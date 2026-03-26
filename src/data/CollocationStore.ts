@@ -1,0 +1,220 @@
+import type { App } from "obsidian";
+import { type CollocationEntry, type CollocationIndex, type StoreStats, CollocationSource } from "../types.ts";
+import { SEED_DATA } from "./seed-data.ts";
+
+export class CollocationStore {
+  private entries: Map<string, CollocationEntry> = new Map();
+  private index: CollocationIndex = {
+    byHeadword: new Map(),
+    byPOS: new Map(),
+    byPattern: new Map(),
+    byTag: new Map(),
+  };
+  private app: App;
+  private dataPath: string;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor(app: App, dataPath: string) {
+    this.app = app;
+    this.dataPath = dataPath;
+  }
+
+  async load(): Promise<void> {
+    try {
+      const exists = await this.app.vault.adapter.exists(this.dataPath);
+      if (exists) {
+        const raw = await this.app.vault.adapter.read(this.dataPath);
+        const parsed: CollocationEntry[] = JSON.parse(raw);
+        for (const e of parsed) {
+          this.entries.set(e.id, e);
+        }
+      } else {
+        // Seed with initial data
+        for (const e of SEED_DATA) {
+          this.entries.set(e.id, e);
+        }
+        await this.save();
+      }
+    } catch {
+      // Fall back to seed data on any error
+      for (const e of SEED_DATA) {
+        this.entries.set(e.id, e);
+      }
+    }
+    this.rebuildIndex();
+  }
+
+  private rebuildIndex(): void {
+    this.index = {
+      byHeadword: new Map(),
+      byPOS: new Map(),
+      byPattern: new Map(),
+      byTag: new Map(),
+    };
+    for (const entry of this.entries.values()) {
+      this.indexEntry(entry);
+    }
+  }
+
+  private indexEntry(entry: CollocationEntry): void {
+    this.addToIndex(this.index.byHeadword, entry.headword, entry.id);
+    this.addToIndex(this.index.byPOS, entry.headwordPOS, entry.id);
+    this.addToIndex(this.index.byPattern, entry.pattern, entry.id);
+    for (const tag of entry.tags) {
+      this.addToIndex(this.index.byTag, tag, entry.id);
+    }
+  }
+
+  private deindexEntry(entry: CollocationEntry): void {
+    this.removeFromIndex(this.index.byHeadword, entry.headword, entry.id);
+    this.removeFromIndex(this.index.byPOS, entry.headwordPOS, entry.id);
+    this.removeFromIndex(this.index.byPattern, entry.pattern, entry.id);
+    for (const tag of entry.tags) {
+      this.removeFromIndex(this.index.byTag, tag, entry.id);
+    }
+  }
+
+  private addToIndex(map: Map<string, string[]>, key: string, id: string): void {
+    if (!map.has(key)) map.set(key, []);
+    const arr = map.get(key)!;
+    if (!arr.includes(id)) arr.push(id);
+  }
+
+  private removeFromIndex(map: Map<string, string[]>, key: string, id: string): void {
+    const arr = map.get(key);
+    if (!arr) return;
+    const idx = arr.indexOf(id);
+    if (idx !== -1) arr.splice(idx, 1);
+  }
+
+  getAll(): CollocationEntry[] {
+    return Array.from(this.entries.values());
+  }
+
+  getById(id: string): CollocationEntry | undefined {
+    return this.entries.get(id);
+  }
+
+  getByHeadword(headword: string): CollocationEntry[] {
+    const ids = this.index.byHeadword.get(headword) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  getByPOS(pos: string): CollocationEntry[] {
+    const ids = this.index.byPOS.get(pos) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  getByPattern(pattern: string): CollocationEntry[] {
+    const ids = this.index.byPattern.get(pattern) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  getByTag(tag: string): CollocationEntry[] {
+    const ids = this.index.byTag.get(tag) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  add(entry: CollocationEntry): void {
+    this.entries.set(entry.id, entry);
+    this.indexEntry(entry);
+    this.scheduleSave();
+  }
+
+  update(entry: CollocationEntry): void {
+    const old = this.entries.get(entry.id);
+    if (old) this.deindexEntry(old);
+    entry.updatedAt = Date.now();
+    this.entries.set(entry.id, entry);
+    this.indexEntry(entry);
+    this.scheduleSave();
+  }
+
+  delete(id: string): void {
+    const entry = this.entries.get(id);
+    if (entry) {
+      this.deindexEntry(entry);
+      this.entries.delete(id);
+      this.scheduleSave();
+    }
+  }
+
+  bulkImport(entries: CollocationEntry[]): number {
+    let count = 0;
+    for (const e of entries) {
+      this.entries.set(e.id, e);
+      this.indexEntry(e);
+      count++;
+    }
+    this.scheduleSave();
+    return count;
+  }
+
+  exportAll(): CollocationEntry[] {
+    return this.getAll();
+  }
+
+  async resetToSeed(): Promise<void> {
+    this.entries.clear();
+    for (const e of SEED_DATA) {
+      this.entries.set(e.id, e);
+    }
+    this.rebuildIndex();
+    await this.save();
+  }
+
+  async clearAll(): Promise<void> {
+    this.entries.clear();
+    this.rebuildIndex();
+    await this.save();
+  }
+
+  getStats(): StoreStats {
+    const byPOS: Record<string, number> = {};
+    const bySource: Record<string, number> = {};
+    for (const e of this.entries.values()) {
+      byPOS[e.headwordPOS] = (byPOS[e.headwordPOS] ?? 0) + 1;
+      bySource[e.source] = (bySource[e.source] ?? 0) + 1;
+    }
+    return { total: this.entries.size, byPOS, bySource };
+  }
+
+  getAllTags(): string[] {
+    return Array.from(this.index.byTag.keys()).sort();
+  }
+
+  getAllPatterns(): string[] {
+    return Array.from(this.index.byPattern.keys()).sort();
+  }
+
+  private scheduleSave(): void {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.save().catch(console.error);
+    }, 1000);
+  }
+
+  async save(): Promise<void> {
+    const data = JSON.stringify(this.getAll(), null, 2);
+    await this.app.vault.adapter.write(this.dataPath, data);
+  }
+
+  getIndex(): CollocationIndex {
+    return this.index;
+  }
+
+  size(): number {
+    return this.entries.size;
+  }
+
+  generateId(): string {
+    return `entry_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  }
+
+  hasSource(source: CollocationSource): boolean {
+    for (const e of this.entries.values()) {
+      if (e.source === source) return true;
+    }
+    return false;
+  }
+}
