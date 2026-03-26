@@ -35,6 +35,18 @@ Inspired by and seeded with data from [collocation.hyogen.info](https://collocat
 3. Reload Obsidian
 4. Enable the plugin in **Settings → Community Plugins**
 
+### 📱 iOS / Mobile Install (No Build Required)
+
+1. Download these 3 files from the [`dist/` folder](https://github.com/silasnahan-sys/jp-collocations/tree/main/dist):
+   - `main.js`
+   - `manifest.json`
+   - `styles.css`
+2. On your device, navigate to your Obsidian vault folder
+3. Go to `.obsidian/plugins/` (create it if it doesn't exist)
+4. Create a new folder called `jp-collocations`
+5. Place the 3 downloaded files inside `jp-collocations/`
+6. Open Obsidian → Settings → Community Plugins → Enable "JP Collocations"
+
 ---
 
 ## Usage

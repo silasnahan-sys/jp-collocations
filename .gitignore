@@ -1,6 +1,5 @@
 node_modules/
-main.js
 *.js.map
-dist/
 .DS_Store
 *.d.ts
+# main.js and dist/ are committed so iOS/mobile users can install without building

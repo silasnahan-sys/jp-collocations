@@ -1,0 +1,347 @@
+/* ─────────────────────────────────────────────────────────────
+   JP Collocations — Plugin Styles
+   Supports Obsidian light and dark themes via CSS variables
+   ──────────────────────────────────────────────────────────── */
+
+/* ── View Layout ──────────────────────────────────────────── */
+.jp-collocations-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-interface), "Hiragino Kaku Gothic Pro", "Noto Sans JP", sans-serif;
+  font-size: var(--font-ui-medium);
+}
+
+.jp-col-header {
+  padding: 8px 12px 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.jp-col-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-accent);
+}
+
+/* ── Search Bar ───────────────────────────────────────────── */
+.jp-col-search-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  align-items: center;
+}
+
+.jp-col-search-input {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.jp-col-search-input:focus {
+  border-color: var(--text-accent);
+  box-shadow: 0 0 0 2px var(--text-accent-hover);
+}
+
+.jp-col-add-btn {
+  padding: 6px 12px;
+  border-radius: var(--radius-s);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  cursor: pointer;
+  font-size: 1.2rem;
+  line-height: 1;
+  transition: background 0.15s;
+}
+
+.jp-col-add-btn:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* ── Filter Chips ─────────────────────────────────────────── */
+.jp-col-filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 12px 6px;
+}
+
+.jp-col-chip {
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.72rem;
+  cursor: pointer;
+  user-select: none;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+
+.jp-col-chip:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.jp-col-chip--active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.jp-col-chip--clear {
+  background: transparent;
+  color: var(--text-faint);
+}
+
+/* ── Stats Bar ────────────────────────────────────────────── */
+.jp-col-stats {
+  padding: 2px 12px 4px;
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* ── Results List ─────────────────────────────────────────── */
+.jp-col-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 8px 16px;
+}
+
+.jp-col-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* ── Entry Card ───────────────────────────────────────────── */
+.jp-col-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  background: var(--background-primary);
+  transition: box-shadow 0.12s, border-color 0.12s;
+}
+
+.jp-col-card:hover {
+  border-color: var(--text-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.jp-col-card-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.jp-col-headword {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-normal);
+}
+
+.jp-col-reading {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.jp-col-collocate {
+  font-size: 1rem;
+  color: var(--text-normal);
+}
+
+.jp-col-pattern {
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  font-family: var(--font-monospace);
+  margin-left: 4px;
+}
+
+/* ── POS Badges ───────────────────────────────────────────── */
+.jp-col-pos {
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.jp-col-pos--noun   { background: #4a90d9; }
+.jp-col-pos--verb   { background: #e06c75; }
+.jp-col-pos--adj-i  { background: #98c379; color: #1e2227; }
+.jp-col-pos--adj-na { background: #56b6c2; color: #1e2227; }
+.jp-col-pos--adv    { background: #e5c07b; color: #1e2227; }
+.jp-col-pos--expr   { background: #c678dd; }
+.jp-col-pos--other  { background: var(--text-faint); }
+
+/* ── Action Buttons ───────────────────────────────────────── */
+.jp-col-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.jp-col-action-btn {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.jp-col-action-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.jp-col-action-btn--danger:hover {
+  background: var(--text-error);
+  border-color: var(--text-error);
+}
+
+/* ── Expandable Details ───────────────────────────────────── */
+.jp-col-details {
+  margin-top: 6px;
+}
+
+.jp-col-details summary {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  cursor: pointer;
+  user-select: none;
+}
+
+.jp-col-example {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 4px 0 0 12px;
+  padding-left: 8px;
+  border-left: 2px solid var(--background-modifier-border);
+  line-height: 1.6;
+}
+
+.jp-col-notes {
+  font-size: 0.8rem;
+  color: var(--text-faint);
+  margin: 4px 0 0 12px;
+  font-style: italic;
+}
+
+/* ── Search Modal Suggestions ─────────────────────────────── */
+.jp-col-suggest-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+}
+
+.jp-col-suggest-left {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.jp-col-suggest-headword {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-normal);
+  white-space: nowrap;
+}
+
+.jp-col-suggest-reading {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.jp-col-suggest-collocate {
+  font-size: 0.9rem;
+  color: var(--text-normal);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jp-col-suggest-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.jp-col-suggest-pos {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  white-space: nowrap;
+}
+
+.jp-col-suggest-pattern {
+  font-size: 0.65rem;
+  color: var(--text-faint);
+  font-family: var(--font-monospace);
+  white-space: nowrap;
+}
+
+/* ── Add Entry Modal ──────────────────────────────────────── */
+.jp-col-modal h2 {
+  margin-bottom: 16px;
+  color: var(--text-normal);
+}
+
+.jp-col-modal-btns {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+/* ── Settings Tab ─────────────────────────────────────────── */
+.jp-col-settings h3 {
+  color: var(--text-accent);
+  margin-top: 20px;
+}
+
+/* ── Scrollbar Styling ────────────────────────────────────── */
+.jp-col-results::-webkit-scrollbar {
+  width: 4px;
+}
+
+.jp-col-results::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.jp-col-results::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+}
+
+.jp-col-results::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
