@@ -8,6 +8,8 @@ import { CollocationView, JP_COLLOCATIONS_VIEW_TYPE } from "./ui/CollocationView
 import { SearchModal } from "./ui/SearchModal.ts";
 import { AddEntryModal } from "./ui/AddEntryModal.ts";
 import { SettingsTab } from "./ui/SettingsTab.ts";
+import { TextClassifier } from "./classifier/TextClassifier.ts";
+import { ClassifyModal } from "./ui/ClassifyModal.ts";
 
 export default class JPCollocationsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
@@ -59,6 +61,21 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "add-entry",
       name: "Add Entry",
       callback: () => new AddEntryModal(this.app, this.store, () => this.refreshViews()).open(),
+    });
+
+    this.addCommand({
+      id: "classify-selected",
+      name: "Classify Selected Text",
+      editorCallback: (editor) => {
+        const selected = editor.getSelection();
+        if (!selected || selected.trim().length === 0) {
+          new Notice("Select some Japanese text first!");
+          return;
+        }
+        const classifier = new TextClassifier();
+        const result = classifier.classify(selected.trim());
+        new ClassifyModal(this.app, result, this.store, () => this.refreshViews()).open();
+      },
     });
 
     this.addCommand({
