@@ -18,6 +18,7 @@ export enum CollocationSource {
   Hyogen = "hyogen.info",
   Manual = "manual",
   Import = "import",
+  Classified = "classified",
 }
 
 export interface CollocationEntry {

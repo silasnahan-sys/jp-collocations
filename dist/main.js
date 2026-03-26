@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => JPCollocationsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 
 // src/types.ts
 var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
@@ -1568,8 +1568,1004 @@ var SettingsTab = class extends import_obsidian5.PluginSettingTab {
   }
 };
 
+// src/classifier/TextClassifier.ts
+var NA_ADJECTIVES = /* @__PURE__ */ new Set([
+  "\u9759\u304B",
+  "\u5927\u5207",
+  "\u4E0D\u601D\u8B70",
+  "\u5FC5\u8981",
+  "\u5927\u4E08\u592B",
+  "\u7C21\u5358",
+  "\u91CD\u8981",
+  "\u6709\u540D",
+  "\u5927\u5909",
+  "\u5143\u6C17",
+  "\u4E01\u5BE7",
+  "\u89AA\u5207",
+  "\u4FBF\u5229",
+  "\u8907\u96D1",
+  "\u7279\u5225",
+  "\u666E\u901A",
+  "\u81EA\u7531",
+  "\u5B89\u5168",
+  "\u5371\u967A",
+  "\u9069\u5F53",
+  "\u5341\u5206",
+  "\u5FAE\u5999",
+  "\u660E\u78BA",
+  "\u66D6\u6627",
+  "\u5287\u7684",
+  "\u6025\u6FC0",
+  "\u4E2D\u9014\u534A\u7AEF",
+  "\u7684",
+  "\u7D20\u76F4",
+  "\u4E0A\u624B",
+  "\u4E0B\u624B",
+  "\u597D\u304D",
+  "\u5ACC\u3044",
+  "\u5F97\u610F",
+  "\u82E6\u624B",
+  "\u5927\u597D\u304D",
+  "\u5B8C\u5168",
+  "\u6B63\u78BA",
+  "\u6696\u304B",
+  "\u8CD1\u3084\u304B",
+  "\u7A4F\u3084\u304B",
+  "\u8C4A\u304B",
+  "\u6109\u5FEB",
+  "\u4E0D\u6109\u5FEB",
+  "\u7DBA\u9E97",
+  "\u304D\u308C\u3044",
+  "\u7D20\u6575",
+  "\u7D20\u6674\u3089\u3057",
+  "\u30CF\u30F3\u30B5\u30E0",
+  "\u89AA\u5BC6",
+  "\u91CD\u5927",
+  "\u6DF1\u523B",
+  "\u7DCA\u6025",
+  "\u9AD8\u5EA6",
+  "\u7CBE\u5BC6",
+  "\u9AD8\u5C1A",
+  "\u5E78\u798F",
+  "\u5E78\u305B",
+  "\u4E0D\u5E78",
+  "\u6B8B\u5FF5",
+  "\u53EF\u80FD",
+  "\u4E0D\u53EF\u80FD",
+  "\u660E\u3089\u304B",
+  "\u78BA\u304B",
+  "\u4E0D\u78BA\u304B",
+  "\u5F53\u7136",
+  "\u81EA\u7136",
+  "\u4E0D\u81EA\u7136",
+  "\u771F\u5263",
+  "\u771F\u9762\u76EE",
+  "\u4E0D\u771F\u9762\u76EE",
+  "\u7A4D\u6975\u7684",
+  "\u6D88\u6975\u7684",
+  "\u5177\u4F53\u7684",
+  "\u62BD\u8C61\u7684",
+  "\u4E00\u822C\u7684",
+  "\u7279\u5B9A",
+  "\u591A\u69D8",
+  "\u5747\u4E00",
+  "\u540C\u69D8",
+  "\u7570\u69D8",
+  "\u5408\u6CD5",
+  "\u9055\u6CD5",
+  "\u6709\u52B9",
+  "\u7121\u52B9",
+  "\u9069\u5207",
+  "\u4E0D\u9069\u5207",
+  "\u5408\u7406\u7684",
+  "\u975E\u5408\u7406\u7684",
+  "\u7406\u60F3\u7684",
+  "\u73FE\u5B9F\u7684",
+  "\u8AD6\u7406\u7684",
+  "\u611F\u60C5\u7684",
+  "\u5BA2\u89B3\u7684",
+  "\u4E3B\u89B3\u7684",
+  "\u76F8\u5BFE\u7684",
+  "\u7D76\u5BFE\u7684",
+  "\u57FA\u672C\u7684",
+  "\u5FDC\u7528\u7684",
+  "\u5C02\u9580\u7684",
+  "\u6280\u8853\u7684",
+  "\u6B74\u53F2\u7684",
+  "\u4F1D\u7D71\u7684",
+  "\u9769\u65B0\u7684",
+  "\u5178\u578B\u7684",
+  "\u4F8B\u5916\u7684",
+  "\u516C\u5F0F",
+  "\u975E\u516C\u5F0F",
+  "\u6B63\u5F0F",
+  "\u5E73\u548C",
+  "\u5B89\u5B9A",
+  "\u4E0D\u5B89\u5B9A",
+  "\u5065\u5EB7",
+  "\u4E0D\u5065\u5EB7",
+  "\u6E05\u6F54",
+  "\u4E0D\u6F54",
+  "\u5FEB\u9069",
+  "\u4E0D\u5FEB"
+]);
+var SURU_VERBS = /* @__PURE__ */ new Set([
+  "\u52C9\u5F37",
+  "\u7814\u7A76",
+  "\u8ABF\u67FB",
+  "\u6279\u5224",
+  "\u767A\u9054",
+  "\u767A\u5C55",
+  "\u767A\u751F",
+  "\u767A\u898B",
+  "\u767A\u660E",
+  "\u767A\u8868",
+  "\u8AAC\u660E",
+  "\u78BA\u8A8D",
+  "\u78BA\u4FDD",
+  "\u78BA\u7ACB",
+  "\u5BFE\u5FDC",
+  "\u5BFE\u7B56",
+  "\u5BFE\u8C61",
+  "\u691C\u8A0E",
+  "\u691C\u67FB",
+  "\u691C\u8A3C",
+  "\u5206\u6790",
+  "\u5206\u985E",
+  "\u5206\u89E3",
+  "\u7406\u89E3",
+  "\u89E3\u6C7A",
+  "\u89E3\u8AAC",
+  "\u89E3\u91C8",
+  "\u8A18\u9332",
+  "\u8A18\u8FF0",
+  "\u8A18\u61B6",
+  "\u6574\u7406",
+  "\u6574\u5099",
+  "\u6574\u5408",
+  "\u6BD4\u8F03",
+  "\u6BD4\u55A9",
+  "\u53C2\u8003",
+  "\u53C2\u7167",
+  "\u53C2\u52A0",
+  "\u5224\u65AD",
+  "\u5224\u660E",
+  "\u5224\u5B9A",
+  "\u8A55\u4FA1",
+  "\u8A55\u8AD6",
+  "\u8868\u73FE",
+  "\u8868\u793A",
+  "\u8868\u8A18",
+  "\u5831\u544A",
+  "\u5831\u9053",
+  "\u901A\u5831",
+  "\u5B9F\u65BD",
+  "\u5B9F\u884C",
+  "\u5B9F\u73FE",
+  "\u5B9F\u9A13",
+  "\u5B9F\u611F",
+  "\u8A2D\u5B9A",
+  "\u8A2D\u7ACB",
+  "\u8A2D\u7F6E",
+  "\u8A2D\u8A08",
+  "\u7BA1\u7406",
+  "\u76E3\u8996",
+  "\u76E3\u7763",
+  "\u4FEE\u6B63",
+  "\u4FEE\u7406",
+  "\u4FEE\u4E86",
+  "\u5B8C\u6210",
+  "\u5B8C\u4E86",
+  "\u958B\u59CB",
+  "\u958B\u767A",
+  "\u5229\u7528",
+  "\u6D3B\u7528",
+  "\u6D3B\u52D5",
+  "\u4F7F\u7528",
+  "\u64CD\u4F5C",
+  "\u5236\u5FA1",
+  "\u5236\u4F5C",
+  "\u5236\u9650",
+  "\u88FD\u4F5C",
+  "\u88FD\u9020",
+  "\u53CD\u6620",
+  "\u53CD\u5FDC",
+  "\u53CD\u7701",
+  "\u53CD\u5BFE",
+  "\u8CDB\u6210",
+  "\u4E3B\u5F35",
+  "\u4E3B\u5C0E",
+  "\u5F37\u8ABF",
+  "\u5F37\u5236",
+  "\u652F\u63F4",
+  "\u652F\u6301",
+  "\u652F\u914D",
+  "\u6307\u6458",
+  "\u6307\u793A",
+  "\u6307\u5C0E",
+  "\u7D39\u4ECB",
+  "\u63D0\u4F9B",
+  "\u63D0\u6848",
+  "\u63D0\u793A",
+  "\u8981\u6C42",
+  "\u8981\u671B",
+  "\u8981\u7D04",
+  "\u6E96\u5099",
+  "\u4E88\u5B9A",
+  "\u4E88\u6E2C",
+  "\u4E88\u9632",
+  "\u9632\u6B62",
+  "\u9632\u885B",
+  "\u4FDD\u8B77",
+  "\u4FDD\u8A3C",
+  "\u4FDD\u5B58",
+  "\u4FDD\u7BA1",
+  "\u7DAD\u6301",
+  "\u904B\u55B6",
+  "\u904B\u7528",
+  "\u63A1\u7528",
+  "\u63A1\u53D6",
+  "\u53CE\u96C6",
+  "\u53CE\u9332",
+  "\u6CE8\u76EE",
+  "\u6CE8\u610F",
+  "\u96C6\u4E2D",
+  "\u96C6\u8A08",
+  "\u89B3\u5BDF",
+  "\u89B3\u6E2C",
+  "\u4F53\u9A13",
+  "\u7D4C\u9A13",
+  "\u8ABF\u6574",
+  "\u8ABF\u7BC0",
+  "\u8EE2\u63DB",
+  "\u5909\u63DB",
+  "\u5909\u66F4",
+  "\u5909\u5316",
+  "\u9032\u5316",
+  "\u9032\u884C",
+  "\u9032\u6B69",
+  "\u4FC3\u9032",
+  "\u63A8\u9032",
+  "\u666E\u53CA",
+  "\u62E1\u5927",
+  "\u7E2E\u5C0F",
+  "\u5897\u52A0",
+  "\u6E1B\u5C11",
+  "\u5411\u4E0A",
+  "\u6539\u5584",
+  "\u6539\u9769",
+  "\u63A8\u85A6",
+  "\u5F15\u7528",
+  "\u6279\u5224",
+  "\u6279\u8A55",
+  "\u5426\u5B9A",
+  "\u80AF\u5B9A",
+  "\u627F\u8A8D",
+  "\u5426\u5B9A",
+  "\u6D88\u8CBB",
+  "\u751F\u7523",
+  "\u6D41\u901A",
+  "\u8CA9\u58F2",
+  "\u8CFC\u5165",
+  "\u6295\u8CC7",
+  "\u8CAF\u84C4",
+  "\u878D\u8CC7",
+  "\u640D\u5931",
+  "\u5229\u76CA",
+  "\u8A08\u7B97",
+  "\u6E2C\u5B9A",
+  "\u8A55\u5B9A",
+  "\u7AF6\u4E89",
+  "\u5354\u529B",
+  "\u5354\u8B70",
+  "\u5354\u8ABF",
+  "\u7D71\u5408",
+  "\u9023\u643A",
+  "\u9023\u7D61",
+  "\u63A5\u7D9A",
+  "\u5207\u65AD",
+  "\u5206\u96E2",
+  "\u5408\u4F75",
+  "\u7D71\u4E00"
+]);
+var COLLOQUIAL_FORMS = [
+  [/てる/g, "\u3066\u3044\u308B"],
+  [/でる/g, "\u3067\u3044\u308B"],
+  [/ってた/g, "\u3068\u8A00\u3063\u3066\u3044\u305F"],
+  [/てた/g, "\u3066\u3044\u305F"],
+  [/でた/g, "\u3067\u3044\u305F"],
+  [/じゃ/g, "\u3067\u306F"],
+  [/んだ/g, "\u306E\u3060"],
+  [/んです/g, "\u306E\u3067\u3059"],
+  [/っぽい/g, "\u3089\u3057\u3044"],
+  [/やっぱ(?!り)/g, "\u3084\u306F\u308A"],
+  [/やっぱり/g, "\u3084\u306F\u308A"],
+  [/ちょっと/g, "\u5C11\u3057"],
+  [/すごい/g, "\u3068\u3066\u3082"],
+  [/めっちゃ/g, "\u3068\u3066\u3082"],
+  [/超([^\s])/g, "\u3068\u3066\u3082$1"]
+];
+var HONORIFIC_VERBS = [
+  "\u3044\u3089\u3063\u3057\u3083\u308B",
+  "\u304A\u3063\u3057\u3083\u308B",
+  "\u306A\u3055\u308B",
+  "\u3054\u3056\u3044\u307E\u3059",
+  "\u3044\u305F\u3060\u304F",
+  "\u304F\u3060\u3055\u308B",
+  "\u7533\u3057\u4E0A\u3052\u308B",
+  "\u4F3A\u3046",
+  "\u62DD\u898B",
+  "\u3054\u89A7",
+  "\u304A\u301C\u306B\u306A\u308B",
+  "\u301C\u3089\u308C\u308B"
+];
+var SLANG_WORDS = [
+  "\u30DC\u30ED\u30AB\u30B9",
+  "\u30D1\u30C1",
+  "\u3084\u3070\u3044",
+  "\u3084\u3079",
+  "\u30E0\u30AB\u3064\u304F",
+  "\u30A6\u30B6\u3044",
+  "\u30AD\u30E2\u3044",
+  "\u30C0\u30B5\u3044",
+  "\u30A4\u30B1\u3066\u308B",
+  "\u30A6\u30B1\u308B",
+  "\u30C1\u30E7\u30D9\u30EA\u30D0",
+  "\u3071\u3061\u3053\u304F",
+  "\u30D1\u30C1\u3053\u304F"
+];
+var DIALECT_MARKERS = [
+  "\u30D1\u30C1\u3053\u304F",
+  "\u30D1\u30C1\u3053\u3044\u3066\u308B",
+  "\u301C\u3078\u3093",
+  "\u301C\u3084\u3093",
+  "\u301C\u3084\u308D",
+  "\u301C\u3061\u3083\u3046",
+  "\u301C\u3084\u306A",
+  "\u301C\u306F\u308B",
+  "\u301C\u3067\u3093\u304C\u306A",
+  "\u301C\u3069\u3059",
+  "\u301C\u305A\u3089",
+  "\u301C\u3079",
+  "\u301C\u3060\u3079",
+  "\u301C\u3058\u3083"
+];
+var ACADEMIC_WORDS = [
+  "\u6587\u6CD5",
+  "\u54C1\u8A5E",
+  "\u30C6\u30F3\u30B9",
+  "\u30A2\u30B9\u30DA\u30AF\u30C8",
+  "\u5F62\u614B\u7D20",
+  "\u8A9E\u5F59",
+  "\u8A9E\u7528",
+  "\u610F\u5473",
+  "\u97F3\u97FB",
+  "\u7D71\u8A9E",
+  "\u8AC7\u8A71",
+  "\u30B3\u30FC\u30D1\u30B9",
+  "\u5206\u6790",
+  "\u7814\u7A76",
+  "\u8AD6\u6587",
+  "\u4EEE\u8AAC",
+  "\u6279\u5224",
+  "\u8A18\u8FF0",
+  "\u8ABF\u67FB",
+  "\u8A00\u8A9E\u5B66",
+  "\u8A00\u8A9E",
+  "\u5F15\u7528",
+  "\u6A19\u6E96",
+  "\u898F\u5247",
+  "\u898F\u7BC4",
+  "\u4F53\u7CFB",
+  "\u30C7\u30FC\u30BF",
+  "\u7406\u8AD6",
+  "\u30E2\u30C7\u30EB",
+  "\u30D5\u30EC\u30FC\u30E0",
+  "\u30B9\u30AD\u30FC\u30DE",
+  "\u69CB\u9020",
+  "\u7279\u5FB4",
+  "\u6A5F\u80FD",
+  "\u5206\u985E",
+  "\u985E\u578B",
+  "\u6BD4\u8F03",
+  "\u5BFE\u7167",
+  "\u6B74\u53F2",
+  "\u5909\u5316",
+  "\u767A\u9054",
+  "\u7FD2\u5F97",
+  "\u6559\u6388"
+];
+var BODY_WORDS = [
+  "\u624B",
+  "\u76EE",
+  "\u8DB3",
+  "\u9854",
+  "\u982D",
+  "\u5FC3",
+  "\u4F53",
+  "\u8033",
+  "\u53E3",
+  "\u9F3B",
+  "\u80A9",
+  "\u8155",
+  "\u80CC",
+  "\u80F8",
+  "\u8179",
+  "\u8170",
+  "\u6307",
+  "\u722A",
+  "\u6B6F",
+  "\u820C",
+  "\u5507",
+  "\u7709",
+  "\u3072\u3052",
+  "\u9AEA"
+];
+var EMOTION_WORDS = [
+  "\u6C17",
+  "\u5FC3",
+  "\u611F",
+  "\u559C",
+  "\u60B2",
+  "\u6012",
+  "\u6050",
+  "\u611B",
+  "\u5ACC",
+  "\u597D",
+  "\u697D",
+  "\u8F9B",
+  "\u82E6",
+  "\u5B09\u3057\u3044",
+  "\u60B2\u3057\u3044",
+  "\u6012\u308B",
+  "\u6016\u3044",
+  "\u611B\u3059\u308B",
+  "\u5ACC\u3044",
+  "\u597D\u304D",
+  "\u697D\u3057\u3044",
+  "\u8F9B\u3044",
+  "\u82E6\u3057\u3044",
+  "\u5BC2\u3057\u3044",
+  "\u6065\u305A\u304B\u3057\u3044",
+  "\u9A5A\u304F",
+  "\u611F\u52D5",
+  "\u611F\u8B1D",
+  "\u5F8C\u6094"
+];
+var TextClassifier = class {
+  classify(text) {
+    const trimmed = text.trim();
+    const tags = [];
+    const notesParts = [];
+    let confidence = 50;
+    const colloquialDetected = this.detectColloquial(trimmed);
+    if (colloquialDetected.length > 0) {
+      tags.push("\u53E3\u8A9E");
+      notesParts.push("\u53E3\u8A9E\u5F62: " + colloquialDetected.join(", "));
+    }
+    const register = this.detectRegister(trimmed);
+    if (register)
+      tags.push(register);
+    const structure = this.detectStructure(trimmed);
+    const { headword, collocate, pattern, headwordPOS, collocatePOS } = structure;
+    if (structure.confidence > 0)
+      confidence = Math.min(95, confidence + structure.confidence);
+    const domainTags = this.detectDomains(trimmed, headword, collocate);
+    for (const t of domainTags)
+      if (!tags.includes(t))
+        tags.push(t);
+    const normalisedText = this.normalise(trimmed);
+    const frequency = this.scoreFrequency(trimmed, tags, pattern);
+    return {
+      originalText: trimmed,
+      normalisedText,
+      headword,
+      collocate,
+      fullPhrase: trimmed,
+      headwordPOS,
+      collocatePOS,
+      pattern,
+      tags,
+      notes: notesParts.join("; "),
+      frequency,
+      confidence
+    };
+  }
+  // ---------------------------------------------------------------------------
+  // Colloquial detection
+  // ---------------------------------------------------------------------------
+  detectColloquial(text) {
+    const found = [];
+    if (/てる/.test(text))
+      found.push("\u3066\u308B\u2192\u3066\u3044\u308B");
+    if (/[^出]でる/.test(text) || text.startsWith("\u3067\u308B"))
+      found.push("\u3067\u308B\u2192\u3067\u3044\u308B");
+    if (/ってた/.test(text))
+      found.push("\u3063\u3066\u305F\u2192\u3068\u8A00\u3063\u3066\u3044\u305F");
+    if (/てた/.test(text) && !/ってた/.test(text))
+      found.push("\u3066\u305F\u2192\u3066\u3044\u305F");
+    if (/じゃ/.test(text))
+      found.push("\u3058\u3083\u2192\u3067\u306F");
+    if (/んだ/.test(text))
+      found.push("\u3093\u3060\u2192\u306E\u3060");
+    if (/んです/.test(text))
+      found.push("\u3093\u3067\u3059\u2192\u306E\u3067\u3059");
+    if (/っぽい/.test(text))
+      found.push("\u3063\u307D\u3044\u2192\u3089\u3057\u3044");
+    if (/やっぱ/.test(text))
+      found.push("\u3084\u3063\u3071\u2192\u3084\u306F\u308A");
+    return found;
+  }
+  // ---------------------------------------------------------------------------
+  // Register detection
+  // ---------------------------------------------------------------------------
+  detectRegister(text) {
+    if (SLANG_WORDS.some((w) => text.includes(w)))
+      return "\u4FD7\u8A9E";
+    if (DIALECT_MARKERS.some((w) => text.includes(w)))
+      return "\u65B9\u8A00";
+    if (HONORIFIC_VERBS.some((w) => text.includes(w)))
+      return "\u656C\u8A9E";
+    if (text.endsWith("\u3067\u3059") || text.endsWith("\u307E\u3059") || text.endsWith("\u307E\u3057\u305F") || text.endsWith("\u307E\u305B\u3093") || text.endsWith("\u3067\u3057\u305F"))
+      return "\u4E01\u5BE7\u8A9E";
+    if (/[うくぐすつぬぶむる]$/.test(text) || text.endsWith("\u3060") || /[いかけがきさしたちなにのはひふへほまみめもやゆよらりれろわ]$/.test(text)) {
+      return "\u666E\u901A\u4F53";
+    }
+    return null;
+  }
+  // ---------------------------------------------------------------------------
+  // Phrase structure detection
+  // ---------------------------------------------------------------------------
+  detectStructure(text) {
+    for (const sv of SURU_VERBS) {
+      if (text.startsWith(sv) && (text === sv + "\u3059\u308B" || text === sv + "\u3057\u305F" || text === sv + "\u3057\u3066" || text === sv + "\u3057\u306A\u3044" || text === sv + "\u3057\u3066\u3044\u308B" || text === sv + "\u3057\u3066\u308B" || text === sv + "\u3057\u305F\u7D50\u679C" || text.startsWith(sv + "\u3059\u308B"))) {
+        const rest = text.slice(sv.length);
+        return {
+          headword: sv,
+          collocate: "\u3059\u308B" + (rest.startsWith("\u3059\u308B") ? rest.slice(2) : rest),
+          pattern: rest.includes("\u7D50\u679C") ? "N+\u3059\u308B+N" : "N+\u3059\u308B",
+          headwordPOS: "\u540D\u8A5E" /* Noun */,
+          collocatePOS: "\u52D5\u8A5E" /* Verb */,
+          confidence: 30
+        };
+      }
+    }
+    const quoteMatch = text.match(/^(.+?)[とって]([思言見考感聞][\S]*)$/);
+    if (quoteMatch) {
+      return {
+        headword: quoteMatch[1],
+        collocate: "\u3068" + quoteMatch[2],
+        pattern: "Quote+\u3068+V",
+        headwordPOS: "\u8868\u73FE" /* Expression */,
+        collocatePOS: "\u52D5\u8A5E" /* Verb */,
+        confidence: 20
+      };
+    }
+    const passiveTeiru = text.match(/^([\s\S]+?)([わかされ]れて[るたいいた]*)$/);
+    if (passiveTeiru) {
+      const verbBase = this.extractVerbBase(passiveTeiru[1] + "\u308C");
+      const suffix = passiveTeiru[2].replace(/^[わかされ]れ/, "");
+      const hasTe = suffix.startsWith("\u3066");
+      return {
+        headword: verbBase || passiveTeiru[1],
+        collocate: "passive" + (hasTe ? "+" + suffix : ""),
+        pattern: hasTe ? "V+passive+\u3066" + suffix.slice(1) : "V+passive",
+        headwordPOS: "\u52D5\u8A5E" /* Verb */,
+        collocatePOS: "\u52A9\u52D5\u8A5E" /* AuxVerb */,
+        confidence: 25
+      };
+    }
+    if (/させられ/.test(text)) {
+      const base = text.replace(/させられ.*$/, "");
+      return {
+        headword: base || text,
+        collocate: "\u3055\u305B\u3089\u308C\u308B",
+        pattern: "V+causative+passive",
+        headwordPOS: "\u52D5\u8A5E" /* Verb */,
+        collocatePOS: "\u52A9\u52D5\u8A5E" /* AuxVerb */,
+        confidence: 25
+      };
+    }
+    const teitaMatch = text.match(/^([\s\S]+?)(て(?:い)?た|で(?:い)?た)$/);
+    if (teitaMatch && teitaMatch[1].length > 0) {
+      const verbPart = teitaMatch[1];
+      if (/[うくぐすつぬぶむるく]$|んで$|って$|いて$|いで$/.test(verbPart)) {
+        return {
+          headword: verbPart,
+          collocate: teitaMatch[2],
+          pattern: "V+\u3066\u3044\u305F",
+          headwordPOS: "\u52D5\u8A5E" /* Verb */,
+          collocatePOS: "\u52A9\u52D5\u8A5E" /* AuxVerb */,
+          confidence: 20
+        };
+      }
+    }
+    const teVMatch = text.match(/^([\s\S]+?)(て(?:い)?(?:[るみあおい]|ある|いる|みる|おく|しまう|くる))/);
+    if (teVMatch && teVMatch[1].length > 0) {
+      const head = teVMatch[1];
+      const tail = teVMatch[2];
+      return {
+        headword: head,
+        collocate: tail,
+        pattern: "V+\u3066+V",
+        headwordPOS: "\u52D5\u8A5E" /* Verb */,
+        collocatePOS: "\u52D5\u8A5E" /* Verb */,
+        confidence: 20
+      };
+    }
+    const naAdjNiV = text.match(/^([^\s]+?)に([^\s]+)$/);
+    if (naAdjNiV) {
+      const adj = naAdjNiV[1];
+      const verb = naAdjNiV[2];
+      if (NA_ADJECTIVES.has(adj) || adj.endsWith("\u7684")) {
+        return {
+          headword: adj,
+          collocate: "\u306B" + verb,
+          pattern: "naAdj+\u306B+V",
+          headwordPOS: "\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */,
+          collocatePOS: "\u52D5\u8A5E" /* Verb */,
+          confidence: 30
+        };
+      }
+    }
+    const nGaAdj = text.match(/^([^\s]+?)が([^\s]+[いなか](?:だ|です|った)?)$/);
+    if (nGaAdj && !nGaAdj[2].match(/[うくぐすつぬぶむる]$/)) {
+      const adj = nGaAdj[2];
+      const posAdj = this.detectWordPOS(adj);
+      if (posAdj === "\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */ || posAdj === "\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */ || NA_ADJECTIVES.has(adj) || NA_ADJECTIVES.has(adj.replace(/だ$|です$/, ""))) {
+        return {
+          headword: nGaAdj[1],
+          collocate: "\u304C" + adj,
+          pattern: "N+\u304C+naAdj",
+          headwordPOS: "\u540D\u8A5E" /* Noun */,
+          collocatePOS: posAdj,
+          confidence: 20
+        };
+      }
+    }
+    const advVMatch = text.match(/^([^\s]+?り|[^\s]+?と)([^\s]+[うくぐすつぬぶむる](?:.*?)?)$/);
+    if (advVMatch && advVMatch[1].length >= 2 && advVMatch[2].length >= 1) {
+      const adv = advVMatch[1];
+      const verb = advVMatch[2];
+      if (/り$|と$/.test(adv) && this.looksLikeAdverb(adv)) {
+        return {
+          headword: adv,
+          collocate: verb,
+          pattern: "Adv+V",
+          headwordPOS: "\u526F\u8A5E" /* Adverb */,
+          collocatePOS: "\u52D5\u8A5E" /* Verb */,
+          confidence: 20
+        };
+      }
+    }
+    const nNoN = text.match(/^([^\s]+?)の([^\s]+)$/);
+    if (nNoN && nNoN[1].length >= 1 && nNoN[2].length >= 1) {
+      return {
+        headword: nNoN[1],
+        collocate: "\u306E" + nNoN[2],
+        pattern: "N+\u306E+N",
+        headwordPOS: "\u540D\u8A5E" /* Noun */,
+        collocatePOS: "\u540D\u8A5E" /* Noun */,
+        confidence: 15
+      };
+    }
+    const nWoV = text.match(/^([^\s]+?)を([^\s]+)$/);
+    if (nWoV) {
+      return {
+        headword: nWoV[1],
+        collocate: "\u3092" + nWoV[2],
+        pattern: "N+\u3092+V",
+        headwordPOS: "\u540D\u8A5E" /* Noun */,
+        collocatePOS: "\u52D5\u8A5E" /* Verb */,
+        confidence: 25
+      };
+    }
+    const nGaV = text.match(/^([^\s]+?)が([^\s]+)$/);
+    if (nGaV) {
+      return {
+        headword: nGaV[1],
+        collocate: "\u304C" + nGaV[2],
+        pattern: "N+\u304C+V",
+        headwordPOS: "\u540D\u8A5E" /* Noun */,
+        collocatePOS: "\u52D5\u8A5E" /* Verb */,
+        confidence: 25
+      };
+    }
+    const nNiV = text.match(/^([^\s]+?)に([^\s]+)$/);
+    if (nNiV) {
+      return {
+        headword: nNiV[1],
+        collocate: "\u306B" + nNiV[2],
+        pattern: "N+\u306B+V",
+        headwordPOS: "\u540D\u8A5E" /* Noun */,
+        collocatePOS: "\u52D5\u8A5E" /* Verb */,
+        confidence: 20
+      };
+    }
+    const fallback = this.fallbackSplit(text);
+    return {
+      headword: fallback.headword,
+      collocate: fallback.collocate,
+      pattern: fallback.pattern,
+      headwordPOS: "\u540D\u8A5E" /* Noun */,
+      collocatePOS: "\u52D5\u8A5E" /* Verb */,
+      confidence: 10
+    };
+  }
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+  /** Detect POS for a single word (used for collocates). */
+  detectWordPOS(word) {
+    if (!word)
+      return "\u305D\u306E\u4ED6" /* Other */;
+    const clean = word.replace(/だ$|です$|でした$|だった$/, "");
+    if (NA_ADJECTIVES.has(clean) || clean.endsWith("\u7684"))
+      return "\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */;
+    if (/[うくぐすつぬぶむる]$/.test(word))
+      return "\u52D5\u8A5E" /* Verb */;
+    if (word.endsWith("\u3044"))
+      return "\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */;
+    if (word.endsWith("\u306B") || word.endsWith("\u3068"))
+      return "\u526F\u8A5E" /* Adverb */;
+    return "\u540D\u8A5E" /* Noun */;
+  }
+  /** Extract verb base (dictionary form) from a passivised/conjugated form. */
+  extractVerbBase(conjugated) {
+    return conjugated.replace(/[わかされ]れる?$/, "\u3046").replace(/られる?$/, "\u308B").replace(/れる?$/, "\u308B").replace(/て$/, "");
+  }
+  /** Heuristic: does a string look like a Japanese adverb? */
+  looksLikeAdverb(s) {
+    const knownAdverbs = [
+      "\u3058\u3063\u304F\u308A",
+      "\u306F\u3063\u304D\u308A",
+      "\u3086\u3063\u304F\u308A",
+      "\u3057\u3063\u304B\u308A",
+      "\u304E\u3063\u3057\u308A",
+      "\u3056\u3063\u304F\u308A",
+      "\u3055\u3063\u3071\u308A",
+      "\u3059\u3063\u304D\u308A",
+      "\u305F\u3063\u3077\u308A",
+      "\u3073\u3063\u304F\u308A",
+      "\u3075\u3063\u304F\u3089",
+      "\u307C\u3093\u3084\u308A",
+      "\u307E\u3063\u305F\u308A",
+      "\u306E\u3093\u3073\u308A",
+      "\u304D\u3063\u3071\u308A",
+      "\u3066\u3063\u304D\u308A",
+      "\u3046\u3063\u304B\u308A",
+      "\u3061\u3083\u3063\u304B\u308A",
+      "\u3058\u3063\u3068",
+      "\u307C\u30FC\u3063\u3068",
+      "\u307C\u3093\u3084\u308A\u3068",
+      "\u306F\u3063\u3068",
+      "\u3075\u3068",
+      "\u3059\u3063\u3068",
+      "\u3082\u3063\u3068",
+      "\u305A\u3063\u3068",
+      "\u304D\u3063\u3068",
+      "\u3082\u3068\u3082\u3068",
+      "\u305F\u3068\u3048\u3070"
+    ];
+    return knownAdverbs.some((a) => s.startsWith(a) || s === a);
+  }
+  /** Fallback: split the phrase into a head noun/word and a verb tail. */
+  fallbackSplit(text) {
+    if (text.length <= 3) {
+      return { headword: text, collocate: "", pattern: "V" };
+    }
+    const m = text.match(/^([\u4e00-\u9fafぁ-ゖァ-ヶ]{1,4})([\s\S]+)$/);
+    if (m) {
+      return { headword: m[1], collocate: m[2], pattern: "N+V" };
+    }
+    const mid = Math.floor(text.length / 2);
+    return {
+      headword: text.slice(0, mid),
+      collocate: text.slice(mid),
+      pattern: "phrase"
+    };
+  }
+  // ---------------------------------------------------------------------------
+  // Domain tagging
+  // ---------------------------------------------------------------------------
+  detectDomains(text, headword, collocate) {
+    const tags = [];
+    const combined = text + headword + collocate;
+    if (ACADEMIC_WORDS.some((w) => combined.includes(w)))
+      tags.push("\u5B66\u8853");
+    if (combined.includes("\u8A00\u8A9E") || combined.includes("\u6587\u6CD5") || combined.includes("\u8A9E\u5F59") || combined.includes("\u54C1\u8A5E") || combined.includes("\u30C6\u30F3\u30B9") || combined.includes("\u30A2\u30B9\u30DA\u30AF\u30C8")) {
+      if (!tags.includes("\u5B66\u8853"))
+        tags.push("\u5B66\u8853");
+      tags.push("\u8A00\u8A9E\u5B66");
+    }
+    if (BODY_WORDS.some((w) => combined.includes(w)))
+      tags.push("\u8EAB\u4F53");
+    if (EMOTION_WORDS.some((w) => combined.includes(w)))
+      tags.push("\u611F\u60C5");
+    if (SLANG_WORDS.some((w) => combined.includes(w)) && !tags.includes("\u4FD7\u8A9E"))
+      tags.push("\u4FD7\u8A9E");
+    if (DIALECT_MARKERS.some((w) => combined.includes(w)) && !tags.includes("\u65B9\u8A00"))
+      tags.push("\u65B9\u8A00");
+    if (combined.includes("\u708E\u4E0A") || combined.includes("\u6D88\u3059") && combined.includes("\u708E")) {
+      tags.push("\u6BD4\u55A9");
+    }
+    if (tags.length === 0)
+      tags.push("\u65E5\u5E38");
+    return tags;
+  }
+  // ---------------------------------------------------------------------------
+  // Normalisation (spoken → written)
+  // ---------------------------------------------------------------------------
+  normalise(text) {
+    let result = text;
+    for (const [pattern, replacement] of COLLOQUIAL_FORMS) {
+      result = result.replace(pattern, replacement);
+    }
+    return result;
+  }
+  // ---------------------------------------------------------------------------
+  // Frequency scoring
+  // ---------------------------------------------------------------------------
+  scoreFrequency(text, tags, pattern) {
+    let score = 50;
+    if (tags.includes("\u4FD7\u8A9E"))
+      score = 45;
+    if (tags.includes("\u65E5\u5E38"))
+      score = 65;
+    if (tags.includes("\u5B66\u8853"))
+      score = 60;
+    if (tags.includes("\u8A00\u8A9E\u5B66"))
+      score = 55;
+    if (pattern === "N+\u3059\u308B")
+      score = Math.max(score, 70);
+    if (pattern.includes("passive"))
+      score = Math.max(score, 60);
+    if (text.length <= 6)
+      score = Math.min(score + 10, 95);
+    return Math.min(Math.max(score, 20), 100);
+  }
+};
+
+// src/ui/ClassifyModal.ts
+var import_obsidian6 = require("obsidian");
+var ClassifyModal = class extends import_obsidian6.Modal {
+  constructor(app, result, store, onSave) {
+    super(app);
+    this.result = result;
+    this.store = store;
+    this.onSave = onSave;
+    this.headword = result.headword;
+    this.collocate = result.collocate;
+    this.fullPhrase = result.fullPhrase;
+    this.headwordPOS = result.headwordPOS;
+    this.collocatePOS = result.collocatePOS;
+    this.pattern = result.pattern;
+    this.tags = [...result.tags];
+    this.notes = result.notes;
+    this.frequency = result.frequency;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("jp-col-modal");
+    contentEl.addClass("jp-col-classify-modal");
+    contentEl.createEl("h2", { text: "Classify Selected Text" });
+    const origBox = contentEl.createDiv("jp-col-classify-original");
+    origBox.createEl("span", { text: "Selected: ", cls: "jp-col-classify-label" });
+    origBox.createEl("strong", { text: this.result.originalText });
+    if (this.result.normalisedText !== this.result.originalText) {
+      const normBox = contentEl.createDiv("jp-col-classify-normalised");
+      normBox.createEl("span", { text: "Standard form: ", cls: "jp-col-classify-label" });
+      normBox.createEl("span", { text: this.result.normalisedText, cls: "jp-col-classify-norm-text" });
+    }
+    const confRow = contentEl.createDiv("jp-col-classify-conf");
+    confRow.createEl("span", { text: `Classification confidence: ${this.result.confidence}%`, cls: "jp-col-classify-label" });
+    const bar = confRow.createDiv("jp-col-conf-bar");
+    const fill = bar.createDiv("jp-col-conf-fill");
+    fill.style.width = `${this.result.confidence}%`;
+    fill.style.backgroundColor = this.result.confidence >= 70 ? "#4caf50" : this.result.confidence >= 40 ? "#ff9800" : "#f44336";
+    contentEl.createEl("hr");
+    new import_obsidian6.Setting(contentEl).setName("Headword").setDesc("Main entry word").addText((t) => t.setValue(this.headword).onChange((v) => {
+      this.headword = v;
+    }));
+    new import_obsidian6.Setting(contentEl).setName("Collocate").setDesc("Collocating element (particle + verb, etc.)").addText((t) => t.setValue(this.collocate).onChange((v) => {
+      this.collocate = v;
+    }));
+    new import_obsidian6.Setting(contentEl).setName("Full Phrase").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
+      this.fullPhrase = v;
+    }));
+    new import_obsidian6.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
+      for (const pos of Object.values(PartOfSpeech))
+        d.addOption(pos, pos);
+      d.setValue(this.headwordPOS).onChange((v) => {
+        this.headwordPOS = v;
+      });
+    });
+    new import_obsidian6.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
+      for (const pos of Object.values(PartOfSpeech))
+        d.addOption(pos, pos);
+      d.setValue(this.collocatePOS).onChange((v) => {
+        this.collocatePOS = v;
+      });
+    });
+    new import_obsidian6.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u3092+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
+      this.pattern = v;
+    }));
+    const tagSetting = new import_obsidian6.Setting(contentEl).setName("Tags").setDesc("Click to toggle; edit the text field to add more");
+    const tagChipRow = contentEl.createDiv("jp-col-tag-chips");
+    let tagInputEl = null;
+    const renderChips = () => {
+      tagChipRow.empty();
+      for (const tag of this.tags) {
+        const chip = tagChipRow.createEl("span", { text: tag, cls: "jp-col-tag-chip active" });
+        chip.addEventListener("click", () => {
+          this.tags = this.tags.filter((t) => t !== tag);
+          renderChips();
+          if (tagInputEl)
+            tagInputEl.value = this.tags.join(", ");
+        });
+      }
+    };
+    renderChips();
+    tagSetting.addText((t) => {
+      tagInputEl = t.inputEl;
+      t.setValue(this.tags.join(", ")).onChange((v) => {
+        this.tags = v.split(",").map((x) => x.trim()).filter(Boolean);
+        renderChips();
+      });
+    });
+    new import_obsidian6.Setting(contentEl).setName("Notes").addTextArea((t) => {
+      t.setValue(this.notes).onChange((v) => {
+        this.notes = v;
+      });
+      t.inputEl.rows = 2;
+    });
+    new import_obsidian6.Setting(contentEl).setName("Frequency / Importance").setDesc("1\u2013100").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
+      this.frequency = v;
+    }));
+    const btnRow = contentEl.createDiv("jp-col-modal-btns");
+    const saveBtn = btnRow.createEl("button", { text: "Save Entry", cls: "mod-cta" });
+    saveBtn.addEventListener("click", () => this.handleSave());
+    const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => this.close());
+  }
+  handleSave() {
+    const hw = this.headword.trim();
+    const col = this.collocate.trim();
+    if (!hw) {
+      new import_obsidian6.Notice("Headword is required.");
+      return;
+    }
+    const now = Date.now();
+    const entry2 = {
+      id: this.store.generateId(),
+      headword: hw,
+      headwordReading: "",
+      collocate: col,
+      fullPhrase: this.fullPhrase.trim() || hw + col,
+      headwordPOS: this.headwordPOS,
+      collocatePOS: this.collocatePOS,
+      pattern: this.pattern.trim(),
+      exampleSentences: [this.result.originalText].filter(Boolean),
+      source: "classified" /* Classified */,
+      tags: this.tags,
+      notes: this.notes.trim(),
+      frequency: this.frequency,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.store.add(entry2);
+    new import_obsidian6.Notice(`Saved: ${entry2.fullPhrase}`);
+    this.onSave();
+    this.close();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+
 // src/main.ts
-var JPCollocationsPlugin = class extends import_obsidian6.Plugin {
+var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULT_SETTINGS };
@@ -1610,6 +2606,20 @@ var JPCollocationsPlugin = class extends import_obsidian6.Plugin {
       id: "add-entry",
       name: "Add Entry",
       callback: () => new AddEntryModal(this.app, this.store, () => this.refreshViews()).open()
+    });
+    this.addCommand({
+      id: "classify-selected",
+      name: "Classify Selected Text",
+      editorCallback: (editor) => {
+        const selected = editor.getSelection();
+        if (!selected || selected.trim().length === 0) {
+          new import_obsidian7.Notice("Select some Japanese text first!");
+          return;
+        }
+        const classifier = new TextClassifier();
+        const result = classifier.classify(selected.trim());
+        new ClassifyModal(this.app, result, this.store, () => this.refreshViews()).open();
+      }
     });
     this.addCommand({
       id: "import-data",
@@ -1669,10 +2679,10 @@ var JPCollocationsPlugin = class extends import_obsidian6.Plugin {
       try {
         const parsed = JSON.parse(text);
         const count = this.store.bulkImport(parsed);
-        new import_obsidian6.Notice(`Imported ${count} entries.`);
+        new import_obsidian7.Notice(`Imported ${count} entries.`);
         this.refreshViews();
       } catch (e) {
-        new import_obsidian6.Notice("Failed to parse JSON file.");
+        new import_obsidian7.Notice("Failed to parse JSON file.");
       }
     };
     input.click();
@@ -1686,31 +2696,31 @@ var JPCollocationsPlugin = class extends import_obsidian6.Plugin {
     a.download = "jp-collocations-export.json";
     a.click();
     URL.revokeObjectURL(url);
-    new import_obsidian6.Notice("Exported collocations.");
+    new import_obsidian7.Notice("Exported collocations.");
   }
   async fetchFromHyogen() {
     var _a;
     if (!this.settings.hyogenEnabled) {
-      new import_obsidian6.Notice("Hyogen scraping is disabled. Enable it in settings first.");
+      new import_obsidian7.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
     }
     if (this.settings.hyogenWordList.length === 0) {
-      new import_obsidian6.Notice("No words configured. Add words to the scrape list in settings.");
+      new import_obsidian7.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
     if ((_a = this.scraper) == null ? void 0 : _a.isRunning()) {
-      new import_obsidian6.Notice("Scraper is already running.");
+      new import_obsidian7.Notice("Scraper is already running.");
       return;
     }
     this.scraper = new HyogenScraper(this.app, this.store, {
       rateLimit: this.settings.hyogenRateLimit,
-      onProgress: (msg) => new import_obsidian6.Notice(msg, 3e3),
+      onProgress: (msg) => new import_obsidian7.Notice(msg, 3e3),
       onEntry: () => this.refreshViews()
     });
     this.scraper.enqueue(this.settings.hyogenWordList);
-    new import_obsidian6.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
+    new import_obsidian7.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
     const count = await this.scraper.run();
-    new import_obsidian6.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    new import_obsidian7.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
   }
 };
