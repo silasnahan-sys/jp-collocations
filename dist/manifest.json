@@ -1,0 +1,11 @@
+{
+  "id": "jp-collocations",
+  "name": "JP Collocations",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "A searchable, dynamic Japanese collocation lexicon for writing, searching, and indexing phrase combinations",
+  "author": "JP Collocations Contributors",
+  "authorUrl": "https://github.com/silasnahan-sys/jp-collocations",
+  "fundingUrl": "",
+  "isDesktopOnly": false
+}
