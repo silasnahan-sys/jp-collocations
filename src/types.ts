@@ -92,5 +92,3 @@ export interface StoreStats {
   byPOS: Record<string, number>;
   bySource: Record<string, number>;
 }
-
-export type ViewMode = "search" | "grammar" | "connections" | "forms" | "sources";
