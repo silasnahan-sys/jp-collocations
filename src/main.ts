@@ -2,6 +2,7 @@ import { Plugin, WorkspaceLeaf, Notice } from "obsidian";
 import type { PluginSettings } from "./types.ts";
 import { DEFAULT_SETTINGS } from "./types.ts";
 import { CollocationStore } from "./data/CollocationStore.ts";
+import { ContextStore } from "./data/ContextStore.ts";
 import { SearchEngine } from "./search/SearchEngine.ts";
 import { HyogenScraper } from "./scraper/HyogenScraper.ts";
 import { CollocationView, JP_COLLOCATIONS_VIEW_TYPE } from "./ui/CollocationView.ts";
@@ -10,10 +11,13 @@ import { AddEntryModal } from "./ui/AddEntryModal.ts";
 import { SettingsTab } from "./ui/SettingsTab.ts";
 import { TextClassifier } from "./classifier/TextClassifier.ts";
 import { ClassifyModal } from "./ui/ClassifyModal.ts";
+import { DiscourseAnalyzer } from "./discourse/DiscourseAnalyzer.ts";
+import { VaultIndexer } from "./data/VaultIndexer.ts";
 
 export default class JPCollocationsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   store!: CollocationStore;
+  contextStore!: ContextStore;
   engine!: SearchEngine;
   private scraper: HyogenScraper | null = null;
 
@@ -25,12 +29,17 @@ export default class JPCollocationsPlugin extends Plugin {
     this.store = new CollocationStore(this.app, dataPath);
     await this.store.load();
 
+    // Context store (discourse grammar / context chunks)
+    const contextPath = `${this.app.vault.configDir}/plugins/jp-collocations/${this.settings.contextDataFilePath}`;
+    this.contextStore = new ContextStore(this.app, contextPath);
+    await this.contextStore.load();
+
     // Search engine
     this.engine = new SearchEngine(this.store);
 
     // Register view
     this.registerView(JP_COLLOCATIONS_VIEW_TYPE, leaf =>
-      new CollocationView(leaf, this.store, this.engine, this.settings)
+      new CollocationView(leaf, this.store, this.engine, this.settings, this.contextStore)
     );
 
     // Settings tab
@@ -94,6 +103,37 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "fetch-hyogen",
       name: "Fetch from Hyogen",
       callback: () => this.fetchFromHyogen(),
+    });
+
+    this.addCommand({
+      id: "create-discourse-card",
+      name: "Create Discourse Card from Selection",
+      editorCallback: (editor) => {
+        const selected = editor.getSelection();
+        if (!selected || selected.trim().length === 0) {
+          new Notice("Select some transcript/text first!");
+          return;
+        }
+        this.createDiscourseChunk(selected.trim(), null);
+      },
+    });
+
+    this.addCommand({
+      id: "index-phrase-vault",
+      name: "Index Selected Phrase across Vault",
+      editorCallback: async (editor) => {
+        const selected = editor.getSelection();
+        if (!selected || selected.trim().length === 0) {
+          new Notice("Select a phrase to index first!");
+          return;
+        }
+        const phrase = selected.trim();
+        new Notice(`Indexing "${phrase}" across vault…`);
+        const indexer = new VaultIndexer(this.app, this.contextStore, this.settings.contextRadius);
+        const count = await indexer.indexPhrase(phrase, null);
+        new Notice(`Found ${count} occurrences. Created context entries.`);
+        this.refreshViews();
+      },
     });
 
     // Ribbon icon
@@ -162,6 +202,38 @@ export default class JPCollocationsPlugin extends Plugin {
     a.click();
     URL.revokeObjectURL(url);
     new Notice("Exported collocations.");
+  }
+
+  private createDiscourseChunk(text: string, collocationId: string | null): void {
+    const analyzer = new DiscourseAnalyzer();
+    const analysis = analyzer.analyse(text);
+
+    const chunk = {
+      id: this.contextStore.generateId("chunk"),
+      rawText: text,
+      bits: analysis.bits,
+      relations: analysis.relations,
+      sourceFile: this.app.workspace.getActiveFile()?.path ?? "unknown",
+      selectedPhrase: text.length > 40 ? text.slice(0, 40) + "…" : text,
+      createdAt: Date.now(),
+    };
+    this.contextStore.addChunk(chunk);
+
+    // Create a context entry
+    const formattedMarkdown = analyzer.formatChunkMarkdown(text, chunk.selectedPhrase, analysis.bits);
+    const entry = {
+      id: this.contextStore.generateId("ctx"),
+      collocationId,
+      chunkId: chunk.id,
+      highlightedBitIds: analysis.bits.map(b => b.id),
+      formattedMarkdown,
+      tags: Array.from(new Set(analysis.bits.filter(b => b.discourseLabel).map(b => b.discourseLabel))),
+      createdAt: Date.now(),
+    };
+    this.contextStore.addEntry(entry);
+
+    new Notice(`Created discourse chunk with ${analysis.bits.length} bits and ${analysis.relations.length} connections.`);
+    this.refreshViews();
   }
 
   private async fetchFromHyogen(): Promise<void> {

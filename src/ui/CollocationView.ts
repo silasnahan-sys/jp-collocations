@@ -3,6 +3,7 @@ import type { App } from "obsidian";
 import type { CollocationEntry, PluginSettings, SearchResult, ViewMode } from "../types.ts";
 import { PartOfSpeech, CollocationSource } from "../types.ts";
 import type { CollocationStore } from "../data/CollocationStore.ts";
+import type { ContextStore } from "../data/ContextStore.ts";
 import type { SearchEngine } from "../search/SearchEngine.ts";
 import { AddEntryModal } from "./AddEntryModal.ts";
 import { ViewSwitcher } from "./ViewSwitcher.ts";
@@ -10,11 +11,14 @@ import { GrammarBrowserView } from "./GrammarBrowserView.ts";
 import { ConnectionMapView } from "./ConnectionMapView.ts";
 import { FormVariationsView } from "./FormVariationsView.ts";
 import { SourceContextView } from "./SourceContextView.ts";
+import { DiscourseCardView } from "./DiscourseCardView.ts";
+import { ContextLexiconView } from "./ContextLexiconView.ts";
 
 export const JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
 
 export class CollocationView extends ItemView {
   private store: CollocationStore;
+  private contextStore: ContextStore;
   private engine: SearchEngine;
   private settings: PluginSettings;
   private results: SearchResult[] = [];
@@ -30,17 +34,21 @@ export class CollocationView extends ItemView {
   private connectionView: ConnectionMapView | null = null;
   private formView: FormVariationsView | null = null;
   private sourceView: SourceContextView | null = null;
+  private discourseView: DiscourseCardView | null = null;
+  private contextLexiconView: ContextLexiconView | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
     store: CollocationStore,
     engine: SearchEngine,
-    settings: PluginSettings
+    settings: PluginSettings,
+    contextStore: ContextStore,
   ) {
     super(leaf);
     this.store = store;
     this.engine = engine;
     this.settings = settings;
+    this.contextStore = contextStore;
   }
 
   getViewType(): string {
@@ -139,6 +147,8 @@ export class CollocationView extends ItemView {
     this.connectionView = null;
     this.formView = null;
     this.sourceView = null;
+    this.discourseView = null;
+    this.contextLexiconView = null;
 
     switch (this.currentViewMode) {
       case "grammar":
@@ -152,6 +162,12 @@ export class CollocationView extends ItemView {
         break;
       case "sources":
         this.sourceView = new SourceContextView(this.subViewContainer, this.store, this.currentPOSFilter);
+        break;
+      case "discourse":
+        this.discourseView = new DiscourseCardView(this.subViewContainer, this.contextStore);
+        break;
+      case "contexts":
+        this.contextLexiconView = new ContextLexiconView(this.subViewContainer, this.contextStore);
         break;
     }
   }
@@ -190,6 +206,8 @@ export class CollocationView extends ItemView {
       this.connectionView?.refresh(this.currentPOSFilter);
       this.formView?.refresh(this.currentPOSFilter);
       this.sourceView?.refresh(this.currentPOSFilter);
+      this.discourseView?.refresh();
+      this.contextLexiconView?.refresh();
     }
   }
 

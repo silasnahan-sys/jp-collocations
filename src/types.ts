@@ -73,6 +73,9 @@ export interface PluginSettings {
   fuzzySearchSensitivity: number;
   maxResults: number;
   dataFilePath: string;
+  contextDataFilePath: string;
+  /** Number of surrounding sentences to include in a context chunk. */
+  contextRadius: number;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -85,6 +88,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   fuzzySearchSensitivity: 0.6,
   maxResults: 100,
   dataFilePath: "jp-collocations-data.json",
+  contextDataFilePath: "jp-collocations-contexts.json",
+  contextRadius: 3,
 };
 
 export interface StoreStats {
@@ -93,4 +98,60 @@ export interface StoreStats {
   bySource: Record<string, number>;
 }
 
-export type ViewMode = "search" | "grammar" | "connections" | "forms" | "sources";
+// ── Discourse Grammar (談話文法) Types ─────────────────────────
+
+/** A single discourse "bit" — an atomic grammar-thought unit within a chunk. */
+export interface DiscourseBit {
+  id: string;
+  text: string;
+  speaker: string;
+  /** Colour key for connection lines/underlines linking related bits. */
+  connectionGroup: number;
+  /** Label describing the discourse function (e.g. 話題化, 例示, 付加疑問文). */
+  discourseLabel: string;
+  startOffset: number;
+  endOffset: number;
+}
+
+/** A directional relationship between two discourse bits. */
+export interface DiscourseRelation {
+  fromBitId: string;
+  toBitId: string;
+  /** e.g. "topic-continuation", "example", "tag-question", "reaction" */
+  relationType: string;
+  /** Same colour key used in the connected bits. */
+  connectionGroup: number;
+}
+
+/** A context chunk extracted around a collocation or phrase. */
+export interface ContextChunk {
+  id: string;
+  /** Raw text of the chunk. */
+  rawText: string;
+  /** Parsed discourse bits within this chunk. */
+  bits: DiscourseBit[];
+  /** Relations between bits. */
+  relations: DiscourseRelation[];
+  /** Vault file path the chunk was extracted from. */
+  sourceFile: string;
+  /** The highlighted / selected phrase that triggered the chunk creation. */
+  selectedPhrase: string;
+  createdAt: number;
+}
+
+/** An indexed context entry stored in the Lexicon. */
+export interface ContextEntry {
+  id: string;
+  /** Link back to the original collocation, if any. */
+  collocationId: string | null;
+  /** Link to the context chunk. */
+  chunkId: string;
+  /** The specific bit ids that were spoilered in card mode. */
+  highlightedBitIds: string[];
+  /** Markdown-formatted context for display. */
+  formattedMarkdown: string;
+  tags: string[];
+  createdAt: number;
+}
+
+export type ViewMode = "search" | "grammar" | "connections" | "forms" | "sources" | "discourse" | "contexts";

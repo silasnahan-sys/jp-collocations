@@ -6,9 +6,11 @@ export const VIEW_LABELS: Record<ViewMode, string> = {
   connections: "Connections",
   forms: "Forms",
   sources: "Sources",
+  discourse: "談話文法",
+  contexts: "Contexts",
 };
 
-export const VIEW_ORDER: ViewMode[] = ["search", "grammar", "connections", "forms", "sources"];
+export const VIEW_ORDER: ViewMode[] = ["search", "grammar", "connections", "forms", "sources", "discourse", "contexts"];
 
 export class ViewSwitcher {
   private container: HTMLElement;
