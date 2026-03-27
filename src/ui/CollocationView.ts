@@ -1,10 +1,15 @@
 import { ItemView, WorkspaceLeaf, Menu, Notice } from "obsidian";
 import type { App } from "obsidian";
-import type { CollocationEntry, PluginSettings, SearchResult } from "../types.ts";
+import type { CollocationEntry, PluginSettings, SearchResult, ViewMode } from "../types.ts";
 import { PartOfSpeech, CollocationSource } from "../types.ts";
 import type { CollocationStore } from "../data/CollocationStore.ts";
 import type { SearchEngine } from "../search/SearchEngine.ts";
 import { AddEntryModal } from "./AddEntryModal.ts";
+import { ViewSwitcher } from "./ViewSwitcher.ts";
+import { GrammarBrowserView } from "./GrammarBrowserView.ts";
+import { ConnectionMapView } from "./ConnectionMapView.ts";
+import { FormVariationsView } from "./FormVariationsView.ts";
+import { SourceContextView } from "./SourceContextView.ts";
 
 export const JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
 
@@ -15,9 +20,16 @@ export class CollocationView extends ItemView {
   private results: SearchResult[] = [];
   private currentPOSFilter: PartOfSpeech[] = [];
   private currentTagFilter: string[] = [];
+  private currentViewMode: ViewMode = "search";
   private searchInput: HTMLInputElement | null = null;
   private resultContainer: HTMLElement | null = null;
   private statsEl: HTMLElement | null = null;
+  private searchSection: HTMLElement | null = null;
+  private subViewContainer: HTMLElement | null = null;
+  private grammarView: GrammarBrowserView | null = null;
+  private connectionView: ConnectionMapView | null = null;
+  private formView: FormVariationsView | null = null;
+  private sourceView: SourceContextView | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -61,8 +73,15 @@ export class CollocationView extends ItemView {
     const header = container.createDiv("jp-col-header");
     header.createEl("h4", { text: "JP Collocations", cls: "jp-col-title" });
 
-    // Search bar
-    const searchRow = container.createDiv("jp-col-search-row");
+    // View Switcher tabs
+    new ViewSwitcher(container, this.currentViewMode, (mode) => {
+      this.currentViewMode = mode;
+      this.switchView();
+    });
+
+    // Search bar (only shown in search mode)
+    this.searchSection = container.createDiv("jp-col-search-section");
+    const searchRow = this.searchSection.createDiv("jp-col-search-row");
     this.searchInput = searchRow.createEl("input", {
       type: "text",
       placeholder: "Search collocations... (JP/EN/romaji)",
@@ -75,15 +94,66 @@ export class CollocationView extends ItemView {
       new AddEntryModal(this.app, this.store, () => this.refresh()).open();
     });
 
-    // POS filter chips
+    // POS filter chips (shared across all views)
     const filterRow = container.createDiv("jp-col-filter-row");
     this.buildPOSChips(filterRow);
 
-    // Stats bar
+    // Stats bar (search view only)
     this.statsEl = container.createDiv("jp-col-stats");
 
-    // Results
+    // Search results container
     this.resultContainer = container.createDiv("jp-col-results");
+
+    // Sub-view container (grammar, connections, forms, sources)
+    this.subViewContainer = container.createDiv("jp-col-subview-container");
+
+    this.switchView();
+  }
+
+  private switchView(): void {
+    const isSearch = this.currentViewMode === "search";
+
+    // Toggle search-specific UI
+    if (this.searchSection) {
+      this.searchSection.toggleClass("jp-col-hidden", !isSearch);
+    }
+    if (this.statsEl) {
+      this.statsEl.toggleClass("jp-col-hidden", !isSearch);
+    }
+    if (this.resultContainer) {
+      this.resultContainer.toggleClass("jp-col-hidden", !isSearch);
+    }
+    if (this.subViewContainer) {
+      this.subViewContainer.toggleClass("jp-col-hidden", isSearch);
+    }
+
+    if (isSearch) {
+      this.refresh();
+      return;
+    }
+
+    // Render the appropriate sub-view
+    if (!this.subViewContainer) return;
+    this.subViewContainer.empty();
+    this.grammarView = null;
+    this.connectionView = null;
+    this.formView = null;
+    this.sourceView = null;
+
+    switch (this.currentViewMode) {
+      case "grammar":
+        this.grammarView = new GrammarBrowserView(this.subViewContainer, this.store, this.currentPOSFilter);
+        break;
+      case "connections":
+        this.connectionView = new ConnectionMapView(this.subViewContainer, this.store, this.currentPOSFilter);
+        break;
+      case "forms":
+        this.formView = new FormVariationsView(this.subViewContainer, this.store, this.currentPOSFilter);
+        break;
+      case "sources":
+        this.sourceView = new SourceContextView(this.subViewContainer, this.store, this.currentPOSFilter);
+        break;
+    }
   }
 
   private buildPOSChips(parent: HTMLElement): void {
@@ -98,7 +168,7 @@ export class CollocationView extends ItemView {
           this.currentPOSFilter.push(pos);
           chip.addClass("jp-col-chip--active");
         }
-        this.refresh();
+        this.refreshCurrentView();
       });
     }
 
@@ -108,8 +178,19 @@ export class CollocationView extends ItemView {
       this.currentPOSFilter = [];
       this.currentTagFilter = [];
       parent.querySelectorAll(".jp-col-chip--active").forEach(el => el.removeClass("jp-col-chip--active"));
-      this.refresh();
+      this.refreshCurrentView();
     });
+  }
+
+  private refreshCurrentView(): void {
+    if (this.currentViewMode === "search") {
+      this.refresh();
+    } else {
+      this.grammarView?.refresh(this.currentPOSFilter);
+      this.connectionView?.refresh(this.currentPOSFilter);
+      this.formView?.refresh(this.currentPOSFilter);
+      this.sourceView?.refresh(this.currentPOSFilter);
+    }
   }
 
   refresh(): void {

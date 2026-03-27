@@ -1233,6 +1233,548 @@ var AddEntryModal = class extends import_obsidian2.Modal {
   }
 };
 
+// src/ui/ViewSwitcher.ts
+var VIEW_LABELS = {
+  search: "Search",
+  grammar: "Grammar",
+  connections: "Connections",
+  forms: "Forms",
+  sources: "Sources"
+};
+var VIEW_ORDER = ["search", "grammar", "connections", "forms", "sources"];
+var ViewSwitcher = class {
+  constructor(parent, initial, onSwitch) {
+    this.tabEls = /* @__PURE__ */ new Map();
+    this.currentMode = initial;
+    this.onSwitch = onSwitch;
+    this.container = parent.createDiv("jp-col-view-switcher");
+    this.build();
+  }
+  build() {
+    for (const mode of VIEW_ORDER) {
+      const tab = this.container.createEl("button", {
+        text: VIEW_LABELS[mode],
+        cls: "jp-col-view-tab"
+      });
+      if (mode === this.currentMode)
+        tab.addClass("jp-col-view-tab--active");
+      tab.addEventListener("click", () => this.select(mode));
+      this.tabEls.set(mode, tab);
+    }
+  }
+  select(mode) {
+    var _a, _b;
+    if (mode === this.currentMode)
+      return;
+    (_a = this.tabEls.get(this.currentMode)) == null ? void 0 : _a.removeClass("jp-col-view-tab--active");
+    this.currentMode = mode;
+    (_b = this.tabEls.get(mode)) == null ? void 0 : _b.addClass("jp-col-view-tab--active");
+    this.onSwitch(mode);
+  }
+  getMode() {
+    return this.currentMode;
+  }
+};
+
+// src/ui/GrammarBrowserView.ts
+var GrammarBrowserView = class {
+  constructor(parent, store, posFilter) {
+    this.sortMode = "count";
+    this.store = store;
+    this.posFilter = posFilter;
+    this.container = parent.createDiv("jp-col-grammar-browser");
+    this.render();
+  }
+  render() {
+    this.container.empty();
+    const toolbar = this.container.createDiv("jp-col-browser-toolbar");
+    toolbar.createSpan({ text: "Sort:", cls: "jp-col-browser-label" });
+    const sorts = [
+      { key: "count", label: "Count" },
+      { key: "frequency", label: "Frequency" },
+      { key: "alpha", label: "A\u2013Z" }
+    ];
+    for (const s of sorts) {
+      const btn = toolbar.createEl("button", {
+        text: s.label,
+        cls: "jp-col-sort-btn" + (this.sortMode === s.key ? " jp-col-sort-btn--active" : "")
+      });
+      btn.addEventListener("click", () => {
+        this.sortMode = s.key;
+        this.render();
+      });
+    }
+    const all = this.getEntries();
+    const grouped = this.groupByPattern(all);
+    const patterns = this.sortPatterns(grouped);
+    if (patterns.length === 0) {
+      this.container.createDiv({ text: "No entries.", cls: "jp-col-empty" });
+      return;
+    }
+    for (const pattern of patterns) {
+      const entries = grouped.get(pattern);
+      this.renderSection(this.container, pattern, entries);
+    }
+  }
+  getEntries() {
+    const all = this.store.getAll();
+    if (this.posFilter.length === 0)
+      return all;
+    return all.filter((e) => this.posFilter.includes(e.headwordPOS));
+  }
+  groupByPattern(entries) {
+    const map = /* @__PURE__ */ new Map();
+    for (const e of entries) {
+      const key = e.pattern || "\uFF08\u672A\u5206\u985E\uFF09";
+      if (!map.has(key))
+        map.set(key, []);
+      map.get(key).push(e);
+    }
+    return map;
+  }
+  sortPatterns(grouped) {
+    const keys = Array.from(grouped.keys());
+    switch (this.sortMode) {
+      case "count":
+        return keys.sort((a, b) => grouped.get(b).length - grouped.get(a).length);
+      case "frequency":
+        return keys.sort((a, b) => {
+          const sumFreq = (arr) => arr.reduce((s, e) => {
+            var _a;
+            return s + ((_a = e.frequency) != null ? _a : 0);
+          }, 0);
+          return sumFreq(grouped.get(b)) - sumFreq(grouped.get(a));
+        });
+      case "alpha":
+        return keys.sort((a, b) => a.localeCompare(b, "ja"));
+    }
+  }
+  renderSection(parent, pattern, entries) {
+    const section = parent.createDiv("jp-col-grammar-section");
+    const header = section.createDiv("jp-col-grammar-section-header");
+    header.createSpan({ text: pattern || "\uFF08\u672A\u5206\u985E\uFF09", cls: "jp-col-grammar-pattern-label" });
+    header.createSpan({ text: `(${entries.length})`, cls: "jp-col-grammar-count" });
+    const body = section.createDiv("jp-col-grammar-section-body");
+    let collapsed = false;
+    header.addEventListener("click", () => {
+      collapsed = !collapsed;
+      body.toggleClass("jp-col-grammar-section-body--collapsed", collapsed);
+      header.toggleClass("jp-col-grammar-section-header--collapsed", collapsed);
+    });
+    const sorted = [...entries].sort((a, b) => {
+      var _a, _b;
+      return ((_a = b.frequency) != null ? _a : 0) - ((_b = a.frequency) != null ? _b : 0);
+    });
+    for (const entry2 of sorted) {
+      this.renderCard(body, entry2);
+    }
+  }
+  renderCard(parent, entry2) {
+    const card = parent.createDiv("jp-col-grammar-card");
+    const mainRow = card.createDiv("jp-col-card-main");
+    mainRow.createSpan({ cls: "jp-col-headword", text: entry2.headword });
+    mainRow.createSpan({ cls: "jp-col-collocate", text: " " + entry2.collocate });
+    if (entry2.frequency > 0) {
+      mainRow.createSpan({ cls: "jp-col-freq-badge", text: `\xD7${entry2.frequency}` });
+    }
+    if (entry2.exampleSentences.length > 0 || entry2.notes) {
+      const details = card.createEl("details", { cls: "jp-col-details" });
+      details.createEl("summary", { text: "examples / notes" });
+      for (const s of entry2.exampleSentences) {
+        details.createEl("p", { text: s, cls: "jp-col-example" });
+      }
+      if (entry2.notes) {
+        details.createEl("p", { text: entry2.notes, cls: "jp-col-notes" });
+      }
+    }
+  }
+  refresh(posFilter) {
+    this.posFilter = posFilter;
+    this.render();
+  }
+};
+
+// src/ui/ConnectionMapView.ts
+var ConnectionMapView = class {
+  constructor(parent, store, posFilter) {
+    this.selectedHeadword = "";
+    this.searchInput = null;
+    this.mapContainer = null;
+    this.store = store;
+    this.posFilter = posFilter;
+    this.container = parent.createDiv("jp-col-connection-map");
+    this.build();
+  }
+  build() {
+    this.container.empty();
+    const searchRow = this.container.createDiv("jp-col-conn-search-row");
+    searchRow.createSpan({ text: "\u8A9E :", cls: "jp-col-browser-label" });
+    this.searchInput = searchRow.createEl("input", {
+      type: "text",
+      placeholder: "Enter headword\u2026",
+      cls: "jp-col-conn-input"
+    });
+    const headwords = this.getHeadwords();
+    const dlId = "jp-col-conn-dl";
+    const dl = this.container.createEl("datalist");
+    dl.id = dlId;
+    for (const hw of headwords) {
+      const opt = dl.createEl("option");
+      opt.value = hw;
+    }
+    this.searchInput.setAttribute("list", dlId);
+    this.searchInput.addEventListener("input", () => {
+      var _a, _b;
+      this.selectedHeadword = (_b = (_a = this.searchInput) == null ? void 0 : _a.value.trim()) != null ? _b : "";
+      this.renderMap();
+    });
+    this.mapContainer = this.container.createDiv("jp-col-conn-map-body");
+    this.renderMap();
+  }
+  getHeadwords() {
+    const all = this.store.getAll();
+    const set = /* @__PURE__ */ new Set();
+    for (const e of all)
+      set.add(e.headword);
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "ja"));
+  }
+  renderMap() {
+    if (!this.mapContainer)
+      return;
+    this.mapContainer.empty();
+    if (!this.selectedHeadword) {
+      this.mapContainer.createDiv({ text: "Type a headword to see its connections.", cls: "jp-col-empty" });
+      return;
+    }
+    let entries = this.store.getByHeadword(this.selectedHeadword);
+    if (this.posFilter.length > 0) {
+      entries = entries.filter((e) => this.posFilter.includes(e.headwordPOS));
+    }
+    if (entries.length === 0) {
+      this.mapContainer.createDiv({ text: `No entries for "${this.selectedHeadword}".`, cls: "jp-col-empty" });
+      return;
+    }
+    const root = this.mapContainer.createDiv("jp-col-conn-root");
+    root.createSpan({ text: this.selectedHeadword, cls: "jp-col-conn-root-label" });
+    const byPattern = this.groupByPattern(entries);
+    const patterns = Array.from(byPattern.keys()).sort();
+    for (let pi = 0; pi < patterns.length; pi++) {
+      const pattern = patterns[pi];
+      const group = byPattern.get(pattern);
+      const isLast = pi === patterns.length - 1;
+      const branchRow = this.mapContainer.createDiv("jp-col-conn-branch");
+      const connector = branchRow.createSpan({ cls: "jp-col-conn-connector", text: isLast ? "\u2514\u2500" : "\u251C\u2500" });
+      connector.setAttribute("aria-hidden", "true");
+      branchRow.createSpan({ cls: "jp-col-conn-pattern-label", text: pattern || "\uFF08\u672A\u5206\u985E\uFF09" });
+      branchRow.createSpan({ cls: "jp-col-conn-sep", text: ":" });
+      const collocateList = branchRow.createSpan({ cls: "jp-col-conn-collocate-list" });
+      const collocateTexts = group.map((e) => e.collocate).join(", ");
+      branchRow.createSpan({ cls: "jp-col-conn-count", text: ` (${group.length})` });
+      const details = this.mapContainer.createEl("details", { cls: "jp-col-conn-details" });
+      const summaryEl = details.createEl("summary", { cls: "jp-col-conn-summary" });
+      collocateList.textContent = collocateTexts;
+      summaryEl.textContent = `${pattern || "\uFF08\u672A\u5206\u985E\uFF09"} (${group.length})`;
+      for (const entry2 of group) {
+        const item = details.createDiv("jp-col-conn-entry");
+        const phraseRow = item.createDiv("jp-col-conn-phrase-row");
+        phraseRow.createSpan({ cls: "jp-col-conn-arrow", text: "\u2192" });
+        phraseRow.createSpan({ cls: "jp-col-collocate", text: entry2.collocate });
+        if (entry2.frequency > 0) {
+          phraseRow.createSpan({ cls: "jp-col-freq-badge", text: `\xD7${entry2.frequency}` });
+        }
+        if (entry2.exampleSentences.length > 0 || entry2.notes) {
+          for (const s of entry2.exampleSentences) {
+            item.createEl("p", { text: s, cls: "jp-col-example" });
+          }
+          if (entry2.notes) {
+            item.createEl("p", { text: entry2.notes, cls: "jp-col-notes" });
+          }
+        }
+      }
+    }
+  }
+  groupByPattern(entries) {
+    const map = /* @__PURE__ */ new Map();
+    for (const e of entries) {
+      const key = e.pattern || "\uFF08\u672A\u5206\u985E\uFF09";
+      if (!map.has(key))
+        map.set(key, []);
+      map.get(key).push(e);
+    }
+    return map;
+  }
+  refresh(posFilter) {
+    this.posFilter = posFilter;
+    this.renderMap();
+  }
+};
+
+// src/ui/FormVariationsView.ts
+function extractBaseForm(word) {
+  if (!word)
+    return word;
+  const inflectionMap = [
+    [/ませんでした$/, "\u307E\u3059"],
+    [/ました$/, "\u307E\u3059"],
+    [/ません$/, "\u307E\u3059"],
+    [/して$/, "\u3059\u308B"],
+    [/した$/, "\u3059\u308B"],
+    [/しない$/, "\u3059\u308B"],
+    [/すれば$/, "\u3059\u308B"],
+    [/しよう$/, "\u3059\u308B"],
+    [/って$/, "\u3046"],
+    // godan -u
+    [/った$/, "\u3046"],
+    [/わない$/, "\u3046"],
+    [/えば$/, "\u3046"],
+    [/いて$/, "\u304F"],
+    // godan -ku
+    [/いた$/, "\u304F"],
+    [/かない$/, "\u304F"],
+    [/けば$/, "\u304F"],
+    [/いで$/, "\u3050"],
+    // godan -gu
+    [/いだ$/, "\u3050"],
+    [/がない$/, "\u3050"],
+    [/げば$/, "\u3050"],
+    [/して$/, "\u3059"],
+    // godan -su
+    [/した$/, "\u3059"],
+    [/さない$/, "\u3059"],
+    [/せば$/, "\u3059"],
+    [/って$/, "\u3064"],
+    // godan -tsu
+    [/った$/, "\u3064"],
+    [/たない$/, "\u3064"],
+    [/てば$/, "\u3064"],
+    [/んで$/, "\u3076"],
+    // godan -bu / -mu / -nu
+    [/んだ$/, "\u3076"],
+    [/ばない$/, "\u3076"],
+    [/べば$/, "\u3076"],
+    [/んで$/, "\u3080"],
+    [/んだ$/, "\u3080"],
+    [/まない$/, "\u3080"],
+    [/めば$/, "\u3080"],
+    [/って$/, "\u308B"],
+    // godan -ru
+    [/った$/, "\u308B"],
+    [/らない$/, "\u308B"],
+    [/れば$/, "\u308B"],
+    // ichidan
+    [/て$/, "\u308B"],
+    [/た$/, "\u308B"],
+    [/ない$/, "\u308B"],
+    [/ます$/, "\u308B"],
+    [/れる$/, "\u308B"],
+    [/られる$/, "\u308B"],
+    [/よう$/, "\u308B"],
+    // い-adjective
+    [/くて$/, "\u3044"],
+    [/くない$/, "\u3044"],
+    [/かった$/, "\u3044"],
+    [/くなかった$/, "\u3044"],
+    [/ければ$/, "\u3044"],
+    [/く$/, "\u3044"]
+  ];
+  for (const [pattern, suffix] of inflectionMap) {
+    if (pattern.test(word)) {
+      const stem = word.replace(pattern, "");
+      if (stem.length > 0)
+        return stem + suffix;
+    }
+  }
+  return word;
+}
+function groupByBaseForm(entries) {
+  const map = /* @__PURE__ */ new Map();
+  for (const e of entries) {
+    const base = extractBaseForm(e.headword);
+    if (!map.has(base))
+      map.set(base, []);
+    map.get(base).push(e);
+  }
+  return map;
+}
+var FormVariationsView = class {
+  constructor(parent, store, posFilter) {
+    this.store = store;
+    this.posFilter = posFilter;
+    this.container = parent.createDiv("jp-col-form-variations");
+    this.render();
+  }
+  render() {
+    this.container.empty();
+    const all = this.getEntries();
+    if (all.length === 0) {
+      this.container.createDiv({ text: "No entries.", cls: "jp-col-empty" });
+      return;
+    }
+    const grouped = groupByBaseForm(all);
+    const sortedBases = Array.from(grouped.keys()).sort((a, b) => a.localeCompare(b, "ja"));
+    for (const base of sortedBases) {
+      const entries = grouped.get(base);
+      const hasVariation = entries.some((e) => e.headword !== base) || entries.length > 1;
+      if (!hasVariation && entries.length <= 1)
+        continue;
+      this.renderGroup(base, entries);
+    }
+  }
+  getEntries() {
+    const all = this.store.getAll();
+    if (this.posFilter.length === 0)
+      return all;
+    return all.filter((e) => this.posFilter.includes(e.headwordPOS));
+  }
+  renderGroup(base, entries) {
+    const section = this.container.createDiv("jp-col-forms-section");
+    const header = section.createDiv("jp-col-forms-section-header");
+    header.createSpan({ text: base, cls: "jp-col-forms-base-label" });
+    header.createSpan({ text: `(${entries.length})`, cls: "jp-col-grammar-count" });
+    const body = section.createDiv("jp-col-forms-section-body");
+    let collapsed = false;
+    header.addEventListener("click", () => {
+      collapsed = !collapsed;
+      body.toggleClass("jp-col-forms-section-body--collapsed", collapsed);
+      header.toggleClass("jp-col-forms-section-header--collapsed", collapsed);
+    });
+    const sorted = [...entries].sort((a, b) => {
+      if (a.headword === base)
+        return -1;
+      if (b.headword === base)
+        return 1;
+      return a.headword.localeCompare(b.headword, "ja");
+    });
+    for (const entry2 of sorted) {
+      this.renderVariationRow(body, entry2, base);
+    }
+  }
+  renderVariationRow(parent, entry2, base) {
+    const row = parent.createDiv("jp-col-forms-row");
+    const formLabel = row.createDiv("jp-col-forms-form-label");
+    formLabel.createSpan({
+      text: entry2.headword,
+      cls: entry2.headword === base ? "jp-col-forms-base-form" : "jp-col-forms-variant-form"
+    });
+    const phraseEl = row.createDiv("jp-col-forms-phrase");
+    phraseEl.createSpan({ cls: "jp-col-collocate", text: entry2.collocate });
+    if (entry2.exampleSentences.length > 0 || entry2.notes) {
+      const details = row.createEl("details", { cls: "jp-col-details" });
+      details.createEl("summary", { text: "examples / notes" });
+      for (const s of entry2.exampleSentences) {
+        details.createEl("p", { text: s, cls: "jp-col-example" });
+      }
+      if (entry2.notes) {
+        details.createEl("p", { text: entry2.notes, cls: "jp-col-notes" });
+      }
+    }
+  }
+  refresh(posFilter) {
+    this.posFilter = posFilter;
+    this.render();
+  }
+};
+
+// src/ui/SourceContextView.ts
+var SOURCE_LABELS = {
+  ["manual" /* Manual */]: "\u624B\u52D5\u8FFD\u52A0 (manual)",
+  ["hyogen.info" /* Hyogen */]: "\u8868\u73FE (hyogen.info)",
+  ["classified" /* Classified */]: "\u81EA\u52D5\u5206\u985E (classified)",
+  ["import" /* Import */]: "\u30A4\u30F3\u30DD\u30FC\u30C8 (import)"
+};
+function highlightCollocation(sentence, fullPhrase, parent) {
+  if (!fullPhrase || !sentence.includes(fullPhrase)) {
+    parent.createSpan({ text: sentence });
+    return;
+  }
+  const idx = sentence.indexOf(fullPhrase);
+  if (idx > 0)
+    parent.createSpan({ text: sentence.slice(0, idx) });
+  parent.createEl("strong", { text: fullPhrase, cls: "jp-col-highlight" });
+  if (idx + fullPhrase.length < sentence.length) {
+    parent.createSpan({ text: sentence.slice(idx + fullPhrase.length) });
+  }
+}
+var SourceContextView = class {
+  constructor(parent, store, posFilter) {
+    this.store = store;
+    this.posFilter = posFilter;
+    this.container = parent.createDiv("jp-col-source-context");
+    this.render();
+  }
+  render() {
+    this.container.empty();
+    const all = this.getEntries();
+    if (all.length === 0) {
+      this.container.createDiv({ text: "No entries.", cls: "jp-col-empty" });
+      return;
+    }
+    const grouped = this.groupBySource(all);
+    const sources = Array.from(grouped.keys()).sort();
+    for (const source of sources) {
+      const entries = grouped.get(source);
+      this.renderSourceSection(source, entries);
+    }
+  }
+  getEntries() {
+    const all = this.store.getAll();
+    if (this.posFilter.length === 0)
+      return all;
+    return all.filter((e) => this.posFilter.includes(e.headwordPOS));
+  }
+  groupBySource(entries) {
+    const map = /* @__PURE__ */ new Map();
+    for (const e of entries) {
+      const key = e.source;
+      if (!map.has(key))
+        map.set(key, []);
+      map.get(key).push(e);
+    }
+    return map;
+  }
+  renderSourceSection(source, entries) {
+    var _a;
+    const section = this.container.createDiv("jp-col-source-section");
+    const header = section.createDiv("jp-col-source-section-header");
+    header.createSpan({ text: (_a = SOURCE_LABELS[source]) != null ? _a : source, cls: "jp-col-source-label" });
+    header.createSpan({ text: `(${entries.length})`, cls: "jp-col-grammar-count" });
+    const body = section.createDiv("jp-col-source-section-body");
+    let collapsed = false;
+    header.addEventListener("click", () => {
+      collapsed = !collapsed;
+      body.toggleClass("jp-col-source-section-body--collapsed", collapsed);
+      header.toggleClass("jp-col-source-section-header--collapsed", collapsed);
+    });
+    const sorted = [...entries].sort((a, b) => a.headword.localeCompare(b.headword, "ja"));
+    for (const entry2 of sorted) {
+      this.renderEntry(body, entry2);
+    }
+  }
+  renderEntry(parent, entry2) {
+    const card = parent.createDiv("jp-col-source-card");
+    const mainRow = card.createDiv("jp-col-card-main");
+    mainRow.createSpan({ cls: "jp-col-headword", text: entry2.headword });
+    mainRow.createSpan({ cls: "jp-col-collocate", text: " " + entry2.collocate });
+    if (entry2.pattern) {
+      mainRow.createSpan({ cls: "jp-col-pattern", text: entry2.pattern });
+    }
+    if (entry2.exampleSentences.length > 0) {
+      const quotesEl = card.createDiv("jp-col-source-quotes");
+      for (const sentence of entry2.exampleSentences) {
+        const quote = quotesEl.createEl("blockquote", { cls: "jp-col-source-quote" });
+        highlightCollocation(sentence, entry2.fullPhrase, quote);
+      }
+    }
+    if (entry2.notes) {
+      card.createEl("p", { text: entry2.notes, cls: "jp-col-notes" });
+    }
+  }
+  refresh(posFilter) {
+    this.posFilter = posFilter;
+    this.render();
+  }
+};
+
 // src/ui/CollocationView.ts
 var JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
 var CollocationView = class extends import_obsidian3.ItemView {
@@ -1241,9 +1783,16 @@ var CollocationView = class extends import_obsidian3.ItemView {
     this.results = [];
     this.currentPOSFilter = [];
     this.currentTagFilter = [];
+    this.currentViewMode = "search";
     this.searchInput = null;
     this.resultContainer = null;
     this.statsEl = null;
+    this.searchSection = null;
+    this.subViewContainer = null;
+    this.grammarView = null;
+    this.connectionView = null;
+    this.formView = null;
+    this.sourceView = null;
     this.store = store;
     this.engine = engine;
     this.settings = settings;
@@ -1269,7 +1818,12 @@ var CollocationView = class extends import_obsidian3.ItemView {
     container.addClass("jp-collocations-view");
     const header = container.createDiv("jp-col-header");
     header.createEl("h4", { text: "JP Collocations", cls: "jp-col-title" });
-    const searchRow = container.createDiv("jp-col-search-row");
+    new ViewSwitcher(container, this.currentViewMode, (mode) => {
+      this.currentViewMode = mode;
+      this.switchView();
+    });
+    this.searchSection = container.createDiv("jp-col-search-section");
+    const searchRow = this.searchSection.createDiv("jp-col-search-row");
     this.searchInput = searchRow.createEl("input", {
       type: "text",
       placeholder: "Search collocations... (JP/EN/romaji)",
@@ -1284,6 +1838,48 @@ var CollocationView = class extends import_obsidian3.ItemView {
     this.buildPOSChips(filterRow);
     this.statsEl = container.createDiv("jp-col-stats");
     this.resultContainer = container.createDiv("jp-col-results");
+    this.subViewContainer = container.createDiv("jp-col-subview-container");
+    this.switchView();
+  }
+  switchView() {
+    const isSearch = this.currentViewMode === "search";
+    if (this.searchSection) {
+      this.searchSection.toggleClass("jp-col-hidden", !isSearch);
+    }
+    if (this.statsEl) {
+      this.statsEl.toggleClass("jp-col-hidden", !isSearch);
+    }
+    if (this.resultContainer) {
+      this.resultContainer.toggleClass("jp-col-hidden", !isSearch);
+    }
+    if (this.subViewContainer) {
+      this.subViewContainer.toggleClass("jp-col-hidden", isSearch);
+    }
+    if (isSearch) {
+      this.refresh();
+      return;
+    }
+    if (!this.subViewContainer)
+      return;
+    this.subViewContainer.empty();
+    this.grammarView = null;
+    this.connectionView = null;
+    this.formView = null;
+    this.sourceView = null;
+    switch (this.currentViewMode) {
+      case "grammar":
+        this.grammarView = new GrammarBrowserView(this.subViewContainer, this.store, this.currentPOSFilter);
+        break;
+      case "connections":
+        this.connectionView = new ConnectionMapView(this.subViewContainer, this.store, this.currentPOSFilter);
+        break;
+      case "forms":
+        this.formView = new FormVariationsView(this.subViewContainer, this.store, this.currentPOSFilter);
+        break;
+      case "sources":
+        this.sourceView = new SourceContextView(this.subViewContainer, this.store, this.currentPOSFilter);
+        break;
+    }
   }
   buildPOSChips(parent) {
     const posValues = Object.values(PartOfSpeech);
@@ -1297,7 +1893,7 @@ var CollocationView = class extends import_obsidian3.ItemView {
           this.currentPOSFilter.push(pos);
           chip.addClass("jp-col-chip--active");
         }
-        this.refresh();
+        this.refreshCurrentView();
       });
     }
     const clearBtn = parent.createEl("span", { text: "\u2715 clear", cls: "jp-col-chip jp-col-chip--clear" });
@@ -1305,8 +1901,19 @@ var CollocationView = class extends import_obsidian3.ItemView {
       this.currentPOSFilter = [];
       this.currentTagFilter = [];
       parent.querySelectorAll(".jp-col-chip--active").forEach((el) => el.removeClass("jp-col-chip--active"));
-      this.refresh();
+      this.refreshCurrentView();
     });
+  }
+  refreshCurrentView() {
+    var _a, _b, _c, _d;
+    if (this.currentViewMode === "search") {
+      this.refresh();
+    } else {
+      (_a = this.grammarView) == null ? void 0 : _a.refresh(this.currentPOSFilter);
+      (_b = this.connectionView) == null ? void 0 : _b.refresh(this.currentPOSFilter);
+      (_c = this.formView) == null ? void 0 : _c.refresh(this.currentPOSFilter);
+      (_d = this.sourceView) == null ? void 0 : _d.refresh(this.currentPOSFilter);
+    }
   }
   refresh() {
     var _a, _b;
