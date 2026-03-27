@@ -19,6 +19,7 @@ export enum CollocationSource {
   Manual = "manual",
   Import = "import",
   Classified = "classified",
+  VaultIndex = "vault-index",
 }
 
 export interface CollocationEntry {
@@ -91,4 +92,33 @@ export interface StoreStats {
   total: number;
   byPOS: Record<string, number>;
   bySource: Record<string, number>;
+}
+
+export interface VaultMatchContext {
+  /** Vault-relative path of the source note. */
+  filePath: string;
+  /** Cleaned sentence containing the match. */
+  sentence: string;
+  /** The matched target text. */
+  matchedText: string;
+}
+
+export interface VaultIndexOptions {
+  /** Words/phrases to search for. If empty, all headwords in the store are used. */
+  targetWords?: string[];
+  /** Maximum number of sentences to process per target word (default 20). */
+  maxPerWord?: number;
+  /** Skip words that already have vault-index entries (default true). */
+  skipExisting?: boolean;
+}
+
+export interface VaultIndexResult {
+  /** Number of vault files scanned. */
+  scanned: number;
+  /** Total sentence-level matches found across all files. */
+  matches: number;
+  /** New collocation entries added to the store. */
+  added: number;
+  /** Target words that produced at least one new entry. */
+  words: string[];
 }

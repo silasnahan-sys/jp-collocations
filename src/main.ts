@@ -10,6 +10,7 @@ import { AddEntryModal } from "./ui/AddEntryModal.ts";
 import { SettingsTab } from "./ui/SettingsTab.ts";
 import { TextClassifier } from "./classifier/TextClassifier.ts";
 import { ClassifyModal } from "./ui/ClassifyModal.ts";
+import { VaultIndexModal } from "./ui/VaultIndexModal.ts";
 
 export default class JPCollocationsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
@@ -88,6 +89,18 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "export-data",
       name: "Export Data",
       callback: () => this.exportData(),
+    });
+
+    this.addCommand({
+      id: "index-vault",
+      name: "Index Vault for Collocations",
+      callback: () =>
+        new VaultIndexModal(this.app, this.store, result => {
+          if (result.added > 0) {
+            new Notice(`Vault indexing: added ${result.added} new entr${result.added === 1 ? "y" : "ies"}.`);
+            this.refreshViews();
+          }
+        }).open(),
     });
 
     this.addCommand({
