@@ -96,7 +96,10 @@ export class VaultIndexer {
           chunkId: chunk.id,
           highlightedBitIds: [bitId],
           formattedMarkdown: this.formatBitEntry(bit, analysis.bits, analysis.relations),
-          tags: bit.discourseLabel ? [bit.discourseLabel] : [],
+          tags: [
+            ...(bit.category ? [bit.category] : []),
+            ...bit.functions.map(f => String(f)),
+          ],
           createdAt: Date.now(),
         };
         this.contextStore.addEntry(bitEntry);
@@ -129,8 +132,11 @@ export class VaultIndexer {
   ): string {
     const lines: string[] = [];
     lines.push(`> **${bit.text}**`);
-    if (bit.discourseLabel) {
-      lines.push(`> 談話機能: \`${bit.discourseLabel}\``);
+    if (bit.category) {
+      lines.push(`> 分類: \`${bit.category}\``);
+    }
+    if (bit.functions.length > 0) {
+      lines.push(`> 談話機能: ${bit.functions.map(f => `\`${f}\``).join(" ")}`);
     }
     lines.push(`> 話者: _${bit.speaker}_`);
 

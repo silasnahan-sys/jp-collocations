@@ -59,6 +59,58 @@ var DEFAULT_SETTINGS = {
   contextDataFilePath: "jp-collocations-contexts.json",
   contextRadius: 3
 };
+var FUNCTION_TO_CATEGORY = {
+  ["\u9806\u63A5" /* LogicalConsequence */]: "\u63A5\u7D9A\u8868\u73FE" /* Connective */,
+  ["\u9006\u63A5" /* Adversative */]: "\u63A5\u7D9A\u8868\u73FE" /* Connective */,
+  ["\u4E26\u5217\u30FB\u7D2F\u52A0" /* Additive */]: "\u63A5\u7D9A\u8868\u73FE" /* Connective */,
+  ["\u5BFE\u6BD4" /* Comparison */]: "\u63A5\u7D9A\u8868\u73FE" /* Connective */,
+  ["\u8EE2\u63DB" /* TopicChange */]: "\u63A5\u7D9A\u8868\u73FE" /* Connective */,
+  ["\u88DC\u8DB3" /* Supplement */]: "\u63A5\u7D9A\u8868\u73FE" /* Connective */,
+  ["\u4F8B\u793A" /* Exemplification */]: "\u63A5\u7D9A\u8868\u73FE" /* Connective */,
+  ["\u8A00\u3044\u63DB\u3048" /* Rephrase */]: "\u63A5\u7D9A\u8868\u73FE" /* Connective */,
+  ["\u78BA\u8A8D\u8981\u6C42" /* ConfirmationSeeking */]: "\u6587\u672B\u8868\u73FE" /* SentenceFinal */,
+  ["\u540C\u610F\u8981\u6C42" /* AgreementSeeking */]: "\u6587\u672B\u8868\u73FE" /* SentenceFinal */,
+  ["\u4E3B\u5F35" /* Assertion */]: "\u6587\u672B\u8868\u73FE" /* SentenceFinal */,
+  ["\u63A8\u91CF" /* Conjecture */]: "\u6587\u672B\u8868\u73FE" /* SentenceFinal */,
+  ["\u4F1D\u805E" /* Hearsay */]: "\u6587\u672B\u8868\u73FE" /* SentenceFinal */,
+  ["\u7591\u554F" /* Question */]: "\u6587\u672B\u8868\u73FE" /* SentenceFinal */,
+  ["\u610F\u5FD7" /* Volition */]: "\u6587\u672B\u8868\u73FE" /* SentenceFinal */,
+  ["\u8A71\u984C\u63D0\u793A" /* TopicIntroduction */]: "\u8A71\u984C\u7BA1\u7406" /* TopicManagement */,
+  ["\u8A71\u984C\u8EE2\u63DB" /* TopicShift */]: "\u8A71\u984C\u7BA1\u7406" /* TopicManagement */,
+  ["\u8A71\u984C\u6DF1\u5316" /* TopicDeepening */]: "\u8A71\u984C\u7BA1\u7406" /* TopicManagement */,
+  ["\u8A71\u984C\u56DE\u5E30" /* TopicReturn */]: "\u8A71\u984C\u7BA1\u7406" /* TopicManagement */,
+  ["\u3042\u3044\u3065\u3061" /* BackChannel */]: "\u76F8\u4E92\u884C\u70BA" /* Interactional */,
+  ["\u30D5\u30A3\u30E9\u30FC" /* Filler */]: "\u76F8\u4E92\u884C\u70BA" /* Interactional */,
+  ["\u4FEE\u5FA9" /* Repair */]: "\u76F8\u4E92\u884C\u70BA" /* Interactional */,
+  ["\u6CE8\u76EE\u8981\u7D20" /* AttentionGetter */]: "\u76F8\u4E92\u884C\u70BA" /* Interactional */,
+  ["\u7126\u70B9" /* Focus */]: "\u60C5\u5831\u69CB\u9020" /* InfoStructure */,
+  ["\u53D6\u308A\u7ACB\u3066" /* Delimitation */]: "\u60C5\u5831\u69CB\u9020" /* InfoStructure */,
+  ["\u958B\u59CB\u6A19\u8B58" /* Opening */]: "\u8AC7\u8A71\u6A19\u8B58" /* DiscourseMarker */,
+  ["\u5C55\u958B\u6A19\u8B58" /* Development */]: "\u8AC7\u8A71\u6A19\u8B58" /* DiscourseMarker */,
+  ["\u7D42\u7D50\u6A19\u8B58" /* Closing */]: "\u8AC7\u8A71\u6A19\u8B58" /* DiscourseMarker */,
+  ["\u30D8\u30C3\u30B8" /* Hedging */]: "\u30DD\u30E9\u30A4\u30C8\u30CD\u30B9" /* Politeness */,
+  ["\u9593\u63A5\u8868\u73FE" /* Indirect */]: "\u30DD\u30E9\u30A4\u30C8\u30CD\u30B9" /* Politeness */,
+  ["\u76F4\u63A5\u5F15\u7528" /* DirectQuotation */]: "\u5F15\u7528\u30FB\u767A\u8A71" /* Quotation */,
+  ["\u9593\u63A5\u5F15\u7528" /* IndirectQuotation */]: "\u5F15\u7528\u30FB\u767A\u8A71" /* Quotation */
+};
+var CATEGORY_COLOURS = {
+  ["\u63A5\u7D9A\u8868\u73FE" /* Connective */]: "#4a90d9",
+  // blue — structural links
+  ["\u6587\u672B\u8868\u73FE" /* SentenceFinal */]: "#c678dd",
+  // purple — modality
+  ["\u8A71\u984C\u7BA1\u7406" /* TopicManagement */]: "#e5c07b",
+  // amber — topic flow
+  ["\u76F8\u4E92\u884C\u70BA" /* Interactional */]: "#e06c75",
+  // red — live interaction
+  ["\u60C5\u5831\u69CB\u9020" /* InfoStructure */]: "#56b6c2",
+  // teal — information
+  ["\u8AC7\u8A71\u6A19\u8B58" /* DiscourseMarker */]: "#98c379",
+  // green — markers
+  ["\u30DD\u30E9\u30A4\u30C8\u30CD\u30B9" /* Politeness */]: "#d19a66",
+  // orange — social
+  ["\u5F15\u7528\u30FB\u767A\u8A71" /* Quotation */]: "#be5046"
+  // brick — speech acts
+};
 
 // src/data/seed-data.ts
 function entry(id, headword, headwordReading, collocate, fullPhrase, headwordPOS, collocatePOS, pattern, exampleSentences, frequency, tags = []) {
@@ -538,9 +590,21 @@ var ContextStore = class {
   constructor(app, dataPath) {
     this.chunks = /* @__PURE__ */ new Map();
     this.entries = /* @__PURE__ */ new Map();
+    /** Fast-lookup map: bitId → the DiscourseBit object */
+    this.bitLookup = /* @__PURE__ */ new Map();
+    this.bitIndex = this.emptyIndex();
     this.saveTimer = null;
     this.app = app;
     this.dataPath = dataPath;
+  }
+  emptyIndex() {
+    return {
+      byChunk: /* @__PURE__ */ new Map(),
+      byCategory: /* @__PURE__ */ new Map(),
+      byFunction: /* @__PURE__ */ new Map(),
+      bySpeaker: /* @__PURE__ */ new Map(),
+      byConnectionGroup: /* @__PURE__ */ new Map()
+    };
   }
   async load() {
     var _a, _b;
@@ -556,10 +620,139 @@ var ContextStore = class {
       }
     } catch (e) {
     }
+    this.rebuildBitIndex();
+  }
+  // ── Bit Index ─────────────────────────────────────────────
+  rebuildBitIndex() {
+    this.bitIndex = this.emptyIndex();
+    this.bitLookup.clear();
+    for (const chunk of this.chunks.values()) {
+      this.indexChunkBits(chunk);
+    }
+  }
+  indexChunkBits(chunk) {
+    for (const bit of chunk.bits) {
+      this.bitLookup.set(bit.id, { bit, chunkId: chunk.id });
+      this.addToIdx(this.bitIndex.byChunk, chunk.id, bit.id);
+      if (bit.category) {
+        this.addToIdx(this.bitIndex.byCategory, bit.category, bit.id);
+      }
+      for (const fn of bit.functions) {
+        this.addToIdx(this.bitIndex.byFunction, fn, bit.id);
+      }
+      this.addToIdx(this.bitIndex.bySpeaker, bit.speaker, bit.id);
+      this.addToIdx(
+        this.bitIndex.byConnectionGroup,
+        `${chunk.id}:${bit.connectionGroup}`,
+        bit.id
+      );
+    }
+  }
+  deindexChunkBits(chunkId) {
+    var _a;
+    const bitIds = (_a = this.bitIndex.byChunk.get(chunkId)) != null ? _a : [];
+    for (const bitId of bitIds) {
+      const info = this.bitLookup.get(bitId);
+      if (!info)
+        continue;
+      const { bit } = info;
+      if (bit.category) {
+        this.removeFromIdx(this.bitIndex.byCategory, bit.category, bitId);
+      }
+      for (const fn of bit.functions) {
+        this.removeFromIdx(this.bitIndex.byFunction, fn, bitId);
+      }
+      this.removeFromIdx(this.bitIndex.bySpeaker, bit.speaker, bitId);
+      this.removeFromIdx(
+        this.bitIndex.byConnectionGroup,
+        `${chunkId}:${bit.connectionGroup}`,
+        bitId
+      );
+      this.bitLookup.delete(bitId);
+    }
+    this.bitIndex.byChunk.delete(chunkId);
+  }
+  addToIdx(map, key, id) {
+    if (!map.has(key))
+      map.set(key, []);
+    const arr = map.get(key);
+    if (!arr.includes(id))
+      arr.push(id);
+  }
+  removeFromIdx(map, key, id) {
+    const arr = map.get(key);
+    if (!arr)
+      return;
+    const idx = arr.indexOf(id);
+    if (idx !== -1)
+      arr.splice(idx, 1);
+    if (arr.length === 0)
+      map.delete(key);
+  }
+  // ── Bit queries ───────────────────────────────────────────
+  getBit(bitId) {
+    return this.bitLookup.get(bitId);
+  }
+  getBitsByCategory(category) {
+    var _a;
+    const ids = (_a = this.bitIndex.byCategory.get(category)) != null ? _a : [];
+    return ids.map((id) => {
+      var _a2;
+      return (_a2 = this.bitLookup.get(id)) == null ? void 0 : _a2.bit;
+    }).filter(Boolean);
+  }
+  getBitsByFunction(fn) {
+    var _a;
+    const ids = (_a = this.bitIndex.byFunction.get(fn)) != null ? _a : [];
+    return ids.map((id) => {
+      var _a2;
+      return (_a2 = this.bitLookup.get(id)) == null ? void 0 : _a2.bit;
+    }).filter(Boolean);
+  }
+  getBitsBySpeaker(speaker) {
+    var _a;
+    const ids = (_a = this.bitIndex.bySpeaker.get(speaker)) != null ? _a : [];
+    return ids.map((id) => {
+      var _a2;
+      return (_a2 = this.bitLookup.get(id)) == null ? void 0 : _a2.bit;
+    }).filter(Boolean);
+  }
+  /** Get all unique categories across all indexed bits. */
+  getAllCategories() {
+    return Array.from(this.bitIndex.byCategory.keys()).sort();
+  }
+  /** Get all unique functions across all indexed bits. */
+  getAllFunctions() {
+    return Array.from(this.bitIndex.byFunction.keys()).sort();
+  }
+  /** Get all unique speakers across all indexed bits. */
+  getAllSpeakers() {
+    return Array.from(this.bitIndex.bySpeaker.keys()).sort();
+  }
+  /** Get frequency counts for each discourse function across all bits. */
+  getFunctionDistribution() {
+    const dist = {};
+    for (const [fn, ids] of this.bitIndex.byFunction) {
+      dist[fn] = ids.length;
+    }
+    return dist;
+  }
+  /** Get frequency counts for each discourse category. */
+  getCategoryDistribution() {
+    const dist = {};
+    for (const [cat, ids] of this.bitIndex.byCategory) {
+      dist[cat] = ids.length;
+    }
+    return dist;
+  }
+  /** Total indexed bits across all chunks. */
+  totalBits() {
+    return this.bitLookup.size;
   }
   // ── Chunks ────────────────────────────────────────────────
   addChunk(chunk) {
     this.chunks.set(chunk.id, chunk);
+    this.indexChunkBits(chunk);
     this.scheduleSave();
   }
   getChunk(id) {
@@ -569,6 +762,7 @@ var ContextStore = class {
     return Array.from(this.chunks.values());
   }
   deleteChunk(id) {
+    this.deindexChunkBits(id);
     this.chunks.delete(id);
     for (const [eid, entry2] of this.entries) {
       if (entry2.chunkId === id)
@@ -618,7 +812,7 @@ var ContextStore = class {
     return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   }
   size() {
-    return { chunks: this.chunks.size, entries: this.entries.size };
+    return { chunks: this.chunks.size, entries: this.entries.size, bits: this.bitLookup.size };
   }
 };
 
@@ -1869,26 +2063,20 @@ var SourceContextView = class {
 };
 
 // src/ui/DiscourseCardView.ts
-var CONNECTION_COLOURS = [
-  "#e06c75",
-  // red
-  "#4a90d9",
-  // blue
-  "#98c379",
-  // green
-  "#e5c07b",
-  // amber
-  "#c678dd",
-  // purple
-  "#56b6c2",
-  // teal
-  "#d19a66",
-  // orange
-  "#be5046"
-  // brick
+var AUTO_REVEAL_DELAY_MS = 600;
+var GROUP_FALLBACK_COLOURS = [
+  "#888",
+  "#999",
+  "#777",
+  "#aaa",
+  "#666",
+  "#bbb"
 ];
-function colourForGroup(group) {
-  return CONNECTION_COLOURS[group % CONNECTION_COLOURS.length];
+function colourForBit(bit) {
+  if (bit.category && CATEGORY_COLOURS[bit.category]) {
+    return CATEGORY_COLOURS[bit.category];
+  }
+  return GROUP_FALLBACK_COLOURS[bit.connectionGroup % GROUP_FALLBACK_COLOURS.length];
 }
 var DiscourseCardView = class {
   constructor(parent, contextStore) {
@@ -1907,15 +2095,46 @@ var DiscourseCardView = class {
       return;
     }
     const toolbar = this.container.createDiv("jp-col-browser-toolbar");
-    toolbar.createSpan({ text: `${chunks.length} chunk(s)`, cls: "jp-col-browser-label" });
+    const storeSize = this.contextStore.size();
+    toolbar.createSpan({
+      text: `${chunks.length} chunk(s) \xB7 ${storeSize.bits} bits indexed`,
+      cls: "jp-col-browser-label"
+    });
     const autoRevealBtn = toolbar.createEl("button", {
       text: "\u25B6 Auto-reveal",
       cls: "jp-col-sort-btn"
     });
     autoRevealBtn.addEventListener("click", () => this.autoRevealAll());
+    this.renderCategoryStats(this.container);
     const list = this.container.createDiv("jp-col-discourse-list");
     for (const chunk of chunks) {
       this.renderChunkCard(list, chunk);
+    }
+  }
+  /**
+   * Render a small bar-chart of discourse category distribution.
+   */
+  renderCategoryStats(parent) {
+    var _a;
+    const catDist = this.contextStore.getCategoryDistribution();
+    const entries = Object.entries(catDist);
+    if (entries.length === 0)
+      return;
+    const total = entries.reduce((s, [, n]) => s + n, 0);
+    const statsEl = parent.createDiv("jp-col-discourse-stats");
+    statsEl.createEl("small", { text: "Discourse function distribution:", cls: "jp-col-discourse-stats-label" });
+    const barContainer = statsEl.createDiv("jp-col-discourse-stats-bars");
+    for (const [cat, count] of entries.sort((a, b) => b[1] - a[1])) {
+      const pct = Math.round(count / total * 100);
+      const row = barContainer.createDiv("jp-col-discourse-stats-row");
+      const label = row.createSpan({ text: cat, cls: "jp-col-discourse-stats-cat" });
+      const colour = (_a = CATEGORY_COLOURS[cat]) != null ? _a : "#888";
+      label.style.setProperty("color", colour);
+      const barOuter = row.createDiv("jp-col-discourse-stats-bar-outer");
+      const barInner = barOuter.createDiv("jp-col-discourse-stats-bar-inner");
+      barInner.style.setProperty("width", `${Math.max(pct, 4)}%`);
+      barInner.style.setProperty("background", colour);
+      row.createSpan({ text: `${count} (${pct}%)`, cls: "jp-col-discourse-stats-count" });
     }
   }
   renderChunkCard(parent, chunk) {
@@ -1938,18 +2157,25 @@ var DiscourseCardView = class {
         const speakerEl = bitContainer.createDiv("jp-col-discourse-speaker");
         speakerEl.createSpan({ text: currentSpeaker });
       }
+      const colour = colourForBit(bit);
       const bitWrapper = bitContainer.createDiv("jp-col-discourse-bit-wrapper");
       bitWrapper.setAttribute("data-bit-id", bit.id);
-      bitWrapper.style.setProperty(
-        "--connection-color",
-        colourForGroup(bit.connectionGroup)
-      );
+      bitWrapper.style.setProperty("--connection-color", colour);
       bitWrapper.createDiv("jp-col-discourse-bit-underline");
-      if (bit.discourseLabel) {
-        bitWrapper.createSpan({
-          cls: "jp-col-discourse-label-badge",
-          text: bit.discourseLabel
+      if (bit.category) {
+        const catBadge = bitWrapper.createSpan({
+          cls: "jp-col-discourse-cat-badge",
+          text: bit.category
         });
+        catBadge.style.setProperty("--cat-color", colour);
+      }
+      if (bit.functions.length > 0) {
+        for (const fn of bit.functions) {
+          bitWrapper.createSpan({
+            cls: "jp-col-discourse-label-badge",
+            text: fn
+          });
+        }
       }
       const spoiler = bitWrapper.createDiv("jp-col-discourse-spoiler");
       spoiler.createSpan({ text: bit.text });
@@ -2013,15 +2239,15 @@ var DiscourseCardView = class {
   }
   /**
    * Render visual connection indicators between related bits.
-   * Uses colour-coded dots/lines next to the connected bits.
+   * Uses per-category colours on relation badges.
    */
   renderRelationIndicators(container, bits, relations) {
     for (const rel of relations) {
-      const fromEl = container.querySelector(`[data-bit-id="${rel.fromBitId}"]`);
       const toEl = container.querySelector(`[data-bit-id="${rel.toBitId}"]`);
-      if (!fromEl || !toEl)
+      if (!toEl)
         continue;
-      const colour = colourForGroup(rel.connectionGroup);
+      const toBit = bits.find((b) => b.id === rel.toBitId);
+      const colour = toBit ? colourForBit(toBit) : "#888";
       const badge = toEl.createSpan({
         cls: "jp-col-discourse-relation-badge",
         text: rel.relationType
@@ -2042,7 +2268,7 @@ var DiscourseCardView = class {
         const sp = el.querySelector(".jp-col-discourse-spoiler");
         sp == null ? void 0 : sp.addClass("jp-col-discourse-spoiler--revealed");
       }, delay);
-      delay += 600;
+      delay += AUTO_REVEAL_DELAY_MS;
     }
   }
   refresh() {
@@ -2051,27 +2277,24 @@ var DiscourseCardView = class {
 };
 
 // src/ui/ContextLexiconView.ts
-var CONNECTION_COLOURS2 = [
-  "#e06c75",
-  "#4a90d9",
-  "#98c379",
-  "#e5c07b",
-  "#c678dd",
-  "#56b6c2",
-  "#d19a66",
-  "#be5046"
-];
-function colourForGroup2(group) {
-  return CONNECTION_COLOURS2[group % CONNECTION_COLOURS2.length];
+function colourForBit2(bit) {
+  if (bit.category && CATEGORY_COLOURS[bit.category]) {
+    return CATEGORY_COLOURS[bit.category];
+  }
+  return "#888";
 }
 var ContextLexiconView = class {
   constructor(parent, contextStore) {
     this.filterTag = null;
+    this.filterCategory = null;
+    this.filterFunction = null;
+    this.searchQuery = "";
     this.contextStore = contextStore;
     this.container = parent.createDiv("jp-col-ctx-lexicon-view");
     this.render();
   }
   render() {
+    var _a;
     this.container.empty();
     const entries = this.contextStore.getAllEntries();
     const chunks = this.contextStore.getAllChunks();
@@ -2082,14 +2305,72 @@ var ContextLexiconView = class {
       });
       return;
     }
+    const storeSize = this.contextStore.size();
     const toolbar = this.container.createDiv("jp-col-browser-toolbar");
     toolbar.createSpan({
-      text: `${entries.length} entries across ${chunks.length} chunks`,
+      text: `${entries.length} entries \xB7 ${chunks.length} chunks \xB7 ${storeSize.bits} bits`,
       cls: "jp-col-browser-label"
     });
+    const searchRow = this.container.createDiv("jp-col-ctx-search-row");
+    const searchInput = searchRow.createEl("input", {
+      type: "text",
+      placeholder: "Search bits by text\u2026",
+      cls: "jp-col-search-input",
+      value: this.searchQuery
+    });
+    searchInput.addEventListener("input", () => {
+      this.searchQuery = searchInput.value;
+      this.render();
+    });
+    const categories = this.contextStore.getAllCategories();
+    if (categories.length > 0) {
+      const catRow = this.container.createDiv("jp-col-filter-row");
+      catRow.createSpan({ text: "Categories:", cls: "jp-col-browser-label" });
+      for (const cat of categories) {
+        const colour = (_a = CATEGORY_COLOURS[cat]) != null ? _a : "#888";
+        const chip = catRow.createEl("span", {
+          text: cat,
+          cls: "jp-col-chip" + (this.filterCategory === cat ? " jp-col-chip--active" : "")
+        });
+        chip.style.setProperty("border-color", colour);
+        if (this.filterCategory === cat) {
+          chip.style.setProperty("background", colour);
+          chip.style.setProperty("color", "#fff");
+        } else {
+          chip.style.setProperty("color", colour);
+        }
+        chip.addEventListener("click", () => {
+          this.filterCategory = this.filterCategory === cat ? null : cat;
+          this.filterFunction = null;
+          this.render();
+        });
+      }
+    }
+    if (this.filterCategory) {
+      const allFns = this.contextStore.getAllFunctions();
+      const catFns = allFns.filter((fn) => {
+        const bits = this.contextStore.getBitsByFunction(fn);
+        return bits.some((b) => b.category === this.filterCategory);
+      });
+      if (catFns.length > 0) {
+        const fnRow = this.container.createDiv("jp-col-filter-row");
+        fnRow.createSpan({ text: "Functions:", cls: "jp-col-browser-label" });
+        for (const fn of catFns) {
+          const chip = fnRow.createEl("span", {
+            text: fn,
+            cls: "jp-col-chip" + (this.filterFunction === fn ? " jp-col-chip--active" : "")
+          });
+          chip.addEventListener("click", () => {
+            this.filterFunction = this.filterFunction === fn ? null : fn;
+            this.render();
+          });
+        }
+      }
+    }
     const allTags = this.collectTags(entries);
     if (allTags.length > 0) {
       const tagRow = this.container.createDiv("jp-col-filter-row");
+      tagRow.createSpan({ text: "Tags:", cls: "jp-col-browser-label" });
       for (const tag of allTags) {
         const chip = tagRow.createEl("span", {
           text: tag,
@@ -2100,21 +2381,73 @@ var ContextLexiconView = class {
           this.render();
         });
       }
-      const clearBtn = tagRow.createEl("span", { text: "\u2715 clear", cls: "jp-col-chip jp-col-chip--clear" });
+      const clearBtn = tagRow.createEl("span", { text: "\u2715 clear all", cls: "jp-col-chip jp-col-chip--clear" });
       clearBtn.addEventListener("click", () => {
         this.filterTag = null;
+        this.filterCategory = null;
+        this.filterFunction = null;
+        this.searchQuery = "";
         this.render();
       });
     }
+    this.renderFunctionDistribution(this.container);
     const grouped = this.groupByChunk(entries, chunks);
     const list = this.container.createDiv("jp-col-ctx-list");
     for (const group of grouped) {
-      if (this.filterTag) {
-        const hasTag = group.entries.some((e) => e.tags.includes(this.filterTag));
-        if (!hasTag)
-          continue;
-      }
+      if (!this.chunkPassesFilter(group.chunk, group.entries))
+        continue;
       this.renderChunkGroup(list, group.chunk, group.entries);
+    }
+  }
+  /** Check if a chunk/entries group passes all active filters. */
+  chunkPassesFilter(chunk, entries) {
+    if (this.filterTag) {
+      if (!entries.some((e) => e.tags.includes(this.filterTag)))
+        return false;
+    }
+    if (this.filterCategory) {
+      if (!chunk.bits.some((b) => b.category === this.filterCategory))
+        return false;
+    }
+    if (this.filterFunction) {
+      if (!chunk.bits.some((b) => b.functions.includes(this.filterFunction)))
+        return false;
+    }
+    if (this.searchQuery.trim()) {
+      const q = this.searchQuery.trim().toLowerCase();
+      if (!chunk.bits.some((b) => b.text.toLowerCase().includes(q)))
+        return false;
+    }
+    return true;
+  }
+  /**
+   * Render a horizontal bar-chart of discourse function distribution.
+   */
+  renderFunctionDistribution(parent) {
+    const fnDist = this.contextStore.getFunctionDistribution();
+    const fnEntries = Object.entries(fnDist);
+    if (fnEntries.length === 0)
+      return;
+    const total = fnEntries.reduce((s, [, n]) => s + n, 0);
+    const section = parent.createEl("details", { cls: "jp-col-ctx-stats-section" });
+    section.createEl("summary", {
+      text: `Discourse function index (${fnEntries.length} functions, ${total} bits)`,
+      cls: "jp-col-ctx-stats-summary"
+    });
+    const table = section.createDiv("jp-col-ctx-stats-table");
+    for (const [fn, count] of fnEntries.sort((a, b) => b[1] - a[1])) {
+      const pct = Math.round(count / total * 100);
+      const row = table.createDiv("jp-col-discourse-stats-row");
+      const fnBits = this.contextStore.getBitsByFunction(fn);
+      const cat = fnBits.length > 0 ? fnBits[0].category : null;
+      const colour = cat && CATEGORY_COLOURS[cat] ? CATEGORY_COLOURS[cat] : "#888";
+      const label = row.createSpan({ text: fn, cls: "jp-col-discourse-stats-cat" });
+      label.style.setProperty("color", colour);
+      const barOuter = row.createDiv("jp-col-discourse-stats-bar-outer");
+      const barInner = barOuter.createDiv("jp-col-discourse-stats-bar-inner");
+      barInner.style.setProperty("width", `${Math.max(pct, 4)}%`);
+      barInner.style.setProperty("background", colour);
+      row.createSpan({ text: `${count}`, cls: "jp-col-discourse-stats-count" });
     }
   }
   renderChunkGroup(parent, chunk, entries) {
@@ -2124,7 +2457,7 @@ var ContextLexiconView = class {
     labelEl.createEl("strong", { text: chunk.selectedPhrase });
     labelEl.createSpan({ text: ` \u2014 ${chunk.sourceFile}`, cls: "jp-col-ctx-source" });
     header.createSpan({
-      text: `${entries.length} entries`,
+      text: `${chunk.bits.length} bits \xB7 ${entries.length} entries`,
       cls: "jp-col-grammar-count"
     });
     const body = section.createDiv("jp-col-ctx-section-body");
@@ -2143,7 +2476,7 @@ var ContextLexiconView = class {
   }
   /**
    * Render the full chunk with all bits visible (no spoilers)
-   * and colour-coded connection indicators.
+   * and per-category colour-coded connection indicators.
    */
   renderVisibleChunk(parent, chunk) {
     const chunkEl = parent.createDiv("jp-col-ctx-chunk");
@@ -2156,8 +2489,13 @@ var ContextLexiconView = class {
           cls: "jp-col-ctx-speaker"
         });
       }
+      const colour = colourForBit2(bit);
+      const dimmed = this.filterCategory && bit.category !== this.filterCategory || this.filterFunction && !bit.functions.includes(this.filterFunction);
       const bitEl = chunkEl.createDiv("jp-col-ctx-bit");
-      bitEl.style.setProperty("--connection-color", colourForGroup2(bit.connectionGroup));
+      bitEl.style.setProperty("--connection-color", colour);
+      if (dimmed)
+        bitEl.style.setProperty("opacity", "0.35");
+      const matchesSearch = this.searchQuery.trim() && bit.text.toLowerCase().includes(this.searchQuery.trim().toLowerCase());
       bitEl.createDiv("jp-col-ctx-bit-indicator");
       const textEl = bitEl.createSpan({
         text: bit.text,
@@ -2166,9 +2504,19 @@ var ContextLexiconView = class {
       if (chunk.selectedPhrase.includes(bit.text)) {
         textEl.addClass("jp-col-ctx-bit-text--highlight");
       }
-      if (bit.discourseLabel) {
+      if (matchesSearch) {
+        textEl.addClass("jp-col-ctx-bit-text--search-match");
+      }
+      if (bit.category) {
+        const catLabel = bitEl.createSpan({
+          text: bit.category,
+          cls: "jp-col-ctx-bit-cat"
+        });
+        catLabel.style.setProperty("color", colour);
+      }
+      for (const fn of bit.functions) {
         bitEl.createSpan({
-          text: bit.discourseLabel,
+          text: fn,
           cls: "jp-col-ctx-bit-label"
         });
       }
@@ -2181,12 +2529,13 @@ var ContextLexiconView = class {
         const toBit = chunk.bits.find((b) => b.id === rel.toBitId);
         if (!fromBit || !toBit)
           continue;
+        const colour = colourForBit2(toBit);
         const relEl = relSection.createDiv("jp-col-ctx-relation");
-        relEl.style.setProperty("--rel-color", colourForGroup2(rel.connectionGroup));
+        relEl.style.setProperty("--rel-color", colour);
         const fromTrunc = fromBit.text.length > 20 ? fromBit.text.slice(0, 20) + "\u2026" : fromBit.text;
         const toTrunc = toBit.text.length > 20 ? toBit.text.slice(0, 20) + "\u2026" : toBit.text;
         relEl.createSpan({ text: fromTrunc, cls: "jp-col-ctx-rel-from" });
-        relEl.createSpan({ text: ` \u2192 `, cls: "jp-col-ctx-rel-arrow" });
+        relEl.createSpan({ text: " \u2192 ", cls: "jp-col-ctx-rel-arrow" });
         relEl.createSpan({ text: toTrunc, cls: "jp-col-ctx-rel-to" });
         relEl.createSpan({
           text: ` (${rel.relationType})`,
@@ -2195,7 +2544,7 @@ var ContextLexiconView = class {
       }
     }
   }
-  renderEntry(parent, entry2, chunk) {
+  renderEntry(parent, entry2, _chunk) {
     const card = parent.createDiv("jp-col-ctx-entry-card");
     if (entry2.tags.length > 0) {
       const tagRow = card.createDiv("jp-col-ctx-entry-tags");
@@ -3663,34 +4012,110 @@ var ClassifyModal = class extends import_obsidian6.Modal {
 };
 
 // src/discourse/DiscourseAnalyzer.ts
-var DISCOURSE_PATTERNS = [
-  // 話題化 — topic markers / topic shift
-  { regex: /は[。、\s]|って[さねよ]|というのは/u, label: "\u8A71\u984C\u5316", relationType: "topic" },
-  // 付加疑問文 — tag questions (よね, でしょ, じゃない)
-  { regex: /よね[。？]?$|でしょ[う？]?$|じゃない[？]?$/u, label: "\u4ED8\u52A0\u7591\u554F\u6587", relationType: "tag-question" },
-  // 例示 — exemplification (たとえば, とか, みたいな)
-  { regex: /たとえば|例えば|とか[、。\s]|みたいな/u, label: "\u4F8B\u793A", relationType: "example" },
-  // 付加 — additive continuation (それに, しかも, あと)
-  { regex: /^それに|^しかも|^あと[、\s]/u, label: "\u4ED8\u52A0", relationType: "addition" },
-  // 反応・相槌 — back-channel / reactions (はい, うん, そうそう, ほんと)
-  { regex: /^はい[はい]*[。]?$|^うん[うん]*$|^そうそう|^ほんと[うに]?[？!。]?$/u, label: "\u76F8\u69CC", relationType: "reaction" },
-  // 理由・原因 — reason (から, ので, だって)
-  { regex: /から[。、\s]|ので[。、\s]|^だって/u, label: "\u7406\u7531", relationType: "reason" },
-  // 逆接 — contrast (でも, けど, が)
-  { regex: /^でも|けど[。、\s]|^ただ[、\s]/u, label: "\u9006\u63A5", relationType: "contrast" },
-  // 言い換え — rephrasing (つまり, 要するに, というか)
-  { regex: /^つまり|^要するに|というか/u, label: "\u8A00\u3044\u63DB\u3048", relationType: "rephrase" },
-  // 感嘆・詠嘆 — exclamation (あ、ああ, おお, えっ)
-  { regex: /^[あぁ][、。!！]|^おお|^えっ|^わあ/u, label: "\u611F\u5606", relationType: "exclamation" },
-  // 確認 — confirmation seeking (かな, だっけ, っけ)
-  { regex: /かな[。]?$|だっけ[。？]?$|っけ[。？]?$/u, label: "\u78BA\u8A8D", relationType: "confirmation" }
+var CONNECTIVE_PATTERNS = [
+  // 順接 — Logical consequence
+  { regex: /^だから[、\s]|^したがって|^そのため[、\s]?|^それで[、\s]|^そこで[、\s]|^ゆえに/u, fn: "\u9806\u63A5" /* LogicalConsequence */, relationType: "logical-consequence" },
+  // 逆接 — Adversative
+  { regex: /^しかし[、\s]?|^でも[、\s]?|^けれども|^ところが|^だが[、\s]?|にもかかわらず|^けど[、\s]?|^ただ[、\s]/u, fn: "\u9006\u63A5" /* Adversative */, relationType: "adversative" },
+  // 並列・累加 — Additive
+  { regex: /^また[、\s]?|^そして[、\s]?|^それに[、\s]?|^しかも[、\s]?|^その上[、\s]?|^加えて|^かつ[、\s]?|^さらに[、\s]?|^おまけに/u, fn: "\u4E26\u5217\u30FB\u7D2F\u52A0" /* Additive */, relationType: "additive" },
+  // 対比 — Comparison
+  { regex: /^一方[、\s]?|^それに対して|^反面|^逆に[、\s]?|^他方/u, fn: "\u5BFE\u6BD4" /* Comparison */, relationType: "comparison" },
+  // 転換 — Topic change (also 話題転換 in topic management)
+  { regex: /^ところで[、\s]?|^さて[、\s]?|^それはそうと|^話は変わる/u, fn: "\u8EE2\u63DB" /* TopicChange */, relationType: "topic-change" },
+  // 補足 — Supplementation
+  { regex: /^なお[、\s]?|^ちなみに[、\s]?|^ただし[、\s]?|^もっとも[、\s]?/u, fn: "\u88DC\u8DB3" /* Supplement */, relationType: "supplement" },
+  // 例示 — Exemplification
+  { regex: /^たとえば|^例えば|^具体的には|とか[、。\s]|みたいな[、。\s]?$/u, fn: "\u4F8B\u793A" /* Exemplification */, relationType: "exemplification" },
+  // 言い換え — Rephrasing
+  { regex: /^つまり[、\s]?|^すなわち|^要するに|^いわば|^換言すれば|^言い換えると|というか[、\s]/u, fn: "\u8A00\u3044\u63DB\u3048" /* Rephrase */, relationType: "rephrase" }
+];
+var SENTENCE_FINAL_PATTERNS = [
+  // 確認要求 — Confirmation seeking
+  { regex: /よね[。？]?$|でしょう?[。？]?$|じゃない[。？]?$|じゃないですか[。？]?$|ではないか[。？]?$/u, fn: "\u78BA\u8A8D\u8981\u6C42" /* ConfirmationSeeking */, relationType: "confirmation-seeking" },
+  // 同意要求 — Agreement seeking
+  { regex: /[^よ]ね[。]?$|ねえ[。]?$/u, fn: "\u540C\u610F\u8981\u6C42" /* AgreementSeeking */, relationType: "agreement-seeking" },
+  // 主張 — Assertion
+  { regex: /[^ね]よ[。！]?$|わ[。！]?$|ぞ[。！]?$|ぜ[。！]?$|んだ[。]?$/u, fn: "\u4E3B\u5F35" /* Assertion */, relationType: "assertion" },
+  // 推量 — Conjecture
+  { regex: /だろう[。？]?$|かもしれない[。]?$|かも[。]?$|はず[。]?$/u, fn: "\u63A8\u91CF" /* Conjecture */, relationType: "conjecture" },
+  // 伝聞 — Hearsay
+  { regex: /そうだ[。]?$|そうです[。]?$|って[。]?$|らしい[。]?$|と聞いた|だって[。]?$/u, fn: "\u4F1D\u805E" /* Hearsay */, relationType: "hearsay" },
+  // 疑問 — Question
+  { regex: /か[。？]?$|かな[。？]?$|かしら[。？]?$/u, fn: "\u7591\u554F" /* Question */, relationType: "question" },
+  // 意志 — Volition
+  { regex: /つもり[。]?$|[よう]う[。！]?$|するぞ[。！]?$/u, fn: "\u610F\u5FD7" /* Volition */, relationType: "volition" }
+];
+var TOPIC_MANAGEMENT_PATTERNS = [
+  // 話題提示 — Topic introduction
+  { regex: /^.{1,12}は[、\s]|って[さねよ]|というのは|について|に関して/u, fn: "\u8A71\u984C\u63D0\u793A" /* TopicIntroduction */, relationType: "topic-introduction" },
+  // 話題転換 — Topic shift
+  { regex: /^そういえば|^ところで|^それはそうと|^話変わるけど/u, fn: "\u8A71\u984C\u8EE2\u63DB" /* TopicShift */, relationType: "topic-shift" },
+  // 話題深化 — Topic deepening
+  { regex: /^実は|^実際のところ|^本当は|^正直[、\s]|^ぶっちゃけ/u, fn: "\u8A71\u984C\u6DF1\u5316" /* TopicDeepening */, relationType: "topic-deepening" },
+  // 話題回帰 — Topic return
+  { regex: /^話を戻す|^元の話|^さっきの話|^本題に戻る/u, fn: "\u8A71\u984C\u56DE\u5E30" /* TopicReturn */, relationType: "topic-return" }
+];
+var INTERACTIONAL_PATTERNS = [
+  // あいづち — Back-channel
+  { regex: /^はい[はい]*[。]?$|^うん[うん]*[。]?$|^ええ[。]?$|^そうそう[そう]*|^なるほど[。！]?$|^へえ[ー]*[。！]?$|^ほんと[うに]?[。？！]?$|^そうですね[。]?$|^確かに[。]?$/u, fn: "\u3042\u3044\u3065\u3061" /* BackChannel */, relationType: "back-channel" },
+  // フィラー — Fillers
+  { regex: /^えーと|^あのー|^まあ[、\s]|^こう[、\s]|^なんか[、\s]|^えっと|^あの[、\s]|^そのー|^ほら[、\s]/u, fn: "\u30D5\u30A3\u30E9\u30FC" /* Filler */, relationType: "filler" },
+  // 修復 — Repair
+  { regex: /^いや[、\s]|^じゃなくて|^っていうか|^ごめん|^違う[、\s]|^そうじゃなくて/u, fn: "\u4FEE\u5FA9" /* Repair */, relationType: "repair" },
+  // 注目要素 — Attention-getter
+  { regex: /^ほら[、！]|^ねえ[、！]|^あのさ[、]?|^ちょっと[、！]|^聞いて[。！]?/u, fn: "\u6CE8\u76EE\u8981\u7D20" /* AttentionGetter */, relationType: "attention-getter" }
+];
+var INFO_STRUCTURE_PATTERNS = [
+  // 焦点 — Focus particles
+  { regex: /こそ[、。\s]|さえ[、。\s]|まで[も]?[、。\s]/u, fn: "\u7126\u70B9" /* Focus */, relationType: "focus" },
+  // 取り立て — Delimitation particles
+  { regex: /だけ[、。\s]|しか[、。\s]|ばかり[、。\s]|のみ[、。\s]/u, fn: "\u53D6\u308A\u7ACB\u3066" /* Delimitation */, relationType: "delimitation" }
+];
+var DISCOURSE_MARKER_PATTERNS = [
+  // 開始標識 — Opening
+  { regex: /^えー[、\s]|^さあ[、\s]|^じゃあ[、\s]|^では[、\s]|^はい[、\s]じゃあ/u, fn: "\u958B\u59CB\u6A19\u8B58" /* Opening */, relationType: "opening" },
+  // 展開標識 — Development
+  { regex: /^で[、\s](?!も)|^それで[、\s]|^そしたら|^そうすると|^すると/u, fn: "\u5C55\u958B\u6A19\u8B58" /* Development */, relationType: "development" },
+  // 終結標識 — Closing
+  { regex: /^というわけで|^以上|^じゃ[、\s]?$/u, fn: "\u7D42\u7D50\u6A19\u8B58" /* Closing */, relationType: "closing" }
+];
+var POLITENESS_PATTERNS = [
+  // ヘッジ — Hedging
+  { regex: /ちょっと[、\s]|少し[、\s]|なんとなく|多分|もしかして|たぶん/u, fn: "\u30D8\u30C3\u30B8" /* Hedging */, relationType: "hedging" },
+  // 間接表現 — Indirect
+  { regex: /と思うんですけど|と思いますが|かなと思って|ないかなと/u, fn: "\u9593\u63A5\u8868\u73FE" /* Indirect */, relationType: "indirect" }
+];
+var QUOTATION_PATTERNS = [
+  // 直接引用 — Direct quotation
+  { regex: /「.+」って|「.+」と/u, fn: "\u76F4\u63A5\u5F15\u7528" /* DirectQuotation */, relationType: "direct-quotation" },
+  // 間接引用 — Indirect quotation
+  { regex: /と言った|と言って|って言う|って言った|と思った/u, fn: "\u9593\u63A5\u5F15\u7528" /* IndirectQuotation */, relationType: "indirect-quotation" }
+];
+var ALL_PATTERNS = [
+  ...INTERACTIONAL_PATTERNS,
+  // highest: back-channel detection
+  ...CONNECTIVE_PATTERNS,
+  // high: structural connectives
+  ...TOPIC_MANAGEMENT_PATTERNS,
+  ...SENTENCE_FINAL_PATTERNS,
+  ...QUOTATION_PATTERNS,
+  ...DISCOURSE_MARKER_PATTERNS,
+  ...POLITENESS_PATTERNS,
+  ...INFO_STRUCTURE_PATTERNS
+  // lowest: particle-level
 ];
 var TIMESTAMP_RE = /\s*\[\d{1,2}:\d{2}(?::\d{2})?\]\s*/g;
+var nextBitId = 0;
+function genBitId() {
+  return `bit_${Date.now()}_${Math.random().toString(36).slice(2, 5)}_${nextBitId++}`;
+}
+var BACKCHANNEL_ONLY_RE = /^(はい|うん|ええ|そうそう|なるほど|へえ|ほんと|確かに|あ[あー]*|おお+)[。！!？ー]*$/u;
 function detectSpeaker(segment, previousSpeaker) {
   const namedMatch = segment.match(/^([A-Za-z\u3040-\u9FFF]{1,10})[：:]\s*/u);
   if (namedMatch)
     return namedMatch[1];
-  if (/^(はい|うん|そうそう|ほんと|ああ|えっ|へえ|なるほど)[。！!？]*$/u.test(segment.trim())) {
+  if (BACKCHANNEL_ONLY_RE.test(segment.trim())) {
     return previousSpeaker === "Speaker A" ? "Speaker B" : "Speaker A";
   }
   return previousSpeaker;
@@ -3720,15 +4145,30 @@ function splitIntoSegments(rawText) {
   }
   return result;
 }
-var nextBitId = 0;
-function genBitId() {
-  return `bit_${Date.now()}_${nextBitId++}`;
+function matchPatterns(segment) {
+  const matched = [];
+  for (const pat of ALL_PATTERNS) {
+    if (pat.regex.test(segment)) {
+      if (!matched.some((m) => m.fn === pat.fn)) {
+        matched.push({ fn: pat.fn, relationType: pat.relationType });
+      }
+    }
+  }
+  if (matched.length === 0) {
+    return { primary: null, all: [], primaryRelationType: "continuation" };
+  }
+  return {
+    primary: matched[0].fn,
+    all: matched.map((m) => m.fn),
+    primaryRelationType: matched[0].relationType
+  };
 }
 var DiscourseAnalyzer = class {
   /**
    * Analyse raw text, returning bits and relations.
    */
   analyse(rawText) {
+    var _a;
     const segments = splitIntoSegments(rawText);
     const bits = [];
     let currentSpeaker = "Speaker A";
@@ -3736,19 +4176,13 @@ var DiscourseAnalyzer = class {
     let offset = 0;
     for (const seg of segments) {
       currentSpeaker = detectSpeaker(seg, currentSpeaker);
-      let label = "";
-      let relationType = "";
-      for (const pat of DISCOURSE_PATTERNS) {
-        if (pat.regex.test(seg)) {
-          label = pat.label;
-          relationType = pat.relationType;
-          break;
-        }
-      }
+      const match = matchPatterns(seg);
+      const category = match.primary ? FUNCTION_TO_CATEGORY[match.primary] : null;
+      const label = (_a = match.primary) != null ? _a : "";
       const prevBit = bits.length > 0 ? bits[bits.length - 1] : null;
       const sameSpeaker = prevBit && prevBit.speaker === currentSpeaker;
-      const isReaction = relationType === "reaction" || relationType === "tag-question";
-      if (!sameSpeaker && !isReaction) {
+      const isBackChannel = match.primary === "\u3042\u3044\u3065\u3061" /* BackChannel */;
+      if (!sameSpeaker && !isBackChannel) {
         groupCounter++;
       }
       const bit = {
@@ -3756,13 +4190,27 @@ var DiscourseAnalyzer = class {
         text: seg,
         speaker: currentSpeaker,
         connectionGroup: groupCounter,
-        discourseLabel: label,
+        primaryFunction: match.primary,
+        category,
+        functions: match.all,
+        discourseLabel: String(label),
         startOffset: offset,
         endOffset: offset + seg.length
       };
       bits.push(bit);
       offset += seg.length + 1;
     }
+    const relations = this.buildRelations(bits);
+    return { bits, relations };
+  }
+  /**
+   * Build relations based on discourse structure:
+   * 1. Same connection-group adjacency → continuation / specific relation
+   * 2. Back-channel → links back to the preceding bit from the other speaker
+   * 3. Topic management → links to the prior topic bit
+   * 4. Connectives → links back to what they connect
+   */
+  buildRelations(bits) {
     const relations = [];
     for (let i = 1; i < bits.length; i++) {
       const prev = bits[i - 1];
@@ -3771,24 +4219,48 @@ var DiscourseAnalyzer = class {
         relations.push({
           fromBitId: prev.id,
           toBitId: curr.id,
-          relationType: curr.discourseLabel || "continuation",
+          relationType: curr.primaryFunction ? curr.discourseLabel : "continuation",
           connectionGroup: curr.connectionGroup
         });
       }
-      if (curr.discourseLabel === "\u76F8\u69CC" && prev.connectionGroup !== curr.connectionGroup) {
+      if (curr.primaryFunction === "\u3042\u3044\u3065\u3061" /* BackChannel */ && prev.connectionGroup !== curr.connectionGroup) {
         relations.push({
           fromBitId: prev.id,
           toBitId: curr.id,
-          relationType: "reaction",
+          relationType: "\u3042\u3044\u3065\u3061",
+          connectionGroup: curr.connectionGroup
+        });
+      }
+      if (curr.category === "\u63A5\u7D9A\u8868\u73FE" /* Connective */ && prev.connectionGroup !== curr.connectionGroup) {
+        relations.push({
+          fromBitId: prev.id,
+          toBitId: curr.id,
+          relationType: curr.discourseLabel,
+          connectionGroup: curr.connectionGroup
+        });
+      }
+      if ((curr.primaryFunction === "\u78BA\u8A8D\u8981\u6C42" /* ConfirmationSeeking */ || curr.primaryFunction === "\u540C\u610F\u8981\u6C42" /* AgreementSeeking */) && prev.speaker === curr.speaker && prev.connectionGroup !== curr.connectionGroup) {
+        relations.push({
+          fromBitId: prev.id,
+          toBitId: curr.id,
+          relationType: curr.discourseLabel,
+          connectionGroup: curr.connectionGroup
+        });
+      }
+      if (curr.primaryFunction === "\u4FEE\u5FA9" /* Repair */) {
+        relations.push({
+          fromBitId: prev.id,
+          toBitId: curr.id,
+          relationType: "\u4FEE\u5FA9",
           connectionGroup: curr.connectionGroup
         });
       }
     }
-    return { bits, relations };
+    return relations;
   }
   /**
    * Given a larger text and a selected phrase, extract a context chunk
-   * centred on the phrase with the given radius (number of segments on each side).
+   * centred on the phrase with the given radius.
    */
   extractChunk(fullText, selectedPhrase, radius) {
     const idx = fullText.indexOf(selectedPhrase);
@@ -3815,12 +4287,14 @@ var DiscourseAnalyzer = class {
         currentSpeaker = bit.speaker;
         lines.push(`> _${currentSpeaker}_:`);
       }
-      const isSelected = rawText.indexOf(bit.text) !== -1 && selectedPhrase.includes(bit.text);
-      const label = bit.discourseLabel ? ` \`${bit.discourseLabel}\`` : "";
-      if (isSelected) {
-        lines.push(`> **${bit.text}**${label}`);
+      const phraseIdx = rawText.indexOf(selectedPhrase);
+      const overlaps = phraseIdx !== -1 && bit.startOffset < phraseIdx + selectedPhrase.length && bit.endOffset > phraseIdx;
+      const fnLabels = bit.functions.length > 0 ? ` \`${bit.functions.join("` `")}\`` : "";
+      const catLabel = bit.category ? ` [${bit.category}]` : "";
+      if (overlaps) {
+        lines.push(`> **${bit.text}**${fnLabels}${catLabel}`);
       } else {
-        lines.push(`> ${bit.text}${label}`);
+        lines.push(`> ${bit.text}${fnLabels}${catLabel}`);
       }
     }
     return lines.join("\n");
@@ -3901,7 +4375,10 @@ var VaultIndexer = class {
           chunkId: chunk.id,
           highlightedBitIds: [bitId],
           formattedMarkdown: this.formatBitEntry(bit, analysis.bits, analysis.relations),
-          tags: bit.discourseLabel ? [bit.discourseLabel] : [],
+          tags: [
+            ...bit.category ? [bit.category] : [],
+            ...bit.functions.map((f) => String(f))
+          ],
           createdAt: Date.now()
         };
         this.contextStore.addEntry(bitEntry);
@@ -3924,8 +4401,11 @@ var VaultIndexer = class {
   formatBitEntry(bit, allBits, relations) {
     const lines = [];
     lines.push(`> **${bit.text}**`);
-    if (bit.discourseLabel) {
-      lines.push(`> \u8AC7\u8A71\u6A5F\u80FD: \`${bit.discourseLabel}\``);
+    if (bit.category) {
+      lines.push(`> \u5206\u985E: \`${bit.category}\``);
+    }
+    if (bit.functions.length > 0) {
+      lines.push(`> \u8AC7\u8A71\u6A5F\u80FD: ${bit.functions.map((f) => `\`${f}\``).join(" ")}`);
     }
     lines.push(`> \u8A71\u8005: _${bit.speaker}_`);
     const connected = relations.filter((r) => r.fromBitId === bit.id || r.toBitId === bit.id);
@@ -4132,7 +4612,10 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       chunkId: chunk.id,
       highlightedBitIds: analysis.bits.map((b) => b.id),
       formattedMarkdown,
-      tags: Array.from(new Set(analysis.bits.filter((b) => b.discourseLabel).map((b) => b.discourseLabel))),
+      tags: Array.from(/* @__PURE__ */ new Set([
+        ...analysis.bits.filter((b) => b.category).map((b) => b.category),
+        ...analysis.bits.flatMap((b) => b.functions.map((f) => String(f)))
+      ])),
       createdAt: Date.now()
     };
     this.contextStore.addEntry(entry2);

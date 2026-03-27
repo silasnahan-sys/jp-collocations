@@ -99,6 +99,178 @@ export interface StoreStats {
 }
 
 // ── Discourse Grammar (談話文法) Types ─────────────────────────
+// Taxonomy grounded in Japanese discourse grammar research:
+//   佐久間まゆみ『文章・談話のしくみ』
+//   メイナード泉子 K.『談話分析の可能性』
+//   石黒圭『文章は接続詞で決まる』
+//   市川孝『国語教育のための文章論概説』
+
+/**
+ * High-level discourse categories based on published 談話文法 research.
+ * Each category groups related discourse functions.
+ */
+export enum DiscourseCategory {
+  /** 接続表現 — Connective expressions (石黒 2008) */
+  Connective = "接続表現",
+  /** 文末表現 — Sentence-final modality (日本語モダリティ研究) */
+  SentenceFinal = "文末表現",
+  /** 話題管理 — Topic management (佐久間 2003) */
+  TopicManagement = "話題管理",
+  /** 相互行為 — Interactional functions (メイナード 1993) */
+  Interactional = "相互行為",
+  /** 情報構造 — Information structure (語用論) */
+  InfoStructure = "情報構造",
+  /** 談話標識 — Discourse markers */
+  DiscourseMarker = "談話標識",
+  /** ポライトネス — Politeness / register (Brown & Levinson → JP) */
+  Politeness = "ポライトネス",
+  /** 引用・発話 — Quotation and speech acts */
+  Quotation = "引用・発話",
+}
+
+/**
+ * Specific discourse functions within each category.
+ * Values are Japanese labels used in the UI.
+ */
+export enum DiscourseFunction {
+  // ── 接続表現 (Connective) ───────────────────
+  /** 順接 — Logical consequence: だから、したがって、そのため */
+  LogicalConsequence = "順接",
+  /** 逆接 — Adversative/contrast: しかし、でも、けれども */
+  Adversative = "逆接",
+  /** 並列・累加 — Additive: また、そして、しかも */
+  Additive = "並列・累加",
+  /** 対比 — Comparison: 一方、それに対して */
+  Comparison = "対比",
+  /** 転換 — Topic change: ところで、さて */
+  TopicChange = "転換",
+  /** 補足 — Supplementation: なお、ちなみに、ただし */
+  Supplement = "補足",
+  /** 例示 — Exemplification: たとえば、具体的には */
+  Exemplification = "例示",
+  /** 言い換え — Rephrasing: つまり、要するに */
+  Rephrase = "言い換え",
+
+  // ── 文末表現 (Sentence-final) ───────────────
+  /** 確認要求 — Confirmation seeking: よね、でしょう */
+  ConfirmationSeeking = "確認要求",
+  /** 同意要求 — Agreement seeking: ね、ねえ */
+  AgreementSeeking = "同意要求",
+  /** 主張 — Assertion: よ、わ、ぞ */
+  Assertion = "主張",
+  /** 推量 — Conjecture: だろう、かもしれない */
+  Conjecture = "推量",
+  /** 伝聞 — Hearsay: そうだ、って、らしい */
+  Hearsay = "伝聞",
+  /** 疑問 — Question: か、かな */
+  Question = "疑問",
+  /** 意志 — Volition: つもり、よう */
+  Volition = "意志",
+
+  // ── 話題管理 (Topic management) ─────────────
+  /** 話題提示 — Topic introduction: は、って、というのは */
+  TopicIntroduction = "話題提示",
+  /** 話題転換 — Topic shift: ところで、そういえば */
+  TopicShift = "話題転換",
+  /** 話題深化 — Topic deepening: 実は、本当は */
+  TopicDeepening = "話題深化",
+  /** 話題回帰 — Topic return: 話を戻すと */
+  TopicReturn = "話題回帰",
+
+  // ── 相互行為 (Interactional) ────────────────
+  /** あいづち — Back-channel: うん、ええ、なるほど */
+  BackChannel = "あいづち",
+  /** フィラー — Fillers: えーと、あのー、なんか */
+  Filler = "フィラー",
+  /** 修復 — Repair: いや、じゃなくて */
+  Repair = "修復",
+  /** 注目要素 — Attention-getter: ほら、ねえ、あのさ */
+  AttentionGetter = "注目要素",
+
+  // ── 情報構造 (Info structure) ────────────────
+  /** 焦点 — Focus: こそ、さえ、まで */
+  Focus = "焦点",
+  /** 取り立て — Delimitation: だけ、しか、ばかり */
+  Delimitation = "取り立て",
+
+  // ── 談話標識 (Discourse markers) ────────────
+  /** 開始標識 — Opening: えー、さあ、じゃあ */
+  Opening = "開始標識",
+  /** 展開標識 — Development: で、それで、そしたら */
+  Development = "展開標識",
+  /** 終結標識 — Closing: というわけで、以上 */
+  Closing = "終結標識",
+
+  // ── ポライトネス (Politeness) ────────────────
+  /** ヘッジ — Hedging: ちょっと、少し、なんとなく */
+  Hedging = "ヘッジ",
+  /** 間接表現 — Indirect speech: ～と思うんですけど */
+  Indirect = "間接表現",
+
+  // ── 引用・発話 (Quotation) ──────────────────
+  /** 直接引用 — Direct quotation: 「～」って */
+  DirectQuotation = "直接引用",
+  /** 間接引用 — Indirect quotation: ～と言った */
+  IndirectQuotation = "間接引用",
+}
+
+/** Maps each DiscourseFunction to its parent DiscourseCategory. */
+export const FUNCTION_TO_CATEGORY: Record<DiscourseFunction, DiscourseCategory> = {
+  [DiscourseFunction.LogicalConsequence]: DiscourseCategory.Connective,
+  [DiscourseFunction.Adversative]: DiscourseCategory.Connective,
+  [DiscourseFunction.Additive]: DiscourseCategory.Connective,
+  [DiscourseFunction.Comparison]: DiscourseCategory.Connective,
+  [DiscourseFunction.TopicChange]: DiscourseCategory.Connective,
+  [DiscourseFunction.Supplement]: DiscourseCategory.Connective,
+  [DiscourseFunction.Exemplification]: DiscourseCategory.Connective,
+  [DiscourseFunction.Rephrase]: DiscourseCategory.Connective,
+
+  [DiscourseFunction.ConfirmationSeeking]: DiscourseCategory.SentenceFinal,
+  [DiscourseFunction.AgreementSeeking]: DiscourseCategory.SentenceFinal,
+  [DiscourseFunction.Assertion]: DiscourseCategory.SentenceFinal,
+  [DiscourseFunction.Conjecture]: DiscourseCategory.SentenceFinal,
+  [DiscourseFunction.Hearsay]: DiscourseCategory.SentenceFinal,
+  [DiscourseFunction.Question]: DiscourseCategory.SentenceFinal,
+  [DiscourseFunction.Volition]: DiscourseCategory.SentenceFinal,
+
+  [DiscourseFunction.TopicIntroduction]: DiscourseCategory.TopicManagement,
+  [DiscourseFunction.TopicShift]: DiscourseCategory.TopicManagement,
+  [DiscourseFunction.TopicDeepening]: DiscourseCategory.TopicManagement,
+  [DiscourseFunction.TopicReturn]: DiscourseCategory.TopicManagement,
+
+  [DiscourseFunction.BackChannel]: DiscourseCategory.Interactional,
+  [DiscourseFunction.Filler]: DiscourseCategory.Interactional,
+  [DiscourseFunction.Repair]: DiscourseCategory.Interactional,
+  [DiscourseFunction.AttentionGetter]: DiscourseCategory.Interactional,
+
+  [DiscourseFunction.Focus]: DiscourseCategory.InfoStructure,
+  [DiscourseFunction.Delimitation]: DiscourseCategory.InfoStructure,
+
+  [DiscourseFunction.Opening]: DiscourseCategory.DiscourseMarker,
+  [DiscourseFunction.Development]: DiscourseCategory.DiscourseMarker,
+  [DiscourseFunction.Closing]: DiscourseCategory.DiscourseMarker,
+
+  [DiscourseFunction.Hedging]: DiscourseCategory.Politeness,
+  [DiscourseFunction.Indirect]: DiscourseCategory.Politeness,
+
+  [DiscourseFunction.DirectQuotation]: DiscourseCategory.Quotation,
+  [DiscourseFunction.IndirectQuotation]: DiscourseCategory.Quotation,
+};
+
+/**
+ * Colour assigned to each DiscourseCategory for consistent visualization.
+ * Research-informed: warm tones for interactional, cool for structural.
+ */
+export const CATEGORY_COLOURS: Record<DiscourseCategory, string> = {
+  [DiscourseCategory.Connective]: "#4a90d9",       // blue — structural links
+  [DiscourseCategory.SentenceFinal]: "#c678dd",     // purple — modality
+  [DiscourseCategory.TopicManagement]: "#e5c07b",   // amber — topic flow
+  [DiscourseCategory.Interactional]: "#e06c75",     // red — live interaction
+  [DiscourseCategory.InfoStructure]: "#56b6c2",     // teal — information
+  [DiscourseCategory.DiscourseMarker]: "#98c379",   // green — markers
+  [DiscourseCategory.Politeness]: "#d19a66",        // orange — social
+  [DiscourseCategory.Quotation]: "#be5046",         // brick — speech acts
+};
 
 /** A single discourse "bit" — an atomic grammar-thought unit within a chunk. */
 export interface DiscourseBit {
@@ -107,7 +279,13 @@ export interface DiscourseBit {
   speaker: string;
   /** Colour key for connection lines/underlines linking related bits. */
   connectionGroup: number;
-  /** Label describing the discourse function (e.g. 話題化, 例示, 付加疑問文). */
+  /** Primary discourse function. */
+  primaryFunction: DiscourseFunction | null;
+  /** Parent category of the primary function. */
+  category: DiscourseCategory | null;
+  /** All discourse functions detected (a bit can exhibit multiple). */
+  functions: DiscourseFunction[];
+  /** Legacy label kept for backward compatibility. */
   discourseLabel: string;
   startOffset: number;
   endOffset: number;

@@ -227,7 +227,10 @@ export default class JPCollocationsPlugin extends Plugin {
       chunkId: chunk.id,
       highlightedBitIds: analysis.bits.map(b => b.id),
       formattedMarkdown,
-      tags: Array.from(new Set(analysis.bits.filter(b => b.discourseLabel).map(b => b.discourseLabel))),
+      tags: Array.from(new Set([
+        ...analysis.bits.filter(b => b.category).map(b => b.category!),
+        ...analysis.bits.flatMap(b => b.functions.map(f => String(f))),
+      ])),
       createdAt: Date.now(),
     };
     this.contextStore.addEntry(entry);

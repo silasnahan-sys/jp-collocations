@@ -1,31 +1,33 @@
 import type { ContextChunk, DiscourseBit, DiscourseRelation } from "../types.ts";
+import { CATEGORY_COLOURS } from "../types.ts";
 import type { ContextStore } from "../data/ContextStore.ts";
 
+/** Delay in ms between each bit during auto-reveal. */
+const AUTO_REVEAL_DELAY_MS = 600;
+
 /**
- * Colour palette for connection groups — cycles through these for
- * different discourse relationship clusters.
+ * Fallback colour for connection groups when no category is assigned.
+ * Cycles through a neutral palette.
  */
-const CONNECTION_COLOURS = [
-  "#e06c75", // red
-  "#4a90d9", // blue
-  "#98c379", // green
-  "#e5c07b", // amber
-  "#c678dd", // purple
-  "#56b6c2", // teal
-  "#d19a66", // orange
-  "#be5046", // brick
+const GROUP_FALLBACK_COLOURS = [
+  "#888", "#999", "#777", "#aaa", "#666", "#bbb",
 ];
 
-function colourForGroup(group: number): string {
-  return CONNECTION_COLOURS[group % CONNECTION_COLOURS.length];
+/** Resolve a colour for a bit based on its category (preferred) or connection group (fallback). */
+function colourForBit(bit: DiscourseBit): string {
+  if (bit.category && CATEGORY_COLOURS[bit.category]) {
+    return CATEGORY_COLOURS[bit.category];
+  }
+  return GROUP_FALLBACK_COLOURS[bit.connectionGroup % GROUP_FALLBACK_COLOURS.length];
 }
 
 /**
  * DiscourseCardView — renders 談話文法 cards with:
  * - Spoiler tags (tap to reveal each bit)
  * - Fade-in animations (one thought at a time)
- * - Colour-coded underlines / connection indicators
- * - Mobile-friendly touch targets
+ * - Per-category colour-coded underlines / connection indicators
+ * - Function frequency stats panel
+ * - Mobile-friendly touch targets (44px+)
  */
 export class DiscourseCardView {
   private container: HTMLElement;
@@ -51,7 +53,11 @@ export class DiscourseCardView {
 
     // Toolbar
     const toolbar = this.container.createDiv("jp-col-browser-toolbar");
-    toolbar.createSpan({ text: `${chunks.length} chunk(s)`, cls: "jp-col-browser-label" });
+    const storeSize = this.contextStore.size();
+    toolbar.createSpan({
+      text: `${chunks.length} chunk(s) · ${storeSize.bits} bits indexed`,
+      cls: "jp-col-browser-label",
+    });
 
     const autoRevealBtn = toolbar.createEl("button", {
       text: "▶ Auto-reveal",
@@ -59,10 +65,43 @@ export class DiscourseCardView {
     });
     autoRevealBtn.addEventListener("click", () => this.autoRevealAll());
 
+    // Category distribution stats panel
+    this.renderCategoryStats(this.container);
+
     // Cards
     const list = this.container.createDiv("jp-col-discourse-list");
     for (const chunk of chunks) {
       this.renderChunkCard(list, chunk);
+    }
+  }
+
+  /**
+   * Render a small bar-chart of discourse category distribution.
+   */
+  private renderCategoryStats(parent: HTMLElement): void {
+    const catDist = this.contextStore.getCategoryDistribution();
+    const entries = Object.entries(catDist);
+    if (entries.length === 0) return;
+
+    const total = entries.reduce((s, [, n]) => s + n, 0);
+    const statsEl = parent.createDiv("jp-col-discourse-stats");
+    statsEl.createEl("small", { text: "Discourse function distribution:", cls: "jp-col-discourse-stats-label" });
+
+    const barContainer = statsEl.createDiv("jp-col-discourse-stats-bars");
+    for (const [cat, count] of entries.sort((a, b) => b[1] - a[1])) {
+      const pct = Math.round((count / total) * 100);
+      const row = barContainer.createDiv("jp-col-discourse-stats-row");
+
+      const label = row.createSpan({ text: cat, cls: "jp-col-discourse-stats-cat" });
+      const colour = CATEGORY_COLOURS[cat as keyof typeof CATEGORY_COLOURS] ?? "#888";
+      label.style.setProperty("color", colour);
+
+      const barOuter = row.createDiv("jp-col-discourse-stats-bar-outer");
+      const barInner = barOuter.createDiv("jp-col-discourse-stats-bar-inner");
+      barInner.style.setProperty("width", `${Math.max(pct, 4)}%`);
+      barInner.style.setProperty("background", colour);
+
+      row.createSpan({ text: `${count} (${pct}%)`, cls: "jp-col-discourse-stats-count" });
     }
   }
 
@@ -93,22 +132,32 @@ export class DiscourseCardView {
         speakerEl.createSpan({ text: currentSpeaker });
       }
 
+      const colour = colourForBit(bit);
+
       const bitWrapper = bitContainer.createDiv("jp-col-discourse-bit-wrapper");
       bitWrapper.setAttribute("data-bit-id", bit.id);
-      bitWrapper.style.setProperty(
-        "--connection-color",
-        colourForGroup(bit.connectionGroup)
-      );
+      bitWrapper.style.setProperty("--connection-color", colour);
 
       // Connection indicator underline
       bitWrapper.createDiv("jp-col-discourse-bit-underline");
 
-      // Discourse label badge
-      if (bit.discourseLabel) {
-        bitWrapper.createSpan({
-          cls: "jp-col-discourse-label-badge",
-          text: bit.discourseLabel,
+      // Category badge (shows parent category)
+      if (bit.category) {
+        const catBadge = bitWrapper.createSpan({
+          cls: "jp-col-discourse-cat-badge",
+          text: bit.category,
         });
+        catBadge.style.setProperty("--cat-color", colour);
+      }
+
+      // Function badges (all matched functions)
+      if (bit.functions.length > 0) {
+        for (const fn of bit.functions) {
+          bitWrapper.createSpan({
+            cls: "jp-col-discourse-label-badge",
+            text: fn,
+          });
+        }
       }
 
       // The spoiler element
@@ -127,7 +176,7 @@ export class DiscourseCardView {
     // Render relation arrows between connected bits
     this.renderRelationIndicators(bitContainer, chunk.bits, chunk.relations);
 
-    // Flip card — show all at once (collocation card mode)
+    // Actions
     const actions = card.createDiv("jp-col-discourse-actions");
 
     const revealAllBtn = actions.createEl("button", {
@@ -186,7 +235,7 @@ export class DiscourseCardView {
 
   /**
    * Render visual connection indicators between related bits.
-   * Uses colour-coded dots/lines next to the connected bits.
+   * Uses per-category colours on relation badges.
    */
   private renderRelationIndicators(
     container: HTMLElement,
@@ -194,13 +243,13 @@ export class DiscourseCardView {
     relations: DiscourseRelation[]
   ): void {
     for (const rel of relations) {
-      const fromEl = container.querySelector(`[data-bit-id="${rel.fromBitId}"]`);
       const toEl = container.querySelector(`[data-bit-id="${rel.toBitId}"]`);
-      if (!fromEl || !toEl) continue;
+      if (!toEl) continue;
 
-      const colour = colourForGroup(rel.connectionGroup);
+      // Resolve colour from the target bit's category
+      const toBit = bits.find(b => b.id === rel.toBitId);
+      const colour = toBit ? colourForBit(toBit) : "#888";
 
-      // Add relation type label to the target bit
       const badge = (toEl as HTMLElement).createSpan({
         cls: "jp-col-discourse-relation-badge",
         text: rel.relationType,
@@ -222,7 +271,7 @@ export class DiscourseCardView {
         const sp = el.querySelector(".jp-col-discourse-spoiler");
         sp?.addClass("jp-col-discourse-spoiler--revealed");
       }, delay);
-      delay += 600;
+      delay += AUTO_REVEAL_DELAY_MS;
     }
   }
 

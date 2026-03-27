@@ -984,6 +984,80 @@
   flex-wrap: wrap;
 }
 
+/* ── Discourse stats bar-chart ───────────────────────────── */
+.jp-col-discourse-stats {
+  padding: 8px;
+  margin-bottom: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+
+.jp-col-discourse-stats-label {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+
+.jp-col-discourse-stats-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.jp-col-discourse-stats-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 20px;
+}
+
+.jp-col-discourse-stats-cat {
+  font-size: 0.68rem;
+  font-weight: 600;
+  width: 72px;
+  flex-shrink: 0;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jp-col-discourse-stats-bar-outer {
+  flex: 1;
+  height: 8px;
+  background: var(--background-modifier-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.jp-col-discourse-stats-bar-inner {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.jp-col-discourse-stats-count {
+  font-size: 0.62rem;
+  color: var(--text-faint);
+  width: 48px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+/* ── Category badge (shows parent DiscourseCategory on bits) ── */
+.jp-col-discourse-cat-badge {
+  font-size: 0.56rem;
+  padding: 1px 5px;
+  border-radius: 6px;
+  border: 1px solid var(--cat-color, var(--text-faint));
+  color: var(--cat-color, var(--text-faint));
+  background: transparent;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
 /* ─────────────────────────────────────────────────────────────
    Context Lexicon View
    ──────────────────────────────────────────────────────────── */
@@ -1189,6 +1263,53 @@
 
 .jp-col-ctx-entry-content em {
   color: var(--text-muted);
+}
+
+/* ── Context search row ──────────────────────────────────── */
+.jp-col-ctx-search-row {
+  padding: 0 0 6px;
+}
+
+/* ── Context stats section (collapsible function index) ──── */
+.jp-col-ctx-stats-section {
+  margin-bottom: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  overflow: hidden;
+}
+
+.jp-col-ctx-stats-summary {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 6px 10px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--background-secondary);
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+
+.jp-col-ctx-stats-table {
+  padding: 6px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* ── Context bit category label ──────────────────────────── */
+.jp-col-ctx-bit-cat {
+  font-size: 0.56rem;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Search match highlight ──────────────────────────────── */
+.jp-col-ctx-bit-text--search-match {
+  background: rgba(255, 215, 0, 0.25);
+  border-radius: 2px;
+  padding: 0 2px;
 }
 
 /* ─────────────────────────────────────────────────────────────
