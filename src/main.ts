@@ -1,7 +1,8 @@
 import { Plugin, WorkspaceLeaf, Notice } from "obsidian";
-import type { PluginSettings } from "./types.ts";
-import { DEFAULT_SETTINGS } from "./types.ts";
+import type { PluginSettings, CollocationEntry, DiscourseContext, DiscourseCategory, SurferCollocationEntry, CollocationMatch } from "./types.ts";
+import { DEFAULT_SETTINGS, PartOfSpeech, CollocationSource } from "./types.ts";
 import { CollocationStore } from "./data/CollocationStore.ts";
+import { DiscourseStore } from "./data/DiscourseStore.ts";
 import { SearchEngine } from "./search/SearchEngine.ts";
 import { HyogenScraper } from "./scraper/HyogenScraper.ts";
 import { CollocationView, JP_COLLOCATIONS_VIEW_TYPE } from "./ui/CollocationView.ts";
@@ -14,6 +15,7 @@ import { ClassifyModal } from "./ui/ClassifyModal.ts";
 export default class JPCollocationsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   store!: CollocationStore;
+  discourseStore!: DiscourseStore;
   engine!: SearchEngine;
   private scraper: HyogenScraper | null = null;
 
@@ -24,6 +26,11 @@ export default class JPCollocationsPlugin extends Plugin {
     const dataPath = `${this.app.vault.configDir}/plugins/jp-collocations/${this.settings.dataFilePath}`;
     this.store = new CollocationStore(this.app, dataPath);
     await this.store.load();
+
+    // Discourse store
+    const discourseDataPath = `${this.app.vault.configDir}/plugins/jp-collocations/discourse-index.json`;
+    this.discourseStore = new DiscourseStore(this.app, discourseDataPath);
+    await this.discourseStore.load();
 
     // Search engine
     this.engine = new SearchEngine(this.store);
@@ -187,5 +194,180 @@ export default class JPCollocationsPlugin extends Plugin {
     const count = await this.scraper.run();
     new Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
+  }
+
+  // ── Bridge API (callable by jp-sentence-surfer) ───────────────────────────
+
+  /**
+   * Upsert a collocation entry originating from jp-sentence-surfer.
+   * If an existing entry already matches the expression, it is updated
+   * (examples, tags, reading, meaning merged); otherwise a new entry is
+   * created.  Any discourse contexts carried by the entry are stored in the
+   * DiscourseStore and linked to the returned collocation ID.
+   * @returns The collocation ID (new or existing).
+   */
+  async addEntryFromSurfer(entry: SurferCollocationEntry): Promise<string> {
+    const existing = this.store.getAll().find(
+      e => e.fullPhrase === entry.expression || e.headword === entry.expression
+    );
+
+    let collocationId: string;
+
+    if (existing) {
+      collocationId = existing.id;
+      const updated: CollocationEntry = { ...existing };
+      if (entry.exampleSentence && !updated.exampleSentences.includes(entry.exampleSentence)) {
+        updated.exampleSentences = [...updated.exampleSentences, entry.exampleSentence];
+      }
+      const newTags = entry.tags.filter(t => !updated.tags.includes(t));
+      if (newTags.length > 0) updated.tags = [...updated.tags, ...newTags];
+      if (entry.reading && !updated.headwordReading) updated.headwordReading = entry.reading;
+      if (entry.meaning && !updated.notes) updated.notes = entry.meaning;
+      this.store.update(updated);
+    } else {
+      collocationId = this.store.generateId();
+      const newEntry: CollocationEntry = {
+        id: collocationId,
+        headword: entry.expression,
+        headwordReading: entry.reading ?? "",
+        collocate: "",
+        fullPhrase: entry.expression,
+        headwordPOS: PartOfSpeech.Expression,
+        collocatePOS: PartOfSpeech.Other,
+        pattern: "",
+        exampleSentences: entry.exampleSentence ? [entry.exampleSentence] : [],
+        source: CollocationSource.Import,
+        tags: [...entry.tags],
+        notes: entry.meaning ?? "",
+        frequency: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      this.store.add(newEntry);
+    }
+
+    for (const ctx of entry.discourseContexts) {
+      this.discourseStore.addContext(collocationId, ctx);
+    }
+
+    this.refreshViews();
+    return collocationId;
+  }
+
+  /**
+   * Attach a single DiscourseContext to an existing collocation entry.
+   * Duplicate contexts (same chunkText + source file) are silently ignored.
+   */
+  async addDiscourseContext(collocationId: string, context: DiscourseContext): Promise<void> {
+    this.discourseStore.addContext(collocationId, context);
+  }
+
+  /**
+   * Append an example sentence (and its source citation) to an existing
+   * collocation entry.  Duplicate sentences are silently ignored.
+   */
+  async saveExampleSentence(collocationId: string, sentence: string, source: string): Promise<void> {
+    const entry = this.store.getById(collocationId);
+    if (!entry) return;
+    if (!entry.exampleSentences.includes(sentence)) {
+      const updated: CollocationEntry = {
+        ...entry,
+        exampleSentences: [...entry.exampleSentences, sentence],
+        notes: entry.notes || source,
+      };
+      this.store.update(updated);
+    }
+  }
+
+  /**
+   * Scan `text` for all known collocation expressions (fullPhrase and
+   * headword) and return every match with its character offsets.
+   * Overlapping matches at the same position and collocation ID are
+   * deduplicated via a `collocationId:offset` key.
+   */
+  findCollocationsInText(text: string): CollocationMatch[] {
+    const matches: CollocationMatch[] = [];
+    const seen = new Set<string>();
+    for (const entry of this.store.getAll()) {
+      const phrases = [entry.fullPhrase, entry.headword].filter(Boolean);
+      for (const phrase of phrases) {
+        let start = 0;
+        while (true) {
+          const idx = text.indexOf(phrase, start);
+          if (idx === -1) break;
+          const key = `${entry.id}:${idx}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            matches.push({
+              collocationId: entry.id,
+              expression: phrase,
+              matchStart: idx,
+              matchEnd: idx + phrase.length,
+            });
+          }
+          start = idx + 1;
+        }
+      }
+    }
+    return matches;
+  }
+
+  /**
+   * Return all collocation entries that have at least one DiscourseContext
+   * whose markers include a marker with the given `surface` form (the
+   * textual representation of the discourse marker, e.g. "でも", "つまり").
+   */
+  searchByDiscourseMarker(surface: string): SurferCollocationEntry[] {
+    return this.discourseStore
+      .getCollocationIdsByMarker(surface)
+      .map(id => this.toSurferEntry(id))
+      .filter((e): e is SurferCollocationEntry => e !== null);
+  }
+
+  /**
+   * Return all collocation entries that appear in a DiscourseContext whose
+   * markers belong to the given `category` (one of the 8 DiscourseCategory
+   * values in the 談話文法 taxonomy, e.g. 'connective', 'filler').
+   */
+  searchByCategory(category: DiscourseCategory): SurferCollocationEntry[] {
+    return this.discourseStore
+      .getCollocationIdsByCategory(category)
+      .map(id => this.toSurferEntry(id))
+      .filter((e): e is SurferCollocationEntry => e !== null);
+  }
+
+  /**
+   * Return every collocation entry in the store as SurferCollocationEntry
+   * objects, each hydrated with its associated DiscourseContexts.
+   */
+  getAllEntries(): SurferCollocationEntry[] {
+    return this.store
+      .getAll()
+      .map(e => this.toSurferEntry(e.id))
+      .filter((e): e is SurferCollocationEntry => e !== null);
+  }
+
+  /**
+   * Return aggregate statistics about stored discourse contexts:
+   * - `markerFrequency`: count of contexts per marker surface form
+   * - `categoryFrequency`: count of contexts per DiscourseCategory
+   * - `totalContexts`: total number of stored context chunks
+   */
+  getDiscourseStats(): { markerFrequency: Record<string, number>; categoryFrequency: Record<string, number>; totalContexts: number } {
+    return this.discourseStore.getStats();
+  }
+
+  private toSurferEntry(collocationId: string): SurferCollocationEntry | null {
+    const entry = this.store.getById(collocationId);
+    if (!entry) return null;
+    return {
+      expression: entry.fullPhrase || entry.headword,
+      reading: entry.headwordReading || undefined,
+      meaning: entry.notes || undefined,
+      exampleSentence: entry.exampleSentences[0] ?? undefined,
+      exampleSource: undefined,
+      discourseContexts: this.discourseStore.getContextsByCollocation(collocationId),
+      tags: [...entry.tags],
+    };
   }
 }

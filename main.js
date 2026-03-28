@@ -531,6 +531,152 @@ var CollocationStore = class {
   }
 };
 
+// src/data/DiscourseStore.ts
+var DiscourseStore = class {
+  constructor(app, dataPath, maxContexts = 1e3) {
+    this.chunks = /* @__PURE__ */ new Map();
+    this.index = { byMarker: {}, byCategory: {}, byCollocation: {} };
+    this.saveTimer = null;
+    this.chunkCounter = 0;
+    this.app = app;
+    this.dataPath = dataPath;
+    this.maxContexts = maxContexts;
+  }
+  async load() {
+    try {
+      const exists = await this.app.vault.adapter.exists(this.dataPath);
+      if (exists) {
+        const raw = await this.app.vault.adapter.read(this.dataPath);
+        const parsed = JSON.parse(raw);
+        for (const chunk of parsed) {
+          this.chunks.set(chunk.id, chunk);
+        }
+      }
+    } catch (e) {
+    }
+    this.rebuildIndex();
+  }
+  rebuildIndex() {
+    this.index = { byMarker: {}, byCategory: {}, byCollocation: {} };
+    for (const chunk of this.chunks.values()) {
+      this.indexChunk(chunk);
+    }
+  }
+  indexChunk(chunk) {
+    const addId = (map, key, id) => {
+      if (!map[key])
+        map[key] = [];
+      if (!map[key].includes(id))
+        map[key].push(id);
+    };
+    addId(this.index.byCollocation, chunk.collocationId, chunk.id);
+    for (const marker of chunk.context.markers) {
+      addId(this.index.byMarker, marker.surface, chunk.id);
+      addId(this.index.byCategory, marker.category, chunk.id);
+    }
+  }
+  deindexChunk(chunk) {
+    const removeId = (map, key, id) => {
+      const arr = map[key];
+      if (!arr)
+        return;
+      const idx = arr.indexOf(id);
+      if (idx !== -1)
+        arr.splice(idx, 1);
+      if (arr.length === 0)
+        delete map[key];
+    };
+    removeId(this.index.byCollocation, chunk.collocationId, chunk.id);
+    for (const marker of chunk.context.markers) {
+      removeId(this.index.byMarker, marker.surface, chunk.id);
+      removeId(this.index.byCategory, marker.category, chunk.id);
+    }
+  }
+  deduplicationKey(context) {
+    return `${context.chunkText}::${context.source.file}`;
+  }
+  addContext(collocationId, context) {
+    const dedupKey = this.deduplicationKey(context);
+    for (const existing of this.chunks.values()) {
+      if (this.deduplicationKey(existing.context) === dedupKey) {
+        return existing.id;
+      }
+    }
+    const id = `chunk_${Date.now()}_${++this.chunkCounter}`;
+    const chunk = { id, collocationId, context };
+    this.chunks.set(id, chunk);
+    this.indexChunk(chunk);
+    if (this.chunks.size > this.maxContexts) {
+      this.evictOldest();
+    }
+    this.scheduleSave();
+    return id;
+  }
+  evictOldest() {
+    const sorted = Array.from(this.chunks.values()).sort(
+      (a, b) => a.context.capturedAt.localeCompare(b.context.capturedAt)
+    );
+    const evictCount = this.chunks.size - this.maxContexts;
+    for (let i = 0; i < evictCount; i++) {
+      const chunk = sorted[i];
+      this.deindexChunk(chunk);
+      this.chunks.delete(chunk.id);
+    }
+  }
+  getContextsByCollocation(collocationId) {
+    var _a;
+    const ids = (_a = this.index.byCollocation[collocationId]) != null ? _a : [];
+    return ids.map((id) => {
+      var _a2;
+      return (_a2 = this.chunks.get(id)) == null ? void 0 : _a2.context;
+    }).filter((c) => c !== void 0);
+  }
+  getCollocationIdsByMarker(surface) {
+    var _a;
+    const chunkIds = (_a = this.index.byMarker[surface]) != null ? _a : [];
+    const collIds = /* @__PURE__ */ new Set();
+    for (const id of chunkIds) {
+      const chunk = this.chunks.get(id);
+      if (chunk)
+        collIds.add(chunk.collocationId);
+    }
+    return Array.from(collIds);
+  }
+  getCollocationIdsByCategory(category) {
+    var _a;
+    const chunkIds = (_a = this.index.byCategory[category]) != null ? _a : [];
+    const collIds = /* @__PURE__ */ new Set();
+    for (const id of chunkIds) {
+      const chunk = this.chunks.get(id);
+      if (chunk)
+        collIds.add(chunk.collocationId);
+    }
+    return Array.from(collIds);
+  }
+  getStats() {
+    const markerFrequency = {};
+    const categoryFrequency = {};
+    for (const [marker, ids] of Object.entries(this.index.byMarker)) {
+      markerFrequency[marker] = ids.length;
+    }
+    for (const [category, ids] of Object.entries(this.index.byCategory)) {
+      categoryFrequency[category] = ids.length;
+    }
+    return { markerFrequency, categoryFrequency, totalContexts: this.chunks.size };
+  }
+  scheduleSave() {
+    if (this.saveTimer)
+      clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.save().catch(console.error);
+    }, 1e3);
+  }
+  async save() {
+    const data = JSON.stringify(Array.from(this.chunks.values()), null, 2);
+    await this.app.vault.adapter.write(this.dataPath, data);
+  }
+};
+
 // src/utils/japanese.ts
 var HIRAGANA_START = 12353;
 var KATAKANA_START = 12449;
@@ -2576,6 +2722,9 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
     const dataPath = `${this.app.vault.configDir}/plugins/jp-collocations/${this.settings.dataFilePath}`;
     this.store = new CollocationStore(this.app, dataPath);
     await this.store.load();
+    const discourseDataPath = `${this.app.vault.configDir}/plugins/jp-collocations/discourse-index.json`;
+    this.discourseStore = new DiscourseStore(this.app, discourseDataPath);
+    await this.discourseStore.load();
     this.engine = new SearchEngine(this.store);
     this.registerView(
       JP_COLLOCATIONS_VIEW_TYPE,
@@ -2722,5 +2871,165 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
     const count = await this.scraper.run();
     new import_obsidian7.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
+  }
+  // ── Bridge API (callable by jp-sentence-surfer) ───────────────────────────
+  /**
+   * Upsert a collocation entry originating from jp-sentence-surfer.
+   * If an existing entry already matches the expression, it is updated
+   * (examples, tags, reading, meaning merged); otherwise a new entry is
+   * created.  Any discourse contexts carried by the entry are stored in the
+   * DiscourseStore and linked to the returned collocation ID.
+   * @returns The collocation ID (new or existing).
+   */
+  async addEntryFromSurfer(entry2) {
+    var _a, _b;
+    const existing = this.store.getAll().find(
+      (e) => e.fullPhrase === entry2.expression || e.headword === entry2.expression
+    );
+    let collocationId;
+    if (existing) {
+      collocationId = existing.id;
+      const updated = { ...existing };
+      if (entry2.exampleSentence && !updated.exampleSentences.includes(entry2.exampleSentence)) {
+        updated.exampleSentences = [...updated.exampleSentences, entry2.exampleSentence];
+      }
+      const newTags = entry2.tags.filter((t) => !updated.tags.includes(t));
+      if (newTags.length > 0)
+        updated.tags = [...updated.tags, ...newTags];
+      if (entry2.reading && !updated.headwordReading)
+        updated.headwordReading = entry2.reading;
+      if (entry2.meaning && !updated.notes)
+        updated.notes = entry2.meaning;
+      this.store.update(updated);
+    } else {
+      collocationId = this.store.generateId();
+      const newEntry = {
+        id: collocationId,
+        headword: entry2.expression,
+        headwordReading: (_a = entry2.reading) != null ? _a : "",
+        collocate: "",
+        fullPhrase: entry2.expression,
+        headwordPOS: "\u8868\u73FE" /* Expression */,
+        collocatePOS: "\u305D\u306E\u4ED6" /* Other */,
+        pattern: "",
+        exampleSentences: entry2.exampleSentence ? [entry2.exampleSentence] : [],
+        source: "import" /* Import */,
+        tags: [...entry2.tags],
+        notes: (_b = entry2.meaning) != null ? _b : "",
+        frequency: 0,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      this.store.add(newEntry);
+    }
+    for (const ctx of entry2.discourseContexts) {
+      this.discourseStore.addContext(collocationId, ctx);
+    }
+    this.refreshViews();
+    return collocationId;
+  }
+  /**
+   * Attach a single DiscourseContext to an existing collocation entry.
+   * Duplicate contexts (same chunkText + source file) are silently ignored.
+   */
+  async addDiscourseContext(collocationId, context) {
+    this.discourseStore.addContext(collocationId, context);
+  }
+  /**
+   * Append an example sentence (and its source citation) to an existing
+   * collocation entry.  Duplicate sentences are silently ignored.
+   */
+  async saveExampleSentence(collocationId, sentence, source) {
+    const entry2 = this.store.getById(collocationId);
+    if (!entry2)
+      return;
+    if (!entry2.exampleSentences.includes(sentence)) {
+      const updated = {
+        ...entry2,
+        exampleSentences: [...entry2.exampleSentences, sentence],
+        notes: entry2.notes || source
+      };
+      this.store.update(updated);
+    }
+  }
+  /**
+   * Scan `text` for all known collocation expressions (fullPhrase and
+   * headword) and return every match with its character offsets.
+   * Overlapping matches at the same position and collocation ID are
+   * deduplicated via a `collocationId:offset` key.
+   */
+  findCollocationsInText(text) {
+    const matches = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const entry2 of this.store.getAll()) {
+      const phrases = [entry2.fullPhrase, entry2.headword].filter(Boolean);
+      for (const phrase of phrases) {
+        let start = 0;
+        while (true) {
+          const idx = text.indexOf(phrase, start);
+          if (idx === -1)
+            break;
+          const key = `${entry2.id}:${idx}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            matches.push({
+              collocationId: entry2.id,
+              expression: phrase,
+              matchStart: idx,
+              matchEnd: idx + phrase.length
+            });
+          }
+          start = idx + 1;
+        }
+      }
+    }
+    return matches;
+  }
+  /**
+   * Return all collocation entries that have at least one DiscourseContext
+   * whose markers include a marker with the given `surface` form (the
+   * textual representation of the discourse marker, e.g. "でも", "つまり").
+   */
+  searchByDiscourseMarker(surface) {
+    return this.discourseStore.getCollocationIdsByMarker(surface).map((id) => this.toSurferEntry(id)).filter((e) => e !== null);
+  }
+  /**
+   * Return all collocation entries that appear in a DiscourseContext whose
+   * markers belong to the given `category` (one of the 8 DiscourseCategory
+   * values in the 談話文法 taxonomy, e.g. 'connective', 'filler').
+   */
+  searchByCategory(category) {
+    return this.discourseStore.getCollocationIdsByCategory(category).map((id) => this.toSurferEntry(id)).filter((e) => e !== null);
+  }
+  /**
+   * Return every collocation entry in the store as SurferCollocationEntry
+   * objects, each hydrated with its associated DiscourseContexts.
+   */
+  getAllEntries() {
+    return this.store.getAll().map((e) => this.toSurferEntry(e.id)).filter((e) => e !== null);
+  }
+  /**
+   * Return aggregate statistics about stored discourse contexts:
+   * - `markerFrequency`: count of contexts per marker surface form
+   * - `categoryFrequency`: count of contexts per DiscourseCategory
+   * - `totalContexts`: total number of stored context chunks
+   */
+  getDiscourseStats() {
+    return this.discourseStore.getStats();
+  }
+  toSurferEntry(collocationId) {
+    var _a;
+    const entry2 = this.store.getById(collocationId);
+    if (!entry2)
+      return null;
+    return {
+      expression: entry2.fullPhrase || entry2.headword,
+      reading: entry2.headwordReading || void 0,
+      meaning: entry2.notes || void 0,
+      exampleSentence: (_a = entry2.exampleSentences[0]) != null ? _a : void 0,
+      exampleSource: void 0,
+      discourseContexts: this.discourseStore.getContextsByCollocation(collocationId),
+      tags: [...entry2.tags]
+    };
   }
 };
