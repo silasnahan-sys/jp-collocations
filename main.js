@@ -2597,8 +2597,10 @@ var SurferBridge = class {
     const entry2 = this.entries.get(collocationId);
     if (!entry2)
       return;
-    const updated = { ...entry2 };
-    updated._discourseContexts = [...(_a = updated._discourseContexts) != null ? _a : [], context];
+    const updated = {
+      ...entry2,
+      _discourseContexts: [...(_a = entry2._discourseContexts) != null ? _a : [], context]
+    };
     this.entries.set(collocationId, updated);
     await this.persist();
   }
@@ -2712,8 +2714,8 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
   async onload() {
     await this.loadSettings();
     this.surferBridge = new SurferBridge(this);
-    const rawData = this.settings;
-    const storedEntries = Array.isArray(rawData._surferEntries) ? rawData._surferEntries : [];
+    const rawData = await this.loadData();
+    const storedEntries = Array.isArray(rawData == null ? void 0 : rawData._surferEntries) ? rawData._surferEntries : [];
     this.surferBridge.load(storedEntries);
     const dataPath = `${this.app.vault.configDir}/plugins/jp-collocations/${this.settings.dataFilePath}`;
     this.store = new CollocationStore(this.app, dataPath);

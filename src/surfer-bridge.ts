@@ -46,8 +46,10 @@ export class SurferBridge {
   async addDiscourseContext(collocationId: string, context: DiscourseContext): Promise<void> {
     const entry = this.entries.get(collocationId);
     if (!entry) return;
-    const updated = { ...entry } as SurferCollocationEntry & { _discourseContexts?: DiscourseContext[] };
-    updated._discourseContexts = [...(updated._discourseContexts ?? []), context];
+    const updated: SurferCollocationEntry = {
+      ...entry,
+      _discourseContexts: [...(entry._discourseContexts ?? []), context],
+    };
     this.entries.set(collocationId, updated);
     await this.persist();
   }

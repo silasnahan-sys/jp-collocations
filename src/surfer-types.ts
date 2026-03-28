@@ -20,6 +20,7 @@ export interface SurferCollocationEntry {
   pragmaticFunction?: string;
   register?: string;
   coOccurrences?: string[];
+  _discourseContexts?: DiscourseContext[];
   exampleSentences?: Array<{
     text: string;
     source: string;

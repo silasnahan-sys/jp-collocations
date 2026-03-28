@@ -31,8 +31,8 @@ export default class JPCollocationsPlugin extends Plugin {
 
     // Surfer bridge
     this.surferBridge = new SurferBridge(this);
-    const rawData = this.settings as unknown as Record<string, unknown>;
-    const storedEntries: SurferCollocationEntry[] = Array.isArray(rawData._surferEntries)
+    const rawData = await this.loadData() as { _surferEntries?: SurferCollocationEntry[] } | null;
+    const storedEntries: SurferCollocationEntry[] = Array.isArray(rawData?._surferEntries)
       ? rawData._surferEntries as SurferCollocationEntry[]
       : [];
     this.surferBridge.load(storedEntries);
