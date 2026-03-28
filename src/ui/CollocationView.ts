@@ -1,21 +1,49 @@
 import { ItemView, WorkspaceLeaf, Menu, Notice } from "obsidian";
 import type { App } from "obsidian";
-import type { CollocationEntry, PluginSettings, SearchResult } from "../types.ts";
+import type { CollocationEntry, PluginSettings, SearchResult, DiscourseCategory } from "../types.ts";
 import { PartOfSpeech, CollocationSource } from "../types.ts";
 import type { CollocationStore } from "../data/CollocationStore.ts";
+import type { DiscourseStore } from "../data/DiscourseStore.ts";
 import type { SearchEngine } from "../search/SearchEngine.ts";
 import { AddEntryModal } from "./AddEntryModal.ts";
 
 export const JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
 
+const DISCOURSE_CATEGORY_LABELS: Record<string, string> = {
+  "topic-initiation": "話題開始",
+  "reasoning":        "理由",
+  "modality":         "モダリティ",
+  "connective":       "接続",
+  "confirmation":     "確認",
+  "rephrasing":       "言い換え",
+  "filler":           "フィラー",
+  "quotation":        "引用",
+};
+
+const DISCOURSE_CATEGORY_COLOURS: Record<string, string> = {
+  "topic-initiation": "#4CAF50",
+  "reasoning":        "#2196F3",
+  "modality":         "#9C27B0",
+  "connective":       "#FF9800",
+  "confirmation":     "#00BCD4",
+  "rephrasing":       "#795548",
+  "filler":           "#607D8B",
+  "quotation":        "#E91E63",
+};
+
 export class CollocationView extends ItemView {
   private store: CollocationStore;
+  private discourseStore: DiscourseStore | null;
   private engine: SearchEngine;
   private settings: PluginSettings;
   private results: SearchResult[] = [];
   private currentPOSFilter: PartOfSpeech[] = [];
   private currentTagFilter: string[] = [];
+  private discourseMarkerFilter = "";
+  private discourseCategoryFilter = "";
   private searchInput: HTMLInputElement | null = null;
+  private discourseMarkerInput: HTMLInputElement | null = null;
+  private discourseCategorySelect: HTMLSelectElement | null = null;
   private resultContainer: HTMLElement | null = null;
   private statsEl: HTMLElement | null = null;
 
@@ -23,12 +51,14 @@ export class CollocationView extends ItemView {
     leaf: WorkspaceLeaf,
     store: CollocationStore,
     engine: SearchEngine,
-    settings: PluginSettings
+    settings: PluginSettings,
+    discourseStore?: DiscourseStore | null
   ) {
     super(leaf);
     this.store = store;
     this.engine = engine;
     this.settings = settings;
+    this.discourseStore = discourseStore ?? null;
   }
 
   getViewType(): string {
@@ -79,6 +109,11 @@ export class CollocationView extends ItemView {
     const filterRow = container.createDiv("jp-col-filter-row");
     this.buildPOSChips(filterRow);
 
+    // Discourse filter row
+    if (this.settings.showDiscourseContexts && this.discourseStore) {
+      this.buildDiscourseFilterRow(container);
+    }
+
     // Stats bar
     this.statsEl = container.createDiv("jp-col-stats");
 
@@ -112,6 +147,33 @@ export class CollocationView extends ItemView {
     });
   }
 
+  private buildDiscourseFilterRow(container: HTMLElement): void {
+    const row = container.createDiv("jp-col-discourse-filter-row");
+    row.createEl("span", { text: "談話：", cls: "jp-col-discourse-label" });
+
+    this.discourseMarkerInput = row.createEl("input", {
+      type: "text",
+      placeholder: "マーカー (e.g. でも)",
+      cls: "jp-col-discourse-marker-input",
+    });
+    this.discourseMarkerInput.addEventListener("input", () => {
+      this.discourseMarkerFilter = this.discourseMarkerInput?.value ?? "";
+      this.refresh();
+    });
+
+    this.discourseCategorySelect = row.createEl("select", { cls: "jp-col-discourse-cat-select" });
+    const defaultOpt = this.discourseCategorySelect.createEl("option", { text: "全カテゴリ", value: "" });
+    defaultOpt.value = "";
+    for (const [cat, label] of Object.entries(DISCOURSE_CATEGORY_LABELS)) {
+      const opt = this.discourseCategorySelect.createEl("option", { text: label, value: cat });
+      opt.value = cat;
+    }
+    this.discourseCategorySelect.addEventListener("change", () => {
+      this.discourseCategoryFilter = this.discourseCategorySelect?.value ?? "";
+      this.refresh();
+    });
+  }
+
   refresh(): void {
     const query = this.searchInput?.value ?? "";
     this.results = this.engine.search({
@@ -122,6 +184,29 @@ export class CollocationView extends ItemView {
       maxResults: this.settings.maxResults,
       sortBy: this.settings.defaultSortOrder,
     });
+
+    // Apply discourse filters client-side
+    if (this.discourseStore && (this.discourseMarkerFilter || this.discourseCategoryFilter)) {
+      let matchingChunkColIds: Set<string> | null = null;
+
+      if (this.discourseMarkerFilter) {
+        const chunks = this.discourseStore.getChunksByMarker(this.discourseMarkerFilter);
+        const ids = new Set(chunks.flatMap(c => c.collocationIds));
+        matchingChunkColIds = ids;
+      }
+
+      if (this.discourseCategoryFilter) {
+        const chunks = this.discourseStore.getChunksByCategory(this.discourseCategoryFilter);
+        const ids = new Set(chunks.flatMap(c => c.collocationIds));
+        matchingChunkColIds = matchingChunkColIds
+          ? new Set([...matchingChunkColIds].filter(id => ids.has(id)))
+          : ids;
+      }
+
+      if (matchingChunkColIds) {
+        this.results = this.results.filter(r => matchingChunkColIds!.has(r.entry.id));
+      }
+    }
 
     this.renderStats();
     this.renderResults();
@@ -183,6 +268,48 @@ export class CollocationView extends ItemView {
       }
       if (entry.notes) {
         details.createEl("p", { text: entry.notes, cls: "jp-col-notes" });
+      }
+    }
+
+    // Discourse contexts section
+    if (this.settings.showDiscourseContexts && this.discourseStore) {
+      const chunks = this.discourseStore.getChunksByCollocation(entry.id);
+      if (chunks.length > 0) {
+        const discDetails = card.createEl("details", { cls: "jp-col-discourse-details" });
+        discDetails.createEl("summary", { text: `談話コンテキスト (${chunks.length})`, cls: "jp-col-discourse-summary" });
+
+        for (const chunk of chunks.slice(0, 5)) {
+          const ctxEl = discDetails.createDiv("jp-col-discourse-ctx");
+          ctxEl.createEl("p", { text: chunk.context.chunkText, cls: "jp-col-discourse-text" });
+
+          // Color-coded marker chips
+          if (chunk.context.markers.length > 0) {
+            const markersEl = ctxEl.createDiv("jp-col-discourse-markers");
+            for (const marker of chunk.context.markers) {
+              const chip = markersEl.createEl("span", {
+                text: marker.surface,
+                cls: "jp-col-discourse-marker-chip",
+              });
+              chip.style.background = DISCOURSE_CATEGORY_COLOURS[marker.category] ?? "#888";
+              chip.title = DISCOURSE_CATEGORY_LABELS[marker.category] ?? marker.category;
+            }
+          }
+
+          // Source info
+          if (chunk.context.source.file) {
+            ctxEl.createEl("span", {
+              text: `📄 ${chunk.context.source.file}`,
+              cls: "jp-col-discourse-source",
+            });
+          }
+        }
+
+        if (chunks.length > 5) {
+          discDetails.createEl("p", {
+            text: `… and ${chunks.length - 5} more`,
+            cls: "jp-col-discourse-more",
+          });
+        }
       }
     }
   }

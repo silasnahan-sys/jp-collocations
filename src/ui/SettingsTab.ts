@@ -160,6 +160,72 @@ export class SettingsTab extends PluginSettingTab {
         new Notice("All data cleared.");
       }));
 
+    // ── Discourse Context ───────────────────────────────────────────
+    containerEl.createEl("h3", { text: "Discourse Context (jp-sentence-surfer bridge)" });
+
+    new Setting(containerEl)
+      .setName("Show discourse contexts")
+      .setDesc("Show 談話コンテキスト sections in collocation entries")
+      .addToggle(t => t.setValue(this.settings.showDiscourseContexts).onChange(async v => {
+        this.settings.showDiscourseContexts = v;
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("Max contexts per collocation")
+      .setDesc("Maximum number of discourse contexts to store per collocation entry (oldest evicted first)")
+      .addSlider(s =>
+        s.setLimits(5, 100, 5)
+          .setValue(this.settings.maxContextsPerCollocation)
+          .setDynamicTooltip()
+          .onChange(async v => {
+            this.settings.maxContextsPerCollocation = v;
+            await this.onSettingsChange();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Auto-clean old contexts")
+      .setDesc("Automatically evict the oldest contexts when the max limit is reached")
+      .addToggle(t => t.setValue(this.settings.autoCleanOldContexts).onChange(async v => {
+        this.settings.autoCleanOldContexts = v;
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("Discourse index path")
+      .setDesc("Filename for the discourse index JSON (inside plugin data folder)")
+      .addText(t =>
+        t.setValue(this.settings.discourseIndexPath).onChange(async v => {
+          this.settings.discourseIndexPath = v.trim() || "jp-collocations-discourse-index.json";
+          await this.onSettingsChange();
+        })
+      );
+
+    // ── Vault Indexer ───────────────────────────────────────────────
+    containerEl.createEl("h3", { text: "Vault Indexer" });
+
+    new Setting(containerEl)
+      .setName("Max sentences per word")
+      .setDesc("Maximum number of example sentences to import per word when vault-indexing")
+      .addSlider(s =>
+        s.setLimits(1, 50, 1)
+          .setValue(this.settings.vaultIndexMaxSentencesPerWord)
+          .setDynamicTooltip()
+          .onChange(async v => {
+            this.settings.vaultIndexMaxSentencesPerWord = v;
+            await this.onSettingsChange();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName("Skip already-indexed words")
+      .setDesc("Skip words that already have vault-indexed entries when re-running the indexer")
+      .addToggle(t => t.setValue(this.settings.vaultIndexSkipIndexed).onChange(async v => {
+        this.settings.vaultIndexSkipIndexed = v;
+        await this.onSettingsChange();
+      }));
+
     // ── Stats ──────────────────────────────────────────────────────
     containerEl.createEl("h3", { text: "Statistics" });
     const stats = this.store.getStats();
