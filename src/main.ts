@@ -10,15 +10,32 @@ import { AddEntryModal } from "./ui/AddEntryModal.ts";
 import { SettingsTab } from "./ui/SettingsTab.ts";
 import { TextClassifier } from "./classifier/TextClassifier.ts";
 import { ClassifyModal } from "./ui/ClassifyModal.ts";
+import { SurferBridge } from "./surfer-bridge.ts";
+import type {
+  SurferCollocationEntry,
+  DiscourseContext,
+  CollocationMatch,
+  DiscourseCategory,
+  DiscourseStats,
+} from "./surfer-types.ts";
 
 export default class JPCollocationsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   store!: CollocationStore;
   engine!: SearchEngine;
   private scraper: HyogenScraper | null = null;
+  surferBridge!: SurferBridge;
 
   async onload(): Promise<void> {
     await this.loadSettings();
+
+    // Surfer bridge
+    this.surferBridge = new SurferBridge(this);
+    const rawData = await this.loadData() as { _surferEntries?: SurferCollocationEntry[] } | null;
+    const storedEntries: SurferCollocationEntry[] = Array.isArray(rawData?._surferEntries)
+      ? rawData._surferEntries as SurferCollocationEntry[]
+      : [];
+    this.surferBridge.load(storedEntries);
 
     // Data store
     const dataPath = `${this.app.vault.configDir}/plugins/jp-collocations/${this.settings.dataFilePath}`;
@@ -110,7 +127,10 @@ export default class JPCollocationsPlugin extends Plugin {
   }
 
   async saveSettings(): Promise<void> {
-    await this.saveData(this.settings);
+    await this.saveData({
+      ...this.settings,
+      _surferEntries: [...this.surferBridge.getAllEntriesMap().values()],
+    });
   }
 
   private async openLexiconView(): Promise<void> {
@@ -130,6 +150,40 @@ export default class JPCollocationsPlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE)) {
       (leaf.view as CollocationView).refresh();
     }
+  }
+
+  // === Surfer Bridge API (called by jp-sentence-surfer- via app.plugins.plugins['jp-collocations']) ===
+
+  async addEntryFromSurfer(entry: SurferCollocationEntry): Promise<void> {
+    return this.surferBridge.addEntryFromSurfer(entry);
+  }
+
+  async addDiscourseContext(collocationId: string, context: DiscourseContext): Promise<void> {
+    return this.surferBridge.addDiscourseContext(collocationId, context);
+  }
+
+  async saveExampleSentence(collocationId: string, sentence: string, source: string): Promise<void> {
+    return this.surferBridge.saveExampleSentence(collocationId, sentence, source);
+  }
+
+  findCollocationsInText(text: string): CollocationMatch[] {
+    return this.surferBridge.findCollocationsInText(text);
+  }
+
+  searchByDiscourseMarker(surface: string): SurferCollocationEntry[] {
+    return this.surferBridge.searchByDiscourseMarker(surface);
+  }
+
+  searchByCategory(category: DiscourseCategory): SurferCollocationEntry[] {
+    return this.surferBridge.searchByCategory(category);
+  }
+
+  getAllEntries(): SurferCollocationEntry[] {
+    return this.surferBridge.getAllEntries();
+  }
+
+  getDiscourseStats(): DiscourseStats {
+    return this.surferBridge.getDiscourseStats();
   }
 
   private importData(): void {
