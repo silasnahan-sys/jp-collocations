@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => JPCollocationsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 
 // src/types.ts
 var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
@@ -2564,8 +2564,146 @@ var ClassifyModal = class extends import_obsidian6.Modal {
   }
 };
 
+// src/surfer-bridge.ts
+var import_obsidian7 = require("obsidian");
+var SurferBridge = class {
+  constructor(plugin) {
+    this.entries = /* @__PURE__ */ new Map();
+    this.plugin = plugin;
+  }
+  load(entries) {
+    this.entries.clear();
+    for (const e of entries) {
+      this.entries.set(e.id, e);
+    }
+  }
+  getAllEntriesMap() {
+    return this.entries;
+  }
+  async persist() {
+    await this.plugin.saveData({
+      ...this.plugin.settings,
+      _surferEntries: [...this.entries.values()]
+    });
+  }
+  // === Write operations ===
+  async addEntryFromSurfer(entry2) {
+    this.entries.set(entry2.id, { ...entry2 });
+    await this.persist();
+    new import_obsidian7.Notice(`JP Collocations: saved "${entry2.surface}"`);
+  }
+  async addDiscourseContext(collocationId, context) {
+    var _a;
+    const entry2 = this.entries.get(collocationId);
+    if (!entry2)
+      return;
+    const updated = { ...entry2 };
+    updated._discourseContexts = [...(_a = updated._discourseContexts) != null ? _a : [], context];
+    this.entries.set(collocationId, updated);
+    await this.persist();
+  }
+  async saveExampleSentence(collocationId, sentence, source) {
+    var _a;
+    const entry2 = this.entries.get(collocationId);
+    if (!entry2)
+      return;
+    const updated = {
+      ...entry2,
+      exampleSentences: [
+        ...(_a = entry2.exampleSentences) != null ? _a : [],
+        { text: sentence, source }
+      ]
+    };
+    this.entries.set(collocationId, updated);
+    await this.persist();
+    new import_obsidian7.Notice(`JP Collocations: saved example for "${entry2.surface}"`);
+  }
+  // === Read operations ===
+  findCollocationsInText(text) {
+    if (!text)
+      return [];
+    const matches = [];
+    for (const entry2 of this.entries.values()) {
+      if (!entry2.surface)
+        continue;
+      let searchFrom = 0;
+      while (searchFrom < text.length) {
+        const idx = text.indexOf(entry2.surface, searchFrom);
+        if (idx === -1)
+          break;
+        matches.push({
+          entry: entry2,
+          startOffset: idx,
+          endOffset: idx + entry2.surface.length,
+          matchedSurface: entry2.surface
+        });
+        searchFrom = idx + 1;
+      }
+    }
+    matches.sort((a, b) => a.startOffset - b.startOffset);
+    return matches;
+  }
+  searchByDiscourseMarker(surface) {
+    if (!surface)
+      return [];
+    const lower = surface.toLowerCase();
+    return [...this.entries.values()].filter(
+      (e) => {
+        var _a;
+        return (_a = e.surface) == null ? void 0 : _a.toLowerCase().includes(lower);
+      }
+    );
+  }
+  searchByCategory(category) {
+    return [...this.entries.values()].filter((e) => e.discourseCategory === category);
+  }
+  getAllEntries() {
+    return [...this.entries.values()];
+  }
+  getDiscourseStats() {
+    var _a, _b, _c;
+    const allEntries = [...this.entries.values()];
+    const byCategory = {};
+    const byPosition = {};
+    const coOccurrencePairs = /* @__PURE__ */ new Map();
+    for (const entry2 of allEntries) {
+      if (entry2.discourseCategory) {
+        byCategory[entry2.discourseCategory] = ((_a = byCategory[entry2.discourseCategory]) != null ? _a : 0) + 1;
+      }
+      if (entry2.discoursePosition) {
+        byPosition[entry2.discoursePosition] = ((_b = byPosition[entry2.discoursePosition]) != null ? _b : 0) + 1;
+      }
+      if (entry2.coOccurrences) {
+        for (const coId of entry2.coOccurrences) {
+          const pair = [entry2.id, coId].sort();
+          const key = pair.join("::");
+          coOccurrencePairs.set(key, ((_c = coOccurrencePairs.get(key)) != null ? _c : 0) + 1);
+        }
+      }
+    }
+    const topCoOccurrences = [...coOccurrencePairs.entries()].map(([key, count]) => {
+      const [a, b] = key.split("::");
+      return { pair: [a, b], count };
+    }).sort((a, b) => b.count - a.count).slice(0, 20);
+    const topMarkers = allEntries.filter((e) => e.surface).sort((a, b) => {
+      var _a2, _b2, _c2, _d;
+      return ((_b2 = (_a2 = b.exampleSentences) == null ? void 0 : _a2.length) != null ? _b2 : 0) - ((_d = (_c2 = a.exampleSentences) == null ? void 0 : _c2.length) != null ? _d : 0);
+    }).slice(0, 20).map((e) => {
+      var _a2, _b2;
+      return { surface: e.surface, count: (_b2 = (_a2 = e.exampleSentences) == null ? void 0 : _a2.length) != null ? _b2 : 0 };
+    });
+    return {
+      totalEntries: allEntries.length,
+      byCategory,
+      byPosition,
+      topCoOccurrences,
+      topMarkers
+    };
+  }
+};
+
 // src/main.ts
-var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
+var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULT_SETTINGS };
@@ -2573,6 +2711,10 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
   }
   async onload() {
     await this.loadSettings();
+    this.surferBridge = new SurferBridge(this);
+    const rawData = this.settings;
+    const storedEntries = Array.isArray(rawData._surferEntries) ? rawData._surferEntries : [];
+    this.surferBridge.load(storedEntries);
     const dataPath = `${this.app.vault.configDir}/plugins/jp-collocations/${this.settings.dataFilePath}`;
     this.store = new CollocationStore(this.app, dataPath);
     await this.store.load();
@@ -2613,7 +2755,7 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       editorCallback: (editor) => {
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian7.Notice("Select some Japanese text first!");
+          new import_obsidian8.Notice("Select some Japanese text first!");
           return;
         }
         const classifier = new TextClassifier();
@@ -2647,7 +2789,10 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
   }
   async saveSettings() {
-    await this.saveData(this.settings);
+    await this.saveData({
+      ...this.settings,
+      _surferEntries: [...this.surferBridge.getAllEntriesMap().values()]
+    });
   }
   async openLexiconView() {
     const existing = this.app.workspace.getLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
@@ -2666,6 +2811,31 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       leaf.view.refresh();
     }
   }
+  // === Surfer Bridge API (called by jp-sentence-surfer- via app.plugins.plugins['jp-collocations']) ===
+  async addEntryFromSurfer(entry2) {
+    return this.surferBridge.addEntryFromSurfer(entry2);
+  }
+  async addDiscourseContext(collocationId, context) {
+    return this.surferBridge.addDiscourseContext(collocationId, context);
+  }
+  async saveExampleSentence(collocationId, sentence, source) {
+    return this.surferBridge.saveExampleSentence(collocationId, sentence, source);
+  }
+  findCollocationsInText(text) {
+    return this.surferBridge.findCollocationsInText(text);
+  }
+  searchByDiscourseMarker(surface) {
+    return this.surferBridge.searchByDiscourseMarker(surface);
+  }
+  searchByCategory(category) {
+    return this.surferBridge.searchByCategory(category);
+  }
+  getAllEntries() {
+    return this.surferBridge.getAllEntries();
+  }
+  getDiscourseStats() {
+    return this.surferBridge.getDiscourseStats();
+  }
   importData() {
     const input = document.createElement("input");
     input.type = "file";
@@ -2679,10 +2849,10 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       try {
         const parsed = JSON.parse(text);
         const count = this.store.bulkImport(parsed);
-        new import_obsidian7.Notice(`Imported ${count} entries.`);
+        new import_obsidian8.Notice(`Imported ${count} entries.`);
         this.refreshViews();
       } catch (e) {
-        new import_obsidian7.Notice("Failed to parse JSON file.");
+        new import_obsidian8.Notice("Failed to parse JSON file.");
       }
     };
     input.click();
@@ -2696,31 +2866,31 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
     a.download = "jp-collocations-export.json";
     a.click();
     URL.revokeObjectURL(url);
-    new import_obsidian7.Notice("Exported collocations.");
+    new import_obsidian8.Notice("Exported collocations.");
   }
   async fetchFromHyogen() {
     var _a;
     if (!this.settings.hyogenEnabled) {
-      new import_obsidian7.Notice("Hyogen scraping is disabled. Enable it in settings first.");
+      new import_obsidian8.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
     }
     if (this.settings.hyogenWordList.length === 0) {
-      new import_obsidian7.Notice("No words configured. Add words to the scrape list in settings.");
+      new import_obsidian8.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
     if ((_a = this.scraper) == null ? void 0 : _a.isRunning()) {
-      new import_obsidian7.Notice("Scraper is already running.");
+      new import_obsidian8.Notice("Scraper is already running.");
       return;
     }
     this.scraper = new HyogenScraper(this.app, this.store, {
       rateLimit: this.settings.hyogenRateLimit,
-      onProgress: (msg) => new import_obsidian7.Notice(msg, 3e3),
+      onProgress: (msg) => new import_obsidian8.Notice(msg, 3e3),
       onEntry: () => this.refreshViews()
     });
     this.scraper.enqueue(this.settings.hyogenWordList);
-    new import_obsidian7.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
+    new import_obsidian8.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
     const count = await this.scraper.run();
-    new import_obsidian7.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    new import_obsidian8.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
   }
 };

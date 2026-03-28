@@ -142,7 +142,7 @@ export class SurferBridge {
       .filter(e => e.surface)
       .sort((a, b) => (b.exampleSentences?.length ?? 0) - (a.exampleSentences?.length ?? 0))
       .slice(0, 20)
-      .map(e => ({ surface: e.surface, count: e.exampleSentences?.length ?? 0 }));
+      .map(e => ({ surface: e.surface!, count: e.exampleSentences?.length ?? 0 }));
 
     return {
       totalEntries: allEntries.length,
