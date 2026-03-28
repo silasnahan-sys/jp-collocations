@@ -345,3 +345,393 @@
 .jp-col-results::-webkit-scrollbar-thumb:hover {
   background: var(--text-faint);
 }
+
+/* ── Discourse Filter Row ─────────────────────────────────── */
+.jp-col-discourse-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--background-secondary);
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-wrap: wrap;
+}
+
+.jp-col-discourse-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.jp-col-discourse-marker-input {
+  flex: 1;
+  min-width: 80px;
+  max-width: 140px;
+  padding: 3px 6px;
+  font-size: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.jp-col-discourse-cat-select {
+  flex: 1;
+  min-width: 80px;
+  max-width: 120px;
+  padding: 3px 6px;
+  font-size: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+/* ── Discourse Context Expandable Section ─────────────────── */
+.jp-col-discourse-details {
+  margin-top: 4px;
+}
+
+.jp-col-discourse-details summary.jp-col-discourse-summary {
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 4px;
+}
+
+.jp-col-discourse-ctx {
+  padding: 6px 8px;
+  margin: 4px 0;
+  background: var(--background-secondary);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 0 4px 4px 0;
+  font-size: 12px;
+}
+
+.jp-col-discourse-text {
+  margin: 0 0 4px 0;
+  color: var(--text-normal);
+  line-height: 1.5;
+}
+
+.jp-col-discourse-markers {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.jp-col-discourse-marker-chip {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  color: #fff;
+  font-weight: 600;
+  min-height: 20px;
+  line-height: 18px;
+}
+
+.jp-col-discourse-source {
+  font-size: 10px;
+  color: var(--text-faint);
+  display: block;
+}
+
+.jp-col-discourse-more {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 4px 8px;
+}
+
+/* ── Discourse Stats View ─────────────────────────────────── */
+.jp-discourse-stats-view {
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.jp-ds-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.jp-ds-title {
+  margin: 0;
+  font-size: 14px;
+}
+
+.jp-ds-refresh-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.jp-ds-refresh-btn:hover { background: var(--background-modifier-hover); }
+
+.jp-ds-summary {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.jp-ds-total {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.jp-ds-section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-accent);
+  margin: 12px 0 6px;
+}
+
+.jp-ds-cat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.jp-ds-cat-label {
+  font-size: 11px;
+  width: 80px;
+  flex-shrink: 0;
+  color: var(--text-normal);
+}
+
+.jp-ds-bar-wrap {
+  flex: 1;
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.jp-ds-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.jp-ds-cat-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  width: 28px;
+  text-align: right;
+}
+
+.jp-ds-marker-list,
+.jp-ds-col-list {
+  padding-left: 16px;
+  margin: 0;
+}
+
+.jp-ds-marker-item,
+.jp-ds-col-item {
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+
+.jp-ds-marker-surface {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.jp-ds-marker-count,
+.jp-ds-col-count {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.jp-ds-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* ── ViewSwitcher ─────────────────────────────────────────── */
+.jp-view-switcher {
+  display: flex;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.jp-vs-tab {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  min-height: 28px;
+}
+.jp-vs-tab:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.jp-vs-tab--active { background: var(--interactive-accent) !important; color: #fff !important; }
+
+/* ── Grammar Browser, Connection Map, Form Variations, Source Context ── */
+.jp-grammar-browser-view,
+.jp-connection-map-view,
+.jp-form-variations-view,
+.jp-source-context-view {
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.jp-gbv-title,
+.jp-cmv-title,
+.jp-fvv-title,
+.jp-scv-title {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.jp-gbv-empty,
+.jp-cmv-empty,
+.jp-fvv-empty,
+.jp-scv-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.jp-gbv-pattern-list,
+.jp-cmv-list,
+.jp-fvv-form-list,
+.jp-scv-card {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.jp-gbv-pattern-item,
+.jp-cmv-item,
+.jp-fvv-form-item {
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.jp-gbv-pattern-name,
+.jp-cmv-hw,
+.jp-fvv-hw,
+.jp-scv-hw {
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.jp-gbv-pattern-count,
+.jp-cmv-colls,
+.jp-fvv-collocate,
+.jp-fvv-pattern,
+.jp-scv-collocate {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.jp-gbv-tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0;
+}
+
+.jp-gbv-tag-chip {
+  padding: 2px 8px;
+  background: var(--interactive-accent);
+  color: #fff;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.jp-gbv-ctx-card,
+.jp-scv-card {
+  padding: 8px;
+  margin-bottom: 8px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+}
+
+.jp-gbv-ctx-sentence,
+.jp-scv-sentence {
+  font-size: 12px;
+  color: var(--text-normal);
+  margin: 4px 0;
+  line-height: 1.5;
+}
+
+.jp-scv-notes {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 2px 0;
+}
+
+/* ── Vault Index Modal ────────────────────────────────────── */
+.jp-vault-index-modal .jp-vault-index-desc {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.jp-vault-index-label {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 8px 0 4px;
+}
+
+.jp-vault-index-wordlist {
+  width: 100%;
+  font-size: 13px;
+  padding: 6px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  resize: vertical;
+}
+
+.jp-vault-index-progress {
+  margin: 8px 0;
+  padding: 8px;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  min-height: 32px;
+}
+
+.jp-vault-index-btn-row {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* ── Mobile touch targets (44px min) ─────────────────────── */
+@media (max-width: 768px) {
+  .jp-col-action-btn,
+  .jp-vs-tab,
+  .jp-col-add-btn,
+  .jp-ds-refresh-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .jp-col-discourse-marker-input,
+  .jp-col-discourse-cat-select {
+    min-height: 44px;
+    font-size: 16px; /* prevent iOS zoom */
+  }
+
+  /* iOS safe-area insets */
+  .jp-collocations-view,
+  .jp-discourse-stats-view {
+    padding-bottom: env(safe-area-inset-bottom, 16px);
+  }
+}

@@ -63,18 +63,6 @@ export interface SearchResult {
   score: number;
 }
 
-export interface PluginSettings {
-  hyogenEnabled: boolean;
-  hyogenRateLimit: number;
-  hyogenWordList: string[];
-  defaultSortOrder: "headword" | "frequency" | "createdAt" | "updatedAt";
-  entriesPerPage: number;
-  showReadings: boolean;
-  fuzzySearchSensitivity: number;
-  maxResults: number;
-  dataFilePath: string;
-}
-
 export const DEFAULT_SETTINGS: PluginSettings = {
   hyogenEnabled: false,
   hyogenRateLimit: 2000,
@@ -85,10 +73,127 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   fuzzySearchSensitivity: 0.6,
   maxResults: 100,
   dataFilePath: "jp-collocations-data.json",
+  discourseIndexPath: "jp-collocations-discourse-index.json",
+  maxContextsPerCollocation: 20,
+  autoCleanOldContexts: true,
+  showDiscourseContexts: true,
+  vaultIndexMaxSentencesPerWord: 10,
+  vaultIndexSkipIndexed: true,
 };
 
 export interface StoreStats {
   total: number;
   byPOS: Record<string, number>;
   bySource: Record<string, number>;
+}
+
+// ────────────────────────────────────────────────────────────────
+// Discourse Grammar Types (bridge contract with jp-sentence-surfer)
+// ────────────────────────────────────────────────────────────────
+
+export type DiscourseCategory =
+  | 'topic-initiation'
+  | 'reasoning'
+  | 'modality'
+  | 'connective'
+  | 'confirmation'
+  | 'rephrasing'
+  | 'filler'
+  | 'quotation';
+
+export type DiscourseGranularity =
+  | 'morpheme'
+  | 'bunsetsu'
+  | 'clause'
+  | 'utterance'
+  | 'turn'
+  | 'exchange'
+  | 'topic-segment';
+
+export interface DiscourseMarker {
+  id: string;
+  surface: string;
+  category: DiscourseCategory;
+  position: 'initial' | 'medial' | 'final' | 'any';
+  charStart: number;
+  charEnd: number;
+}
+
+export interface DiscourseContext {
+  chunkText: string;
+  cleanText: string;
+  granularity: DiscourseGranularity;
+  markers: DiscourseMarker[];
+  relatedCollocations: string[];
+  source: {
+    file: string;
+    lineStart: number;
+    lineEnd: number;
+    ytTimestamp?: string;
+    ytUrl?: string;
+  };
+  capturedAt: string;
+  contextBefore?: string;
+  contextAfter?: string;
+  patternTags: string[];
+}
+
+export interface SurferCollocationEntry {
+  expression: string;
+  reading?: string;
+  meaning?: string;
+  exampleSentence?: string;
+  exampleSource?: string;
+  discourseContexts: DiscourseContext[];
+  tags: string[];
+}
+
+export interface CollocationMatch {
+  collocationId: string;
+  expression: string;
+  matchStart: number;
+  matchEnd: number;
+}
+
+/** Persisted record stored inside discourse-index.json */
+export interface DiscourseChunkRecord {
+  id: string;
+  context: DiscourseContext;
+  collocationIds: string[];
+}
+
+/** Top-level shape of discourse-index.json */
+export interface DiscourseIndex {
+  chunks: Record<string, DiscourseChunkRecord>;
+  byMarker: Record<string, string[]>;     // surface → chunkIds
+  byCategory: Record<string, string[]>;  // category → chunkIds
+  byCollocation: Record<string, string[]>; // collocationId → chunkIds
+}
+
+export interface DiscourseStats {
+  totalChunks: number;
+  byCategory: Record<string, number>;
+  topMarkers: Array<{ surface: string; count: number }>;
+  topCollocations: Array<{ id: string; contextCount: number }>;
+}
+
+/** Extended plugin settings including discourse features */
+export interface PluginSettings {
+  hyogenEnabled: boolean;
+  hyogenRateLimit: number;
+  hyogenWordList: string[];
+  defaultSortOrder: "headword" | "frequency" | "createdAt" | "updatedAt";
+  entriesPerPage: number;
+  showReadings: boolean;
+  fuzzySearchSensitivity: number;
+  maxResults: number;
+  dataFilePath: string;
+  // Discourse settings
+  discourseIndexPath: string;
+  maxContextsPerCollocation: number;
+  autoCleanOldContexts: boolean;
+  showDiscourseContexts: boolean;
+  // Vault indexer settings
+  vaultIndexMaxSentencesPerWord: number;
+  vaultIndexSkipIndexed: boolean;
 }

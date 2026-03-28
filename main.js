@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => JPCollocationsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian7 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 
 // src/types.ts
 var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
@@ -46,6 +46,13 @@ var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
   PartOfSpeech2["Other"] = "\u305D\u306E\u4ED6";
   return PartOfSpeech2;
 })(PartOfSpeech || {});
+var CollocationSource = /* @__PURE__ */ ((CollocationSource4) => {
+  CollocationSource4["Hyogen"] = "hyogen.info";
+  CollocationSource4["Manual"] = "manual";
+  CollocationSource4["Import"] = "import";
+  CollocationSource4["Classified"] = "classified";
+  return CollocationSource4;
+})(CollocationSource || {});
 var DEFAULT_SETTINGS = {
   hyogenEnabled: false,
   hyogenRateLimit: 2e3,
@@ -55,7 +62,13 @@ var DEFAULT_SETTINGS = {
   showReadings: true,
   fuzzySearchSensitivity: 0.6,
   maxResults: 100,
-  dataFilePath: "jp-collocations-data.json"
+  dataFilePath: "jp-collocations-data.json",
+  discourseIndexPath: "jp-collocations-discourse-index.json",
+  maxContextsPerCollocation: 20,
+  autoCleanOldContexts: true,
+  showDiscourseContexts: true,
+  vaultIndexMaxSentencesPerWord: 10,
+  vaultIndexSkipIndexed: true
 };
 
 // src/data/seed-data.ts
@@ -531,1039 +544,187 @@ var CollocationStore = class {
   }
 };
 
-// src/utils/japanese.ts
-var HIRAGANA_START = 12353;
-var KATAKANA_START = 12449;
-function toHiragana(str) {
-  return str.replace(/[\u30a1-\u30f6]/g, (ch) => {
-    return String.fromCharCode(ch.charCodeAt(0) - (KATAKANA_START - HIRAGANA_START));
-  });
-}
-function isJapanese(str) {
-  return /[\u3000-\u9fff\uff00-\uffef]/.test(str);
-}
-function normalizeJapanese(str) {
-  str = str.replace(
-    /[\uff01-\uff5e]/g,
-    (ch) => String.fromCharCode(ch.charCodeAt(0) - 65248)
-  );
-  str = str.replace(/\u3000/g, " ");
-  return str.normalize("NFKC");
-}
-var ROMAJI_MAP = [
-  ["shi", "\u3057"],
-  ["chi", "\u3061"],
-  ["tsu", "\u3064"],
-  ["sha", "\u3057\u3083"],
-  ["shu", "\u3057\u3085"],
-  ["sho", "\u3057\u3087"],
-  ["cha", "\u3061\u3083"],
-  ["chu", "\u3061\u3085"],
-  ["cho", "\u3061\u3087"],
-  ["tchi", "\u3063\u3061"],
-  ["cchi", "\u3063\u3061"],
-  ["jji", "\u3063\u3058"],
-  ["ffu", "\u3063\u3075"],
-  ["kya", "\u304D\u3083"],
-  ["kyu", "\u304D\u3085"],
-  ["kyo", "\u304D\u3087"],
-  ["gya", "\u304E\u3083"],
-  ["gyu", "\u304E\u3085"],
-  ["gyo", "\u304E\u3087"],
-  ["nya", "\u306B\u3083"],
-  ["nyu", "\u306B\u3085"],
-  ["nyo", "\u306B\u3087"],
-  ["hya", "\u3072\u3083"],
-  ["hyu", "\u3072\u3085"],
-  ["hyo", "\u3072\u3087"],
-  ["mya", "\u307F\u3083"],
-  ["myu", "\u307F\u3085"],
-  ["myo", "\u307F\u3087"],
-  ["rya", "\u308A\u3083"],
-  ["ryu", "\u308A\u3085"],
-  ["ryo", "\u308A\u3087"],
-  ["bya", "\u3073\u3083"],
-  ["byu", "\u3073\u3085"],
-  ["byo", "\u3073\u3087"],
-  ["pya", "\u3074\u3083"],
-  ["pyu", "\u3074\u3085"],
-  ["pyo", "\u3074\u3087"],
-  ["ja", "\u3058\u3083"],
-  ["ji", "\u3058"],
-  ["ju", "\u3058\u3085"],
-  ["jo", "\u3058\u3087"],
-  ["tchi", "\u3063\u3061"],
-  ["tta", "\u3063\u305F"],
-  ["tte", "\u3063\u3066"],
-  ["tto", "\u3063\u3068"],
-  ["kka", "\u3063\u304B"],
-  ["kki", "\u3063\u304D"],
-  ["kku", "\u3063\u304F"],
-  ["kke", "\u3063\u3051"],
-  ["kko", "\u3063\u3053"],
-  ["ssa", "\u3063\u3055"],
-  ["ssi", "\u3063\u3057"],
-  ["ssu", "\u3063\u3059"],
-  ["sse", "\u3063\u305B"],
-  ["sso", "\u3063\u305D"],
-  ["ppa", "\u3063\u3071"],
-  ["ppi", "\u3063\u3074"],
-  ["ppu", "\u3063\u3077"],
-  ["ppe", "\u3063\u307A"],
-  ["ppo", "\u3063\u307D"],
-  ["a", "\u3042"],
-  ["i", "\u3044"],
-  ["u", "\u3046"],
-  ["e", "\u3048"],
-  ["o", "\u304A"],
-  ["ka", "\u304B"],
-  ["ki", "\u304D"],
-  ["ku", "\u304F"],
-  ["ke", "\u3051"],
-  ["ko", "\u3053"],
-  ["sa", "\u3055"],
-  ["si", "\u3057"],
-  ["su", "\u3059"],
-  ["se", "\u305B"],
-  ["so", "\u305D"],
-  ["ta", "\u305F"],
-  ["ti", "\u3061"],
-  ["tu", "\u3064"],
-  ["te", "\u3066"],
-  ["to", "\u3068"],
-  ["na", "\u306A"],
-  ["ni", "\u306B"],
-  ["nu", "\u306C"],
-  ["ne", "\u306D"],
-  ["no", "\u306E"],
-  ["ha", "\u306F"],
-  ["hi", "\u3072"],
-  ["fu", "\u3075"],
-  ["he", "\u3078"],
-  ["ho", "\u307B"],
-  ["ma", "\u307E"],
-  ["mi", "\u307F"],
-  ["mu", "\u3080"],
-  ["me", "\u3081"],
-  ["mo", "\u3082"],
-  ["ya", "\u3084"],
-  ["yu", "\u3086"],
-  ["yo", "\u3088"],
-  ["ra", "\u3089"],
-  ["ri", "\u308A"],
-  ["ru", "\u308B"],
-  ["re", "\u308C"],
-  ["ro", "\u308D"],
-  ["wa", "\u308F"],
-  ["wi", "\u3090"],
-  ["we", "\u3091"],
-  ["wo", "\u3092"],
-  ["n", "\u3093"],
-  ["ga", "\u304C"],
-  ["gi", "\u304E"],
-  ["gu", "\u3050"],
-  ["ge", "\u3052"],
-  ["go", "\u3054"],
-  ["za", "\u3056"],
-  ["zi", "\u3058"],
-  ["zu", "\u305A"],
-  ["ze", "\u305C"],
-  ["zo", "\u305E"],
-  ["da", "\u3060"],
-  ["di", "\u3062"],
-  ["du", "\u3065"],
-  ["de", "\u3067"],
-  ["do", "\u3069"],
-  ["ba", "\u3070"],
-  ["bi", "\u3073"],
-  ["bu", "\u3076"],
-  ["be", "\u3079"],
-  ["bo", "\u307C"],
-  ["pa", "\u3071"],
-  ["pi", "\u3074"],
-  ["pu", "\u3077"],
-  ["pe", "\u307A"],
-  ["po", "\u307D"]
-];
-function romajiToHiragana(input) {
-  let result = "";
-  let remaining = input.toLowerCase();
-  while (remaining.length > 0) {
-    let matched = false;
-    for (let len = Math.min(4, remaining.length); len >= 1; len--) {
-      const slice = remaining.slice(0, len);
-      const found = ROMAJI_MAP.find(([r]) => r === slice);
-      if (found) {
-        result += found[1];
-        remaining = remaining.slice(len);
-        matched = true;
-        break;
-      }
-    }
-    if (!matched) {
-      result += remaining[0];
-      remaining = remaining.slice(1);
-    }
-  }
-  return result;
-}
-function levenshtein(a, b) {
-  const m = a.length;
-  const n = b.length;
-  const dp = Array.from(
-    { length: m + 1 },
-    (_, i) => Array.from({ length: n + 1 }, (_2, j) => i === 0 ? j : j === 0 ? i : 0)
-  );
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-    }
-  }
-  return dp[m][n];
-}
-function similarity(a, b) {
-  const maxLen = Math.max(a.length, b.length);
-  if (maxLen === 0)
-    return 1;
-  return 1 - levenshtein(a, b) / maxLen;
-}
-
-// src/utils/grammar.ts
-function getVerbForms(verb) {
-  if (!verb)
-    return [];
-  const forms = [verb];
-  const ichidanSuffixes = ["\u3044\u308B", "\u304D\u308B", "\u304E\u308B", "\u3058\u308B", "\u3061\u308B", "\u306B\u308B", "\u3073\u308B", "\u307F\u308B", "\u308A\u308B", "\u3048\u308B", "\u3051\u308B", "\u3052\u308B", "\u305B\u308B", "\u3066\u308B", "\u3067\u308B", "\u306D\u308B", "\u3079\u308B", "\u3081\u308B", "\u308C\u308B"];
-  const isIchidan = ichidanSuffixes.some((s) => verb.endsWith(s)) || verb.endsWith("\u308B");
-  if (isIchidan && verb.endsWith("\u308B")) {
-    const stem = verb.slice(0, -1);
-    forms.push(
-      stem + "\u307E\u3059",
-      // polite
-      stem + "\u306A\u3044",
-      // negative
-      stem + "\u3066",
-      // te-form
-      stem + "\u305F",
-      // ta-form (past)
-      stem + "\u308C\u308B",
-      // passive
-      stem + "\u3089\u308C\u308B",
-      // potential/passive
-      stem + "\u3088\u3046",
-      // volitional
-      stem + "\u3070"
-      // conditional
-    );
-  }
-  const godanMap = {
-    "\u3046": { masu: "\u3044", nai: "\u308F", te: "\u3063\u3066", ta: "\u3063\u305F", ba: "\u3048\u3070" },
-    "\u304F": { masu: "\u304D", nai: "\u304B", te: "\u3044\u3066", ta: "\u3044\u305F", ba: "\u3051\u3070" },
-    "\u3050": { masu: "\u304E", nai: "\u304C", te: "\u3044\u3067", ta: "\u3044\u3060", ba: "\u3052\u3070" },
-    "\u3059": { masu: "\u3057", nai: "\u3055", te: "\u3057\u3066", ta: "\u3057\u305F", ba: "\u305B\u3070" },
-    "\u3064": { masu: "\u3061", nai: "\u305F", te: "\u3063\u3066", ta: "\u3063\u305F", ba: "\u3066\u3070" },
-    "\u306C": { masu: "\u306B", nai: "\u306A", te: "\u3093\u3067", ta: "\u3093\u3060", ba: "\u306D\u3070" },
-    "\u3076": { masu: "\u3073", nai: "\u3070", te: "\u3093\u3067", ta: "\u3093\u3060", ba: "\u3079\u3070" },
-    "\u3080": { masu: "\u307F", nai: "\u307E", te: "\u3093\u3067", ta: "\u3093\u3060", ba: "\u3081\u3070" },
-    "\u308B": { masu: "\u308A", nai: "\u3089", te: "\u3063\u3066", ta: "\u3063\u305F", ba: "\u308C\u3070" }
-  };
-  const lastChar = verb.slice(-1);
-  const g = godanMap[lastChar];
-  if (g) {
-    const base = verb.slice(0, -1);
-    forms.push(
-      base + g.masu + "\u307E\u3059",
-      base + g.nai + "\u306A\u3044",
-      base + g.te,
-      base + g.ta,
-      base + g.ba
-    );
-  }
-  return [...new Set(forms)];
-}
-function getAdjectiveForms(adj) {
-  if (!adj || !adj.endsWith("\u3044"))
-    return [adj];
-  const stem = adj.slice(0, -1);
-  return [
-    adj,
-    stem + "\u304F",
-    // adverbial / negative base
-    stem + "\u304F\u3066",
-    // te-form
-    stem + "\u304F\u306A\u3044",
-    // negative
-    stem + "\u304B\u3063\u305F",
-    // past
-    stem + "\u304F\u306A\u304B\u3063\u305F",
-    // past negative
-    stem + "\u3051\u308C\u3070"
-    // conditional
-  ];
-}
-function expandSearch(query) {
-  const expanded = /* @__PURE__ */ new Set([query]);
-  if (query.endsWith("\u3044")) {
-    for (const f of getAdjectiveForms(query))
-      expanded.add(f);
-  }
-  const verbEndings = ["\u3046", "\u304F", "\u3050", "\u3059", "\u3064", "\u306C", "\u3076", "\u3080", "\u308B"];
-  if (verbEndings.some((e) => query.endsWith(e))) {
-    for (const f of getVerbForms(query))
-      expanded.add(f);
-  }
-  return [...expanded];
-}
-function detectPOS(word) {
-  if (!word)
-    return "\u305D\u306E\u4ED6" /* Other */;
-  if (/[うくぐすつぬぶむる]$/.test(word)) {
-    if (word.endsWith("\u3044") && !word.endsWith("\u308B\u3044")) {
-      return "\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */;
-    }
-    return "\u52D5\u8A5E" /* Verb */;
-  }
-  if (word.endsWith("\u3044"))
-    return "\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */;
-  const naAdj = ["\u7684", "\u7684\u306A", "\u306A"];
-  if (naAdj.some((s) => word.endsWith(s)))
-    return "\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */;
-  if (word.endsWith("\u306B") || word.endsWith("\u3068"))
-    return "\u526F\u8A5E" /* Adverb */;
-  return "\u540D\u8A5E" /* Noun */;
-}
-
-// src/search/SearchEngine.ts
-var SearchEngine = class {
-  constructor(store) {
-    this.store = store;
-  }
-  search(options) {
-    const {
-      query,
-      posFilter,
-      tagFilter,
-      sourceFilter,
-      patternFilter,
-      fuzzy = true,
-      maxResults = 100,
-      sortBy = "frequency",
-      sortDir = "desc"
-    } = options;
-    const normalized = normalizeJapanese(query.trim());
-    const hiraganaQuery = toHiragana(normalized);
-    const romajiConverted = !isJapanese(normalized) && normalized.length > 0 ? romajiToHiragana(normalized) : hiraganaQuery;
-    const allTerms = /* @__PURE__ */ new Set([normalized, hiraganaQuery, romajiConverted]);
-    for (const term of [normalized, hiraganaQuery]) {
-      for (const variant of expandSearch(term)) {
-        allTerms.add(variant);
-      }
-    }
-    const wildcardRegex = normalized.includes("*") || normalized.includes("?") ? new RegExp(
-      "^" + normalized.replace(/\*/g, ".*").replace(/\?/g, ".") + "$",
-      "i"
-    ) : null;
-    let entries = this.store.getAll();
-    if (posFilter && posFilter.length > 0) {
-      entries = entries.filter((e) => posFilter.includes(e.headwordPOS) || posFilter.includes(e.collocatePOS));
-    }
-    if (tagFilter && tagFilter.length > 0) {
-      entries = entries.filter((e) => tagFilter.some((t) => e.tags.includes(t)));
-    }
-    if (sourceFilter && sourceFilter.length > 0) {
-      entries = entries.filter((e) => sourceFilter.includes(e.source));
-    }
-    if (patternFilter) {
-      entries = entries.filter((e) => e.pattern.includes(patternFilter));
-    }
-    if (!normalized) {
-      return this.sortAndLimit(entries.map((e) => ({ entry: e, score: e.frequency })), sortBy, sortDir, maxResults);
-    }
-    const results = [];
-    for (const entry2 of entries) {
-      const score = this.scoreEntry(entry2, normalized, hiraganaQuery, romajiConverted, allTerms, wildcardRegex, fuzzy);
-      if (score > 0) {
-        results.push({ entry: entry2, score });
-      }
-    }
-    return this.sortAndLimit(results, sortBy, sortDir, maxResults);
-  }
-  scoreEntry(entry2, query, hiraganaQuery, romajiConverted, allTerms, wildcardRegex, fuzzy) {
-    const fields = [
-      entry2.headword,
-      entry2.headwordReading,
-      entry2.collocate,
-      entry2.fullPhrase,
-      entry2.pattern,
-      ...entry2.tags,
-      ...entry2.exampleSentences
-    ];
-    let best = 0;
-    for (const field of fields) {
-      if (!field)
-        continue;
-      const fieldNorm = normalizeJapanese(field);
-      const fieldHira = toHiragana(fieldNorm);
-      if (wildcardRegex && (wildcardRegex.test(fieldNorm) || wildcardRegex.test(fieldHira))) {
-        best = Math.max(best, 90);
-        continue;
-      }
-      for (const term of allTerms) {
-        if (term && fieldNorm.includes(term)) {
-          const boost = field === entry2.headword || field === entry2.fullPhrase ? 20 : 0;
-          best = Math.max(best, 80 + boost);
-        }
-        if (term && fieldHira.includes(term)) {
-          best = Math.max(best, 75);
-        }
-      }
-      if (fuzzy && query.length >= 2) {
-        for (const term of [query, hiraganaQuery, romajiConverted]) {
-          if (!term || term.length < 2)
-            continue;
-          const sim = similarity(fieldNorm, term);
-          if (sim > 0.5)
-            best = Math.max(best, Math.round(sim * 60));
-          if (fieldNorm.length >= term.length) {
-            for (let i = 0; i <= fieldNorm.length - term.length; i++) {
-              const sub = fieldNorm.slice(i, i + term.length);
-              const s = similarity(sub, term);
-              if (s > 0.7)
-                best = Math.max(best, Math.round(s * 65));
-            }
-          }
-        }
-      }
-    }
-    return best;
-  }
-  sortAndLimit(results, sortBy, sortDir, maxResults) {
-    results.sort((a, b) => {
-      let cmp = 0;
-      switch (sortBy) {
-        case "headword":
-          cmp = a.entry.headword.localeCompare(b.entry.headword, "ja");
-          break;
-        case "frequency":
-          cmp = b.entry.frequency - a.entry.frequency || b.score - a.score;
-          break;
-        case "createdAt":
-          cmp = b.entry.createdAt - a.entry.createdAt;
-          break;
-        case "updatedAt":
-          cmp = b.entry.updatedAt - a.entry.updatedAt;
-          break;
-        default:
-          cmp = b.score - a.score;
-      }
-      if (cmp === 0)
-        cmp = b.score - a.score;
-      return sortDir === "asc" ? -cmp : cmp;
-    });
-    return results.slice(0, maxResults);
-  }
-  quickSearch(query, maxResults = 20) {
-    return this.search({ query, maxResults, fuzzy: true });
-  }
-};
-
-// src/scraper/HyogenScraper.ts
-var import_obsidian = require("obsidian");
-var HyogenScraper = class {
-  constructor(app, store, options) {
-    this.queue = [];
-    this.running = false;
-    this.aborted = false;
+// src/data/DiscourseStore.ts
+var DiscourseStore = class {
+  constructor(app, indexPath, maxContextsPerCollocation = 20) {
+    this.index = {
+      chunks: {},
+      byMarker: {},
+      byCategory: {},
+      byCollocation: {}
+    };
+    this.saveTimer = null;
     this.app = app;
-    this.store = store;
-    this.options = { ...{ rateLimit: 2e3 }, ...options };
+    this.indexPath = indexPath;
+    this.maxContextsPerCollocation = maxContextsPerCollocation;
   }
-  enqueue(words) {
-    for (const w of words) {
-      if (!this.queue.includes(w))
-        this.queue.push(w);
-    }
-  }
-  abort() {
-    this.aborted = true;
-    this.running = false;
-  }
-  async run() {
-    var _a, _b, _c, _d, _e, _f;
-    if (this.running)
-      return 0;
-    this.running = true;
-    this.aborted = false;
-    let count = 0;
-    while (this.queue.length > 0 && !this.aborted) {
-      const word = this.queue.shift();
-      (_b = (_a = this.options).onProgress) == null ? void 0 : _b.call(_a, `Fetching: ${word}`);
-      try {
-        const entries = await this.fetchWord(word);
-        for (const e of entries) {
-          this.store.add(e);
-          (_d = (_c = this.options).onEntry) == null ? void 0 : _d.call(_c, e);
-          count++;
-        }
-      } catch (err) {
-        (_f = (_e = this.options).onProgress) == null ? void 0 : _f.call(_e, `Error fetching ${word}: ${err}`);
+  // ── Lifecycle ────────────────────────────────────────────────────
+  async load() {
+    try {
+      const exists = await this.app.vault.adapter.exists(this.indexPath);
+      if (exists) {
+        const raw = await this.app.vault.adapter.read(this.indexPath);
+        const parsed = JSON.parse(raw);
+        this.index = parsed;
+        this.rebuildInvertedMaps();
       }
-      if (this.queue.length > 0 && !this.aborted) {
-        await this.delay(this.options.rateLimit);
-      }
-    }
-    this.running = false;
-    return count;
-  }
-  async fetchWord(word) {
-    const url = `https://collocation.hyogen.info/word/${encodeURIComponent(word)}`;
-    const response = await (0, import_obsidian.requestUrl)({ url, method: "GET" });
-    if (response.status !== 200) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    return this.parseHtml(response.text, word);
-  }
-  parseHtml(html, headword) {
-    var _a, _b, _c;
-    const entries = [];
-    const now = Date.now();
-    const readingMatch = (_a = html.match(/読み[：:\s]*<[^>]*>([ぁ-ん]+)<\/[^>]*>/i)) != null ? _a : html.match(/reading['"]\s*[：:]\s*['"]?([ぁ-ん]+)/i);
-    const headwordReading = readingMatch ? readingMatch[1] : "";
-    const rowPattern = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
-    const rows = (_b = html.match(rowPattern)) != null ? _b : [];
-    let currentPOS = "\u540D\u8A5E" /* Noun */;
-    const posHeaders = [
-      ["\u540D\u8A5E", "\u540D\u8A5E" /* Noun */],
-      ["\u52D5\u8A5E", "\u52D5\u8A5E" /* Verb */],
-      ["\u3044\u5F62\u5BB9\u8A5E", "\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */],
-      ["\u306A\u5F62\u5BB9\u8A5E", "\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */],
-      ["\u526F\u8A5E", "\u526F\u8A5E" /* Adverb */]
-    ];
-    for (const row of rows) {
-      for (const [label, pos] of posHeaders) {
-        if (row.includes(label)) {
-          currentPOS = pos;
-          break;
-        }
-      }
-      const cells = (_c = row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi)) != null ? _c : [];
-      if (cells.length < 2)
-        continue;
-      const stripTags = (cell) => {
-        if (!cell)
-          return "";
-        let text = cell;
-        let prev = "";
-        while (prev !== text) {
-          prev = text;
-          text = text.replace(/<[^>]*>/g, "");
-        }
-        return text.replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").trim();
-      };
-      const collocate = stripTags(cells[0]);
-      const example = stripTags(cells[1]);
-      if (!collocate || collocate.length < 1)
-        continue;
-      const id = this.store.generateId();
-      const entry2 = {
-        id,
-        headword,
-        headwordReading,
-        collocate,
-        fullPhrase: headword + collocate,
-        headwordPOS: "\u540D\u8A5E" /* Noun */,
-        collocatePOS: currentPOS,
-        pattern: `N+${collocate.charAt(0)}+${currentPOS === "\u52D5\u8A5E" /* Verb */ ? "V" : "Adj"}`,
-        exampleSentences: example ? [example] : [],
-        source: "hyogen.info" /* Hyogen */,
-        tags: [],
-        notes: "",
-        frequency: 50,
-        createdAt: now,
-        updatedAt: now
-      };
-      entries.push(entry2);
-    }
-    return entries;
-  }
-  delay(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-  }
-  isRunning() {
-    return this.running;
-  }
-  queueLength() {
-    return this.queue.length;
-  }
-};
-
-// src/ui/CollocationView.ts
-var import_obsidian3 = require("obsidian");
-
-// src/ui/AddEntryModal.ts
-var import_obsidian2 = require("obsidian");
-var AddEntryModal = class extends import_obsidian2.Modal {
-  constructor(app, store, onSave, existing) {
-    super(app);
-    // Form state
-    this.headword = "";
-    this.headwordReading = "";
-    this.collocate = "";
-    this.fullPhrase = "";
-    this.headwordPOS = "\u540D\u8A5E" /* Noun */;
-    this.collocatePOS = "\u52D5\u8A5E" /* Verb */;
-    this.pattern = "";
-    this.exampleSentences = "";
-    this.tags = "";
-    this.notes = "";
-    this.frequency = 50;
-    this.store = store;
-    this.onSave = onSave;
-    this.existing = existing;
-    if (existing) {
-      this.headword = existing.headword;
-      this.headwordReading = existing.headwordReading;
-      this.collocate = existing.collocate;
-      this.fullPhrase = existing.fullPhrase;
-      this.headwordPOS = existing.headwordPOS;
-      this.collocatePOS = existing.collocatePOS;
-      this.pattern = existing.pattern;
-      this.exampleSentences = existing.exampleSentences.join("\n");
-      this.tags = existing.tags.join(", ");
-      this.notes = existing.notes;
-      this.frequency = existing.frequency;
+    } catch (e) {
+      console.error("DiscourseStore: failed to load index:", e);
+      this.index = { chunks: {}, byMarker: {}, byCategory: {}, byCollocation: {} };
     }
   }
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("jp-col-modal");
-    contentEl.createEl("h2", { text: this.existing ? "Edit Entry" : "Add Collocation Entry" });
-    new import_obsidian2.Setting(contentEl).setName("Headword *").setDesc("Main word (e.g. \u98A8)").addText((t) => t.setValue(this.headword).onChange((v) => {
-      this.headword = v;
-      this.headwordPOS = detectPOS(v);
-    }));
-    new import_obsidian2.Setting(contentEl).setName("Reading").setDesc("Hiragana reading (e.g. \u304B\u305C)").addText((t) => t.setValue(this.headwordReading).onChange((v) => {
-      this.headwordReading = v;
-    }));
-    new import_obsidian2.Setting(contentEl).setName("Collocate *").setDesc("Collocating word/phrase (e.g. \u304C\u5439\u304F)").addText((t) => t.setValue(this.collocate).onChange((v) => {
-      this.collocate = v;
-    }));
-    new import_obsidian2.Setting(contentEl).setName("Full Phrase").setDesc("Complete phrase (auto-generated if empty)").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
-      this.fullPhrase = v;
-    }));
-    new import_obsidian2.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
-      for (const pos of Object.values(PartOfSpeech))
-        d.addOption(pos, pos);
-      d.setValue(this.headwordPOS).onChange((v) => {
-        this.headwordPOS = v;
-      });
-    });
-    new import_obsidian2.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
-      for (const pos of Object.values(PartOfSpeech))
-        d.addOption(pos, pos);
-      d.setValue(this.collocatePOS).onChange((v) => {
-        this.collocatePOS = v;
-      });
-    });
-    new import_obsidian2.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u304C+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
-      this.pattern = v;
-    }));
-    new import_obsidian2.Setting(contentEl).setName("Example Sentences").setDesc("One per line").addTextArea((t) => {
-      t.setValue(this.exampleSentences).onChange((v) => {
-        this.exampleSentences = v;
-      });
-      t.inputEl.rows = 3;
-    });
-    new import_obsidian2.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags").addText((t) => t.setValue(this.tags).onChange((v) => {
-      this.tags = v;
-    }));
-    new import_obsidian2.Setting(contentEl).setName("Notes").addTextArea((t) => {
-      t.setValue(this.notes).onChange((v) => {
-        this.notes = v;
-      });
-      t.inputEl.rows = 2;
-    });
-    new import_obsidian2.Setting(contentEl).setName("Frequency").setDesc("1-100 importance score").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
-      this.frequency = v;
-    }));
-    const btnRow = contentEl.createDiv("jp-col-modal-btns");
-    const saveBtn = btnRow.createEl("button", { text: this.existing ? "Save Changes" : "Add Entry", cls: "mod-cta" });
-    saveBtn.addEventListener("click", () => this.handleSave());
-    const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
-    cancelBtn.addEventListener("click", () => this.close());
+  async save() {
+    const data = JSON.stringify(this.index, null, 2);
+    await this.app.vault.adapter.write(this.indexPath, data);
   }
-  handleSave() {
-    var _a, _b, _c, _d, _e, _f;
-    if (!this.headword.trim() || !this.collocate.trim()) {
-      new import_obsidian2.Notice("Headword and Collocate are required.");
-      return;
-    }
-    const now = Date.now();
-    const phrase = this.fullPhrase.trim() || this.headword + this.collocate;
-    const entry2 = {
-      id: (_b = (_a = this.existing) == null ? void 0 : _a.id) != null ? _b : this.store.generateId(),
-      headword: this.headword.trim(),
-      headwordReading: this.headwordReading.trim(),
-      collocate: this.collocate.trim(),
-      fullPhrase: phrase,
-      headwordPOS: this.headwordPOS,
-      collocatePOS: this.collocatePOS,
-      pattern: this.pattern.trim(),
-      exampleSentences: this.exampleSentences.split("\n").map((s) => s.trim()).filter(Boolean),
-      source: (_d = (_c = this.existing) == null ? void 0 : _c.source) != null ? _d : "manual" /* Manual */,
-      tags: this.tags.split(",").map((t) => t.trim()).filter(Boolean),
-      notes: this.notes.trim(),
-      frequency: this.frequency,
-      createdAt: (_f = (_e = this.existing) == null ? void 0 : _e.createdAt) != null ? _f : now,
-      updatedAt: now
-    };
-    if (this.existing) {
-      this.store.update(entry2);
-      new import_obsidian2.Notice(`Updated: ${phrase}`);
-    } else {
-      this.store.add(entry2);
-      new import_obsidian2.Notice(`Added: ${phrase}`);
-    }
-    this.onSave();
-    this.close();
+  scheduleSave() {
+    if (this.saveTimer)
+      clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.save().catch(console.error);
+    }, 1e3);
   }
-  onClose() {
-    this.contentEl.empty();
-  }
-};
-
-// src/ui/CollocationView.ts
-var JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
-var CollocationView = class extends import_obsidian3.ItemView {
-  constructor(leaf, store, engine, settings) {
-    super(leaf);
-    this.results = [];
-    this.currentPOSFilter = [];
-    this.currentTagFilter = [];
-    this.searchInput = null;
-    this.resultContainer = null;
-    this.statsEl = null;
-    this.store = store;
-    this.engine = engine;
-    this.settings = settings;
-  }
-  getViewType() {
-    return JP_COLLOCATIONS_VIEW_TYPE;
-  }
-  getDisplayText() {
-    return "JP Collocations";
-  }
-  getIcon() {
-    return "languages";
-  }
-  async onOpen() {
-    this.buildUI();
-    this.refresh();
-  }
-  async onClose() {
-  }
-  buildUI() {
-    const container = this.containerEl.children[1];
-    container.empty();
-    container.addClass("jp-collocations-view");
-    const header = container.createDiv("jp-col-header");
-    header.createEl("h4", { text: "JP Collocations", cls: "jp-col-title" });
-    const searchRow = container.createDiv("jp-col-search-row");
-    this.searchInput = searchRow.createEl("input", {
-      type: "text",
-      placeholder: "Search collocations... (JP/EN/romaji)",
-      cls: "jp-col-search-input"
-    });
-    this.searchInput.addEventListener("input", () => this.refresh());
-    const addBtn = searchRow.createEl("button", { text: "+", cls: "jp-col-add-btn", title: "Add entry" });
-    addBtn.addEventListener("click", () => {
-      new AddEntryModal(this.app, this.store, () => this.refresh()).open();
-    });
-    const filterRow = container.createDiv("jp-col-filter-row");
-    this.buildPOSChips(filterRow);
-    this.statsEl = container.createDiv("jp-col-stats");
-    this.resultContainer = container.createDiv("jp-col-results");
-  }
-  buildPOSChips(parent) {
-    const posValues = Object.values(PartOfSpeech);
-    for (const pos of posValues) {
-      const chip = parent.createEl("span", { text: pos, cls: "jp-col-chip" });
-      chip.addEventListener("click", () => {
-        if (this.currentPOSFilter.includes(pos)) {
-          this.currentPOSFilter = this.currentPOSFilter.filter((p) => p !== pos);
-          chip.removeClass("jp-col-chip--active");
-        } else {
-          this.currentPOSFilter.push(pos);
-          chip.addClass("jp-col-chip--active");
-        }
-        this.refresh();
-      });
-    }
-    const clearBtn = parent.createEl("span", { text: "\u2715 clear", cls: "jp-col-chip jp-col-chip--clear" });
-    clearBtn.addEventListener("click", () => {
-      this.currentPOSFilter = [];
-      this.currentTagFilter = [];
-      parent.querySelectorAll(".jp-col-chip--active").forEach((el) => el.removeClass("jp-col-chip--active"));
-      this.refresh();
-    });
-  }
-  refresh() {
+  // ── Core Operations ──────────────────────────────────────────────
+  /**
+   * Add a DiscourseContext. Returns the new chunk ID or null if it was a
+   * duplicate (same chunkText + source.file).
+   */
+  addContext(context, collocationIds) {
     var _a, _b;
-    const query = (_b = (_a = this.searchInput) == null ? void 0 : _a.value) != null ? _b : "";
-    this.results = this.engine.search({
-      query,
-      posFilter: this.currentPOSFilter.length ? this.currentPOSFilter : void 0,
-      tagFilter: this.currentTagFilter.length ? this.currentTagFilter : void 0,
-      fuzzy: true,
-      maxResults: this.settings.maxResults,
-      sortBy: this.settings.defaultSortOrder
-    });
-    this.renderStats();
-    this.renderResults();
-  }
-  renderStats() {
-    if (!this.statsEl)
-      return;
-    const stats = this.store.getStats();
-    this.statsEl.empty();
-    this.statsEl.createSpan({ text: `${this.results.length} / ${stats.total} entries`, cls: "jp-col-stat-text" });
-  }
-  renderResults() {
-    if (!this.resultContainer)
-      return;
-    this.resultContainer.empty();
-    if (this.results.length === 0) {
-      this.resultContainer.createDiv({ text: "No results found.", cls: "jp-col-empty" });
-      return;
-    }
-    for (const result of this.results) {
-      this.renderEntry(this.resultContainer, result.entry);
-    }
-  }
-  renderEntry(parent, entry2) {
-    const card = parent.createDiv("jp-col-card");
-    const mainRow = card.createDiv("jp-col-card-main");
-    const hwSpan = mainRow.createSpan({ cls: "jp-col-headword", text: entry2.headword });
-    if (this.settings.showReadings && entry2.headwordReading) {
-      mainRow.createSpan({ cls: "jp-col-reading", text: `\uFF08${entry2.headwordReading}\uFF09` });
-    }
-    mainRow.createSpan({ cls: "jp-col-collocate", text: " " + entry2.collocate });
-    mainRow.createSpan({ cls: `jp-col-pos jp-col-pos--${this.posClass(entry2.headwordPOS)}`, text: entry2.headwordPOS });
-    if (entry2.pattern) {
-      mainRow.createSpan({ cls: "jp-col-pattern", text: entry2.pattern });
-    }
-    const actRow = card.createDiv("jp-col-actions");
-    this.buildActions(actRow, entry2);
-    if (entry2.exampleSentences.length > 0 || entry2.notes) {
-      const details = card.createEl("details", { cls: "jp-col-details" });
-      details.createEl("summary", { text: "examples / notes" });
-      for (const s of entry2.exampleSentences) {
-        details.createEl("p", { text: s, cls: "jp-col-example" });
-      }
-      if (entry2.notes) {
-        details.createEl("p", { text: entry2.notes, cls: "jp-col-notes" });
+    for (const record2 of Object.values(this.index.chunks)) {
+      if (record2.context.chunkText === context.chunkText && record2.context.source.file === context.source.file) {
+        return null;
       }
     }
+    const id = `chunk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const record = { id, context, collocationIds };
+    this.index.chunks[id] = record;
+    for (const marker of context.markers) {
+      this.addToMap(this.index.byMarker, marker.surface, id);
+    }
+    this.addToMap(this.index.byCategory, (_b = (_a = context.markers[0]) == null ? void 0 : _a.category) != null ? _b : "connective", id);
+    for (const colId of collocationIds) {
+      this.addToMap(this.index.byCollocation, colId, id);
+      this.enforceMaxContexts(colId);
+    }
+    this.scheduleSave();
+    return id;
   }
-  buildActions(parent, entry2) {
-    const copyBtn = parent.createEl("button", { text: "Copy", cls: "jp-col-action-btn" });
-    copyBtn.addEventListener("click", () => {
-      navigator.clipboard.writeText(entry2.fullPhrase).then(() => {
-        new import_obsidian3.Notice(`Copied: ${entry2.fullPhrase}`);
-      }).catch(() => {
-        new import_obsidian3.Notice("Copy failed.");
-      });
-    });
-    const insertBtn = parent.createEl("button", { text: "Insert", cls: "jp-col-action-btn" });
-    insertBtn.addEventListener("click", () => {
-      var _a;
-      const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
-      if (editor) {
-        editor.replaceSelection(entry2.fullPhrase);
-        new import_obsidian3.Notice(`Inserted: ${entry2.fullPhrase}`);
-      } else {
-        new import_obsidian3.Notice("No active editor.");
-      }
-    });
-    const editBtn = parent.createEl("button", { text: "Edit", cls: "jp-col-action-btn" });
-    editBtn.addEventListener("click", () => {
-      new AddEntryModal(this.app, this.store, () => this.refresh(), entry2).open();
-    });
-    const delBtn = parent.createEl("button", { text: "\xD7", cls: "jp-col-action-btn jp-col-action-btn--danger" });
-    delBtn.addEventListener("click", () => {
-      this.store.delete(entry2.id);
-      new import_obsidian3.Notice(`Deleted: ${entry2.fullPhrase}`);
-      this.refresh();
-    });
+  /** Attach an existing chunk to an additional collocation ID. */
+  linkCollocation(chunkId, collocationId) {
+    const record = this.index.chunks[chunkId];
+    if (!record)
+      return;
+    if (!record.collocationIds.includes(collocationId)) {
+      record.collocationIds.push(collocationId);
+    }
+    this.addToMap(this.index.byCollocation, collocationId, chunkId);
+    this.enforceMaxContexts(collocationId);
+    this.scheduleSave();
   }
-  posClass(pos) {
+  getChunk(id) {
+    return this.index.chunks[id];
+  }
+  getChunksByMarker(surface) {
     var _a;
-    const map = {
-      ["\u540D\u8A5E" /* Noun */]: "noun",
-      ["\u52D5\u8A5E" /* Verb */]: "verb",
-      ["\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */]: "adj-i",
-      ["\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */]: "adj-na",
-      ["\u526F\u8A5E" /* Adverb */]: "adv",
-      ["\u8868\u73FE" /* Expression */]: "expr"
+    const ids = (_a = this.index.byMarker[surface]) != null ? _a : [];
+    return ids.map((id) => this.index.chunks[id]).filter(Boolean);
+  }
+  getChunksByCategory(category) {
+    var _a;
+    const ids = (_a = this.index.byCategory[category]) != null ? _a : [];
+    return ids.map((id) => this.index.chunks[id]).filter(Boolean);
+  }
+  getChunksByCollocation(collocationId) {
+    var _a;
+    const ids = (_a = this.index.byCollocation[collocationId]) != null ? _a : [];
+    return ids.map((id) => this.index.chunks[id]).filter(Boolean);
+  }
+  getAllChunks() {
+    return Object.values(this.index.chunks);
+  }
+  getStats() {
+    var _a, _b, _c;
+    const byCategory = {};
+    const markerCounts = {};
+    const collocationCounts = {};
+    for (const record of Object.values(this.index.chunks)) {
+      for (const marker of record.context.markers) {
+        markerCounts[marker.surface] = ((_a = markerCounts[marker.surface]) != null ? _a : 0) + 1;
+        byCategory[marker.category] = ((_b = byCategory[marker.category]) != null ? _b : 0) + 1;
+      }
+      for (const colId of record.collocationIds) {
+        collocationCounts[colId] = ((_c = collocationCounts[colId]) != null ? _c : 0) + 1;
+      }
+    }
+    const topMarkers = Object.entries(markerCounts).map(([surface, count]) => ({ surface, count })).sort((a, b) => b.count - a.count).slice(0, 20);
+    const topCollocations = Object.entries(collocationCounts).map(([id, contextCount]) => ({ id, contextCount })).sort((a, b) => b.contextCount - a.contextCount).slice(0, 20);
+    return {
+      totalChunks: Object.keys(this.index.chunks).length,
+      byCategory,
+      topMarkers,
+      topCollocations
     };
-    return (_a = map[pos]) != null ? _a : "other";
   }
-};
-
-// src/ui/SearchModal.ts
-var import_obsidian4 = require("obsidian");
-var SearchModal = class extends import_obsidian4.SuggestModal {
-  constructor(app, engine) {
-    super(app);
-    this.engine = engine;
-    this.setPlaceholder("Search Japanese collocations...");
-    this.setInstructions([
-      { command: "\u2191\u2193", purpose: "navigate" },
-      { command: "\u21B5", purpose: "insert into editor" },
-      { command: "esc", purpose: "close" }
-    ]);
+  // ── Private Helpers ──────────────────────────────────────────────
+  addToMap(map, key, id) {
+    if (!map[key])
+      map[key] = [];
+    if (!map[key].includes(id))
+      map[key].push(id);
   }
-  getSuggestions(query) {
-    if (!query.trim()) {
-      return this.engine.quickSearch("", 20).map((r) => r.entry);
-    }
-    return this.engine.quickSearch(query, 20).map((r) => r.entry);
-  }
-  renderSuggestion(entry2, el) {
-    const row = el.createDiv("jp-col-suggest-row");
-    const left = row.createDiv("jp-col-suggest-left");
-    left.createSpan({ cls: "jp-col-suggest-headword", text: entry2.headword });
-    if (entry2.headwordReading) {
-      left.createSpan({ cls: "jp-col-suggest-reading", text: `\uFF08${entry2.headwordReading}\uFF09` });
-    }
-    left.createSpan({ cls: "jp-col-suggest-collocate", text: " " + entry2.collocate });
-    const right = row.createDiv("jp-col-suggest-right");
-    right.createSpan({ cls: "jp-col-suggest-pos", text: entry2.headwordPOS });
-    if (entry2.pattern) {
-      right.createSpan({ cls: "jp-col-suggest-pattern", text: entry2.pattern });
-    }
-  }
-  onChooseSuggestion(entry2) {
-    var _a;
-    const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
-    if (editor) {
-      editor.replaceSelection(entry2.fullPhrase);
-      new import_obsidian4.Notice(`Inserted: ${entry2.fullPhrase}`);
-    } else {
-      navigator.clipboard.writeText(entry2.fullPhrase).then(() => {
-        new import_obsidian4.Notice(`Copied: ${entry2.fullPhrase}`);
-      }).catch(() => {
-        new import_obsidian4.Notice("No active editor. Clipboard copy failed.");
-      });
-    }
-  }
-};
-
-// src/ui/SettingsTab.ts
-var import_obsidian5 = require("obsidian");
-var SettingsTab = class extends import_obsidian5.PluginSettingTab {
-  constructor(app, plugin, settings, store, getScraper, onSettingsChange) {
-    super(app, plugin);
-    this.settings = settings;
-    this.store = store;
-    this.getScraper = getScraper;
-    this.onSettingsChange = onSettingsChange;
-  }
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
-    containerEl.createEl("h2", { text: "JP Collocations Settings" });
-    containerEl.createEl("h3", { text: "Hyogen Scraper" });
-    new import_obsidian5.Setting(containerEl).setName("Enable Hyogen scraping").setDesc("Allow fetching from collocation.hyogen.info").addToggle((t) => t.setValue(this.settings.hyogenEnabled).onChange(async (v) => {
-      this.settings.hyogenEnabled = v;
-      await this.onSettingsChange();
-    }));
-    new import_obsidian5.Setting(containerEl).setName("Rate limit (ms)").setDesc("Minimum milliseconds between requests (default: 2000)").addSlider((s) => s.setLimits(1e3, 1e4, 500).setValue(this.settings.hyogenRateLimit).setDynamicTooltip().onChange(async (v) => {
-      this.settings.hyogenRateLimit = v;
-      await this.onSettingsChange();
-    }));
-    new import_obsidian5.Setting(containerEl).setName("Word list to scrape").setDesc("Comma-separated list of Japanese words to fetch from Hyogen").addTextArea((t) => {
-      t.setValue(this.settings.hyogenWordList.join(", ")).onChange(async (v) => {
-        this.settings.hyogenWordList = v.split(",").map((w) => w.trim()).filter(Boolean);
-        await this.onSettingsChange();
-      });
-      t.inputEl.rows = 3;
+  /** Evict oldest chunks if collocation exceeds the max-contexts limit. */
+  enforceMaxContexts(collocationId) {
+    const ids = this.index.byCollocation[collocationId];
+    if (!ids || ids.length <= this.maxContextsPerCollocation)
+      return;
+    ids.sort((a, b) => {
+      var _a, _b, _c, _d;
+      const ta = (_b = (_a = this.index.chunks[a]) == null ? void 0 : _a.context.capturedAt) != null ? _b : "";
+      const tb = (_d = (_c = this.index.chunks[b]) == null ? void 0 : _c.context.capturedAt) != null ? _d : "";
+      return ta < tb ? -1 : ta > tb ? 1 : 0;
     });
-    containerEl.createEl("h3", { text: "Display" });
-    new import_obsidian5.Setting(containerEl).setName("Default sort order").addDropdown((d) => {
-      d.addOption("frequency", "Frequency");
-      d.addOption("headword", "Headword (\u3042\u3044\u3046\u3048\u304A)");
-      d.addOption("createdAt", "Date added");
-      d.addOption("updatedAt", "Last updated");
-      d.setValue(this.settings.defaultSortOrder).onChange(async (v) => {
-        this.settings.defaultSortOrder = v;
-        await this.onSettingsChange();
-      });
-    });
-    new import_obsidian5.Setting(containerEl).setName("Entries per page").addSlider((s) => s.setLimits(10, 200, 10).setValue(this.settings.entriesPerPage).setDynamicTooltip().onChange(async (v) => {
-      this.settings.entriesPerPage = v;
-      await this.onSettingsChange();
-    }));
-    new import_obsidian5.Setting(containerEl).setName("Show readings").addToggle((t) => t.setValue(this.settings.showReadings).onChange(async (v) => {
-      this.settings.showReadings = v;
-      await this.onSettingsChange();
-    }));
-    containerEl.createEl("h3", { text: "Search" });
-    new import_obsidian5.Setting(containerEl).setName("Max results").addSlider((s) => s.setLimits(10, 500, 10).setValue(this.settings.maxResults).setDynamicTooltip().onChange(async (v) => {
-      this.settings.maxResults = v;
-      await this.onSettingsChange();
-    }));
-    containerEl.createEl("h3", { text: "Data Management" });
-    new import_obsidian5.Setting(containerEl).setName("Export data").setDesc("Export all collocations as a JSON file").addButton((b) => b.setButtonText("Export JSON").onClick(() => {
-      const data = JSON.stringify(this.store.exportAll(), null, 2);
-      const blob = new Blob([data], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "jp-collocations-export.json";
-      a.click();
-      URL.revokeObjectURL(url);
-      new import_obsidian5.Notice("Exported collocations.");
-    }));
-    new import_obsidian5.Setting(containerEl).setName("Import data").setDesc("Import collocations from a JSON file").addButton((b) => b.setButtonText("Import JSON").onClick(() => {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = ".json";
-      input.onchange = async () => {
-        var _a;
-        const file = (_a = input.files) == null ? void 0 : _a[0];
-        if (!file)
-          return;
-        const text = await file.text();
-        try {
-          const parsed = JSON.parse(text);
-          const count = this.store.bulkImport(parsed);
-          new import_obsidian5.Notice(`Imported ${count} entries.`);
-        } catch (e) {
-          new import_obsidian5.Notice("Failed to parse JSON file.");
-        }
-      };
-      input.click();
-    }));
-    new import_obsidian5.Setting(containerEl).setName("Reset to seed data").setDesc("Clear all data and restore the built-in collocations").addButton((b) => b.setButtonText("Reset").setWarning().onClick(async () => {
-      await this.store.resetToSeed();
-      new import_obsidian5.Notice("Reset to seed data.");
-    }));
-    new import_obsidian5.Setting(containerEl).setName("Clear all data").setDesc("Delete all collocation entries permanently").addButton((b) => b.setButtonText("Clear All").setWarning().onClick(async () => {
-      await this.store.clearAll();
-      new import_obsidian5.Notice("All data cleared.");
-    }));
-    containerEl.createEl("h3", { text: "Statistics" });
-    const stats = this.store.getStats();
-    containerEl.createEl("p", { text: `Total entries: ${stats.total}` });
-    const posList = containerEl.createEl("ul");
-    for (const [pos, count] of Object.entries(stats.byPOS)) {
-      posList.createEl("li", { text: `${pos}: ${count}` });
+    const toRemove = ids.splice(0, ids.length - this.maxContextsPerCollocation);
+    for (const chunkId of toRemove) {
+      this.removeChunk(chunkId);
     }
-    const srcList = containerEl.createEl("ul");
-    for (const [src, count] of Object.entries(stats.bySource)) {
-      srcList.createEl("li", { text: `${src}: ${count}` });
+  }
+  removeChunk(chunkId) {
+    var _a, _b;
+    const record = this.index.chunks[chunkId];
+    if (!record)
+      return;
+    for (const marker of record.context.markers) {
+      this.removeFromMap(this.index.byMarker, marker.surface, chunkId);
+    }
+    this.removeFromMap(this.index.byCategory, (_b = (_a = record.context.markers[0]) == null ? void 0 : _a.category) != null ? _b : "", chunkId);
+    for (const colId of record.collocationIds) {
+      this.removeFromMap(this.index.byCollocation, colId, chunkId);
+    }
+    delete this.index.chunks[chunkId];
+  }
+  removeFromMap(map, key, id) {
+    if (!map[key])
+      return;
+    const idx = map[key].indexOf(id);
+    if (idx !== -1)
+      map[key].splice(idx, 1);
+    if (map[key].length === 0)
+      delete map[key];
+  }
+  /** Rebuild all inverted maps from scratch (used after loading persisted data). */
+  rebuildInvertedMaps() {
+    this.index.byMarker = {};
+    this.index.byCategory = {};
+    this.index.byCollocation = {};
+    for (const record of Object.values(this.index.chunks)) {
+      for (const marker of record.context.markers) {
+        this.addToMap(this.index.byMarker, marker.surface, record.id);
+        this.addToMap(this.index.byCategory, marker.category, record.id);
+      }
+      for (const colId of record.collocationIds) {
+        this.addToMap(this.index.byCollocation, colId, record.id);
+      }
     }
   }
 };
@@ -2426,6 +1587,1334 @@ var TextClassifier = class {
   }
 };
 
+// src/data/VaultIndexer.ts
+var STRIP_PATTERNS = [
+  /^---[\s\S]*?---\n/m,
+  // frontmatter
+  /\[\[.*?\]\]/g,
+  // wiki links
+  /\[.*?\]\(.*?\)/g,
+  // markdown links
+  /!\[.*?\]\(.*?\)/g,
+  // images
+  /```[\s\S]*?```/g,
+  // code blocks
+  /`[^`]+`/g,
+  // inline code
+  /#+\s/g,
+  // headings prefix
+  /\*\*([^*]+)\*\*/g,
+  // bold → text
+  /_([^_]+)_/g,
+  // italic → text
+  /\d{1,2}:\d{2}(:\d{2})?/g,
+  // timestamps HH:MM or HH:MM:SS
+  /https?:\/\/\S+/g,
+  // URLs
+  /[^\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}\p{Script=Latin}\s。、！？…・]/gu
+];
+var SENTENCE_BOUNDARY = /([。！？…]+|[\n]{2,})/;
+var MIN_SENTENCE_LEN = 5;
+var MAX_SENTENCE_LEN = 200;
+var VaultIndexer = class {
+  constructor(app, store, settings) {
+    this.aborted = false;
+    this.app = app;
+    this.store = store;
+    this.settings = settings;
+    this.classifier = new TextClassifier();
+  }
+  abort() {
+    this.aborted = true;
+  }
+  async indexVault(words, onProgress) {
+    this.aborted = false;
+    const result = { entriesAdded: 0, filesScanned: 0, wordsProcessed: 0 };
+    const mdFiles = this.app.vault.getMarkdownFiles();
+    result.filesScanned = mdFiles.length;
+    const allSentences = [];
+    for (const file of mdFiles) {
+      if (this.aborted)
+        break;
+      const sentences = await this.extractSentences(file);
+      for (const s of sentences) {
+        allSentences.push({ ...s, file: file.path });
+      }
+    }
+    for (let i = 0; i < words.length; i++) {
+      if (this.aborted)
+        break;
+      const word = words[i];
+      onProgress == null ? void 0 : onProgress({
+        word,
+        wordIndex: i,
+        totalWords: words.length,
+        sentencesFound: result.entriesAdded
+      });
+      if (this.settings.vaultIndexSkipIndexed) {
+        const existing = this.store.getByHeadword(word);
+        if (existing.some((e) => e.source === "import" /* Import */)) {
+          result.wordsProcessed++;
+          continue;
+        }
+      }
+      const matching = allSentences.filter((s) => s.sentence.includes(word));
+      const limited = matching.slice(0, this.settings.vaultIndexMaxSentencesPerWord);
+      for (const { sentence, file, lineStart } of limited) {
+        const entry2 = this.buildEntry(word, sentence, file, lineStart);
+        if (entry2) {
+          this.store.add(entry2);
+          result.entriesAdded++;
+        }
+      }
+      result.wordsProcessed++;
+    }
+    return result;
+  }
+  async extractSentences(file) {
+    try {
+      const raw = await this.app.vault.read(file);
+      const cleaned = this.cleanText(raw);
+      const lines = cleaned.split("\n");
+      const sentences = [];
+      for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+        const line = lines[lineIdx].trim();
+        if (!line)
+          continue;
+        const parts = line.split(SENTENCE_BOUNDARY).filter((p) => p && !/^[。！？…]+$/.test(p));
+        for (const part of parts) {
+          const s = part.trim();
+          if (s.length >= MIN_SENTENCE_LEN && s.length <= MAX_SENTENCE_LEN) {
+            sentences.push({ sentence: s, lineStart: lineIdx + 1 });
+          }
+        }
+      }
+      return sentences;
+    } catch (e) {
+      console.error("VaultIndexer: failed to read file:", file.path, e);
+      return [];
+    }
+  }
+  cleanText(raw) {
+    let text = raw;
+    for (const pattern of STRIP_PATTERNS) {
+      text = text.replace(pattern, " ");
+    }
+    return text.replace(/\s+/g, " ").trim();
+  }
+  buildEntry(word, sentence, file, lineStart) {
+    var _a, _b, _c, _d;
+    try {
+      const classifyResult = this.classifier.classify(sentence);
+      const idx = sentence.indexOf(word);
+      if (idx === -1)
+        return null;
+      const after = sentence.slice(idx + word.length, idx + word.length + 8).split(/[\s。、！？]/)[0];
+      const before = (_a = sentence.slice(Math.max(0, idx - 8), idx).split(/[\s。、！？]/).pop()) != null ? _a : "";
+      const collocate = after.length >= 1 ? after : before;
+      if (!collocate)
+        return null;
+      const fullPhrase = `${word}${after}`;
+      const now = Date.now();
+      const entry2 = {
+        id: this.store.generateId(),
+        headword: word,
+        headwordReading: "",
+        collocate,
+        fullPhrase,
+        headwordPOS: (_b = classifyResult.headwordPOS) != null ? _b : "\u540D\u8A5E" /* Noun */,
+        collocatePOS: "\u305D\u306E\u4ED6" /* Other */,
+        pattern: (_c = classifyResult.pattern) != null ? _c : "N+V",
+        exampleSentences: [sentence],
+        source: "import" /* Import */,
+        tags: (_d = classifyResult.tags) != null ? _d : [],
+        notes: `Auto-indexed from ${file}:${lineStart}`,
+        frequency: 1,
+        createdAt: now,
+        updatedAt: now
+      };
+      return entry2;
+    } catch (e) {
+      console.error("VaultIndexer: failed to build entry for:", word, e);
+      return null;
+    }
+  }
+};
+
+// src/utils/japanese.ts
+var HIRAGANA_START = 12353;
+var KATAKANA_START = 12449;
+function toHiragana(str) {
+  return str.replace(/[\u30a1-\u30f6]/g, (ch) => {
+    return String.fromCharCode(ch.charCodeAt(0) - (KATAKANA_START - HIRAGANA_START));
+  });
+}
+function isJapanese(str) {
+  return /[\u3000-\u9fff\uff00-\uffef]/.test(str);
+}
+function normalizeJapanese(str) {
+  str = str.replace(
+    /[\uff01-\uff5e]/g,
+    (ch) => String.fromCharCode(ch.charCodeAt(0) - 65248)
+  );
+  str = str.replace(/\u3000/g, " ");
+  return str.normalize("NFKC");
+}
+var ROMAJI_MAP = [
+  ["shi", "\u3057"],
+  ["chi", "\u3061"],
+  ["tsu", "\u3064"],
+  ["sha", "\u3057\u3083"],
+  ["shu", "\u3057\u3085"],
+  ["sho", "\u3057\u3087"],
+  ["cha", "\u3061\u3083"],
+  ["chu", "\u3061\u3085"],
+  ["cho", "\u3061\u3087"],
+  ["tchi", "\u3063\u3061"],
+  ["cchi", "\u3063\u3061"],
+  ["jji", "\u3063\u3058"],
+  ["ffu", "\u3063\u3075"],
+  ["kya", "\u304D\u3083"],
+  ["kyu", "\u304D\u3085"],
+  ["kyo", "\u304D\u3087"],
+  ["gya", "\u304E\u3083"],
+  ["gyu", "\u304E\u3085"],
+  ["gyo", "\u304E\u3087"],
+  ["nya", "\u306B\u3083"],
+  ["nyu", "\u306B\u3085"],
+  ["nyo", "\u306B\u3087"],
+  ["hya", "\u3072\u3083"],
+  ["hyu", "\u3072\u3085"],
+  ["hyo", "\u3072\u3087"],
+  ["mya", "\u307F\u3083"],
+  ["myu", "\u307F\u3085"],
+  ["myo", "\u307F\u3087"],
+  ["rya", "\u308A\u3083"],
+  ["ryu", "\u308A\u3085"],
+  ["ryo", "\u308A\u3087"],
+  ["bya", "\u3073\u3083"],
+  ["byu", "\u3073\u3085"],
+  ["byo", "\u3073\u3087"],
+  ["pya", "\u3074\u3083"],
+  ["pyu", "\u3074\u3085"],
+  ["pyo", "\u3074\u3087"],
+  ["ja", "\u3058\u3083"],
+  ["ji", "\u3058"],
+  ["ju", "\u3058\u3085"],
+  ["jo", "\u3058\u3087"],
+  ["tchi", "\u3063\u3061"],
+  ["tta", "\u3063\u305F"],
+  ["tte", "\u3063\u3066"],
+  ["tto", "\u3063\u3068"],
+  ["kka", "\u3063\u304B"],
+  ["kki", "\u3063\u304D"],
+  ["kku", "\u3063\u304F"],
+  ["kke", "\u3063\u3051"],
+  ["kko", "\u3063\u3053"],
+  ["ssa", "\u3063\u3055"],
+  ["ssi", "\u3063\u3057"],
+  ["ssu", "\u3063\u3059"],
+  ["sse", "\u3063\u305B"],
+  ["sso", "\u3063\u305D"],
+  ["ppa", "\u3063\u3071"],
+  ["ppi", "\u3063\u3074"],
+  ["ppu", "\u3063\u3077"],
+  ["ppe", "\u3063\u307A"],
+  ["ppo", "\u3063\u307D"],
+  ["a", "\u3042"],
+  ["i", "\u3044"],
+  ["u", "\u3046"],
+  ["e", "\u3048"],
+  ["o", "\u304A"],
+  ["ka", "\u304B"],
+  ["ki", "\u304D"],
+  ["ku", "\u304F"],
+  ["ke", "\u3051"],
+  ["ko", "\u3053"],
+  ["sa", "\u3055"],
+  ["si", "\u3057"],
+  ["su", "\u3059"],
+  ["se", "\u305B"],
+  ["so", "\u305D"],
+  ["ta", "\u305F"],
+  ["ti", "\u3061"],
+  ["tu", "\u3064"],
+  ["te", "\u3066"],
+  ["to", "\u3068"],
+  ["na", "\u306A"],
+  ["ni", "\u306B"],
+  ["nu", "\u306C"],
+  ["ne", "\u306D"],
+  ["no", "\u306E"],
+  ["ha", "\u306F"],
+  ["hi", "\u3072"],
+  ["fu", "\u3075"],
+  ["he", "\u3078"],
+  ["ho", "\u307B"],
+  ["ma", "\u307E"],
+  ["mi", "\u307F"],
+  ["mu", "\u3080"],
+  ["me", "\u3081"],
+  ["mo", "\u3082"],
+  ["ya", "\u3084"],
+  ["yu", "\u3086"],
+  ["yo", "\u3088"],
+  ["ra", "\u3089"],
+  ["ri", "\u308A"],
+  ["ru", "\u308B"],
+  ["re", "\u308C"],
+  ["ro", "\u308D"],
+  ["wa", "\u308F"],
+  ["wi", "\u3090"],
+  ["we", "\u3091"],
+  ["wo", "\u3092"],
+  ["n", "\u3093"],
+  ["ga", "\u304C"],
+  ["gi", "\u304E"],
+  ["gu", "\u3050"],
+  ["ge", "\u3052"],
+  ["go", "\u3054"],
+  ["za", "\u3056"],
+  ["zi", "\u3058"],
+  ["zu", "\u305A"],
+  ["ze", "\u305C"],
+  ["zo", "\u305E"],
+  ["da", "\u3060"],
+  ["di", "\u3062"],
+  ["du", "\u3065"],
+  ["de", "\u3067"],
+  ["do", "\u3069"],
+  ["ba", "\u3070"],
+  ["bi", "\u3073"],
+  ["bu", "\u3076"],
+  ["be", "\u3079"],
+  ["bo", "\u307C"],
+  ["pa", "\u3071"],
+  ["pi", "\u3074"],
+  ["pu", "\u3077"],
+  ["pe", "\u307A"],
+  ["po", "\u307D"]
+];
+function romajiToHiragana(input) {
+  let result = "";
+  let remaining = input.toLowerCase();
+  while (remaining.length > 0) {
+    let matched = false;
+    for (let len = Math.min(4, remaining.length); len >= 1; len--) {
+      const slice = remaining.slice(0, len);
+      const found = ROMAJI_MAP.find(([r]) => r === slice);
+      if (found) {
+        result += found[1];
+        remaining = remaining.slice(len);
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) {
+      result += remaining[0];
+      remaining = remaining.slice(1);
+    }
+  }
+  return result;
+}
+function levenshtein(a, b) {
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from(
+    { length: m + 1 },
+    (_, i) => Array.from({ length: n + 1 }, (_2, j) => i === 0 ? j : j === 0 ? i : 0)
+  );
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+function similarity(a, b) {
+  const maxLen = Math.max(a.length, b.length);
+  if (maxLen === 0)
+    return 1;
+  return 1 - levenshtein(a, b) / maxLen;
+}
+
+// src/utils/grammar.ts
+function getVerbForms(verb) {
+  if (!verb)
+    return [];
+  const forms = [verb];
+  const ichidanSuffixes = ["\u3044\u308B", "\u304D\u308B", "\u304E\u308B", "\u3058\u308B", "\u3061\u308B", "\u306B\u308B", "\u3073\u308B", "\u307F\u308B", "\u308A\u308B", "\u3048\u308B", "\u3051\u308B", "\u3052\u308B", "\u305B\u308B", "\u3066\u308B", "\u3067\u308B", "\u306D\u308B", "\u3079\u308B", "\u3081\u308B", "\u308C\u308B"];
+  const isIchidan = ichidanSuffixes.some((s) => verb.endsWith(s)) || verb.endsWith("\u308B");
+  if (isIchidan && verb.endsWith("\u308B")) {
+    const stem = verb.slice(0, -1);
+    forms.push(
+      stem + "\u307E\u3059",
+      // polite
+      stem + "\u306A\u3044",
+      // negative
+      stem + "\u3066",
+      // te-form
+      stem + "\u305F",
+      // ta-form (past)
+      stem + "\u308C\u308B",
+      // passive
+      stem + "\u3089\u308C\u308B",
+      // potential/passive
+      stem + "\u3088\u3046",
+      // volitional
+      stem + "\u3070"
+      // conditional
+    );
+  }
+  const godanMap = {
+    "\u3046": { masu: "\u3044", nai: "\u308F", te: "\u3063\u3066", ta: "\u3063\u305F", ba: "\u3048\u3070" },
+    "\u304F": { masu: "\u304D", nai: "\u304B", te: "\u3044\u3066", ta: "\u3044\u305F", ba: "\u3051\u3070" },
+    "\u3050": { masu: "\u304E", nai: "\u304C", te: "\u3044\u3067", ta: "\u3044\u3060", ba: "\u3052\u3070" },
+    "\u3059": { masu: "\u3057", nai: "\u3055", te: "\u3057\u3066", ta: "\u3057\u305F", ba: "\u305B\u3070" },
+    "\u3064": { masu: "\u3061", nai: "\u305F", te: "\u3063\u3066", ta: "\u3063\u305F", ba: "\u3066\u3070" },
+    "\u306C": { masu: "\u306B", nai: "\u306A", te: "\u3093\u3067", ta: "\u3093\u3060", ba: "\u306D\u3070" },
+    "\u3076": { masu: "\u3073", nai: "\u3070", te: "\u3093\u3067", ta: "\u3093\u3060", ba: "\u3079\u3070" },
+    "\u3080": { masu: "\u307F", nai: "\u307E", te: "\u3093\u3067", ta: "\u3093\u3060", ba: "\u3081\u3070" },
+    "\u308B": { masu: "\u308A", nai: "\u3089", te: "\u3063\u3066", ta: "\u3063\u305F", ba: "\u308C\u3070" }
+  };
+  const lastChar = verb.slice(-1);
+  const g = godanMap[lastChar];
+  if (g) {
+    const base = verb.slice(0, -1);
+    forms.push(
+      base + g.masu + "\u307E\u3059",
+      base + g.nai + "\u306A\u3044",
+      base + g.te,
+      base + g.ta,
+      base + g.ba
+    );
+  }
+  return [...new Set(forms)];
+}
+function getAdjectiveForms(adj) {
+  if (!adj || !adj.endsWith("\u3044"))
+    return [adj];
+  const stem = adj.slice(0, -1);
+  return [
+    adj,
+    stem + "\u304F",
+    // adverbial / negative base
+    stem + "\u304F\u3066",
+    // te-form
+    stem + "\u304F\u306A\u3044",
+    // negative
+    stem + "\u304B\u3063\u305F",
+    // past
+    stem + "\u304F\u306A\u304B\u3063\u305F",
+    // past negative
+    stem + "\u3051\u308C\u3070"
+    // conditional
+  ];
+}
+function expandSearch(query) {
+  const expanded = /* @__PURE__ */ new Set([query]);
+  if (query.endsWith("\u3044")) {
+    for (const f of getAdjectiveForms(query))
+      expanded.add(f);
+  }
+  const verbEndings = ["\u3046", "\u304F", "\u3050", "\u3059", "\u3064", "\u306C", "\u3076", "\u3080", "\u308B"];
+  if (verbEndings.some((e) => query.endsWith(e))) {
+    for (const f of getVerbForms(query))
+      expanded.add(f);
+  }
+  return [...expanded];
+}
+function detectPOS(word) {
+  if (!word)
+    return "\u305D\u306E\u4ED6" /* Other */;
+  if (/[うくぐすつぬぶむる]$/.test(word)) {
+    if (word.endsWith("\u3044") && !word.endsWith("\u308B\u3044")) {
+      return "\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */;
+    }
+    return "\u52D5\u8A5E" /* Verb */;
+  }
+  if (word.endsWith("\u3044"))
+    return "\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */;
+  const naAdj = ["\u7684", "\u7684\u306A", "\u306A"];
+  if (naAdj.some((s) => word.endsWith(s)))
+    return "\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */;
+  if (word.endsWith("\u306B") || word.endsWith("\u3068"))
+    return "\u526F\u8A5E" /* Adverb */;
+  return "\u540D\u8A5E" /* Noun */;
+}
+
+// src/search/SearchEngine.ts
+var SearchEngine = class {
+  constructor(store) {
+    this.store = store;
+  }
+  search(options) {
+    const {
+      query,
+      posFilter,
+      tagFilter,
+      sourceFilter,
+      patternFilter,
+      fuzzy = true,
+      maxResults = 100,
+      sortBy = "frequency",
+      sortDir = "desc"
+    } = options;
+    const normalized = normalizeJapanese(query.trim());
+    const hiraganaQuery = toHiragana(normalized);
+    const romajiConverted = !isJapanese(normalized) && normalized.length > 0 ? romajiToHiragana(normalized) : hiraganaQuery;
+    const allTerms = /* @__PURE__ */ new Set([normalized, hiraganaQuery, romajiConverted]);
+    for (const term of [normalized, hiraganaQuery]) {
+      for (const variant of expandSearch(term)) {
+        allTerms.add(variant);
+      }
+    }
+    const wildcardRegex = normalized.includes("*") || normalized.includes("?") ? new RegExp(
+      "^" + normalized.replace(/\*/g, ".*").replace(/\?/g, ".") + "$",
+      "i"
+    ) : null;
+    let entries = this.store.getAll();
+    if (posFilter && posFilter.length > 0) {
+      entries = entries.filter((e) => posFilter.includes(e.headwordPOS) || posFilter.includes(e.collocatePOS));
+    }
+    if (tagFilter && tagFilter.length > 0) {
+      entries = entries.filter((e) => tagFilter.some((t) => e.tags.includes(t)));
+    }
+    if (sourceFilter && sourceFilter.length > 0) {
+      entries = entries.filter((e) => sourceFilter.includes(e.source));
+    }
+    if (patternFilter) {
+      entries = entries.filter((e) => e.pattern.includes(patternFilter));
+    }
+    if (!normalized) {
+      return this.sortAndLimit(entries.map((e) => ({ entry: e, score: e.frequency })), sortBy, sortDir, maxResults);
+    }
+    const results = [];
+    for (const entry2 of entries) {
+      const score = this.scoreEntry(entry2, normalized, hiraganaQuery, romajiConverted, allTerms, wildcardRegex, fuzzy);
+      if (score > 0) {
+        results.push({ entry: entry2, score });
+      }
+    }
+    return this.sortAndLimit(results, sortBy, sortDir, maxResults);
+  }
+  scoreEntry(entry2, query, hiraganaQuery, romajiConverted, allTerms, wildcardRegex, fuzzy) {
+    const fields = [
+      entry2.headword,
+      entry2.headwordReading,
+      entry2.collocate,
+      entry2.fullPhrase,
+      entry2.pattern,
+      ...entry2.tags,
+      ...entry2.exampleSentences
+    ];
+    let best = 0;
+    for (const field of fields) {
+      if (!field)
+        continue;
+      const fieldNorm = normalizeJapanese(field);
+      const fieldHira = toHiragana(fieldNorm);
+      if (wildcardRegex && (wildcardRegex.test(fieldNorm) || wildcardRegex.test(fieldHira))) {
+        best = Math.max(best, 90);
+        continue;
+      }
+      for (const term of allTerms) {
+        if (term && fieldNorm.includes(term)) {
+          const boost = field === entry2.headword || field === entry2.fullPhrase ? 20 : 0;
+          best = Math.max(best, 80 + boost);
+        }
+        if (term && fieldHira.includes(term)) {
+          best = Math.max(best, 75);
+        }
+      }
+      if (fuzzy && query.length >= 2) {
+        for (const term of [query, hiraganaQuery, romajiConverted]) {
+          if (!term || term.length < 2)
+            continue;
+          const sim = similarity(fieldNorm, term);
+          if (sim > 0.5)
+            best = Math.max(best, Math.round(sim * 60));
+          if (fieldNorm.length >= term.length) {
+            for (let i = 0; i <= fieldNorm.length - term.length; i++) {
+              const sub = fieldNorm.slice(i, i + term.length);
+              const s = similarity(sub, term);
+              if (s > 0.7)
+                best = Math.max(best, Math.round(s * 65));
+            }
+          }
+        }
+      }
+    }
+    return best;
+  }
+  sortAndLimit(results, sortBy, sortDir, maxResults) {
+    results.sort((a, b) => {
+      let cmp = 0;
+      switch (sortBy) {
+        case "headword":
+          cmp = a.entry.headword.localeCompare(b.entry.headword, "ja");
+          break;
+        case "frequency":
+          cmp = b.entry.frequency - a.entry.frequency || b.score - a.score;
+          break;
+        case "createdAt":
+          cmp = b.entry.createdAt - a.entry.createdAt;
+          break;
+        case "updatedAt":
+          cmp = b.entry.updatedAt - a.entry.updatedAt;
+          break;
+        default:
+          cmp = b.score - a.score;
+      }
+      if (cmp === 0)
+        cmp = b.score - a.score;
+      return sortDir === "asc" ? -cmp : cmp;
+    });
+    return results.slice(0, maxResults);
+  }
+  quickSearch(query, maxResults = 20) {
+    return this.search({ query, maxResults, fuzzy: true });
+  }
+};
+
+// src/scraper/HyogenScraper.ts
+var import_obsidian = require("obsidian");
+var HyogenScraper = class {
+  constructor(app, store, options) {
+    this.queue = [];
+    this.running = false;
+    this.aborted = false;
+    this.app = app;
+    this.store = store;
+    this.options = { ...{ rateLimit: 2e3 }, ...options };
+  }
+  enqueue(words) {
+    for (const w of words) {
+      if (!this.queue.includes(w))
+        this.queue.push(w);
+    }
+  }
+  abort() {
+    this.aborted = true;
+    this.running = false;
+  }
+  async run() {
+    var _a, _b, _c, _d, _e, _f;
+    if (this.running)
+      return 0;
+    this.running = true;
+    this.aborted = false;
+    let count = 0;
+    while (this.queue.length > 0 && !this.aborted) {
+      const word = this.queue.shift();
+      (_b = (_a = this.options).onProgress) == null ? void 0 : _b.call(_a, `Fetching: ${word}`);
+      try {
+        const entries = await this.fetchWord(word);
+        for (const e of entries) {
+          this.store.add(e);
+          (_d = (_c = this.options).onEntry) == null ? void 0 : _d.call(_c, e);
+          count++;
+        }
+      } catch (err) {
+        (_f = (_e = this.options).onProgress) == null ? void 0 : _f.call(_e, `Error fetching ${word}: ${err}`);
+      }
+      if (this.queue.length > 0 && !this.aborted) {
+        await this.delay(this.options.rateLimit);
+      }
+    }
+    this.running = false;
+    return count;
+  }
+  async fetchWord(word) {
+    const url = `https://collocation.hyogen.info/word/${encodeURIComponent(word)}`;
+    const response = await (0, import_obsidian.requestUrl)({ url, method: "GET" });
+    if (response.status !== 200) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return this.parseHtml(response.text, word);
+  }
+  parseHtml(html, headword) {
+    var _a, _b, _c;
+    const entries = [];
+    const now = Date.now();
+    const readingMatch = (_a = html.match(/読み[：:\s]*<[^>]*>([ぁ-ん]+)<\/[^>]*>/i)) != null ? _a : html.match(/reading['"]\s*[：:]\s*['"]?([ぁ-ん]+)/i);
+    const headwordReading = readingMatch ? readingMatch[1] : "";
+    const rowPattern = /<tr[^>]*>[\s\S]*?<\/tr>/gi;
+    const rows = (_b = html.match(rowPattern)) != null ? _b : [];
+    let currentPOS = "\u540D\u8A5E" /* Noun */;
+    const posHeaders = [
+      ["\u540D\u8A5E", "\u540D\u8A5E" /* Noun */],
+      ["\u52D5\u8A5E", "\u52D5\u8A5E" /* Verb */],
+      ["\u3044\u5F62\u5BB9\u8A5E", "\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */],
+      ["\u306A\u5F62\u5BB9\u8A5E", "\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */],
+      ["\u526F\u8A5E", "\u526F\u8A5E" /* Adverb */]
+    ];
+    for (const row of rows) {
+      for (const [label, pos] of posHeaders) {
+        if (row.includes(label)) {
+          currentPOS = pos;
+          break;
+        }
+      }
+      const cells = (_c = row.match(/<td[^>]*>([\s\S]*?)<\/td>/gi)) != null ? _c : [];
+      if (cells.length < 2)
+        continue;
+      const stripTags = (cell) => {
+        if (!cell)
+          return "";
+        let text = cell;
+        let prev = "";
+        while (prev !== text) {
+          prev = text;
+          text = text.replace(/<[^>]*>/g, "");
+        }
+        return text.replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").trim();
+      };
+      const collocate = stripTags(cells[0]);
+      const example = stripTags(cells[1]);
+      if (!collocate || collocate.length < 1)
+        continue;
+      const id = this.store.generateId();
+      const entry2 = {
+        id,
+        headword,
+        headwordReading,
+        collocate,
+        fullPhrase: headword + collocate,
+        headwordPOS: "\u540D\u8A5E" /* Noun */,
+        collocatePOS: currentPOS,
+        pattern: `N+${collocate.charAt(0)}+${currentPOS === "\u52D5\u8A5E" /* Verb */ ? "V" : "Adj"}`,
+        exampleSentences: example ? [example] : [],
+        source: "hyogen.info" /* Hyogen */,
+        tags: [],
+        notes: "",
+        frequency: 50,
+        createdAt: now,
+        updatedAt: now
+      };
+      entries.push(entry2);
+    }
+    return entries;
+  }
+  delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+  isRunning() {
+    return this.running;
+  }
+  queueLength() {
+    return this.queue.length;
+  }
+};
+
+// src/ui/CollocationView.ts
+var import_obsidian3 = require("obsidian");
+
+// src/ui/AddEntryModal.ts
+var import_obsidian2 = require("obsidian");
+var AddEntryModal = class extends import_obsidian2.Modal {
+  constructor(app, store, onSave, existing) {
+    super(app);
+    // Form state
+    this.headword = "";
+    this.headwordReading = "";
+    this.collocate = "";
+    this.fullPhrase = "";
+    this.headwordPOS = "\u540D\u8A5E" /* Noun */;
+    this.collocatePOS = "\u52D5\u8A5E" /* Verb */;
+    this.pattern = "";
+    this.exampleSentences = "";
+    this.tags = "";
+    this.notes = "";
+    this.frequency = 50;
+    this.store = store;
+    this.onSave = onSave;
+    this.existing = existing;
+    if (existing) {
+      this.headword = existing.headword;
+      this.headwordReading = existing.headwordReading;
+      this.collocate = existing.collocate;
+      this.fullPhrase = existing.fullPhrase;
+      this.headwordPOS = existing.headwordPOS;
+      this.collocatePOS = existing.collocatePOS;
+      this.pattern = existing.pattern;
+      this.exampleSentences = existing.exampleSentences.join("\n");
+      this.tags = existing.tags.join(", ");
+      this.notes = existing.notes;
+      this.frequency = existing.frequency;
+    }
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("jp-col-modal");
+    contentEl.createEl("h2", { text: this.existing ? "Edit Entry" : "Add Collocation Entry" });
+    new import_obsidian2.Setting(contentEl).setName("Headword *").setDesc("Main word (e.g. \u98A8)").addText((t) => t.setValue(this.headword).onChange((v) => {
+      this.headword = v;
+      this.headwordPOS = detectPOS(v);
+    }));
+    new import_obsidian2.Setting(contentEl).setName("Reading").setDesc("Hiragana reading (e.g. \u304B\u305C)").addText((t) => t.setValue(this.headwordReading).onChange((v) => {
+      this.headwordReading = v;
+    }));
+    new import_obsidian2.Setting(contentEl).setName("Collocate *").setDesc("Collocating word/phrase (e.g. \u304C\u5439\u304F)").addText((t) => t.setValue(this.collocate).onChange((v) => {
+      this.collocate = v;
+    }));
+    new import_obsidian2.Setting(contentEl).setName("Full Phrase").setDesc("Complete phrase (auto-generated if empty)").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
+      this.fullPhrase = v;
+    }));
+    new import_obsidian2.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
+      for (const pos of Object.values(PartOfSpeech))
+        d.addOption(pos, pos);
+      d.setValue(this.headwordPOS).onChange((v) => {
+        this.headwordPOS = v;
+      });
+    });
+    new import_obsidian2.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
+      for (const pos of Object.values(PartOfSpeech))
+        d.addOption(pos, pos);
+      d.setValue(this.collocatePOS).onChange((v) => {
+        this.collocatePOS = v;
+      });
+    });
+    new import_obsidian2.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u304C+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
+      this.pattern = v;
+    }));
+    new import_obsidian2.Setting(contentEl).setName("Example Sentences").setDesc("One per line").addTextArea((t) => {
+      t.setValue(this.exampleSentences).onChange((v) => {
+        this.exampleSentences = v;
+      });
+      t.inputEl.rows = 3;
+    });
+    new import_obsidian2.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags").addText((t) => t.setValue(this.tags).onChange((v) => {
+      this.tags = v;
+    }));
+    new import_obsidian2.Setting(contentEl).setName("Notes").addTextArea((t) => {
+      t.setValue(this.notes).onChange((v) => {
+        this.notes = v;
+      });
+      t.inputEl.rows = 2;
+    });
+    new import_obsidian2.Setting(contentEl).setName("Frequency").setDesc("1-100 importance score").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
+      this.frequency = v;
+    }));
+    const btnRow = contentEl.createDiv("jp-col-modal-btns");
+    const saveBtn = btnRow.createEl("button", { text: this.existing ? "Save Changes" : "Add Entry", cls: "mod-cta" });
+    saveBtn.addEventListener("click", () => this.handleSave());
+    const cancelBtn = btnRow.createEl("button", { text: "Cancel" });
+    cancelBtn.addEventListener("click", () => this.close());
+  }
+  handleSave() {
+    var _a, _b, _c, _d, _e, _f;
+    if (!this.headword.trim() || !this.collocate.trim()) {
+      new import_obsidian2.Notice("Headword and Collocate are required.");
+      return;
+    }
+    const now = Date.now();
+    const phrase = this.fullPhrase.trim() || this.headword + this.collocate;
+    const entry2 = {
+      id: (_b = (_a = this.existing) == null ? void 0 : _a.id) != null ? _b : this.store.generateId(),
+      headword: this.headword.trim(),
+      headwordReading: this.headwordReading.trim(),
+      collocate: this.collocate.trim(),
+      fullPhrase: phrase,
+      headwordPOS: this.headwordPOS,
+      collocatePOS: this.collocatePOS,
+      pattern: this.pattern.trim(),
+      exampleSentences: this.exampleSentences.split("\n").map((s) => s.trim()).filter(Boolean),
+      source: (_d = (_c = this.existing) == null ? void 0 : _c.source) != null ? _d : "manual" /* Manual */,
+      tags: this.tags.split(",").map((t) => t.trim()).filter(Boolean),
+      notes: this.notes.trim(),
+      frequency: this.frequency,
+      createdAt: (_f = (_e = this.existing) == null ? void 0 : _e.createdAt) != null ? _f : now,
+      updatedAt: now
+    };
+    if (this.existing) {
+      this.store.update(entry2);
+      new import_obsidian2.Notice(`Updated: ${phrase}`);
+    } else {
+      this.store.add(entry2);
+      new import_obsidian2.Notice(`Added: ${phrase}`);
+    }
+    this.onSave();
+    this.close();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+
+// src/ui/CollocationView.ts
+var JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
+var DISCOURSE_CATEGORY_LABELS = {
+  "topic-initiation": "\u8A71\u984C\u958B\u59CB",
+  "reasoning": "\u7406\u7531",
+  "modality": "\u30E2\u30C0\u30EA\u30C6\u30A3",
+  "connective": "\u63A5\u7D9A",
+  "confirmation": "\u78BA\u8A8D",
+  "rephrasing": "\u8A00\u3044\u63DB\u3048",
+  "filler": "\u30D5\u30A3\u30E9\u30FC",
+  "quotation": "\u5F15\u7528"
+};
+var DISCOURSE_CATEGORY_COLOURS = {
+  "topic-initiation": "#4CAF50",
+  "reasoning": "#2196F3",
+  "modality": "#9C27B0",
+  "connective": "#FF9800",
+  "confirmation": "#00BCD4",
+  "rephrasing": "#795548",
+  "filler": "#607D8B",
+  "quotation": "#E91E63"
+};
+var CollocationView = class extends import_obsidian3.ItemView {
+  constructor(leaf, store, engine, settings, discourseStore) {
+    super(leaf);
+    this.results = [];
+    this.currentPOSFilter = [];
+    this.currentTagFilter = [];
+    this.discourseMarkerFilter = "";
+    this.discourseCategoryFilter = "";
+    this.searchInput = null;
+    this.discourseMarkerInput = null;
+    this.discourseCategorySelect = null;
+    this.resultContainer = null;
+    this.statsEl = null;
+    this.store = store;
+    this.engine = engine;
+    this.settings = settings;
+    this.discourseStore = discourseStore != null ? discourseStore : null;
+  }
+  getViewType() {
+    return JP_COLLOCATIONS_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "JP Collocations";
+  }
+  getIcon() {
+    return "languages";
+  }
+  async onOpen() {
+    this.buildUI();
+    this.refresh();
+  }
+  async onClose() {
+  }
+  buildUI() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-collocations-view");
+    const header = container.createDiv("jp-col-header");
+    header.createEl("h4", { text: "JP Collocations", cls: "jp-col-title" });
+    const searchRow = container.createDiv("jp-col-search-row");
+    this.searchInput = searchRow.createEl("input", {
+      type: "text",
+      placeholder: "Search collocations... (JP/EN/romaji)",
+      cls: "jp-col-search-input"
+    });
+    this.searchInput.addEventListener("input", () => this.refresh());
+    const addBtn = searchRow.createEl("button", { text: "+", cls: "jp-col-add-btn", title: "Add entry" });
+    addBtn.addEventListener("click", () => {
+      new AddEntryModal(this.app, this.store, () => this.refresh()).open();
+    });
+    const filterRow = container.createDiv("jp-col-filter-row");
+    this.buildPOSChips(filterRow);
+    if (this.settings.showDiscourseContexts && this.discourseStore) {
+      this.buildDiscourseFilterRow(container);
+    }
+    this.statsEl = container.createDiv("jp-col-stats");
+    this.resultContainer = container.createDiv("jp-col-results");
+  }
+  buildPOSChips(parent) {
+    const posValues = Object.values(PartOfSpeech);
+    for (const pos of posValues) {
+      const chip = parent.createEl("span", { text: pos, cls: "jp-col-chip" });
+      chip.addEventListener("click", () => {
+        if (this.currentPOSFilter.includes(pos)) {
+          this.currentPOSFilter = this.currentPOSFilter.filter((p) => p !== pos);
+          chip.removeClass("jp-col-chip--active");
+        } else {
+          this.currentPOSFilter.push(pos);
+          chip.addClass("jp-col-chip--active");
+        }
+        this.refresh();
+      });
+    }
+    const clearBtn = parent.createEl("span", { text: "\u2715 clear", cls: "jp-col-chip jp-col-chip--clear" });
+    clearBtn.addEventListener("click", () => {
+      this.currentPOSFilter = [];
+      this.currentTagFilter = [];
+      parent.querySelectorAll(".jp-col-chip--active").forEach((el) => el.removeClass("jp-col-chip--active"));
+      this.refresh();
+    });
+  }
+  buildDiscourseFilterRow(container) {
+    const row = container.createDiv("jp-col-discourse-filter-row");
+    row.createEl("span", { text: "\u8AC7\u8A71\uFF1A", cls: "jp-col-discourse-label" });
+    this.discourseMarkerInput = row.createEl("input", {
+      type: "text",
+      placeholder: "\u30DE\u30FC\u30AB\u30FC (e.g. \u3067\u3082)",
+      cls: "jp-col-discourse-marker-input"
+    });
+    this.discourseMarkerInput.addEventListener("input", () => {
+      var _a, _b;
+      this.discourseMarkerFilter = (_b = (_a = this.discourseMarkerInput) == null ? void 0 : _a.value) != null ? _b : "";
+      this.refresh();
+    });
+    this.discourseCategorySelect = row.createEl("select", { cls: "jp-col-discourse-cat-select" });
+    const defaultOpt = this.discourseCategorySelect.createEl("option", { text: "\u5168\u30AB\u30C6\u30B4\u30EA", value: "" });
+    defaultOpt.value = "";
+    for (const [cat, label] of Object.entries(DISCOURSE_CATEGORY_LABELS)) {
+      const opt = this.discourseCategorySelect.createEl("option", { text: label, value: cat });
+      opt.value = cat;
+    }
+    this.discourseCategorySelect.addEventListener("change", () => {
+      var _a, _b;
+      this.discourseCategoryFilter = (_b = (_a = this.discourseCategorySelect) == null ? void 0 : _a.value) != null ? _b : "";
+      this.refresh();
+    });
+  }
+  refresh() {
+    var _a, _b;
+    const query = (_b = (_a = this.searchInput) == null ? void 0 : _a.value) != null ? _b : "";
+    this.results = this.engine.search({
+      query,
+      posFilter: this.currentPOSFilter.length ? this.currentPOSFilter : void 0,
+      tagFilter: this.currentTagFilter.length ? this.currentTagFilter : void 0,
+      fuzzy: true,
+      maxResults: this.settings.maxResults,
+      sortBy: this.settings.defaultSortOrder
+    });
+    if (this.discourseStore && (this.discourseMarkerFilter || this.discourseCategoryFilter)) {
+      let matchingChunkColIds = null;
+      if (this.discourseMarkerFilter) {
+        const chunks = this.discourseStore.getChunksByMarker(this.discourseMarkerFilter);
+        const ids = new Set(chunks.flatMap((c) => c.collocationIds));
+        matchingChunkColIds = ids;
+      }
+      if (this.discourseCategoryFilter) {
+        const chunks = this.discourseStore.getChunksByCategory(this.discourseCategoryFilter);
+        const ids = new Set(chunks.flatMap((c) => c.collocationIds));
+        matchingChunkColIds = matchingChunkColIds ? new Set([...matchingChunkColIds].filter((id) => ids.has(id))) : ids;
+      }
+      if (matchingChunkColIds) {
+        this.results = this.results.filter((r) => matchingChunkColIds.has(r.entry.id));
+      }
+    }
+    this.renderStats();
+    this.renderResults();
+  }
+  renderStats() {
+    if (!this.statsEl)
+      return;
+    const stats = this.store.getStats();
+    this.statsEl.empty();
+    this.statsEl.createSpan({ text: `${this.results.length} / ${stats.total} entries`, cls: "jp-col-stat-text" });
+  }
+  renderResults() {
+    if (!this.resultContainer)
+      return;
+    this.resultContainer.empty();
+    if (this.results.length === 0) {
+      this.resultContainer.createDiv({ text: "No results found.", cls: "jp-col-empty" });
+      return;
+    }
+    for (const result of this.results) {
+      this.renderEntry(this.resultContainer, result.entry);
+    }
+  }
+  renderEntry(parent, entry2) {
+    var _a, _b;
+    const card = parent.createDiv("jp-col-card");
+    const mainRow = card.createDiv("jp-col-card-main");
+    const hwSpan = mainRow.createSpan({ cls: "jp-col-headword", text: entry2.headword });
+    if (this.settings.showReadings && entry2.headwordReading) {
+      mainRow.createSpan({ cls: "jp-col-reading", text: `\uFF08${entry2.headwordReading}\uFF09` });
+    }
+    mainRow.createSpan({ cls: "jp-col-collocate", text: " " + entry2.collocate });
+    mainRow.createSpan({ cls: `jp-col-pos jp-col-pos--${this.posClass(entry2.headwordPOS)}`, text: entry2.headwordPOS });
+    if (entry2.pattern) {
+      mainRow.createSpan({ cls: "jp-col-pattern", text: entry2.pattern });
+    }
+    const actRow = card.createDiv("jp-col-actions");
+    this.buildActions(actRow, entry2);
+    if (entry2.exampleSentences.length > 0 || entry2.notes) {
+      const details = card.createEl("details", { cls: "jp-col-details" });
+      details.createEl("summary", { text: "examples / notes" });
+      for (const s of entry2.exampleSentences) {
+        details.createEl("p", { text: s, cls: "jp-col-example" });
+      }
+      if (entry2.notes) {
+        details.createEl("p", { text: entry2.notes, cls: "jp-col-notes" });
+      }
+    }
+    if (this.settings.showDiscourseContexts && this.discourseStore) {
+      const chunks = this.discourseStore.getChunksByCollocation(entry2.id);
+      if (chunks.length > 0) {
+        const discDetails = card.createEl("details", { cls: "jp-col-discourse-details" });
+        discDetails.createEl("summary", { text: `\u8AC7\u8A71\u30B3\u30F3\u30C6\u30AD\u30B9\u30C8 (${chunks.length})`, cls: "jp-col-discourse-summary" });
+        for (const chunk of chunks.slice(0, 5)) {
+          const ctxEl = discDetails.createDiv("jp-col-discourse-ctx");
+          ctxEl.createEl("p", { text: chunk.context.chunkText, cls: "jp-col-discourse-text" });
+          if (chunk.context.markers.length > 0) {
+            const markersEl = ctxEl.createDiv("jp-col-discourse-markers");
+            for (const marker of chunk.context.markers) {
+              const chip = markersEl.createEl("span", {
+                text: marker.surface,
+                cls: "jp-col-discourse-marker-chip"
+              });
+              chip.style.background = (_a = DISCOURSE_CATEGORY_COLOURS[marker.category]) != null ? _a : "#888";
+              chip.title = (_b = DISCOURSE_CATEGORY_LABELS[marker.category]) != null ? _b : marker.category;
+            }
+          }
+          if (chunk.context.source.file) {
+            ctxEl.createEl("span", {
+              text: `\u{1F4C4} ${chunk.context.source.file}`,
+              cls: "jp-col-discourse-source"
+            });
+          }
+        }
+        if (chunks.length > 5) {
+          discDetails.createEl("p", {
+            text: `\u2026 and ${chunks.length - 5} more`,
+            cls: "jp-col-discourse-more"
+          });
+        }
+      }
+    }
+  }
+  buildActions(parent, entry2) {
+    const copyBtn = parent.createEl("button", { text: "Copy", cls: "jp-col-action-btn" });
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(entry2.fullPhrase).then(() => {
+        new import_obsidian3.Notice(`Copied: ${entry2.fullPhrase}`);
+      }).catch(() => {
+        new import_obsidian3.Notice("Copy failed.");
+      });
+    });
+    const insertBtn = parent.createEl("button", { text: "Insert", cls: "jp-col-action-btn" });
+    insertBtn.addEventListener("click", () => {
+      var _a;
+      const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
+      if (editor) {
+        editor.replaceSelection(entry2.fullPhrase);
+        new import_obsidian3.Notice(`Inserted: ${entry2.fullPhrase}`);
+      } else {
+        new import_obsidian3.Notice("No active editor.");
+      }
+    });
+    const editBtn = parent.createEl("button", { text: "Edit", cls: "jp-col-action-btn" });
+    editBtn.addEventListener("click", () => {
+      new AddEntryModal(this.app, this.store, () => this.refresh(), entry2).open();
+    });
+    const delBtn = parent.createEl("button", { text: "\xD7", cls: "jp-col-action-btn jp-col-action-btn--danger" });
+    delBtn.addEventListener("click", () => {
+      this.store.delete(entry2.id);
+      new import_obsidian3.Notice(`Deleted: ${entry2.fullPhrase}`);
+      this.refresh();
+    });
+  }
+  posClass(pos) {
+    var _a;
+    const map = {
+      ["\u540D\u8A5E" /* Noun */]: "noun",
+      ["\u52D5\u8A5E" /* Verb */]: "verb",
+      ["\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */]: "adj-i",
+      ["\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */]: "adj-na",
+      ["\u526F\u8A5E" /* Adverb */]: "adv",
+      ["\u8868\u73FE" /* Expression */]: "expr"
+    };
+    return (_a = map[pos]) != null ? _a : "other";
+  }
+};
+
+// src/ui/SearchModal.ts
+var import_obsidian4 = require("obsidian");
+var SearchModal = class extends import_obsidian4.SuggestModal {
+  constructor(app, engine) {
+    super(app);
+    this.engine = engine;
+    this.setPlaceholder("Search Japanese collocations...");
+    this.setInstructions([
+      { command: "\u2191\u2193", purpose: "navigate" },
+      { command: "\u21B5", purpose: "insert into editor" },
+      { command: "esc", purpose: "close" }
+    ]);
+  }
+  getSuggestions(query) {
+    if (!query.trim()) {
+      return this.engine.quickSearch("", 20).map((r) => r.entry);
+    }
+    return this.engine.quickSearch(query, 20).map((r) => r.entry);
+  }
+  renderSuggestion(entry2, el) {
+    const row = el.createDiv("jp-col-suggest-row");
+    const left = row.createDiv("jp-col-suggest-left");
+    left.createSpan({ cls: "jp-col-suggest-headword", text: entry2.headword });
+    if (entry2.headwordReading) {
+      left.createSpan({ cls: "jp-col-suggest-reading", text: `\uFF08${entry2.headwordReading}\uFF09` });
+    }
+    left.createSpan({ cls: "jp-col-suggest-collocate", text: " " + entry2.collocate });
+    const right = row.createDiv("jp-col-suggest-right");
+    right.createSpan({ cls: "jp-col-suggest-pos", text: entry2.headwordPOS });
+    if (entry2.pattern) {
+      right.createSpan({ cls: "jp-col-suggest-pattern", text: entry2.pattern });
+    }
+  }
+  onChooseSuggestion(entry2) {
+    var _a;
+    const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
+    if (editor) {
+      editor.replaceSelection(entry2.fullPhrase);
+      new import_obsidian4.Notice(`Inserted: ${entry2.fullPhrase}`);
+    } else {
+      navigator.clipboard.writeText(entry2.fullPhrase).then(() => {
+        new import_obsidian4.Notice(`Copied: ${entry2.fullPhrase}`);
+      }).catch(() => {
+        new import_obsidian4.Notice("No active editor. Clipboard copy failed.");
+      });
+    }
+  }
+};
+
+// src/ui/SettingsTab.ts
+var import_obsidian5 = require("obsidian");
+var SettingsTab = class extends import_obsidian5.PluginSettingTab {
+  constructor(app, plugin, settings, store, getScraper, onSettingsChange) {
+    super(app, plugin);
+    this.settings = settings;
+    this.store = store;
+    this.getScraper = getScraper;
+    this.onSettingsChange = onSettingsChange;
+  }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    containerEl.createEl("h2", { text: "JP Collocations Settings" });
+    containerEl.createEl("h3", { text: "Hyogen Scraper" });
+    new import_obsidian5.Setting(containerEl).setName("Enable Hyogen scraping").setDesc("Allow fetching from collocation.hyogen.info").addToggle((t) => t.setValue(this.settings.hyogenEnabled).onChange(async (v) => {
+      this.settings.hyogenEnabled = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian5.Setting(containerEl).setName("Rate limit (ms)").setDesc("Minimum milliseconds between requests (default: 2000)").addSlider((s) => s.setLimits(1e3, 1e4, 500).setValue(this.settings.hyogenRateLimit).setDynamicTooltip().onChange(async (v) => {
+      this.settings.hyogenRateLimit = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian5.Setting(containerEl).setName("Word list to scrape").setDesc("Comma-separated list of Japanese words to fetch from Hyogen").addTextArea((t) => {
+      t.setValue(this.settings.hyogenWordList.join(", ")).onChange(async (v) => {
+        this.settings.hyogenWordList = v.split(",").map((w) => w.trim()).filter(Boolean);
+        await this.onSettingsChange();
+      });
+      t.inputEl.rows = 3;
+    });
+    containerEl.createEl("h3", { text: "Display" });
+    new import_obsidian5.Setting(containerEl).setName("Default sort order").addDropdown((d) => {
+      d.addOption("frequency", "Frequency");
+      d.addOption("headword", "Headword (\u3042\u3044\u3046\u3048\u304A)");
+      d.addOption("createdAt", "Date added");
+      d.addOption("updatedAt", "Last updated");
+      d.setValue(this.settings.defaultSortOrder).onChange(async (v) => {
+        this.settings.defaultSortOrder = v;
+        await this.onSettingsChange();
+      });
+    });
+    new import_obsidian5.Setting(containerEl).setName("Entries per page").addSlider((s) => s.setLimits(10, 200, 10).setValue(this.settings.entriesPerPage).setDynamicTooltip().onChange(async (v) => {
+      this.settings.entriesPerPage = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian5.Setting(containerEl).setName("Show readings").addToggle((t) => t.setValue(this.settings.showReadings).onChange(async (v) => {
+      this.settings.showReadings = v;
+      await this.onSettingsChange();
+    }));
+    containerEl.createEl("h3", { text: "Search" });
+    new import_obsidian5.Setting(containerEl).setName("Max results").addSlider((s) => s.setLimits(10, 500, 10).setValue(this.settings.maxResults).setDynamicTooltip().onChange(async (v) => {
+      this.settings.maxResults = v;
+      await this.onSettingsChange();
+    }));
+    containerEl.createEl("h3", { text: "Data Management" });
+    new import_obsidian5.Setting(containerEl).setName("Export data").setDesc("Export all collocations as a JSON file").addButton((b) => b.setButtonText("Export JSON").onClick(() => {
+      const data = JSON.stringify(this.store.exportAll(), null, 2);
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "jp-collocations-export.json";
+      a.click();
+      URL.revokeObjectURL(url);
+      new import_obsidian5.Notice("Exported collocations.");
+    }));
+    new import_obsidian5.Setting(containerEl).setName("Import data").setDesc("Import collocations from a JSON file").addButton((b) => b.setButtonText("Import JSON").onClick(() => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json";
+      input.onchange = async () => {
+        var _a;
+        const file = (_a = input.files) == null ? void 0 : _a[0];
+        if (!file)
+          return;
+        const text = await file.text();
+        try {
+          const parsed = JSON.parse(text);
+          const count = this.store.bulkImport(parsed);
+          new import_obsidian5.Notice(`Imported ${count} entries.`);
+        } catch (e) {
+          new import_obsidian5.Notice("Failed to parse JSON file.");
+        }
+      };
+      input.click();
+    }));
+    new import_obsidian5.Setting(containerEl).setName("Reset to seed data").setDesc("Clear all data and restore the built-in collocations").addButton((b) => b.setButtonText("Reset").setWarning().onClick(async () => {
+      await this.store.resetToSeed();
+      new import_obsidian5.Notice("Reset to seed data.");
+    }));
+    new import_obsidian5.Setting(containerEl).setName("Clear all data").setDesc("Delete all collocation entries permanently").addButton((b) => b.setButtonText("Clear All").setWarning().onClick(async () => {
+      await this.store.clearAll();
+      new import_obsidian5.Notice("All data cleared.");
+    }));
+    containerEl.createEl("h3", { text: "Discourse Context (jp-sentence-surfer bridge)" });
+    new import_obsidian5.Setting(containerEl).setName("Show discourse contexts").setDesc("Show \u8AC7\u8A71\u30B3\u30F3\u30C6\u30AD\u30B9\u30C8 sections in collocation entries").addToggle((t) => t.setValue(this.settings.showDiscourseContexts).onChange(async (v) => {
+      this.settings.showDiscourseContexts = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian5.Setting(containerEl).setName("Max contexts per collocation").setDesc("Maximum number of discourse contexts to store per collocation entry (oldest evicted first)").addSlider(
+      (s) => s.setLimits(5, 100, 5).setValue(this.settings.maxContextsPerCollocation).setDynamicTooltip().onChange(async (v) => {
+        this.settings.maxContextsPerCollocation = v;
+        await this.onSettingsChange();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Auto-clean old contexts").setDesc("Automatically evict the oldest contexts when the max limit is reached").addToggle((t) => t.setValue(this.settings.autoCleanOldContexts).onChange(async (v) => {
+      this.settings.autoCleanOldContexts = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian5.Setting(containerEl).setName("Discourse index path").setDesc("Filename for the discourse index JSON (inside plugin data folder)").addText(
+      (t) => t.setValue(this.settings.discourseIndexPath).onChange(async (v) => {
+        this.settings.discourseIndexPath = v.trim() || "jp-collocations-discourse-index.json";
+        await this.onSettingsChange();
+      })
+    );
+    containerEl.createEl("h3", { text: "Vault Indexer" });
+    new import_obsidian5.Setting(containerEl).setName("Max sentences per word").setDesc("Maximum number of example sentences to import per word when vault-indexing").addSlider(
+      (s) => s.setLimits(1, 50, 1).setValue(this.settings.vaultIndexMaxSentencesPerWord).setDynamicTooltip().onChange(async (v) => {
+        this.settings.vaultIndexMaxSentencesPerWord = v;
+        await this.onSettingsChange();
+      })
+    );
+    new import_obsidian5.Setting(containerEl).setName("Skip already-indexed words").setDesc("Skip words that already have vault-indexed entries when re-running the indexer").addToggle((t) => t.setValue(this.settings.vaultIndexSkipIndexed).onChange(async (v) => {
+      this.settings.vaultIndexSkipIndexed = v;
+      await this.onSettingsChange();
+    }));
+    containerEl.createEl("h3", { text: "Statistics" });
+    const stats = this.store.getStats();
+    containerEl.createEl("p", { text: `Total entries: ${stats.total}` });
+    const posList = containerEl.createEl("ul");
+    for (const [pos, count] of Object.entries(stats.byPOS)) {
+      posList.createEl("li", { text: `${pos}: ${count}` });
+    }
+    const srcList = containerEl.createEl("ul");
+    for (const [src, count] of Object.entries(stats.bySource)) {
+      srcList.createEl("li", { text: `${src}: ${count}` });
+    }
+  }
+};
+
 // src/ui/ClassifyModal.ts
 var import_obsidian6 = require("obsidian");
 var ClassifyModal = class extends import_obsidian6.Modal {
@@ -2564,8 +3053,474 @@ var ClassifyModal = class extends import_obsidian6.Modal {
   }
 };
 
+// src/ui/VaultIndexModal.ts
+var import_obsidian7 = require("obsidian");
+var VaultIndexModal = class extends import_obsidian7.Modal {
+  constructor(app, store, settings, onComplete) {
+    super(app);
+    this.wordListInput = null;
+    this.useAllHeadwords = false;
+    this.progressEl = null;
+    this.startBtn = null;
+    this.indexer = null;
+    this.running = false;
+    this.store = store;
+    this.settings = settings;
+    this.onComplete = onComplete;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("jp-vault-index-modal");
+    contentEl.createEl("h2", { text: "Vault Indexer \u2014 Index Vault for Collocations" });
+    contentEl.createEl("p", {
+      text: "Scans every note in your vault for occurrences of target words and auto-generates collocation entries.",
+      cls: "jp-vault-index-desc"
+    });
+    new import_obsidian7.Setting(contentEl).setName("Use all lexicon headwords").setDesc("Index every headword already in the lexicon. If off, provide a custom word list below.").addToggle((t) => {
+      t.setValue(false).onChange((v) => {
+        this.useAllHeadwords = v;
+        if (this.wordListInput) {
+          this.wordListInput.disabled = v;
+          this.wordListInput.style.opacity = v ? "0.4" : "1";
+        }
+      });
+    });
+    contentEl.createEl("p", { text: "Custom word list (one word per line):", cls: "jp-vault-index-label" });
+    this.wordListInput = contentEl.createEl("textarea", { cls: "jp-vault-index-wordlist" });
+    this.wordListInput.rows = 6;
+    this.wordListInput.placeholder = "\u65E5\u672C\u8A9E\n\u82F1\u8A9E\n...";
+    new import_obsidian7.Setting(contentEl).setName("Skip already-indexed words").setDesc("Skip words that already have entries sourced from vault indexing.").addToggle((t) => t.setValue(this.settings.vaultIndexSkipIndexed).onChange((v) => {
+      this.settings.vaultIndexSkipIndexed = v;
+    }));
+    new import_obsidian7.Setting(contentEl).setName("Max sentences per word").setDesc("Maximum number of example sentences to import per word.").addSlider(
+      (s) => s.setLimits(1, 50, 1).setValue(this.settings.vaultIndexMaxSentencesPerWord).setDynamicTooltip().onChange((v) => {
+        this.settings.vaultIndexMaxSentencesPerWord = v;
+      })
+    );
+    this.progressEl = contentEl.createDiv({ cls: "jp-vault-index-progress" });
+    this.progressEl.hide();
+    const btnRow = contentEl.createDiv({ cls: "jp-vault-index-btn-row" });
+    new import_obsidian7.ButtonComponent(btnRow).setButtonText("Cancel").onClick(() => {
+      if (this.running && this.indexer)
+        this.indexer.abort();
+      this.close();
+    });
+    this.startBtn = new import_obsidian7.ButtonComponent(btnRow).setButtonText("Start Indexing").setCta().onClick(() => this.startIndexing());
+  }
+  async startIndexing() {
+    var _a, _b, _c, _d, _e, _f, _g;
+    if (this.running)
+      return;
+    const useAll = this.useAllHeadwords;
+    let words;
+    if (useAll) {
+      words = Array.from(new Set(this.store.getAll().map((e) => e.headword))).filter(Boolean);
+    } else {
+      const raw = (_b = (_a = this.wordListInput) == null ? void 0 : _a.value) != null ? _b : "";
+      words = raw.split("\n").map((w) => w.trim()).filter(Boolean);
+    }
+    if (words.length === 0) {
+      new import_obsidian7.Notice("No words to index. Please enter a word list or toggle 'use all headwords'.");
+      return;
+    }
+    this.running = true;
+    (_c = this.startBtn) == null ? void 0 : _c.setDisabled(true);
+    (_d = this.startBtn) == null ? void 0 : _d.setButtonText("Indexing\u2026");
+    (_e = this.progressEl) == null ? void 0 : _e.show();
+    this.progressEl.setText(`Starting \u2014 scanning ${this.app.vault.getMarkdownFiles().length} notes\u2026`);
+    this.indexer = new VaultIndexer(this.app, this.store, this.settings);
+    try {
+      const result = await this.indexer.indexVault(words, (p) => {
+        var _a2;
+        (_a2 = this.progressEl) == null ? void 0 : _a2.setText(
+          `[${p.wordIndex + 1}/${p.totalWords}] ${p.word} \u2014 ${p.sentencesFound} entries added so far\u2026`
+        );
+      });
+      this.onComplete();
+      new import_obsidian7.Notice(
+        `\u2705 Vault indexing complete.
+${result.entriesAdded} entries added from ${result.filesScanned} files.`,
+        6e3
+      );
+      this.close();
+    } catch (e) {
+      new import_obsidian7.Notice("Vault indexing failed: " + String(e));
+      this.running = false;
+      (_f = this.startBtn) == null ? void 0 : _f.setDisabled(false);
+      (_g = this.startBtn) == null ? void 0 : _g.setButtonText("Start Indexing");
+    }
+  }
+  onClose() {
+    if (this.running && this.indexer)
+      this.indexer.abort();
+    this.contentEl.empty();
+  }
+};
+
+// src/ui/DiscourseStatsView.ts
+var import_obsidian8 = require("obsidian");
+var DISCOURSE_STATS_VIEW_TYPE = "jp-collocations-discourse-stats";
+var CATEGORY_COLOURS = {
+  "topic-initiation": "#4CAF50",
+  "reasoning": "#2196F3",
+  "modality": "#9C27B0",
+  "connective": "#FF9800",
+  "confirmation": "#00BCD4",
+  "rephrasing": "#795548",
+  "filler": "#607D8B",
+  "quotation": "#E91E63"
+};
+var CATEGORY_LABELS = {
+  "topic-initiation": "\u8A71\u984C\u958B\u59CB",
+  "reasoning": "\u7406\u7531\u30FB\u8AAC\u660E",
+  "modality": "\u30E2\u30C0\u30EA\u30C6\u30A3",
+  "connective": "\u63A5\u7D9A",
+  "confirmation": "\u78BA\u8A8D",
+  "rephrasing": "\u8A00\u3044\u63DB\u3048",
+  "filler": "\u30D5\u30A3\u30E9\u30FC",
+  "quotation": "\u5F15\u7528"
+};
+var DiscourseStatsView = class extends import_obsidian8.ItemView {
+  constructor(leaf, discourseStore) {
+    super(leaf);
+    this.statsContainer = null;
+    this.discourseStore = discourseStore;
+  }
+  getViewType() {
+    return DISCOURSE_STATS_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "\u8AC7\u8A71\u7D71\u8A08";
+  }
+  getIcon() {
+    return "bar-chart-2";
+  }
+  async onOpen() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-discourse-stats-view");
+    const header = container.createDiv("jp-ds-header");
+    header.createEl("h4", { text: "\u8AC7\u8A71\u30B3\u30F3\u30C6\u30AD\u30B9\u30C8\u7D71\u8A08", cls: "jp-ds-title" });
+    const refreshBtn = header.createEl("button", { text: "\u27F3", cls: "jp-ds-refresh-btn", title: "Refresh" });
+    refreshBtn.addEventListener("click", () => this.refresh());
+    this.statsContainer = container.createDiv("jp-ds-body");
+    this.refresh();
+  }
+  async onClose() {
+  }
+  refresh() {
+    var _a, _b, _c;
+    if (!this.statsContainer)
+      return;
+    this.statsContainer.empty();
+    const stats = this.discourseStore.getStats();
+    const summary = this.statsContainer.createDiv("jp-ds-summary");
+    summary.createEl("span", { text: `${stats.totalChunks} \u30B3\u30F3\u30C6\u30AD\u30B9\u30C8`, cls: "jp-ds-total" });
+    if (stats.totalChunks === 0) {
+      this.statsContainer.createEl("p", {
+        text: "\u307E\u3060\u8AC7\u8A71\u30B3\u30F3\u30C6\u30AD\u30B9\u30C8\u304C\u3042\u308A\u307E\u305B\u3093\u3002jp-sentence-surfer\u3067\u30C6\u30AD\u30B9\u30C8\u3092\u30AD\u30E3\u30D7\u30C1\u30E3\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+        cls: "jp-ds-empty"
+      });
+      return;
+    }
+    this.statsContainer.createEl("h5", { text: "\u30AB\u30C6\u30B4\u30EA\u5225", cls: "jp-ds-section-title" });
+    const catSection = this.statsContainer.createDiv("jp-ds-categories");
+    const maxCatCount = Math.max(...Object.values(stats.byCategory), 1);
+    for (const cat of Object.keys(CATEGORY_LABELS)) {
+      const count = (_a = stats.byCategory[cat]) != null ? _a : 0;
+      const row = catSection.createDiv("jp-ds-cat-row");
+      const label = (_b = CATEGORY_LABELS[cat]) != null ? _b : cat;
+      row.createEl("span", { text: label, cls: "jp-ds-cat-label" });
+      const barWrap = row.createDiv("jp-ds-bar-wrap");
+      const bar = barWrap.createDiv("jp-ds-bar");
+      bar.style.width = `${Math.round(count / maxCatCount * 100)}%`;
+      bar.style.background = (_c = CATEGORY_COLOURS[cat]) != null ? _c : "#888";
+      row.createEl("span", { text: String(count), cls: "jp-ds-cat-count" });
+    }
+    if (stats.topMarkers.length > 0) {
+      this.statsContainer.createEl("h5", { text: "\u983B\u51FA\u30DE\u30FC\u30AB\u30FC Top 10", cls: "jp-ds-section-title" });
+      const markerList = this.statsContainer.createEl("ol", { cls: "jp-ds-marker-list" });
+      for (const m of stats.topMarkers.slice(0, 10)) {
+        const li = markerList.createEl("li", { cls: "jp-ds-marker-item" });
+        li.createEl("span", { text: m.surface, cls: "jp-ds-marker-surface" });
+        li.createEl("span", { text: ` \xD7${m.count}`, cls: "jp-ds-marker-count" });
+      }
+    }
+    if (stats.topCollocations.length > 0) {
+      this.statsContainer.createEl("h5", { text: "\u30B3\u30F3\u30C6\u30AD\u30B9\u30C8\u6570\u4E0A\u4F4D Top 10", cls: "jp-ds-section-title" });
+      const colList = this.statsContainer.createEl("ol", { cls: "jp-ds-col-list" });
+      for (const c of stats.topCollocations.slice(0, 10)) {
+        const li = colList.createEl("li", { cls: "jp-ds-col-item" });
+        li.createEl("span", { text: c.id, cls: "jp-ds-col-id" });
+        li.createEl("span", { text: ` ${c.contextCount} ctx`, cls: "jp-ds-col-count" });
+      }
+    }
+  }
+};
+
+// src/ui/MultiViews.ts
+var import_obsidian9 = require("obsidian");
+var TAB_LABELS = {
+  grammar: "\u6587\u6CD5",
+  connections: "\u63A5\u7D9A",
+  forms: "\u6D3B\u7528",
+  context: "\u6587\u8108"
+};
+var ViewSwitcher = class {
+  constructor(container, initial, onChange) {
+    this.tabs = {};
+    this.current = initial;
+    this.onChange = onChange;
+    const bar = container.createDiv("jp-view-switcher");
+    for (const [key, label] of Object.entries(TAB_LABELS)) {
+      const btn = bar.createEl("button", { text: label, cls: "jp-vs-tab" });
+      if (key === initial)
+        btn.addClass("jp-vs-tab--active");
+      btn.addEventListener("click", () => this.select(key));
+      this.tabs[key] = btn;
+    }
+  }
+  select(tab) {
+    Object.values(this.tabs).forEach((t) => t.removeClass("jp-vs-tab--active"));
+    this.tabs[tab].addClass("jp-vs-tab--active");
+    this.current = tab;
+    this.onChange(tab);
+  }
+  getCurrent() {
+    return this.current;
+  }
+};
+var GRAMMAR_BROWSER_VIEW_TYPE = "jp-collocations-grammar-browser";
+var GrammarBrowserView = class extends import_obsidian9.ItemView {
+  constructor(leaf, store, engine, settings) {
+    super(leaf);
+    this.bodyEl = null;
+    this.currentTab = "grammar";
+    this.store = store;
+    this.engine = engine;
+    this.settings = settings;
+  }
+  getViewType() {
+    return GRAMMAR_BROWSER_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "\u6587\u6CD5\u30D6\u30E9\u30A6\u30B6";
+  }
+  getIcon() {
+    return "book-open";
+  }
+  async onOpen() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-grammar-browser-view");
+    container.createEl("h4", { text: "\u6587\u6CD5\u30D6\u30E9\u30A6\u30B6", cls: "jp-gbv-title" });
+    new ViewSwitcher(container, "grammar", (tab) => {
+      this.currentTab = tab;
+      this.renderBody();
+    });
+    this.bodyEl = container.createDiv("jp-gbv-body");
+    this.renderBody();
+  }
+  async onClose() {
+  }
+  renderBody() {
+    if (!this.bodyEl)
+      return;
+    this.bodyEl.empty();
+    switch (this.currentTab) {
+      case "grammar":
+        this.renderGrammarPanel();
+        break;
+      case "connections":
+        this.renderConnectionsPanel();
+        break;
+      case "forms":
+        this.renderFormsPanel();
+        break;
+      case "context":
+        this.renderContextPanel();
+        break;
+    }
+  }
+  renderGrammarPanel() {
+    const patterns = this.store.getAllPatterns();
+    if (patterns.length === 0) {
+      this.bodyEl.createEl("p", { text: "\u30D1\u30BF\u30FC\u30F3\u30C7\u30FC\u30BF\u306A\u3057", cls: "jp-gbv-empty" });
+      return;
+    }
+    const list = this.bodyEl.createEl("ul", { cls: "jp-gbv-pattern-list" });
+    for (const p of patterns) {
+      const entries = this.store.getByPattern(p);
+      const li = list.createEl("li", { cls: "jp-gbv-pattern-item" });
+      li.createEl("span", { text: p, cls: "jp-gbv-pattern-name" });
+      li.createEl("span", { text: ` (${entries.length})`, cls: "jp-gbv-pattern-count" });
+    }
+  }
+  renderConnectionsPanel() {
+    this.bodyEl.createEl("p", { text: "\u63A5\u7D9A\u30D1\u30BF\u30FC\u30F3\u5206\u6790", cls: "jp-gbv-section" });
+    const entries = this.store.getAll().slice(0, 50);
+    const list = this.bodyEl.createEl("ul", { cls: "jp-gbv-conn-list" });
+    for (const e of entries) {
+      const li = list.createEl("li", { cls: "jp-gbv-conn-item" });
+      li.createEl("span", { text: `${e.headword} \u2192 ${e.collocate}`, cls: "jp-gbv-conn-pair" });
+      li.createEl("span", { text: ` [${e.pattern}]`, cls: "jp-gbv-conn-pattern" });
+    }
+  }
+  renderFormsPanel() {
+    this.bodyEl.createEl("p", { text: "\u6D3B\u7528\u5F62\u30D0\u30EA\u30A8\u30FC\u30B7\u30E7\u30F3", cls: "jp-gbv-section" });
+    const tags = this.store.getAllTags();
+    const tagCloud = this.bodyEl.createDiv("jp-gbv-tag-cloud");
+    for (const tag of tags) {
+      tagCloud.createEl("span", { text: tag, cls: "jp-gbv-tag-chip" });
+    }
+  }
+  renderContextPanel() {
+    this.bodyEl.createEl("p", { text: "\u30BD\u30FC\u30B9\u6587\u8108", cls: "jp-gbv-section" });
+    const entries = this.store.getAll().filter((e) => e.exampleSentences.length > 0).slice(0, 20);
+    for (const e of entries) {
+      const card = this.bodyEl.createDiv("jp-gbv-ctx-card");
+      card.createEl("strong", { text: e.headword, cls: "jp-gbv-ctx-hw" });
+      card.createEl("p", { text: e.exampleSentences[0], cls: "jp-gbv-ctx-sentence" });
+    }
+  }
+};
+var CONNECTION_MAP_VIEW_TYPE = "jp-collocations-connection-map";
+var ConnectionMapView = class extends import_obsidian9.ItemView {
+  constructor(leaf, store) {
+    super(leaf);
+    this.store = store;
+  }
+  getViewType() {
+    return CONNECTION_MAP_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "\u63A5\u7D9A\u30DE\u30C3\u30D7";
+  }
+  getIcon() {
+    return "git-branch";
+  }
+  async onOpen() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-connection-map-view");
+    container.createEl("h4", { text: "\u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3\u63A5\u7D9A\u30DE\u30C3\u30D7", cls: "jp-cmv-title" });
+    const body = container.createDiv("jp-cmv-body");
+    const entries = this.store.getAll();
+    if (entries.length === 0) {
+      body.createEl("p", { text: "\u30A8\u30F3\u30C8\u30EA\u30FC\u306A\u3057", cls: "jp-cmv-empty" });
+      return;
+    }
+    const byHW = {};
+    for (const e of entries) {
+      if (!byHW[e.headword])
+        byHW[e.headword] = [];
+      if (!byHW[e.headword].includes(e.collocate))
+        byHW[e.headword].push(e.collocate);
+    }
+    const list = body.createEl("ul", { cls: "jp-cmv-list" });
+    for (const [hw, colls] of Object.entries(byHW).slice(0, 40)) {
+      const li = list.createEl("li", { cls: "jp-cmv-item" });
+      li.createEl("strong", { text: hw, cls: "jp-cmv-hw" });
+      li.createEl("span", { text: " \u2192 " + colls.join("\u3001"), cls: "jp-cmv-colls" });
+    }
+  }
+  async onClose() {
+  }
+};
+var FORM_VARIATIONS_VIEW_TYPE = "jp-collocations-form-variations";
+var FormVariationsView = class extends import_obsidian9.ItemView {
+  constructor(leaf, store) {
+    super(leaf);
+    this.store = store;
+  }
+  getViewType() {
+    return FORM_VARIATIONS_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "\u6D3B\u7528\u30D0\u30EA\u30A8\u30FC\u30B7\u30E7\u30F3";
+  }
+  getIcon() {
+    return "list-tree";
+  }
+  async onOpen() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-form-variations-view");
+    container.createEl("h4", { text: "\u6D3B\u7528\u5F62\u30D0\u30EA\u30A8\u30FC\u30B7\u30E7\u30F3", cls: "jp-fvv-title" });
+    const body = container.createDiv("jp-fvv-body");
+    const entries = this.store.getAll();
+    const groups = {};
+    for (const e of entries) {
+      if (!groups[e.headword])
+        groups[e.headword] = [];
+      if (!groups[e.headword].some((x) => x.collocate === e.collocate)) {
+        groups[e.headword].push({ collocate: e.collocate, pattern: e.pattern });
+      }
+    }
+    if (Object.keys(groups).length === 0) {
+      body.createEl("p", { text: "\u30A8\u30F3\u30C8\u30EA\u30FC\u306A\u3057", cls: "jp-fvv-empty" });
+      return;
+    }
+    for (const [hw, forms] of Object.entries(groups).slice(0, 30)) {
+      const card = body.createDiv("jp-fvv-card");
+      card.createEl("h5", { text: hw, cls: "jp-fvv-hw" });
+      const ul = card.createEl("ul", { cls: "jp-fvv-form-list" });
+      for (const f of forms) {
+        const li = ul.createEl("li", { cls: "jp-fvv-form-item" });
+        li.createEl("span", { text: f.collocate, cls: "jp-fvv-collocate" });
+        li.createEl("span", { text: ` [${f.pattern}]`, cls: "jp-fvv-pattern" });
+      }
+    }
+  }
+  async onClose() {
+  }
+};
+var SOURCE_CONTEXT_VIEW_TYPE = "jp-collocations-source-context";
+var SourceContextView = class extends import_obsidian9.ItemView {
+  constructor(leaf, store) {
+    super(leaf);
+    this.store = store;
+  }
+  getViewType() {
+    return SOURCE_CONTEXT_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "\u30BD\u30FC\u30B9\u6587\u8108";
+  }
+  getIcon() {
+    return "file-text";
+  }
+  async onOpen() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-source-context-view");
+    container.createEl("h4", { text: "\u30BD\u30FC\u30B9\u6587\u8108\u30D6\u30E9\u30A6\u30B6", cls: "jp-scv-title" });
+    const body = container.createDiv("jp-scv-body");
+    const entries = this.store.getAll().filter((e) => e.exampleSentences.length > 0);
+    if (entries.length === 0) {
+      body.createEl("p", { text: "\u4F8B\u6587\u306A\u3057", cls: "jp-scv-empty" });
+      return;
+    }
+    for (const e of entries.slice(0, 50)) {
+      const card = body.createDiv("jp-scv-card");
+      const titleRow = card.createDiv("jp-scv-title-row");
+      titleRow.createEl("strong", { text: e.headword, cls: "jp-scv-hw" });
+      titleRow.createEl("span", { text: ` + ${e.collocate}`, cls: "jp-scv-collocate" });
+      for (const s of e.exampleSentences.slice(0, 2)) {
+        card.createEl("p", { text: s, cls: "jp-scv-sentence" });
+      }
+      if (e.notes) {
+        card.createEl("p", { text: e.notes, cls: "jp-scv-notes" });
+      }
+    }
+  }
+  async onClose() {
+  }
+};
+
 // src/main.ts
-var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
+var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULT_SETTINGS };
@@ -2573,13 +3528,41 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
   }
   async onload() {
     await this.loadSettings();
-    const dataPath = `${this.app.vault.configDir}/plugins/jp-collocations/${this.settings.dataFilePath}`;
+    const pluginDir = `${this.app.vault.configDir}/plugins/jp-collocations`;
+    const dataPath = `${pluginDir}/${this.settings.dataFilePath}`;
     this.store = new CollocationStore(this.app, dataPath);
     await this.store.load();
+    const discoursePath = `${pluginDir}/${this.settings.discourseIndexPath}`;
+    this.discourseStore = new DiscourseStore(
+      this.app,
+      discoursePath,
+      this.settings.maxContextsPerCollocation
+    );
+    await this.discourseStore.load();
     this.engine = new SearchEngine(this.store);
     this.registerView(
       JP_COLLOCATIONS_VIEW_TYPE,
-      (leaf) => new CollocationView(leaf, this.store, this.engine, this.settings)
+      (leaf) => new CollocationView(leaf, this.store, this.engine, this.settings, this.discourseStore)
+    );
+    this.registerView(
+      DISCOURSE_STATS_VIEW_TYPE,
+      (leaf) => new DiscourseStatsView(leaf, this.discourseStore)
+    );
+    this.registerView(
+      GRAMMAR_BROWSER_VIEW_TYPE,
+      (leaf) => new GrammarBrowserView(leaf, this.store, this.engine, this.settings)
+    );
+    this.registerView(
+      CONNECTION_MAP_VIEW_TYPE,
+      (leaf) => new ConnectionMapView(leaf, this.store)
+    );
+    this.registerView(
+      FORM_VARIATIONS_VIEW_TYPE,
+      (leaf) => new FormVariationsView(leaf, this.store)
+    );
+    this.registerView(
+      SOURCE_CONTEXT_VIEW_TYPE,
+      (leaf) => new SourceContextView(leaf, this.store)
     );
     this.addSettingTab(new SettingsTab(
       this.app,
@@ -2613,7 +3596,7 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       editorCallback: (editor) => {
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian7.Notice("Select some Japanese text first!");
+          new import_obsidian10.Notice("Select some Japanese text first!");
           return;
         }
         const classifier = new TextClassifier();
@@ -2636,12 +3619,39 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       name: "Fetch from Hyogen",
       callback: () => this.fetchFromHyogen()
     });
+    this.addCommand({
+      id: "index-vault",
+      name: "Index Vault for Collocations",
+      callback: () => {
+        new VaultIndexModal(this.app, this.store, this.settings, () => this.refreshViews()).open();
+      }
+    });
+    this.addCommand({
+      id: "open-discourse-stats",
+      name: "Open Discourse Statistics",
+      callback: () => this.openView(DISCOURSE_STATS_VIEW_TYPE)
+    });
+    this.addCommand({
+      id: "open-grammar-browser",
+      name: "Open Grammar Browser",
+      callback: () => this.openView(GRAMMAR_BROWSER_VIEW_TYPE)
+    });
+    this.addCommand({
+      id: "open-connection-map",
+      name: "Open Connection Map",
+      callback: () => this.openView(CONNECTION_MAP_VIEW_TYPE)
+    });
     this.addRibbonIcon("languages", "JP Collocations", () => this.openLexiconView());
   }
   async onunload() {
     var _a;
     (_a = this.scraper) == null ? void 0 : _a.abort();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(DISCOURSE_STATS_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(GRAMMAR_BROWSER_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(CONNECTION_MAP_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(FORM_VARIATIONS_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(SOURCE_CONTEXT_VIEW_TYPE);
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -2649,6 +3659,125 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
   async saveSettings() {
     await this.saveData(this.settings);
   }
+  // ── Bridge API — callable by jp-sentence-surfer via ──────────────
+  // app.plugins.plugins['jp-collocations'].<method>()
+  // ─────────────────────────────────────────────────────────────────
+  /**
+   * Add or update a collocation entry received from jp-sentence-surfer.
+   */
+  addEntryFromSurfer(entry2) {
+    var _a, _b;
+    const existing = this.store.getByHeadword(entry2.expression);
+    if (existing.length > 0) {
+      const e = { ...existing[0] };
+      if (entry2.exampleSentence && !e.exampleSentences.includes(entry2.exampleSentence)) {
+        e.exampleSentences = [entry2.exampleSentence, ...e.exampleSentences].slice(0, 5);
+        e.updatedAt = Date.now();
+        this.store.update(e);
+      }
+      for (const ctx of entry2.discourseContexts) {
+        this.discourseStore.addContext(ctx, [e.id]);
+      }
+      this.refreshViews();
+      return e.id;
+    }
+    const { CollocationSource: CS, PartOfSpeech: POS } = { CollocationSource, PartOfSpeech };
+    const now = Date.now();
+    const newEntry = {
+      id: this.store.generateId(),
+      headword: entry2.expression,
+      headwordReading: (_a = entry2.reading) != null ? _a : "",
+      collocate: "",
+      fullPhrase: entry2.expression,
+      headwordPOS: POS.Expression,
+      collocatePOS: POS.Other,
+      pattern: "surfer-import",
+      exampleSentences: entry2.exampleSentence ? [entry2.exampleSentence] : [],
+      source: CS.Import,
+      tags: entry2.tags,
+      notes: (_b = entry2.meaning) != null ? _b : "",
+      frequency: 1,
+      createdAt: now,
+      updatedAt: now
+    };
+    this.store.add(newEntry);
+    for (const ctx of entry2.discourseContexts) {
+      this.discourseStore.addContext(ctx, [newEntry.id]);
+    }
+    this.refreshViews();
+    return newEntry.id;
+  }
+  /**
+   * Attach a single DiscourseContext to a collocation entry by ID.
+   */
+  addDiscourseContext(collocationId, context) {
+    const chunkId = this.discourseStore.addContext(context, [collocationId]);
+    if (chunkId)
+      this.refreshViews();
+    return chunkId;
+  }
+  /**
+   * Save or update the example sentence for a collocation entry.
+   */
+  saveExampleSentence(collocationId, sentence, source) {
+    const entry2 = this.store.getById(collocationId);
+    if (!entry2)
+      return false;
+    const updated = { ...entry2 };
+    if (!updated.exampleSentences.includes(sentence)) {
+      updated.exampleSentences = [sentence, ...updated.exampleSentences].slice(0, 5);
+    }
+    if (source && !updated.notes.includes(source)) {
+      updated.notes = updated.notes ? updated.notes + "\n" + source : source;
+    }
+    this.store.update(updated);
+    return true;
+  }
+  /**
+   * Find all collocation entries whose headword or fullPhrase appears in text.
+   */
+  findCollocationsInText(text) {
+    const matches = [];
+    for (const entry2 of this.store.getAll()) {
+      const needle = entry2.fullPhrase || entry2.headword;
+      let idx = 0;
+      while ((idx = text.indexOf(needle, idx)) !== -1) {
+        matches.push({
+          collocationId: entry2.id,
+          expression: needle,
+          matchStart: idx,
+          matchEnd: idx + needle.length
+        });
+        idx += needle.length;
+      }
+    }
+    return matches.sort((a, b) => a.matchStart - b.matchStart);
+  }
+  /**
+   * Search discourse chunks by marker surface form.
+   */
+  searchByDiscourseMarker(surface) {
+    return this.discourseStore.getChunksByMarker(surface);
+  }
+  /**
+   * Search discourse chunks by category.
+   */
+  searchByCategory(category) {
+    return this.discourseStore.getChunksByCategory(category);
+  }
+  /**
+   * Return all collocation entries.
+   */
+  getAllEntries() {
+    return this.store.getAll();
+  }
+  /**
+   * Return discourse statistics.
+   */
+  getDiscourseStats() {
+    return this.discourseStore.getStats();
+  }
+  // ── Private helpers ──────────────────────────────────────────────
   async openLexiconView() {
     const existing = this.app.workspace.getLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
     if (existing.length > 0) {
@@ -2661,8 +3790,23 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       this.app.workspace.revealLeaf(leaf);
     }
   }
+  async openView(viewType) {
+    const existing = this.app.workspace.getLeavesOfType(viewType);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: viewType, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
   refreshViews() {
     for (const leaf of this.app.workspace.getLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE)) {
+      leaf.view.refresh();
+    }
+    for (const leaf of this.app.workspace.getLeavesOfType(DISCOURSE_STATS_VIEW_TYPE)) {
       leaf.view.refresh();
     }
   }
@@ -2679,10 +3823,10 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       try {
         const parsed = JSON.parse(text);
         const count = this.store.bulkImport(parsed);
-        new import_obsidian7.Notice(`Imported ${count} entries.`);
+        new import_obsidian10.Notice(`Imported ${count} entries.`);
         this.refreshViews();
       } catch (e) {
-        new import_obsidian7.Notice("Failed to parse JSON file.");
+        new import_obsidian10.Notice("Failed to parse JSON file.");
       }
     };
     input.click();
@@ -2696,31 +3840,31 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
     a.download = "jp-collocations-export.json";
     a.click();
     URL.revokeObjectURL(url);
-    new import_obsidian7.Notice("Exported collocations.");
+    new import_obsidian10.Notice("Exported collocations.");
   }
   async fetchFromHyogen() {
     var _a;
     if (!this.settings.hyogenEnabled) {
-      new import_obsidian7.Notice("Hyogen scraping is disabled. Enable it in settings first.");
+      new import_obsidian10.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
     }
     if (this.settings.hyogenWordList.length === 0) {
-      new import_obsidian7.Notice("No words configured. Add words to the scrape list in settings.");
+      new import_obsidian10.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
     if ((_a = this.scraper) == null ? void 0 : _a.isRunning()) {
-      new import_obsidian7.Notice("Scraper is already running.");
+      new import_obsidian10.Notice("Scraper is already running.");
       return;
     }
     this.scraper = new HyogenScraper(this.app, this.store, {
       rateLimit: this.settings.hyogenRateLimit,
-      onProgress: (msg) => new import_obsidian7.Notice(msg, 3e3),
+      onProgress: (msg) => new import_obsidian10.Notice(msg, 3e3),
       onEntry: () => this.refreshViews()
     });
     this.scraper.enqueue(this.settings.hyogenWordList);
-    new import_obsidian7.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
+    new import_obsidian10.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
     const count = await this.scraper.run();
-    new import_obsidian7.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    new import_obsidian10.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
   }
 };
