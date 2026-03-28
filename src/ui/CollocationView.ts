@@ -5,6 +5,7 @@ import { PartOfSpeech, CollocationSource } from "../types.ts";
 import type { CollocationStore } from "../data/CollocationStore.ts";
 import type { SearchEngine } from "../search/SearchEngine.ts";
 import { AddEntryModal } from "./AddEntryModal.ts";
+import { VaultIndexModal } from "./VaultIndexModal.ts";
 
 export const JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
 
@@ -73,6 +74,16 @@ export class CollocationView extends ItemView {
     const addBtn = searchRow.createEl("button", { text: "+", cls: "jp-col-add-btn", title: "Add entry" });
     addBtn.addEventListener("click", () => {
       new AddEntryModal(this.app, this.store, () => this.refresh()).open();
+    });
+
+    const indexBtn = searchRow.createEl("button", { text: "⟳", cls: "jp-col-add-btn", title: "Index vault for collocations" });
+    indexBtn.addEventListener("click", () => {
+      new VaultIndexModal(this.app, this.store, result => {
+        if (result.added > 0) {
+          new Notice(`Vault indexing: added ${result.added} new entr${result.added === 1 ? "y" : "ies"}.`);
+          this.refresh();
+        }
+      }).open();
     });
 
     // POS filter chips

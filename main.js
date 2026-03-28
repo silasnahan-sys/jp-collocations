@@ -27,24 +27,24 @@ __export(main_exports, {
   default: () => JPCollocationsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 
 // src/types.ts
-var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
-  PartOfSpeech2["Noun"] = "\u540D\u8A5E";
-  PartOfSpeech2["Verb"] = "\u52D5\u8A5E";
-  PartOfSpeech2["Adjective_i"] = "\u3044\u5F62\u5BB9\u8A5E";
-  PartOfSpeech2["Adjective_na"] = "\u306A\u5F62\u5BB9\u8A5E";
-  PartOfSpeech2["Adverb"] = "\u526F\u8A5E";
-  PartOfSpeech2["Particle"] = "\u52A9\u8A5E";
-  PartOfSpeech2["AuxVerb"] = "\u52A9\u52D5\u8A5E";
-  PartOfSpeech2["Conjunction"] = "\u63A5\u7D9A\u8A5E";
-  PartOfSpeech2["Interjection"] = "\u611F\u52D5\u8A5E";
-  PartOfSpeech2["Prefix"] = "\u63A5\u982D\u8A5E";
-  PartOfSpeech2["Suffix"] = "\u63A5\u5C3E\u8A5E";
-  PartOfSpeech2["Expression"] = "\u8868\u73FE";
-  PartOfSpeech2["Other"] = "\u305D\u306E\u4ED6";
-  return PartOfSpeech2;
+var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech3) => {
+  PartOfSpeech3["Noun"] = "\u540D\u8A5E";
+  PartOfSpeech3["Verb"] = "\u52D5\u8A5E";
+  PartOfSpeech3["Adjective_i"] = "\u3044\u5F62\u5BB9\u8A5E";
+  PartOfSpeech3["Adjective_na"] = "\u306A\u5F62\u5BB9\u8A5E";
+  PartOfSpeech3["Adverb"] = "\u526F\u8A5E";
+  PartOfSpeech3["Particle"] = "\u52A9\u8A5E";
+  PartOfSpeech3["AuxVerb"] = "\u52A9\u52D5\u8A5E";
+  PartOfSpeech3["Conjunction"] = "\u63A5\u7D9A\u8A5E";
+  PartOfSpeech3["Interjection"] = "\u611F\u52D5\u8A5E";
+  PartOfSpeech3["Prefix"] = "\u63A5\u982D\u8A5E";
+  PartOfSpeech3["Suffix"] = "\u63A5\u5C3E\u8A5E";
+  PartOfSpeech3["Expression"] = "\u8868\u73FE";
+  PartOfSpeech3["Other"] = "\u305D\u306E\u4ED6";
+  return PartOfSpeech3;
 })(PartOfSpeech || {});
 var DEFAULT_SETTINGS = {
   hyogenEnabled: false,
@@ -1098,7 +1098,7 @@ var HyogenScraper = class {
 };
 
 // src/ui/CollocationView.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // src/ui/AddEntryModal.ts
 var import_obsidian2 = require("obsidian");
@@ -1233,340 +1233,8 @@ var AddEntryModal = class extends import_obsidian2.Modal {
   }
 };
 
-// src/ui/CollocationView.ts
-var JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
-var CollocationView = class extends import_obsidian3.ItemView {
-  constructor(leaf, store, engine, settings) {
-    super(leaf);
-    this.results = [];
-    this.currentPOSFilter = [];
-    this.currentTagFilter = [];
-    this.searchInput = null;
-    this.resultContainer = null;
-    this.statsEl = null;
-    this.store = store;
-    this.engine = engine;
-    this.settings = settings;
-  }
-  getViewType() {
-    return JP_COLLOCATIONS_VIEW_TYPE;
-  }
-  getDisplayText() {
-    return "JP Collocations";
-  }
-  getIcon() {
-    return "languages";
-  }
-  async onOpen() {
-    this.buildUI();
-    this.refresh();
-  }
-  async onClose() {
-  }
-  buildUI() {
-    const container = this.containerEl.children[1];
-    container.empty();
-    container.addClass("jp-collocations-view");
-    const header = container.createDiv("jp-col-header");
-    header.createEl("h4", { text: "JP Collocations", cls: "jp-col-title" });
-    const searchRow = container.createDiv("jp-col-search-row");
-    this.searchInput = searchRow.createEl("input", {
-      type: "text",
-      placeholder: "Search collocations... (JP/EN/romaji)",
-      cls: "jp-col-search-input"
-    });
-    this.searchInput.addEventListener("input", () => this.refresh());
-    const addBtn = searchRow.createEl("button", { text: "+", cls: "jp-col-add-btn", title: "Add entry" });
-    addBtn.addEventListener("click", () => {
-      new AddEntryModal(this.app, this.store, () => this.refresh()).open();
-    });
-    const filterRow = container.createDiv("jp-col-filter-row");
-    this.buildPOSChips(filterRow);
-    this.statsEl = container.createDiv("jp-col-stats");
-    this.resultContainer = container.createDiv("jp-col-results");
-  }
-  buildPOSChips(parent) {
-    const posValues = Object.values(PartOfSpeech);
-    for (const pos of posValues) {
-      const chip = parent.createEl("span", { text: pos, cls: "jp-col-chip" });
-      chip.addEventListener("click", () => {
-        if (this.currentPOSFilter.includes(pos)) {
-          this.currentPOSFilter = this.currentPOSFilter.filter((p) => p !== pos);
-          chip.removeClass("jp-col-chip--active");
-        } else {
-          this.currentPOSFilter.push(pos);
-          chip.addClass("jp-col-chip--active");
-        }
-        this.refresh();
-      });
-    }
-    const clearBtn = parent.createEl("span", { text: "\u2715 clear", cls: "jp-col-chip jp-col-chip--clear" });
-    clearBtn.addEventListener("click", () => {
-      this.currentPOSFilter = [];
-      this.currentTagFilter = [];
-      parent.querySelectorAll(".jp-col-chip--active").forEach((el) => el.removeClass("jp-col-chip--active"));
-      this.refresh();
-    });
-  }
-  refresh() {
-    var _a, _b;
-    const query = (_b = (_a = this.searchInput) == null ? void 0 : _a.value) != null ? _b : "";
-    this.results = this.engine.search({
-      query,
-      posFilter: this.currentPOSFilter.length ? this.currentPOSFilter : void 0,
-      tagFilter: this.currentTagFilter.length ? this.currentTagFilter : void 0,
-      fuzzy: true,
-      maxResults: this.settings.maxResults,
-      sortBy: this.settings.defaultSortOrder
-    });
-    this.renderStats();
-    this.renderResults();
-  }
-  renderStats() {
-    if (!this.statsEl)
-      return;
-    const stats = this.store.getStats();
-    this.statsEl.empty();
-    this.statsEl.createSpan({ text: `${this.results.length} / ${stats.total} entries`, cls: "jp-col-stat-text" });
-  }
-  renderResults() {
-    if (!this.resultContainer)
-      return;
-    this.resultContainer.empty();
-    if (this.results.length === 0) {
-      this.resultContainer.createDiv({ text: "No results found.", cls: "jp-col-empty" });
-      return;
-    }
-    for (const result of this.results) {
-      this.renderEntry(this.resultContainer, result.entry);
-    }
-  }
-  renderEntry(parent, entry2) {
-    const card = parent.createDiv("jp-col-card");
-    const mainRow = card.createDiv("jp-col-card-main");
-    const hwSpan = mainRow.createSpan({ cls: "jp-col-headword", text: entry2.headword });
-    if (this.settings.showReadings && entry2.headwordReading) {
-      mainRow.createSpan({ cls: "jp-col-reading", text: `\uFF08${entry2.headwordReading}\uFF09` });
-    }
-    mainRow.createSpan({ cls: "jp-col-collocate", text: " " + entry2.collocate });
-    mainRow.createSpan({ cls: `jp-col-pos jp-col-pos--${this.posClass(entry2.headwordPOS)}`, text: entry2.headwordPOS });
-    if (entry2.pattern) {
-      mainRow.createSpan({ cls: "jp-col-pattern", text: entry2.pattern });
-    }
-    const actRow = card.createDiv("jp-col-actions");
-    this.buildActions(actRow, entry2);
-    if (entry2.exampleSentences.length > 0 || entry2.notes) {
-      const details = card.createEl("details", { cls: "jp-col-details" });
-      details.createEl("summary", { text: "examples / notes" });
-      for (const s of entry2.exampleSentences) {
-        details.createEl("p", { text: s, cls: "jp-col-example" });
-      }
-      if (entry2.notes) {
-        details.createEl("p", { text: entry2.notes, cls: "jp-col-notes" });
-      }
-    }
-  }
-  buildActions(parent, entry2) {
-    const copyBtn = parent.createEl("button", { text: "Copy", cls: "jp-col-action-btn" });
-    copyBtn.addEventListener("click", () => {
-      navigator.clipboard.writeText(entry2.fullPhrase).then(() => {
-        new import_obsidian3.Notice(`Copied: ${entry2.fullPhrase}`);
-      }).catch(() => {
-        new import_obsidian3.Notice("Copy failed.");
-      });
-    });
-    const insertBtn = parent.createEl("button", { text: "Insert", cls: "jp-col-action-btn" });
-    insertBtn.addEventListener("click", () => {
-      var _a;
-      const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
-      if (editor) {
-        editor.replaceSelection(entry2.fullPhrase);
-        new import_obsidian3.Notice(`Inserted: ${entry2.fullPhrase}`);
-      } else {
-        new import_obsidian3.Notice("No active editor.");
-      }
-    });
-    const editBtn = parent.createEl("button", { text: "Edit", cls: "jp-col-action-btn" });
-    editBtn.addEventListener("click", () => {
-      new AddEntryModal(this.app, this.store, () => this.refresh(), entry2).open();
-    });
-    const delBtn = parent.createEl("button", { text: "\xD7", cls: "jp-col-action-btn jp-col-action-btn--danger" });
-    delBtn.addEventListener("click", () => {
-      this.store.delete(entry2.id);
-      new import_obsidian3.Notice(`Deleted: ${entry2.fullPhrase}`);
-      this.refresh();
-    });
-  }
-  posClass(pos) {
-    var _a;
-    const map = {
-      ["\u540D\u8A5E" /* Noun */]: "noun",
-      ["\u52D5\u8A5E" /* Verb */]: "verb",
-      ["\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */]: "adj-i",
-      ["\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */]: "adj-na",
-      ["\u526F\u8A5E" /* Adverb */]: "adv",
-      ["\u8868\u73FE" /* Expression */]: "expr"
-    };
-    return (_a = map[pos]) != null ? _a : "other";
-  }
-};
-
-// src/ui/SearchModal.ts
-var import_obsidian4 = require("obsidian");
-var SearchModal = class extends import_obsidian4.SuggestModal {
-  constructor(app, engine) {
-    super(app);
-    this.engine = engine;
-    this.setPlaceholder("Search Japanese collocations...");
-    this.setInstructions([
-      { command: "\u2191\u2193", purpose: "navigate" },
-      { command: "\u21B5", purpose: "insert into editor" },
-      { command: "esc", purpose: "close" }
-    ]);
-  }
-  getSuggestions(query) {
-    if (!query.trim()) {
-      return this.engine.quickSearch("", 20).map((r) => r.entry);
-    }
-    return this.engine.quickSearch(query, 20).map((r) => r.entry);
-  }
-  renderSuggestion(entry2, el) {
-    const row = el.createDiv("jp-col-suggest-row");
-    const left = row.createDiv("jp-col-suggest-left");
-    left.createSpan({ cls: "jp-col-suggest-headword", text: entry2.headword });
-    if (entry2.headwordReading) {
-      left.createSpan({ cls: "jp-col-suggest-reading", text: `\uFF08${entry2.headwordReading}\uFF09` });
-    }
-    left.createSpan({ cls: "jp-col-suggest-collocate", text: " " + entry2.collocate });
-    const right = row.createDiv("jp-col-suggest-right");
-    right.createSpan({ cls: "jp-col-suggest-pos", text: entry2.headwordPOS });
-    if (entry2.pattern) {
-      right.createSpan({ cls: "jp-col-suggest-pattern", text: entry2.pattern });
-    }
-  }
-  onChooseSuggestion(entry2) {
-    var _a;
-    const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
-    if (editor) {
-      editor.replaceSelection(entry2.fullPhrase);
-      new import_obsidian4.Notice(`Inserted: ${entry2.fullPhrase}`);
-    } else {
-      navigator.clipboard.writeText(entry2.fullPhrase).then(() => {
-        new import_obsidian4.Notice(`Copied: ${entry2.fullPhrase}`);
-      }).catch(() => {
-        new import_obsidian4.Notice("No active editor. Clipboard copy failed.");
-      });
-    }
-  }
-};
-
-// src/ui/SettingsTab.ts
-var import_obsidian5 = require("obsidian");
-var SettingsTab = class extends import_obsidian5.PluginSettingTab {
-  constructor(app, plugin, settings, store, getScraper, onSettingsChange) {
-    super(app, plugin);
-    this.settings = settings;
-    this.store = store;
-    this.getScraper = getScraper;
-    this.onSettingsChange = onSettingsChange;
-  }
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
-    containerEl.createEl("h2", { text: "JP Collocations Settings" });
-    containerEl.createEl("h3", { text: "Hyogen Scraper" });
-    new import_obsidian5.Setting(containerEl).setName("Enable Hyogen scraping").setDesc("Allow fetching from collocation.hyogen.info").addToggle((t) => t.setValue(this.settings.hyogenEnabled).onChange(async (v) => {
-      this.settings.hyogenEnabled = v;
-      await this.onSettingsChange();
-    }));
-    new import_obsidian5.Setting(containerEl).setName("Rate limit (ms)").setDesc("Minimum milliseconds between requests (default: 2000)").addSlider((s) => s.setLimits(1e3, 1e4, 500).setValue(this.settings.hyogenRateLimit).setDynamicTooltip().onChange(async (v) => {
-      this.settings.hyogenRateLimit = v;
-      await this.onSettingsChange();
-    }));
-    new import_obsidian5.Setting(containerEl).setName("Word list to scrape").setDesc("Comma-separated list of Japanese words to fetch from Hyogen").addTextArea((t) => {
-      t.setValue(this.settings.hyogenWordList.join(", ")).onChange(async (v) => {
-        this.settings.hyogenWordList = v.split(",").map((w) => w.trim()).filter(Boolean);
-        await this.onSettingsChange();
-      });
-      t.inputEl.rows = 3;
-    });
-    containerEl.createEl("h3", { text: "Display" });
-    new import_obsidian5.Setting(containerEl).setName("Default sort order").addDropdown((d) => {
-      d.addOption("frequency", "Frequency");
-      d.addOption("headword", "Headword (\u3042\u3044\u3046\u3048\u304A)");
-      d.addOption("createdAt", "Date added");
-      d.addOption("updatedAt", "Last updated");
-      d.setValue(this.settings.defaultSortOrder).onChange(async (v) => {
-        this.settings.defaultSortOrder = v;
-        await this.onSettingsChange();
-      });
-    });
-    new import_obsidian5.Setting(containerEl).setName("Entries per page").addSlider((s) => s.setLimits(10, 200, 10).setValue(this.settings.entriesPerPage).setDynamicTooltip().onChange(async (v) => {
-      this.settings.entriesPerPage = v;
-      await this.onSettingsChange();
-    }));
-    new import_obsidian5.Setting(containerEl).setName("Show readings").addToggle((t) => t.setValue(this.settings.showReadings).onChange(async (v) => {
-      this.settings.showReadings = v;
-      await this.onSettingsChange();
-    }));
-    containerEl.createEl("h3", { text: "Search" });
-    new import_obsidian5.Setting(containerEl).setName("Max results").addSlider((s) => s.setLimits(10, 500, 10).setValue(this.settings.maxResults).setDynamicTooltip().onChange(async (v) => {
-      this.settings.maxResults = v;
-      await this.onSettingsChange();
-    }));
-    containerEl.createEl("h3", { text: "Data Management" });
-    new import_obsidian5.Setting(containerEl).setName("Export data").setDesc("Export all collocations as a JSON file").addButton((b) => b.setButtonText("Export JSON").onClick(() => {
-      const data = JSON.stringify(this.store.exportAll(), null, 2);
-      const blob = new Blob([data], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "jp-collocations-export.json";
-      a.click();
-      URL.revokeObjectURL(url);
-      new import_obsidian5.Notice("Exported collocations.");
-    }));
-    new import_obsidian5.Setting(containerEl).setName("Import data").setDesc("Import collocations from a JSON file").addButton((b) => b.setButtonText("Import JSON").onClick(() => {
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = ".json";
-      input.onchange = async () => {
-        var _a;
-        const file = (_a = input.files) == null ? void 0 : _a[0];
-        if (!file)
-          return;
-        const text = await file.text();
-        try {
-          const parsed = JSON.parse(text);
-          const count = this.store.bulkImport(parsed);
-          new import_obsidian5.Notice(`Imported ${count} entries.`);
-        } catch (e) {
-          new import_obsidian5.Notice("Failed to parse JSON file.");
-        }
-      };
-      input.click();
-    }));
-    new import_obsidian5.Setting(containerEl).setName("Reset to seed data").setDesc("Clear all data and restore the built-in collocations").addButton((b) => b.setButtonText("Reset").setWarning().onClick(async () => {
-      await this.store.resetToSeed();
-      new import_obsidian5.Notice("Reset to seed data.");
-    }));
-    new import_obsidian5.Setting(containerEl).setName("Clear all data").setDesc("Delete all collocation entries permanently").addButton((b) => b.setButtonText("Clear All").setWarning().onClick(async () => {
-      await this.store.clearAll();
-      new import_obsidian5.Notice("All data cleared.");
-    }));
-    containerEl.createEl("h3", { text: "Statistics" });
-    const stats = this.store.getStats();
-    containerEl.createEl("p", { text: `Total entries: ${stats.total}` });
-    const posList = containerEl.createEl("ul");
-    for (const [pos, count] of Object.entries(stats.byPOS)) {
-      posList.createEl("li", { text: `${pos}: ${count}` });
-    }
-    const srcList = containerEl.createEl("ul");
-    for (const [src, count] of Object.entries(stats.bySource)) {
-      srcList.createEl("li", { text: `${src}: ${count}` });
-    }
-  }
-};
+// src/ui/VaultIndexModal.ts
+var import_obsidian3 = require("obsidian");
 
 // src/classifier/TextClassifier.ts
 var NA_ADJECTIVES = /* @__PURE__ */ new Set([
@@ -2426,9 +2094,860 @@ var TextClassifier = class {
   }
 };
 
-// src/ui/ClassifyModal.ts
+// src/indexer/VaultIndexer.ts
+var NOISE_PATTERNS = [
+  /\[\d{1,2}:\d{2}(?::\d{2})?\]/g,
+  // [00:00] [1:23:45]
+  /\(\d{1,2}:\d{2}(?::\d{2})?\)/g,
+  // (00:00)
+  /→\s*\d{1,2}:\d{2}(?::\d{2})?/g,
+  // → 1:23
+  /^#+\s.*/gm,
+  // Markdown headings
+  /^\s*[-*]\s+/gm,
+  // Markdown list bullets
+  /\[\[([^\]]+)\]\]/g,
+  // [[wikilink]] → keep inner text
+  /\[([^\]]+)\]\([^)]+\)/g,
+  // [text](url) → keep text
+  /`[^`]*`/g,
+  // inline code
+  /^---.*?---/ms,
+  // frontmatter
+  /\*\*([^*]+)\*\*/g,
+  // **bold** → keep text
+  /\*([^*]+)\*/g,
+  // *italic* → keep text
+  /==([^=]+)==/g,
+  // ==highlight== → keep text
+  /~~([^~]+)~~/g
+  // ~~strikethrough~~
+];
+var SENTENCE_END = /[。！？\n]/;
+var CLAUSE_BOUNDARY = /[、，；]/;
+var NO_PATTERN = /[\s\S]{1,6}の[\s\S]{1,6}/g;
+var PARTICLE_RE = /[はがをにでもからまでへとよりだし]/;
+var MIN_CHUNK_LEN = 2;
+var MAX_CHUNK_LEN = 30;
+var DEFAULT_MAX_PER_WORD = 20;
+var VaultIndexer = class {
+  constructor(app, store) {
+    this.aborted = false;
+    this.app = app;
+    this.store = store;
+    this.classifier = new TextClassifier();
+  }
+  /** Signal to abort a running scan. */
+  abort() {
+    this.aborted = true;
+  }
+  /**
+   * Scan the vault for occurrences of the target words and auto-generate
+   * collocation entries.
+   */
+  async run(options = {}, onProgress) {
+    var _a, _b;
+    this.aborted = false;
+    const maxPerWord = (_a = options.maxPerWord) != null ? _a : DEFAULT_MAX_PER_WORD;
+    const skipExisting = (_b = options.skipExisting) != null ? _b : true;
+    const targetWords = this.resolveTargetWords(options.targetWords, skipExisting);
+    if (targetWords.length === 0) {
+      return { scanned: 0, matches: 0, added: 0, words: [] };
+    }
+    const files = this.app.vault.getMarkdownFiles();
+    const result = {
+      scanned: 0,
+      matches: 0,
+      added: 0,
+      words: []
+    };
+    const matchMap = /* @__PURE__ */ new Map();
+    for (const w of targetWords)
+      matchMap.set(w, []);
+    onProgress == null ? void 0 : onProgress(`Scanning ${files.length} notes for ${targetWords.length} target word(s)\u2026`);
+    for (const file of files) {
+      if (this.aborted)
+        break;
+      let content;
+      try {
+        content = await this.app.vault.cachedRead(file);
+      } catch (e) {
+        continue;
+      }
+      result.scanned++;
+      const cleaned = this.stripNoise(content);
+      const sentences = this.extractSentences(cleaned);
+      for (const sentence of sentences) {
+        if (this.aborted)
+          break;
+        for (const target of targetWords) {
+          const contexts = matchMap.get(target);
+          if (contexts.length >= maxPerWord)
+            continue;
+          if (sentence.includes(target)) {
+            contexts.push({ filePath: file.path, sentence, matchedText: target });
+            result.matches++;
+          }
+        }
+      }
+    }
+    if (this.aborted) {
+      onProgress == null ? void 0 : onProgress("Indexing aborted.");
+      return result;
+    }
+    onProgress == null ? void 0 : onProgress(`Generating collocation entries from ${result.matches} match(es)\u2026`);
+    const existingPhrases = new Set(this.store.getAll().map((e) => e.fullPhrase));
+    for (const [target, contexts] of matchMap.entries()) {
+      if (contexts.length === 0)
+        continue;
+      let addedForWord = 0;
+      for (const ctx of contexts) {
+        if (this.aborted)
+          break;
+        const chunks = this.generateChunks(ctx.sentence, target);
+        for (const chunk of chunks) {
+          if (existingPhrases.has(chunk))
+            continue;
+          const entry2 = this.buildEntry(chunk, ctx);
+          this.store.add(entry2);
+          existingPhrases.add(chunk);
+          result.added++;
+          addedForWord++;
+        }
+      }
+      if (addedForWord > 0 && !result.words.includes(target)) {
+        result.words.push(target);
+      }
+    }
+    onProgress == null ? void 0 : onProgress(
+      `Done. Scanned ${result.scanned} notes, found ${result.matches} match(es), added ${result.added} entr${result.added === 1 ? "y" : "ies"}.`
+    );
+    return result;
+  }
+  // ---------------------------------------------------------------------------
+  // Target word resolution
+  // ---------------------------------------------------------------------------
+  resolveTargetWords(provided, skipExisting) {
+    if (provided && provided.length > 0) {
+      return provided.filter((w) => w.trim().length > 0).map((w) => w.trim());
+    }
+    const words = this.store.getIndex().byHeadword;
+    const targets = [];
+    for (const [headword] of words.entries()) {
+      if (skipExisting) {
+        const entries = this.store.getByHeadword(headword);
+        const hasVaultEntry = entries.some((e) => e.source === "vault-index" /* VaultIndex */);
+        if (hasVaultEntry)
+          continue;
+      }
+      targets.push(headword);
+    }
+    return targets;
+  }
+  // ---------------------------------------------------------------------------
+  // Noise stripping
+  // ---------------------------------------------------------------------------
+  /**
+   * Remove timestamps, markdown formatting and transcript noise while
+   * preserving Japanese text content.
+   */
+  stripNoise(content) {
+    let text = content.replace(/^---[\s\S]*?---\s*/m, "");
+    for (const re of NOISE_PATTERNS) {
+      if (re.source.includes("([^")) {
+        text = text.replace(re, "$1");
+      } else {
+        text = text.replace(re, " ");
+      }
+    }
+    text = text.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n");
+    return text.trim();
+  }
+  // ---------------------------------------------------------------------------
+  // Sentence extraction
+  // ---------------------------------------------------------------------------
+  /**
+   * Split cleaned text into individual sentences, filtering out empty or
+   * non-Japanese lines.
+   */
+  extractSentences(text) {
+    const sentences = [];
+    const parts = text.split(/(?<=[。！？])|(?=\n)/);
+    let buffer = "";
+    for (const part of parts) {
+      buffer += part.replace(/\n/g, "");
+      if (SENTENCE_END.test(part) || part === "\n") {
+        const trimmed = buffer.trim();
+        if (trimmed.length >= MIN_CHUNK_LEN && this.hasJapanese(trimmed)) {
+          sentences.push(trimmed);
+        }
+        buffer = "";
+      }
+    }
+    if (buffer.trim().length >= MIN_CHUNK_LEN && this.hasJapanese(buffer.trim())) {
+      sentences.push(buffer.trim());
+    }
+    return sentences;
+  }
+  // ---------------------------------------------------------------------------
+  // Chunk generation
+  // ---------------------------------------------------------------------------
+  /**
+   * Given a sentence and a target word that appears in it, generate a set of
+   * meaningful collocation chunks to store as entries.
+   *
+   * Strategy:
+   * 1. The target word alone.
+   * 2. The clause-level segment containing the target (split on 、).
+   * 3. Forward windows of various lengths after the target.
+   * 4. Backward windows (preceding material + target).
+   * 5. Structural patterns: N+の+N, N+particle+V, etc. (via the classifier).
+   */
+  generateChunks(sentence, target) {
+    const pos = sentence.indexOf(target);
+    if (pos === -1)
+      return [target];
+    const chunks = /* @__PURE__ */ new Set();
+    if (target.length >= MIN_CHUNK_LEN) {
+      chunks.add(target);
+    }
+    const clauses = sentence.split(CLAUSE_BOUNDARY);
+    for (const clause of clauses) {
+      if (clause.includes(target)) {
+        const c = clause.trim();
+        if (this.isValidChunk(c))
+          chunks.add(c);
+      }
+    }
+    const after = sentence.slice(pos + target.length);
+    const forwardStops = this.findBoundaryPositions(after);
+    for (const stop of forwardStops) {
+      const chunk = target + after.slice(0, stop);
+      if (this.isValidChunk(chunk))
+        chunks.add(chunk);
+    }
+    const before = sentence.slice(0, pos);
+    const backwardStops = this.findBackBoundaryPositions(before);
+    for (const stop of backwardStops) {
+      const chunk = before.slice(stop) + target;
+      if (this.isValidChunk(chunk))
+        chunks.add(chunk);
+    }
+    const structural = this.extractStructuralChunks(sentence, target);
+    for (const c of structural) {
+      if (this.isValidChunk(c))
+        chunks.add(c);
+    }
+    return [...chunks].filter((c) => this.isValidChunk(c));
+  }
+  /**
+   * Find positions (relative to `text`) where interesting forward chunks end.
+   * Returns positions at: next clause boundary, next sentence end, and
+   * a few fixed widths that stay within the sentence.
+   */
+  findBoundaryPositions(text) {
+    const positions = /* @__PURE__ */ new Set();
+    const stripped = text.replace(/[。！？\n].*$/, "");
+    for (const len of [4, 6, 8, 12]) {
+      if (len <= stripped.length)
+        positions.add(len);
+    }
+    for (let i = 0; i < stripped.length; i++) {
+      if (CLAUSE_BOUNDARY.test(stripped[i])) {
+        positions.add(i);
+        positions.add(i + 1);
+      }
+    }
+    if (stripped.length > 0)
+      positions.add(stripped.length);
+    return [...positions].sort((a, b) => a - b).filter((p) => p > 0 && p <= stripped.length);
+  }
+  /**
+   * Find positions where interesting backward chunks start (relative to `text`).
+   * Returns start positions such that `text.slice(start) + target` forms a phrase.
+   */
+  findBackBoundaryPositions(text) {
+    const positions = /* @__PURE__ */ new Set();
+    const stripped = text.replace(/^.*[。！？\n]/, "");
+    const offset = text.length - stripped.length;
+    for (const len of [2, 4, 6]) {
+      const start = stripped.length - len;
+      if (start >= 0)
+        positions.add(offset + start);
+    }
+    for (let i = stripped.length - 1; i >= 0; i--) {
+      if (CLAUSE_BOUNDARY.test(stripped[i])) {
+        positions.add(offset + i + 1);
+        break;
+      }
+    }
+    return [...positions].sort((a, b) => a - b).filter((p) => p >= 0);
+  }
+  /**
+   * Extract noun-phrase cores and particle-based sub-phrases from the sentence
+   * that contain the target word.
+   */
+  extractStructuralChunks(sentence, target) {
+    const chunks = [];
+    NO_PATTERN.lastIndex = 0;
+    let noMatch;
+    while ((noMatch = NO_PATTERN.exec(sentence)) !== null) {
+      if (noMatch[0].includes(target)) {
+        chunks.push(noMatch[0]);
+      }
+    }
+    const pos = sentence.indexOf(target);
+    const afterTarget = sentence.slice(pos + target.length);
+    for (let i = 0; i < Math.min(afterTarget.length, 15); i++) {
+      if (PARTICLE_RE.test(afterTarget[i])) {
+        const verbEnd = Math.min(i + 1 + 8, afterTarget.length);
+        const chunk = target + afterTarget.slice(0, verbEnd);
+        chunks.push(chunk);
+        break;
+      }
+    }
+    return chunks;
+  }
+  // ---------------------------------------------------------------------------
+  // Entry building
+  // ---------------------------------------------------------------------------
+  /**
+   * Build a CollocationEntry from a chunk and its match context.
+   */
+  buildEntry(chunk, ctx) {
+    const result = this.classifier.classify(chunk);
+    const now = Date.now();
+    const exampleWithHighlight = this.highlightInSentence(ctx.sentence, chunk);
+    return {
+      id: this.store.generateId(),
+      headword: result.headword || chunk,
+      headwordReading: "",
+      collocate: result.collocate,
+      fullPhrase: chunk,
+      headwordPOS: result.headwordPOS,
+      collocatePOS: result.collocatePOS,
+      pattern: result.pattern,
+      exampleSentences: [exampleWithHighlight],
+      source: "vault-index" /* VaultIndex */,
+      tags: [...result.tags, "vault-indexed"],
+      notes: `Source: ${ctx.filePath}`,
+      frequency: 1,
+      createdAt: now,
+      updatedAt: now
+    };
+  }
+  /**
+   * Wrap all occurrences of the matched chunk in the sentence with bold markers
+   * for display.
+   */
+  highlightInSentence(sentence, chunk) {
+    if (!sentence.includes(chunk))
+      return sentence;
+    const escaped = chunk.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return sentence.replace(new RegExp(escaped, "g"), `**${chunk}**`);
+  }
+  // ---------------------------------------------------------------------------
+  // Helpers
+  // ---------------------------------------------------------------------------
+  isValidChunk(chunk) {
+    if (!chunk || chunk.length < MIN_CHUNK_LEN || chunk.length > MAX_CHUNK_LEN)
+      return false;
+    if (!this.hasJapanese(chunk))
+      return false;
+    if (/^[はがをにでもからまでへとよりだし]+$/.test(chunk))
+      return false;
+    return true;
+  }
+  hasJapanese(text) {
+    return /[\u3000-\u9fff\uff00-\uffef]/.test(text);
+  }
+};
+
+// src/ui/VaultIndexModal.ts
+var VaultIndexModal = class extends import_obsidian3.Modal {
+  constructor(app, store, onComplete) {
+    super(app);
+    this.indexer = null;
+    this.useAllChecked = false;
+    this.skipExistingChecked = true;
+    this.store = store;
+    this.onComplete = onComplete;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("jp-vault-index-modal");
+    contentEl.createEl("h2", { text: "Vault-Wide Indexing" });
+    contentEl.createEl("p", {
+      text: "Scan every note in your vault for occurrences of Japanese words, automatically generating collocation entries with source context.",
+      cls: "jp-vault-index-desc"
+    });
+    const wordSection = contentEl.createDiv("jp-vault-index-section");
+    wordSection.createEl("label", {
+      text: "Target words (one per line)",
+      cls: "jp-vault-index-label"
+    });
+    this.wordInput = wordSection.createEl("textarea", {
+      cls: "jp-vault-index-textarea"
+    });
+    this.wordInput.placeholder = "e.g.\n\u305D\u3082\u305D\u3082\n\u69CB\u9020\n\u9762\u767D\u3044";
+    this.wordInput.rows = 5;
+    const optionsSection = contentEl.createDiv("jp-vault-index-section");
+    new import_obsidian3.Setting(optionsSection).setName("Use all lexicon headwords").setDesc("Ignore the word list above and index every headword already in the lexicon").addToggle((t) => {
+      t.setValue(false).onChange((v) => {
+        this.useAllChecked = v;
+        this.wordInput.disabled = v;
+        this.wordInput.style.opacity = v ? "0.4" : "1";
+      });
+    });
+    new import_obsidian3.Setting(optionsSection).setName("Skip already-indexed words").setDesc("Do not re-index headwords that already have vault-index entries").addToggle((t) => {
+      t.setValue(true).onChange((v) => {
+        this.skipExistingChecked = v;
+      });
+    });
+    new import_obsidian3.Setting(optionsSection).setName("Max sentences per word").setDesc("Stop collecting context for a word after this many sentences (1\u2013100)").addText((t) => {
+      this.maxPerWordInput = t.inputEl;
+      t.setValue("20");
+      t.inputEl.type = "number";
+      t.inputEl.min = "1";
+      t.inputEl.max = "100";
+      t.inputEl.style.width = "5rem";
+    });
+    this.statusEl = contentEl.createDiv({ cls: "jp-vault-index-status" });
+    this.resultsEl = contentEl.createDiv({ cls: "jp-vault-index-results" });
+    const btnRow = contentEl.createDiv("jp-vault-index-btn-row");
+    this.runBtn = btnRow.createEl("button", {
+      text: "Start Indexing",
+      cls: "mod-cta jp-vault-index-run-btn"
+    });
+    this.runBtn.addEventListener("click", () => this.startIndexing());
+    this.cancelBtn = btnRow.createEl("button", {
+      text: "Cancel",
+      cls: "jp-vault-index-cancel-btn"
+    });
+    this.cancelBtn.style.display = "none";
+    this.cancelBtn.addEventListener("click", () => this.cancelIndexing());
+  }
+  onClose() {
+    var _a;
+    (_a = this.indexer) == null ? void 0 : _a.abort();
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+  async startIndexing() {
+    const useAll = this.useAllChecked;
+    const skipExisting = this.skipExistingChecked;
+    const maxPerWord = Math.max(1, Math.min(100, parseInt(this.maxPerWordInput.value, 10) || 20));
+    let targetWords;
+    if (!useAll) {
+      const raw = this.wordInput.value.split("\n").map((w) => w.trim()).filter((w) => w.length > 0);
+      if (raw.length === 0) {
+        new import_obsidian3.Notice("Please enter at least one target word, or enable 'Use all lexicon headwords'.");
+        return;
+      }
+      targetWords = raw;
+    }
+    this.runBtn.disabled = true;
+    this.runBtn.textContent = "Indexing\u2026";
+    this.cancelBtn.style.display = "";
+    this.statusEl.empty();
+    this.resultsEl.empty();
+    this.setStatus("Starting\u2026");
+    this.indexer = new VaultIndexer(this.app, this.store);
+    try {
+      const result = await this.indexer.run(
+        { targetWords, skipExisting, maxPerWord },
+        (msg) => this.setStatus(msg)
+      );
+      this.renderResults(result);
+      this.onComplete(result);
+    } catch (err) {
+      this.setStatus(`Error: ${String(err)}`);
+      console.error("[JP Collocations] Vault indexer error:", err);
+    } finally {
+      this.runBtn.disabled = false;
+      this.runBtn.textContent = "Start Indexing";
+      this.cancelBtn.style.display = "none";
+      this.indexer = null;
+    }
+  }
+  cancelIndexing() {
+    var _a;
+    (_a = this.indexer) == null ? void 0 : _a.abort();
+    this.setStatus("Cancelling\u2026");
+    this.cancelBtn.disabled = true;
+  }
+  setStatus(msg) {
+    this.statusEl.empty();
+    this.statusEl.createSpan({ text: msg, cls: "jp-vault-index-status-text" });
+  }
+  renderResults(result) {
+    this.resultsEl.empty();
+    if (result.added === 0) {
+      this.resultsEl.createEl("p", {
+        text: "No new entries were added.",
+        cls: "jp-vault-index-result-empty"
+      });
+      return;
+    }
+    this.resultsEl.createEl("h4", { text: "Indexing complete", cls: "jp-vault-index-result-title" });
+    const ul = this.resultsEl.createEl("ul", { cls: "jp-vault-index-result-list" });
+    ul.createEl("li", { text: `Notes scanned: ${result.scanned}` });
+    ul.createEl("li", { text: `Sentence matches: ${result.matches}` });
+    ul.createEl("li", { text: `New entries added: ${result.added}` });
+    if (result.words.length > 0) {
+      ul.createEl("li", { text: `Words processed: ${result.words.join("\u3001")}` });
+    }
+  }
+};
+
+// src/ui/CollocationView.ts
+var JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
+var CollocationView = class extends import_obsidian4.ItemView {
+  constructor(leaf, store, engine, settings) {
+    super(leaf);
+    this.results = [];
+    this.currentPOSFilter = [];
+    this.currentTagFilter = [];
+    this.searchInput = null;
+    this.resultContainer = null;
+    this.statsEl = null;
+    this.store = store;
+    this.engine = engine;
+    this.settings = settings;
+  }
+  getViewType() {
+    return JP_COLLOCATIONS_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "JP Collocations";
+  }
+  getIcon() {
+    return "languages";
+  }
+  async onOpen() {
+    this.buildUI();
+    this.refresh();
+  }
+  async onClose() {
+  }
+  buildUI() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-collocations-view");
+    const header = container.createDiv("jp-col-header");
+    header.createEl("h4", { text: "JP Collocations", cls: "jp-col-title" });
+    const searchRow = container.createDiv("jp-col-search-row");
+    this.searchInput = searchRow.createEl("input", {
+      type: "text",
+      placeholder: "Search collocations... (JP/EN/romaji)",
+      cls: "jp-col-search-input"
+    });
+    this.searchInput.addEventListener("input", () => this.refresh());
+    const addBtn = searchRow.createEl("button", { text: "+", cls: "jp-col-add-btn", title: "Add entry" });
+    addBtn.addEventListener("click", () => {
+      new AddEntryModal(this.app, this.store, () => this.refresh()).open();
+    });
+    const indexBtn = searchRow.createEl("button", { text: "\u27F3", cls: "jp-col-add-btn", title: "Index vault for collocations" });
+    indexBtn.addEventListener("click", () => {
+      new VaultIndexModal(this.app, this.store, (result) => {
+        if (result.added > 0) {
+          new import_obsidian4.Notice(`Vault indexing: added ${result.added} new entr${result.added === 1 ? "y" : "ies"}.`);
+          this.refresh();
+        }
+      }).open();
+    });
+    const filterRow = container.createDiv("jp-col-filter-row");
+    this.buildPOSChips(filterRow);
+    this.statsEl = container.createDiv("jp-col-stats");
+    this.resultContainer = container.createDiv("jp-col-results");
+  }
+  buildPOSChips(parent) {
+    const posValues = Object.values(PartOfSpeech);
+    for (const pos of posValues) {
+      const chip = parent.createEl("span", { text: pos, cls: "jp-col-chip" });
+      chip.addEventListener("click", () => {
+        if (this.currentPOSFilter.includes(pos)) {
+          this.currentPOSFilter = this.currentPOSFilter.filter((p) => p !== pos);
+          chip.removeClass("jp-col-chip--active");
+        } else {
+          this.currentPOSFilter.push(pos);
+          chip.addClass("jp-col-chip--active");
+        }
+        this.refresh();
+      });
+    }
+    const clearBtn = parent.createEl("span", { text: "\u2715 clear", cls: "jp-col-chip jp-col-chip--clear" });
+    clearBtn.addEventListener("click", () => {
+      this.currentPOSFilter = [];
+      this.currentTagFilter = [];
+      parent.querySelectorAll(".jp-col-chip--active").forEach((el) => el.removeClass("jp-col-chip--active"));
+      this.refresh();
+    });
+  }
+  refresh() {
+    var _a, _b;
+    const query = (_b = (_a = this.searchInput) == null ? void 0 : _a.value) != null ? _b : "";
+    this.results = this.engine.search({
+      query,
+      posFilter: this.currentPOSFilter.length ? this.currentPOSFilter : void 0,
+      tagFilter: this.currentTagFilter.length ? this.currentTagFilter : void 0,
+      fuzzy: true,
+      maxResults: this.settings.maxResults,
+      sortBy: this.settings.defaultSortOrder
+    });
+    this.renderStats();
+    this.renderResults();
+  }
+  renderStats() {
+    if (!this.statsEl)
+      return;
+    const stats = this.store.getStats();
+    this.statsEl.empty();
+    this.statsEl.createSpan({ text: `${this.results.length} / ${stats.total} entries`, cls: "jp-col-stat-text" });
+  }
+  renderResults() {
+    if (!this.resultContainer)
+      return;
+    this.resultContainer.empty();
+    if (this.results.length === 0) {
+      this.resultContainer.createDiv({ text: "No results found.", cls: "jp-col-empty" });
+      return;
+    }
+    for (const result of this.results) {
+      this.renderEntry(this.resultContainer, result.entry);
+    }
+  }
+  renderEntry(parent, entry2) {
+    const card = parent.createDiv("jp-col-card");
+    const mainRow = card.createDiv("jp-col-card-main");
+    const hwSpan = mainRow.createSpan({ cls: "jp-col-headword", text: entry2.headword });
+    if (this.settings.showReadings && entry2.headwordReading) {
+      mainRow.createSpan({ cls: "jp-col-reading", text: `\uFF08${entry2.headwordReading}\uFF09` });
+    }
+    mainRow.createSpan({ cls: "jp-col-collocate", text: " " + entry2.collocate });
+    mainRow.createSpan({ cls: `jp-col-pos jp-col-pos--${this.posClass(entry2.headwordPOS)}`, text: entry2.headwordPOS });
+    if (entry2.pattern) {
+      mainRow.createSpan({ cls: "jp-col-pattern", text: entry2.pattern });
+    }
+    const actRow = card.createDiv("jp-col-actions");
+    this.buildActions(actRow, entry2);
+    if (entry2.exampleSentences.length > 0 || entry2.notes) {
+      const details = card.createEl("details", { cls: "jp-col-details" });
+      details.createEl("summary", { text: "examples / notes" });
+      for (const s of entry2.exampleSentences) {
+        details.createEl("p", { text: s, cls: "jp-col-example" });
+      }
+      if (entry2.notes) {
+        details.createEl("p", { text: entry2.notes, cls: "jp-col-notes" });
+      }
+    }
+  }
+  buildActions(parent, entry2) {
+    const copyBtn = parent.createEl("button", { text: "Copy", cls: "jp-col-action-btn" });
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(entry2.fullPhrase).then(() => {
+        new import_obsidian4.Notice(`Copied: ${entry2.fullPhrase}`);
+      }).catch(() => {
+        new import_obsidian4.Notice("Copy failed.");
+      });
+    });
+    const insertBtn = parent.createEl("button", { text: "Insert", cls: "jp-col-action-btn" });
+    insertBtn.addEventListener("click", () => {
+      var _a;
+      const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
+      if (editor) {
+        editor.replaceSelection(entry2.fullPhrase);
+        new import_obsidian4.Notice(`Inserted: ${entry2.fullPhrase}`);
+      } else {
+        new import_obsidian4.Notice("No active editor.");
+      }
+    });
+    const editBtn = parent.createEl("button", { text: "Edit", cls: "jp-col-action-btn" });
+    editBtn.addEventListener("click", () => {
+      new AddEntryModal(this.app, this.store, () => this.refresh(), entry2).open();
+    });
+    const delBtn = parent.createEl("button", { text: "\xD7", cls: "jp-col-action-btn jp-col-action-btn--danger" });
+    delBtn.addEventListener("click", () => {
+      this.store.delete(entry2.id);
+      new import_obsidian4.Notice(`Deleted: ${entry2.fullPhrase}`);
+      this.refresh();
+    });
+  }
+  posClass(pos) {
+    var _a;
+    const map = {
+      ["\u540D\u8A5E" /* Noun */]: "noun",
+      ["\u52D5\u8A5E" /* Verb */]: "verb",
+      ["\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */]: "adj-i",
+      ["\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */]: "adj-na",
+      ["\u526F\u8A5E" /* Adverb */]: "adv",
+      ["\u8868\u73FE" /* Expression */]: "expr"
+    };
+    return (_a = map[pos]) != null ? _a : "other";
+  }
+};
+
+// src/ui/SearchModal.ts
+var import_obsidian5 = require("obsidian");
+var SearchModal = class extends import_obsidian5.SuggestModal {
+  constructor(app, engine) {
+    super(app);
+    this.engine = engine;
+    this.setPlaceholder("Search Japanese collocations...");
+    this.setInstructions([
+      { command: "\u2191\u2193", purpose: "navigate" },
+      { command: "\u21B5", purpose: "insert into editor" },
+      { command: "esc", purpose: "close" }
+    ]);
+  }
+  getSuggestions(query) {
+    if (!query.trim()) {
+      return this.engine.quickSearch("", 20).map((r) => r.entry);
+    }
+    return this.engine.quickSearch(query, 20).map((r) => r.entry);
+  }
+  renderSuggestion(entry2, el) {
+    const row = el.createDiv("jp-col-suggest-row");
+    const left = row.createDiv("jp-col-suggest-left");
+    left.createSpan({ cls: "jp-col-suggest-headword", text: entry2.headword });
+    if (entry2.headwordReading) {
+      left.createSpan({ cls: "jp-col-suggest-reading", text: `\uFF08${entry2.headwordReading}\uFF09` });
+    }
+    left.createSpan({ cls: "jp-col-suggest-collocate", text: " " + entry2.collocate });
+    const right = row.createDiv("jp-col-suggest-right");
+    right.createSpan({ cls: "jp-col-suggest-pos", text: entry2.headwordPOS });
+    if (entry2.pattern) {
+      right.createSpan({ cls: "jp-col-suggest-pattern", text: entry2.pattern });
+    }
+  }
+  onChooseSuggestion(entry2) {
+    var _a;
+    const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
+    if (editor) {
+      editor.replaceSelection(entry2.fullPhrase);
+      new import_obsidian5.Notice(`Inserted: ${entry2.fullPhrase}`);
+    } else {
+      navigator.clipboard.writeText(entry2.fullPhrase).then(() => {
+        new import_obsidian5.Notice(`Copied: ${entry2.fullPhrase}`);
+      }).catch(() => {
+        new import_obsidian5.Notice("No active editor. Clipboard copy failed.");
+      });
+    }
+  }
+};
+
+// src/ui/SettingsTab.ts
 var import_obsidian6 = require("obsidian");
-var ClassifyModal = class extends import_obsidian6.Modal {
+var SettingsTab = class extends import_obsidian6.PluginSettingTab {
+  constructor(app, plugin, settings, store, getScraper, onSettingsChange) {
+    super(app, plugin);
+    this.settings = settings;
+    this.store = store;
+    this.getScraper = getScraper;
+    this.onSettingsChange = onSettingsChange;
+  }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    containerEl.createEl("h2", { text: "JP Collocations Settings" });
+    containerEl.createEl("h3", { text: "Hyogen Scraper" });
+    new import_obsidian6.Setting(containerEl).setName("Enable Hyogen scraping").setDesc("Allow fetching from collocation.hyogen.info").addToggle((t) => t.setValue(this.settings.hyogenEnabled).onChange(async (v) => {
+      this.settings.hyogenEnabled = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian6.Setting(containerEl).setName("Rate limit (ms)").setDesc("Minimum milliseconds between requests (default: 2000)").addSlider((s) => s.setLimits(1e3, 1e4, 500).setValue(this.settings.hyogenRateLimit).setDynamicTooltip().onChange(async (v) => {
+      this.settings.hyogenRateLimit = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian6.Setting(containerEl).setName("Word list to scrape").setDesc("Comma-separated list of Japanese words to fetch from Hyogen").addTextArea((t) => {
+      t.setValue(this.settings.hyogenWordList.join(", ")).onChange(async (v) => {
+        this.settings.hyogenWordList = v.split(",").map((w) => w.trim()).filter(Boolean);
+        await this.onSettingsChange();
+      });
+      t.inputEl.rows = 3;
+    });
+    containerEl.createEl("h3", { text: "Display" });
+    new import_obsidian6.Setting(containerEl).setName("Default sort order").addDropdown((d) => {
+      d.addOption("frequency", "Frequency");
+      d.addOption("headword", "Headword (\u3042\u3044\u3046\u3048\u304A)");
+      d.addOption("createdAt", "Date added");
+      d.addOption("updatedAt", "Last updated");
+      d.setValue(this.settings.defaultSortOrder).onChange(async (v) => {
+        this.settings.defaultSortOrder = v;
+        await this.onSettingsChange();
+      });
+    });
+    new import_obsidian6.Setting(containerEl).setName("Entries per page").addSlider((s) => s.setLimits(10, 200, 10).setValue(this.settings.entriesPerPage).setDynamicTooltip().onChange(async (v) => {
+      this.settings.entriesPerPage = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian6.Setting(containerEl).setName("Show readings").addToggle((t) => t.setValue(this.settings.showReadings).onChange(async (v) => {
+      this.settings.showReadings = v;
+      await this.onSettingsChange();
+    }));
+    containerEl.createEl("h3", { text: "Search" });
+    new import_obsidian6.Setting(containerEl).setName("Max results").addSlider((s) => s.setLimits(10, 500, 10).setValue(this.settings.maxResults).setDynamicTooltip().onChange(async (v) => {
+      this.settings.maxResults = v;
+      await this.onSettingsChange();
+    }));
+    containerEl.createEl("h3", { text: "Data Management" });
+    new import_obsidian6.Setting(containerEl).setName("Export data").setDesc("Export all collocations as a JSON file").addButton((b) => b.setButtonText("Export JSON").onClick(() => {
+      const data = JSON.stringify(this.store.exportAll(), null, 2);
+      const blob = new Blob([data], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "jp-collocations-export.json";
+      a.click();
+      URL.revokeObjectURL(url);
+      new import_obsidian6.Notice("Exported collocations.");
+    }));
+    new import_obsidian6.Setting(containerEl).setName("Import data").setDesc("Import collocations from a JSON file").addButton((b) => b.setButtonText("Import JSON").onClick(() => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".json";
+      input.onchange = async () => {
+        var _a;
+        const file = (_a = input.files) == null ? void 0 : _a[0];
+        if (!file)
+          return;
+        const text = await file.text();
+        try {
+          const parsed = JSON.parse(text);
+          const count = this.store.bulkImport(parsed);
+          new import_obsidian6.Notice(`Imported ${count} entries.`);
+        } catch (e) {
+          new import_obsidian6.Notice("Failed to parse JSON file.");
+        }
+      };
+      input.click();
+    }));
+    new import_obsidian6.Setting(containerEl).setName("Reset to seed data").setDesc("Clear all data and restore the built-in collocations").addButton((b) => b.setButtonText("Reset").setWarning().onClick(async () => {
+      await this.store.resetToSeed();
+      new import_obsidian6.Notice("Reset to seed data.");
+    }));
+    new import_obsidian6.Setting(containerEl).setName("Clear all data").setDesc("Delete all collocation entries permanently").addButton((b) => b.setButtonText("Clear All").setWarning().onClick(async () => {
+      await this.store.clearAll();
+      new import_obsidian6.Notice("All data cleared.");
+    }));
+    containerEl.createEl("h3", { text: "Statistics" });
+    const stats = this.store.getStats();
+    containerEl.createEl("p", { text: `Total entries: ${stats.total}` });
+    const posList = containerEl.createEl("ul");
+    for (const [pos, count] of Object.entries(stats.byPOS)) {
+      posList.createEl("li", { text: `${pos}: ${count}` });
+    }
+    const srcList = containerEl.createEl("ul");
+    for (const [src, count] of Object.entries(stats.bySource)) {
+      srcList.createEl("li", { text: `${src}: ${count}` });
+    }
+  }
+};
+
+// src/ui/ClassifyModal.ts
+var import_obsidian7 = require("obsidian");
+var ClassifyModal = class extends import_obsidian7.Modal {
   constructor(app, result, store, onSave) {
     super(app);
     this.result = result;
@@ -2465,33 +2984,33 @@ var ClassifyModal = class extends import_obsidian6.Modal {
     fill.style.width = `${this.result.confidence}%`;
     fill.style.backgroundColor = this.result.confidence >= 70 ? "#4caf50" : this.result.confidence >= 40 ? "#ff9800" : "#f44336";
     contentEl.createEl("hr");
-    new import_obsidian6.Setting(contentEl).setName("Headword").setDesc("Main entry word").addText((t) => t.setValue(this.headword).onChange((v) => {
+    new import_obsidian7.Setting(contentEl).setName("Headword").setDesc("Main entry word").addText((t) => t.setValue(this.headword).onChange((v) => {
       this.headword = v;
     }));
-    new import_obsidian6.Setting(contentEl).setName("Collocate").setDesc("Collocating element (particle + verb, etc.)").addText((t) => t.setValue(this.collocate).onChange((v) => {
+    new import_obsidian7.Setting(contentEl).setName("Collocate").setDesc("Collocating element (particle + verb, etc.)").addText((t) => t.setValue(this.collocate).onChange((v) => {
       this.collocate = v;
     }));
-    new import_obsidian6.Setting(contentEl).setName("Full Phrase").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
+    new import_obsidian7.Setting(contentEl).setName("Full Phrase").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
       this.fullPhrase = v;
     }));
-    new import_obsidian6.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
+    new import_obsidian7.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
       for (const pos of Object.values(PartOfSpeech))
         d.addOption(pos, pos);
       d.setValue(this.headwordPOS).onChange((v) => {
         this.headwordPOS = v;
       });
     });
-    new import_obsidian6.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
+    new import_obsidian7.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
       for (const pos of Object.values(PartOfSpeech))
         d.addOption(pos, pos);
       d.setValue(this.collocatePOS).onChange((v) => {
         this.collocatePOS = v;
       });
     });
-    new import_obsidian6.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u3092+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
+    new import_obsidian7.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u3092+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
       this.pattern = v;
     }));
-    const tagSetting = new import_obsidian6.Setting(contentEl).setName("Tags").setDesc("Click to toggle; edit the text field to add more");
+    const tagSetting = new import_obsidian7.Setting(contentEl).setName("Tags").setDesc("Click to toggle; edit the text field to add more");
     const tagChipRow = contentEl.createDiv("jp-col-tag-chips");
     let tagInputEl = null;
     const renderChips = () => {
@@ -2514,13 +3033,13 @@ var ClassifyModal = class extends import_obsidian6.Modal {
         renderChips();
       });
     });
-    new import_obsidian6.Setting(contentEl).setName("Notes").addTextArea((t) => {
+    new import_obsidian7.Setting(contentEl).setName("Notes").addTextArea((t) => {
       t.setValue(this.notes).onChange((v) => {
         this.notes = v;
       });
       t.inputEl.rows = 2;
     });
-    new import_obsidian6.Setting(contentEl).setName("Frequency / Importance").setDesc("1\u2013100").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
+    new import_obsidian7.Setting(contentEl).setName("Frequency / Importance").setDesc("1\u2013100").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
       this.frequency = v;
     }));
     const btnRow = contentEl.createDiv("jp-col-modal-btns");
@@ -2533,7 +3052,7 @@ var ClassifyModal = class extends import_obsidian6.Modal {
     const hw = this.headword.trim();
     const col = this.collocate.trim();
     if (!hw) {
-      new import_obsidian6.Notice("Headword is required.");
+      new import_obsidian7.Notice("Headword is required.");
       return;
     }
     const now = Date.now();
@@ -2555,7 +3074,7 @@ var ClassifyModal = class extends import_obsidian6.Modal {
       updatedAt: now
     };
     this.store.add(entry2);
-    new import_obsidian6.Notice(`Saved: ${entry2.fullPhrase}`);
+    new import_obsidian7.Notice(`Saved: ${entry2.fullPhrase}`);
     this.onSave();
     this.close();
   }
@@ -2565,7 +3084,7 @@ var ClassifyModal = class extends import_obsidian6.Modal {
 };
 
 // src/main.ts
-var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
+var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULT_SETTINGS };
@@ -2613,7 +3132,7 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       editorCallback: (editor) => {
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian7.Notice("Select some Japanese text first!");
+          new import_obsidian8.Notice("Select some Japanese text first!");
           return;
         }
         const classifier = new TextClassifier();
@@ -2630,6 +3149,16 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       id: "export-data",
       name: "Export Data",
       callback: () => this.exportData()
+    });
+    this.addCommand({
+      id: "index-vault",
+      name: "Index Vault for Collocations",
+      callback: () => new VaultIndexModal(this.app, this.store, (result) => {
+        if (result.added > 0) {
+          new import_obsidian8.Notice(`Vault indexing: added ${result.added} new entr${result.added === 1 ? "y" : "ies"}.`);
+          this.refreshViews();
+        }
+      }).open()
     });
     this.addCommand({
       id: "fetch-hyogen",
@@ -2679,10 +3208,10 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       try {
         const parsed = JSON.parse(text);
         const count = this.store.bulkImport(parsed);
-        new import_obsidian7.Notice(`Imported ${count} entries.`);
+        new import_obsidian8.Notice(`Imported ${count} entries.`);
         this.refreshViews();
       } catch (e) {
-        new import_obsidian7.Notice("Failed to parse JSON file.");
+        new import_obsidian8.Notice("Failed to parse JSON file.");
       }
     };
     input.click();
@@ -2696,31 +3225,31 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
     a.download = "jp-collocations-export.json";
     a.click();
     URL.revokeObjectURL(url);
-    new import_obsidian7.Notice("Exported collocations.");
+    new import_obsidian8.Notice("Exported collocations.");
   }
   async fetchFromHyogen() {
     var _a;
     if (!this.settings.hyogenEnabled) {
-      new import_obsidian7.Notice("Hyogen scraping is disabled. Enable it in settings first.");
+      new import_obsidian8.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
     }
     if (this.settings.hyogenWordList.length === 0) {
-      new import_obsidian7.Notice("No words configured. Add words to the scrape list in settings.");
+      new import_obsidian8.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
     if ((_a = this.scraper) == null ? void 0 : _a.isRunning()) {
-      new import_obsidian7.Notice("Scraper is already running.");
+      new import_obsidian8.Notice("Scraper is already running.");
       return;
     }
     this.scraper = new HyogenScraper(this.app, this.store, {
       rateLimit: this.settings.hyogenRateLimit,
-      onProgress: (msg) => new import_obsidian7.Notice(msg, 3e3),
+      onProgress: (msg) => new import_obsidian8.Notice(msg, 3e3),
       onEntry: () => this.refreshViews()
     });
     this.scraper.enqueue(this.settings.hyogenWordList);
-    new import_obsidian7.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
+    new import_obsidian8.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
     const count = await this.scraper.run();
-    new import_obsidian7.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    new import_obsidian8.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
   }
 };

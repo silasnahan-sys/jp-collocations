@@ -345,3 +345,87 @@
 .jp-col-results::-webkit-scrollbar-thumb:hover {
   background: var(--text-faint);
 }
+
+/* ── Vault Index Modal ────────────────────────────────────── */
+.jp-vault-index-modal .modal-content {
+  max-width: 560px;
+  width: 100%;
+}
+
+.jp-vault-index-desc {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  margin-bottom: 12px;
+}
+
+.jp-vault-index-section {
+  margin-bottom: 12px;
+}
+
+.jp-vault-index-label {
+  display: block;
+  font-weight: 600;
+  font-size: var(--font-ui-small);
+  margin-bottom: 4px;
+  color: var(--text-normal);
+}
+
+.jp-vault-index-textarea {
+  width: 100%;
+  resize: vertical;
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-small);
+  padding: 6px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  transition: opacity 0.2s;
+}
+
+.jp-vault-index-status {
+  min-height: 1.4em;
+  margin: 8px 0;
+}
+
+.jp-vault-index-status-text {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.jp-vault-index-results {
+  margin-top: 10px;
+}
+
+.jp-vault-index-result-title {
+  margin: 0 0 6px;
+  font-size: var(--font-ui-medium);
+  color: var(--text-accent);
+}
+
+.jp-vault-index-result-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: var(--font-ui-small);
+  color: var(--text-normal);
+}
+
+.jp-vault-index-result-list li {
+  margin-bottom: 2px;
+}
+
+.jp-vault-index-result-empty {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
+.jp-vault-index-btn-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.jp-vault-index-run-btn {
+  flex: 1;
+}
