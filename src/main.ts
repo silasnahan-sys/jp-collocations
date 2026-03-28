@@ -1,7 +1,14 @@
 import { Plugin, WorkspaceLeaf, Notice } from "obsidian";
-import type { PluginSettings } from "./types.ts";
+import type {
+  PluginSettings,
+  DiscourseContext,
+  DiscourseCategory,
+  SurferCollocationEntry,
+  CollocationMatch,
+} from "./types.ts";
 import { DEFAULT_SETTINGS } from "./types.ts";
 import { CollocationStore } from "./data/CollocationStore.ts";
+import { DiscourseStore } from "./data/DiscourseStore.ts";
 import { SearchEngine } from "./search/SearchEngine.ts";
 import { HyogenScraper } from "./scraper/HyogenScraper.ts";
 import { CollocationView, JP_COLLOCATIONS_VIEW_TYPE } from "./ui/CollocationView.ts";
@@ -10,10 +17,12 @@ import { AddEntryModal } from "./ui/AddEntryModal.ts";
 import { SettingsTab } from "./ui/SettingsTab.ts";
 import { TextClassifier } from "./classifier/TextClassifier.ts";
 import { ClassifyModal } from "./ui/ClassifyModal.ts";
+import { DiscourseStatsView, DISCOURSE_STATS_VIEW_TYPE } from "./ui/DiscourseStatsView.ts";
 
 export default class JPCollocationsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   store!: CollocationStore;
+  discourseStore!: DiscourseStore;
   engine!: SearchEngine;
   private scraper: HyogenScraper | null = null;
 
@@ -25,12 +34,26 @@ export default class JPCollocationsPlugin extends Plugin {
     this.store = new CollocationStore(this.app, dataPath);
     await this.store.load();
 
+    // Discourse store
+    const discourseIndexPath = `${this.app.vault.configDir}/plugins/jp-collocations/${this.settings.discourseIndexPath}`;
+    this.discourseStore = new DiscourseStore(
+      this.app,
+      this.store,
+      discourseIndexPath,
+      this.settings.maxContextsPerCollocation
+    );
+    await this.discourseStore.load();
+    this.discourseStore.rebuildIndex();
+
     // Search engine
     this.engine = new SearchEngine(this.store);
 
-    // Register view
+    // Register views
     this.registerView(JP_COLLOCATIONS_VIEW_TYPE, leaf =>
-      new CollocationView(leaf, this.store, this.engine, this.settings)
+      new CollocationView(leaf, this.store, this.engine, this.settings, this.discourseStore)
+    );
+    this.registerView(DISCOURSE_STATS_VIEW_TYPE, leaf =>
+      new DiscourseStatsView(leaf, this.discourseStore, this.store)
     );
 
     // Settings tab
@@ -94,6 +117,12 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "fetch-hyogen",
       name: "Fetch from Hyogen",
       callback: () => this.fetchFromHyogen(),
+    });
+
+    this.addCommand({
+      id: "open-discourse-stats",
+      name: "Open Discourse Stats",
+      callback: () => this.openDiscourseStatsView(),
     });
 
     // Ribbon icon
@@ -187,5 +216,121 @@ export default class JPCollocationsPlugin extends Plugin {
     const count = await this.scraper.run();
     new Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
+  }
+
+  private async openDiscourseStatsView(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(DISCOURSE_STATS_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: DISCOURSE_STATS_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+
+  // ── Bridge API (called by jp-sentence-surfer) ─────────────────────────────
+
+  /**
+   * Creates a new collocation entry from surfer data, or merges discourse
+   * contexts into an existing entry with the same expression.
+   * Returns the ID of the created/updated entry.
+   */
+  async addEntryFromSurfer(entry: SurferCollocationEntry): Promise<string> {
+    return this.discourseStore.addEntryFromSurfer(
+      entry,
+      this.settings.maxContextsPerCollocation
+    );
+  }
+
+  /**
+   * Attaches a discourse context to an existing collocation entry.
+   * Deduplicates on chunkText + source.file.
+   */
+  async addDiscourseContext(collocationId: string, context: DiscourseContext): Promise<void> {
+    await this.discourseStore.addContext(
+      collocationId,
+      context,
+      this.settings.maxContextsPerCollocation
+    );
+  }
+
+  /**
+   * Adds an example sentence to an existing collocation entry,
+   * storing source metadata and skipping exact duplicates.
+   */
+  async saveExampleSentence(
+    collocationId: string,
+    sentence: string,
+    source: { file: string; timestamp?: string; url?: string }
+  ): Promise<void> {
+    await this.discourseStore.saveExampleSentence(collocationId, sentence, source);
+  }
+
+  /**
+   * Scans all stored collocations against the given text and returns
+   * matches with character positions. Designed to be fast — called on
+   * every chunk capture during surfing.
+   */
+  findCollocationsInText(text: string): CollocationMatch[] {
+    const matches: CollocationMatch[] = [];
+    const all = this.store.getAll();
+    for (const entry of all) {
+      const expressions = [entry.fullPhrase, entry.headword].filter(Boolean);
+      for (const expr of expressions) {
+        let start = 0;
+        while (start <= text.length - expr.length) {
+          const idx = text.indexOf(expr, start);
+          if (idx === -1) break;
+          matches.push({
+            collocationId: entry.id,
+            expression: expr,
+            matchStart: idx,
+            matchEnd: idx + expr.length,
+          });
+          start = idx + 1;
+        }
+      }
+    }
+    // Sort by position
+    matches.sort((a, b) => a.matchStart - b.matchStart);
+    return matches;
+  }
+
+  /**
+   * Returns all collocations that have been seen in chunks containing
+   * the given discourse marker surface text.
+   */
+  searchByDiscourseMarker(markerSurface: string): SurferCollocationEntry[] {
+    return this.discourseStore.getEntriesByMarker(markerSurface);
+  }
+
+  /**
+   * Returns all collocations whose stored discourse contexts include the
+   * given category.
+   */
+  searchByCategory(category: DiscourseCategory): SurferCollocationEntry[] {
+    return this.discourseStore.getEntriesByCategory(category);
+  }
+
+  /**
+   * Returns all stored collocation entries in SurferCollocationEntry format
+   * for cross-referencing.
+   */
+  getAllEntries(): SurferCollocationEntry[] {
+    return this.discourseStore.getAllEntries();
+  }
+
+  /**
+   * Returns frequency statistics about stored discourse contexts.
+   */
+  getDiscourseStats(): {
+    markerFrequency: Record<string, number>;
+    categoryBreakdown: Record<DiscourseCategory, number>;
+    totalContexts: number;
+  } {
+    return this.discourseStore.getStats();
   }
 }
