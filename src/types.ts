@@ -73,6 +73,10 @@ export interface PluginSettings {
   fuzzySearchSensitivity: number;
   maxResults: number;
   dataFilePath: string;
+  discourseIndexPath: string;
+  maxContextsPerCollocation: number;
+  autoCleanOldContexts: boolean;
+  showDiscourseContexts: boolean;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -85,6 +89,10 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   fuzzySearchSensitivity: 0.6,
   maxResults: 100,
   dataFilePath: "jp-collocations-data.json",
+  discourseIndexPath: "discourse-index.json",
+  maxContextsPerCollocation: 50,
+  autoCleanOldContexts: false,
+  showDiscourseContexts: true,
 };
 
 export interface StoreStats {
@@ -92,3 +100,96 @@ export interface StoreStats {
   byPOS: Record<string, number>;
   bySource: Record<string, number>;
 }
+
+// ── Discourse Grammar Types ────────────────────────────────────────────────
+
+/** Discourse marker found in a captured chunk */
+export interface DiscourseMarker {
+  id: string;
+  surface: string;           // the actual text (e.g., "わけだから")
+  category: DiscourseCategory;
+  position: 'initial' | 'medial' | 'final' | 'any';
+  charStart: number;         // position within the chunk text
+  charEnd: number;
+}
+
+export type DiscourseCategory =
+  | 'topic-initiation'    // 話題開始
+  | 'reasoning'           // 理由・説明
+  | 'modality'            // 文末モダリティ
+  | 'connective'          // 接続・展開
+  | 'confirmation'        // 確認・同意要求
+  | 'rephrasing'          // 言い換え・修正
+  | 'filler'              // フィラー・ヘッジ
+  | 'quotation';          // 引用・伝聞
+
+export type DiscourseGranularity =
+  | 'morpheme' | 'bunsetsu' | 'clause' | 'utterance'
+  | 'turn' | 'exchange' | 'topic-segment';
+
+/** Full discourse context attached to a chunk capture */
+export interface DiscourseContext {
+  chunkText: string;
+  cleanText: string;         // without timestamps
+  granularity: DiscourseGranularity;
+  markers: DiscourseMarker[];
+  relatedCollocations: string[];  // IDs of collocations found in this chunk
+  source: {
+    file: string;          // vault file path
+    lineStart: number;
+    lineEnd: number;
+    ytTimestamp?: string;  // e.g., "12:34"
+    ytUrl?: string;        // YouTube URL
+  };
+  capturedAt: string;        // ISO timestamp
+  contextBefore?: string;    // preceding chunk for context
+  contextAfter?: string;     // following chunk for context
+  patternTags: string[];     // auto-generated tags like "reasoning-chain", "topic-shift"
+}
+
+/** Entry format for surfer bridge */
+export interface SurferCollocationEntry {
+  expression: string;
+  reading?: string;
+  meaning?: string;
+  exampleSentence?: string;
+  exampleSource?: string;
+  discourseContexts: DiscourseContext[];
+  tags: string[];
+}
+
+/** Result when searching collocations in text */
+export interface CollocationMatch {
+  collocationId: string;
+  expression: string;
+  matchStart: number;
+  matchEnd: number;
+}
+
+/** Discourse index file structure for fast multi-dimensional queries */
+export interface DiscourseIndex {
+  chunks: DiscourseChunkRecord[];
+  markerToChunkIds: Record<string, string[]>;
+  categoryToChunkIds: Record<string, string[]>;
+  collocationToChunkIds: Record<string, string[]>;
+}
+
+export interface DiscourseChunkRecord {
+  id: string;
+  collocationId: string;
+  context: DiscourseContext;
+}
+
+export interface DiscourseSettings {
+  discourseIndexPath: string;
+  maxContextsPerCollocation: number;
+  autoCleanOldContexts: boolean;
+  showDiscourseContexts: boolean;
+}
+
+export const DEFAULT_DISCOURSE_SETTINGS: DiscourseSettings = {
+  discourseIndexPath: "discourse-index.json",
+  maxContextsPerCollocation: 50,
+  autoCleanOldContexts: false,
+  showDiscourseContexts: true,
+};

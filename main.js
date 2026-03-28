@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => JPCollocationsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 
 // src/types.ts
 var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
@@ -55,7 +55,11 @@ var DEFAULT_SETTINGS = {
   showReadings: true,
   fuzzySearchSensitivity: 0.6,
   maxResults: 100,
-  dataFilePath: "jp-collocations-data.json"
+  dataFilePath: "jp-collocations-data.json",
+  discourseIndexPath: "discourse-index.json",
+  maxContextsPerCollocation: 50,
+  autoCleanOldContexts: false,
+  showDiscourseContexts: true
 };
 
 // src/data/seed-data.ts
@@ -528,6 +532,332 @@ var CollocationStore = class {
         return true;
     }
     return false;
+  }
+};
+
+// src/data/DiscourseStore.ts
+var EMPTY_INDEX = {
+  chunks: [],
+  markerToChunkIds: {},
+  categoryToChunkIds: {},
+  collocationToChunkIds: {}
+};
+var DiscourseStore = class {
+  constructor(app, collocationStore, indexPath, maxContextsPerCollocation = 50) {
+    this.index = { ...EMPTY_INDEX, chunks: [] };
+    this.saveTimer = null;
+    this.app = app;
+    this.collocationStore = collocationStore;
+    this.indexPath = indexPath;
+    this.maxContextsPerCollocation = maxContextsPerCollocation;
+  }
+  async load() {
+    try {
+      const exists = await this.app.vault.adapter.exists(this.indexPath);
+      if (exists) {
+        const raw = await this.app.vault.adapter.read(this.indexPath);
+        this.index = JSON.parse(raw);
+        if (!this.index.chunks)
+          this.index.chunks = [];
+        if (!this.index.markerToChunkIds)
+          this.index.markerToChunkIds = {};
+        if (!this.index.categoryToChunkIds)
+          this.index.categoryToChunkIds = {};
+        if (!this.index.collocationToChunkIds)
+          this.index.collocationToChunkIds = {};
+      }
+    } catch (err) {
+      console.error("[jp-collocations] Failed to load discourse index:", err);
+      this.index = { chunks: [], markerToChunkIds: {}, categoryToChunkIds: {}, collocationToChunkIds: {} };
+    }
+  }
+  async save() {
+    const data = JSON.stringify(this.index, null, 2);
+    await this.app.vault.adapter.write(this.indexPath, data);
+  }
+  scheduleSave() {
+    if (this.saveTimer)
+      clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.save().catch(console.error);
+    }, 1e3);
+  }
+  generateChunkId() {
+    return `chunk_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+  }
+  /**
+   * Returns all discourse contexts stored for a given collocation ID.
+   */
+  getContextsForCollocation(collocationId) {
+    var _a;
+    const chunkIds = (_a = this.index.collocationToChunkIds[collocationId]) != null ? _a : [];
+    return chunkIds.map((cid) => this.index.chunks.find((c) => c.id === cid)).filter((c) => c !== void 0).map((c) => c.context).sort((a, b) => new Date(b.capturedAt).getTime() - new Date(a.capturedAt).getTime());
+  }
+  /**
+   * Attach a discourse context to a collocation entry, deduplicating on
+   * chunkText + source.file.
+   */
+  async addContext(collocationId, context, maxContexts) {
+    var _a;
+    const existing = this.getContextsForCollocation(collocationId);
+    const isDuplicate = existing.some(
+      (c) => c.chunkText === context.chunkText && c.source.file === context.source.file
+    );
+    if (isDuplicate)
+      return;
+    const chunkIds = (_a = this.index.collocationToChunkIds[collocationId]) != null ? _a : [];
+    if (chunkIds.length >= maxContexts) {
+      const oldest = chunkIds[0];
+      this.removeChunk(oldest, collocationId);
+    }
+    const record = {
+      id: this.generateChunkId(),
+      collocationId,
+      context
+    };
+    this.index.chunks.push(record);
+    if (!this.index.collocationToChunkIds[collocationId]) {
+      this.index.collocationToChunkIds[collocationId] = [];
+    }
+    this.index.collocationToChunkIds[collocationId].push(record.id);
+    for (const marker of context.markers) {
+      if (!this.index.markerToChunkIds[marker.surface]) {
+        this.index.markerToChunkIds[marker.surface] = [];
+      }
+      if (!this.index.markerToChunkIds[marker.surface].includes(record.id)) {
+        this.index.markerToChunkIds[marker.surface].push(record.id);
+      }
+    }
+    for (const marker of context.markers) {
+      const cat = marker.category;
+      if (!this.index.categoryToChunkIds[cat]) {
+        this.index.categoryToChunkIds[cat] = [];
+      }
+      if (!this.index.categoryToChunkIds[cat].includes(record.id)) {
+        this.index.categoryToChunkIds[cat].push(record.id);
+      }
+    }
+    this.scheduleSave();
+  }
+  removeChunk(chunkId, collocationId) {
+    const chunkIndex = this.index.chunks.findIndex((c) => c.id === chunkId);
+    if (chunkIndex === -1)
+      return;
+    const record = this.index.chunks[chunkIndex];
+    this.index.chunks.splice(chunkIndex, 1);
+    const cIds = this.index.collocationToChunkIds[collocationId];
+    if (cIds) {
+      const idx = cIds.indexOf(chunkId);
+      if (idx !== -1)
+        cIds.splice(idx, 1);
+    }
+    for (const marker of record.context.markers) {
+      const mIds = this.index.markerToChunkIds[marker.surface];
+      if (mIds) {
+        const idx = mIds.indexOf(chunkId);
+        if (idx !== -1)
+          mIds.splice(idx, 1);
+      }
+    }
+    for (const marker of record.context.markers) {
+      const catIds = this.index.categoryToChunkIds[marker.category];
+      if (catIds) {
+        const idx = catIds.indexOf(chunkId);
+        if (idx !== -1)
+          catIds.splice(idx, 1);
+      }
+    }
+  }
+  /**
+   * Returns SurferCollocationEntry objects for all collocations whose stored
+   * contexts contain the given marker surface text.
+   */
+  getEntriesByMarker(markerSurface) {
+    var _a;
+    const chunkIds = (_a = this.index.markerToChunkIds[markerSurface]) != null ? _a : [];
+    return this.buildEntriesFromChunkIds(chunkIds);
+  }
+  /**
+   * Returns SurferCollocationEntry objects for all collocations whose stored
+   * contexts have been tagged with the given category.
+   */
+  getEntriesByCategory(category) {
+    var _a;
+    const chunkIds = (_a = this.index.categoryToChunkIds[category]) != null ? _a : [];
+    return this.buildEntriesFromChunkIds(chunkIds);
+  }
+  buildEntriesFromChunkIds(chunkIds) {
+    const collocationIds = /* @__PURE__ */ new Set();
+    for (const cid of chunkIds) {
+      const record = this.index.chunks.find((c) => c.id === cid);
+      if (record)
+        collocationIds.add(record.collocationId);
+    }
+    const results = [];
+    for (const colId of collocationIds) {
+      const entry2 = this.collocationStore.getById(colId);
+      if (!entry2)
+        continue;
+      const contexts = this.getContextsForCollocation(colId);
+      results.push({
+        expression: entry2.fullPhrase || entry2.headword,
+        reading: entry2.headwordReading || void 0,
+        meaning: entry2.notes || void 0,
+        exampleSentence: entry2.exampleSentences[0],
+        exampleSource: void 0,
+        discourseContexts: contexts,
+        tags: entry2.tags
+      });
+    }
+    return results;
+  }
+  /**
+   * Returns discourse statistics aggregated across all stored contexts.
+   */
+  getStats() {
+    const markerFrequency = {};
+    const categoryBreakdown = {};
+    for (const [surface, ids] of Object.entries(this.index.markerToChunkIds)) {
+      markerFrequency[surface] = ids.length;
+    }
+    for (const [cat, ids] of Object.entries(this.index.categoryToChunkIds)) {
+      categoryBreakdown[cat] = ids.length;
+    }
+    return {
+      markerFrequency,
+      categoryBreakdown,
+      totalContexts: this.index.chunks.length
+    };
+  }
+  /**
+   * Rebuilds the in-memory index from the chunks array (useful after load).
+   * Called automatically after load().
+   */
+  rebuildIndex() {
+    this.index.markerToChunkIds = {};
+    this.index.categoryToChunkIds = {};
+    this.index.collocationToChunkIds = {};
+    for (const record of this.index.chunks) {
+      if (!this.index.collocationToChunkIds[record.collocationId]) {
+        this.index.collocationToChunkIds[record.collocationId] = [];
+      }
+      if (!this.index.collocationToChunkIds[record.collocationId].includes(record.id)) {
+        this.index.collocationToChunkIds[record.collocationId].push(record.id);
+      }
+      for (const marker of record.context.markers) {
+        if (!this.index.markerToChunkIds[marker.surface]) {
+          this.index.markerToChunkIds[marker.surface] = [];
+        }
+        if (!this.index.markerToChunkIds[marker.surface].includes(record.id)) {
+          this.index.markerToChunkIds[marker.surface].push(record.id);
+        }
+        const cat = marker.category;
+        if (!this.index.categoryToChunkIds[cat]) {
+          this.index.categoryToChunkIds[cat] = [];
+        }
+        if (!this.index.categoryToChunkIds[cat].includes(record.id)) {
+          this.index.categoryToChunkIds[cat].push(record.id);
+        }
+      }
+    }
+  }
+  /** Returns all stored SurferCollocationEntry objects by assembling them from
+   * the collocation store combined with their discourse contexts. */
+  getAllEntries() {
+    const allCollocationEntries = this.collocationStore.getAll();
+    return allCollocationEntries.map((e) => {
+      const contexts = this.getContextsForCollocation(e.id);
+      return {
+        expression: e.fullPhrase || e.headword,
+        reading: e.headwordReading || void 0,
+        meaning: e.notes || void 0,
+        exampleSentence: e.exampleSentences[0],
+        exampleSource: void 0,
+        discourseContexts: contexts,
+        tags: e.tags
+      };
+    });
+  }
+  /**
+   * Creates or updates a collocation entry from surfer data, merging discourse
+   * contexts if the expression already exists. Returns the collocation ID.
+   */
+  async addEntryFromSurfer(surferEntry, maxContexts) {
+    var _a, _b;
+    const all = this.collocationStore.getAll();
+    const existing = all.find(
+      (e) => e.fullPhrase === surferEntry.expression || e.headword === surferEntry.expression
+    );
+    let collocationId;
+    if (existing) {
+      collocationId = existing.id;
+      if (surferEntry.exampleSentence && !existing.exampleSentences.includes(surferEntry.exampleSentence)) {
+        existing.exampleSentences.push(surferEntry.exampleSentence);
+        this.collocationStore.update(existing);
+      }
+      const newTags = surferEntry.tags.filter((t) => !existing.tags.includes(t));
+      if (newTags.length > 0) {
+        existing.tags.push(...newTags);
+        this.collocationStore.update(existing);
+      }
+    } else {
+      collocationId = this.collocationStore.generateId();
+      this.collocationStore.add({
+        id: collocationId,
+        headword: surferEntry.expression,
+        headwordReading: (_a = surferEntry.reading) != null ? _a : "",
+        collocate: "",
+        fullPhrase: surferEntry.expression,
+        headwordPOS: "\u8868\u73FE" /* Expression */,
+        collocatePOS: "\u305D\u306E\u4ED6" /* Other */,
+        pattern: "",
+        exampleSentences: surferEntry.exampleSentence ? [surferEntry.exampleSentence] : [],
+        source: "manual" /* Manual */,
+        tags: surferEntry.tags,
+        notes: (_b = surferEntry.meaning) != null ? _b : "",
+        frequency: 50,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      });
+    }
+    for (const ctx of surferEntry.discourseContexts) {
+      await this.addContext(collocationId, ctx, maxContexts);
+    }
+    return collocationId;
+  }
+  /**
+   * Adds or deduplicates an example sentence for a collocation entry.
+   */
+  async saveExampleSentence(collocationId, sentence, source) {
+    const entry2 = this.collocationStore.getById(collocationId);
+    if (!entry2)
+      return;
+    if (!entry2.exampleSentences.includes(sentence)) {
+      entry2.exampleSentences.push(sentence);
+      const sourceNote = `[${source.file}${source.timestamp ? ` @${source.timestamp}` : ""}${source.url ? ` ${source.url}` : ""}]`;
+      if (!entry2.notes.includes(sourceNote)) {
+        entry2.notes = entry2.notes ? `${entry2.notes}
+${sourceNote}` : sourceNote;
+      }
+      this.collocationStore.update(entry2);
+    }
+  }
+  getIndex() {
+    return this.index;
+  }
+  /**
+   * Returns a Map from expression string → collocation ID for efficient lookups
+   * in UI filtering (avoids O(n) scan per filter operation).
+   */
+  buildExpressionToIdMap() {
+    const map = /* @__PURE__ */ new Map();
+    for (const entry2 of this.collocationStore.getAll()) {
+      if (entry2.fullPhrase)
+        map.set(entry2.fullPhrase, entry2.id);
+      if (entry2.headword)
+        map.set(entry2.headword, entry2.id);
+    }
+    return map;
   }
 };
 
@@ -1236,7 +1566,7 @@ var AddEntryModal = class extends import_obsidian2.Modal {
 // src/ui/CollocationView.ts
 var JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
 var CollocationView = class extends import_obsidian3.ItemView {
-  constructor(leaf, store, engine, settings) {
+  constructor(leaf, store, engine, settings, discourseStore) {
     super(leaf);
     this.results = [];
     this.currentPOSFilter = [];
@@ -1244,9 +1574,12 @@ var CollocationView = class extends import_obsidian3.ItemView {
     this.searchInput = null;
     this.resultContainer = null;
     this.statsEl = null;
+    this.discourseFilterMarker = "";
+    this.discourseFilterCategory = "";
     this.store = store;
     this.engine = engine;
     this.settings = settings;
+    this.discourseStore = discourseStore != null ? discourseStore : null;
   }
   getViewType() {
     return JP_COLLOCATIONS_VIEW_TYPE;
@@ -1282,6 +1615,39 @@ var CollocationView = class extends import_obsidian3.ItemView {
     });
     const filterRow = container.createDiv("jp-col-filter-row");
     this.buildPOSChips(filterRow);
+    if (this.discourseStore && this.settings.showDiscourseContexts) {
+      const discourseRow = container.createDiv("jp-col-discourse-filter-row");
+      discourseRow.createSpan({ text: "\u8AC7\u8A71:", cls: "jp-col-discourse-filter-label" });
+      const markerInput = discourseRow.createEl("input", {
+        type: "text",
+        placeholder: "marker surface\u2026",
+        cls: "jp-col-discourse-filter-input"
+      });
+      markerInput.addEventListener("input", () => {
+        this.discourseFilterMarker = markerInput.value.trim();
+        this.refresh();
+      });
+      const categorySelect = discourseRow.createEl("select", { cls: "jp-col-discourse-filter-select" });
+      const blankOpt = categorySelect.createEl("option", { text: "All categories", value: "" });
+      blankOpt.value = "";
+      const categories = [
+        "topic-initiation",
+        "reasoning",
+        "modality",
+        "connective",
+        "confirmation",
+        "rephrasing",
+        "filler",
+        "quotation"
+      ];
+      for (const cat of categories) {
+        categorySelect.createEl("option", { text: cat, value: cat });
+      }
+      categorySelect.addEventListener("change", () => {
+        this.discourseFilterCategory = categorySelect.value;
+        this.refresh();
+      });
+    }
     this.statsEl = container.createDiv("jp-col-stats");
     this.resultContainer = container.createDiv("jp-col-results");
   }
@@ -1311,6 +1677,47 @@ var CollocationView = class extends import_obsidian3.ItemView {
   refresh() {
     var _a, _b;
     const query = (_b = (_a = this.searchInput) == null ? void 0 : _a.value) != null ? _b : "";
+    if (this.discourseStore && (this.discourseFilterMarker || this.discourseFilterCategory)) {
+      const exprToId = this.discourseStore.buildExpressionToIdMap();
+      let filteredIds = null;
+      if (this.discourseFilterMarker) {
+        const markerEntries = this.discourseStore.getEntriesByMarker(this.discourseFilterMarker);
+        const ids = new Set(markerEntries.map((e) => {
+          var _a2;
+          return (_a2 = exprToId.get(e.expression)) != null ? _a2 : "";
+        }).filter(Boolean));
+        filteredIds = ids;
+      }
+      if (this.discourseFilterCategory) {
+        const catEntries = this.discourseStore.getEntriesByCategory(this.discourseFilterCategory);
+        const ids = new Set(catEntries.map((e) => {
+          var _a2;
+          return (_a2 = exprToId.get(e.expression)) != null ? _a2 : "";
+        }).filter(Boolean));
+        if (filteredIds) {
+          for (const id of filteredIds) {
+            if (!ids.has(id))
+              filteredIds.delete(id);
+          }
+        } else {
+          filteredIds = ids;
+        }
+      }
+      if (filteredIds) {
+        const allResults = this.engine.search({
+          query,
+          posFilter: this.currentPOSFilter.length ? this.currentPOSFilter : void 0,
+          tagFilter: this.currentTagFilter.length ? this.currentTagFilter : void 0,
+          fuzzy: true,
+          maxResults: this.settings.maxResults,
+          sortBy: this.settings.defaultSortOrder
+        });
+        this.results = allResults.filter((r) => filteredIds.has(r.entry.id));
+        this.renderStats();
+        this.renderResults();
+        return;
+      }
+    }
     this.results = this.engine.search({
       query,
       posFilter: this.currentPOSFilter.length ? this.currentPOSFilter : void 0,
@@ -1365,6 +1772,12 @@ var CollocationView = class extends import_obsidian3.ItemView {
         details.createEl("p", { text: entry2.notes, cls: "jp-col-notes" });
       }
     }
+    if (this.discourseStore && this.settings.showDiscourseContexts) {
+      const contexts = this.discourseStore.getContextsForCollocation(entry2.id);
+      if (contexts.length > 0) {
+        this.renderDiscourseContexts(card, contexts);
+      }
+    }
   }
   buildActions(parent, entry2) {
     const copyBtn = parent.createEl("button", { text: "Copy", cls: "jp-col-action-btn" });
@@ -1408,6 +1821,92 @@ var CollocationView = class extends import_obsidian3.ItemView {
       ["\u8868\u73FE" /* Expression */]: "expr"
     };
     return (_a = map[pos]) != null ? _a : "other";
+  }
+  renderDiscourseContexts(parent, contexts) {
+    const details = parent.createEl("details", { cls: "jp-col-details jp-discourse-contexts-details" });
+    const summary = details.createEl("summary");
+    summary.createSpan({ text: `\u8AC7\u8A71\u30B3\u30F3\u30C6\u30AD\u30B9\u30C8 `, cls: "jp-discourse-summary-label" });
+    summary.createSpan({
+      text: `(${contexts.length})`,
+      cls: "jp-discourse-context-count"
+    });
+    for (const ctx of contexts) {
+      const ctxCard = details.createDiv("jp-discourse-context-card");
+      const metaRow = ctxCard.createDiv("jp-discourse-context-meta");
+      metaRow.createSpan({ text: ctx.granularity, cls: "jp-discourse-granularity-badge" });
+      const srcText = ctx.source.ytTimestamp ? `${ctx.source.file} @${ctx.source.ytTimestamp}` : ctx.source.file;
+      const srcSpan = metaRow.createSpan({ text: srcText, cls: "jp-discourse-source-link" });
+      if (ctx.source.ytUrl) {
+        srcSpan.setAttribute("title", ctx.source.ytUrl);
+      }
+      srcSpan.addEventListener("click", () => {
+        if (ctx.source.ytUrl) {
+          window.open(ctx.source.ytUrl, "_blank");
+        } else {
+          const file = this.app.vault.getFileByPath(ctx.source.file);
+          if (file)
+            this.app.workspace.openLinkText(ctx.source.file, "", false);
+        }
+      });
+      const chunkEl = ctxCard.createDiv("jp-discourse-chunk-text");
+      this.renderChunkWithMarkers(chunkEl, ctx.cleanText || ctx.chunkText, ctx.markers);
+      if (ctx.patternTags.length > 0) {
+        const tagsRow = ctxCard.createDiv("jp-discourse-pattern-tags");
+        for (const tag of ctx.patternTags) {
+          tagsRow.createSpan({ text: tag, cls: "jp-col-chip" });
+        }
+      }
+      if (ctx.contextBefore || ctx.contextAfter) {
+        const ctxDetails = ctxCard.createEl("details", { cls: "jp-discourse-surrounding-ctx" });
+        ctxDetails.createEl("summary", { text: "surrounding context" });
+        if (ctx.contextBefore) {
+          ctxDetails.createEl("p", { text: ctx.contextBefore, cls: "jp-discourse-ctx-before" });
+        }
+        if (ctx.contextAfter) {
+          ctxDetails.createEl("p", { text: ctx.contextAfter, cls: "jp-discourse-ctx-after" });
+        }
+      }
+      ctxCard.createDiv({
+        text: new Date(ctx.capturedAt).toLocaleString(),
+        cls: "jp-discourse-captured-at"
+      });
+    }
+  }
+  renderChunkWithMarkers(parent, text, markers) {
+    var _a;
+    if (markers.length === 0) {
+      parent.createSpan({ text });
+      return;
+    }
+    const MARKER_CATEGORY_COLOURS = {
+      "topic-initiation": "var(--color-blue)",
+      "reasoning": "var(--color-orange)",
+      "modality": "var(--color-purple)",
+      "connective": "var(--color-green)",
+      "confirmation": "var(--color-red)",
+      "rephrasing": "var(--color-cyan)",
+      "filler": "var(--text-muted)",
+      "quotation": "var(--color-yellow)"
+    };
+    const sorted = [...markers].sort((a, b) => a.charStart - b.charStart);
+    let cursor = 0;
+    for (const marker of sorted) {
+      if (marker.charStart > cursor) {
+        parent.createSpan({ text: text.slice(cursor, marker.charStart) });
+      }
+      const markerSpan = parent.createSpan({
+        text: text.slice(marker.charStart, marker.charEnd),
+        cls: "jp-discourse-marker-highlight"
+      });
+      const colour = (_a = MARKER_CATEGORY_COLOURS[marker.category]) != null ? _a : "var(--text-accent)";
+      markerSpan.style.color = colour;
+      markerSpan.style.fontWeight = "600";
+      markerSpan.setAttribute("title", `${marker.category}: ${marker.surface}`);
+      cursor = marker.charEnd;
+    }
+    if (cursor < text.length) {
+      parent.createSpan({ text: text.slice(cursor) });
+    }
   }
 };
 
@@ -1553,6 +2052,23 @@ var SettingsTab = class extends import_obsidian5.PluginSettingTab {
     new import_obsidian5.Setting(containerEl).setName("Clear all data").setDesc("Delete all collocation entries permanently").addButton((b) => b.setButtonText("Clear All").setWarning().onClick(async () => {
       await this.store.clearAll();
       new import_obsidian5.Notice("All data cleared.");
+    }));
+    containerEl.createEl("h3", { text: "Discourse Grammar (\u8AC7\u8A71\u6587\u6CD5)" });
+    new import_obsidian5.Setting(containerEl).setName("Show discourse contexts").setDesc("Display captured discourse chunks in entry detail view").addToggle((t) => t.setValue(this.settings.showDiscourseContexts).onChange(async (v) => {
+      this.settings.showDiscourseContexts = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian5.Setting(containerEl).setName("Discourse index file").setDesc("File name for the discourse index (stored alongside collocation data)").addText((t) => t.setValue(this.settings.discourseIndexPath).onChange(async (v) => {
+      this.settings.discourseIndexPath = v.trim() || "discourse-index.json";
+      await this.onSettingsChange();
+    }));
+    new import_obsidian5.Setting(containerEl).setName("Max contexts per collocation").setDesc("Maximum number of discourse contexts stored per collocation entry (default: 50)").addSlider((s) => s.setLimits(5, 200, 5).setValue(this.settings.maxContextsPerCollocation).setDynamicTooltip().onChange(async (v) => {
+      this.settings.maxContextsPerCollocation = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian5.Setting(containerEl).setName("Auto-clean old contexts").setDesc("Automatically remove oldest contexts when the per-collocation limit is reached").addToggle((t) => t.setValue(this.settings.autoCleanOldContexts).onChange(async (v) => {
+      this.settings.autoCleanOldContexts = v;
+      await this.onSettingsChange();
     }));
     containerEl.createEl("h3", { text: "Statistics" });
     const stats = this.store.getStats();
@@ -2564,8 +3080,147 @@ var ClassifyModal = class extends import_obsidian6.Modal {
   }
 };
 
+// src/ui/DiscourseStatsView.ts
+var import_obsidian7 = require("obsidian");
+var DISCOURSE_STATS_VIEW_TYPE = "jp-discourse-stats-view";
+var CATEGORY_LABELS = {
+  "topic-initiation": "\u8A71\u984C\u958B\u59CB",
+  "reasoning": "\u7406\u7531\u30FB\u8AAC\u660E",
+  "modality": "\u6587\u672B\u30E2\u30C0\u30EA\u30C6\u30A3",
+  "connective": "\u63A5\u7D9A\u30FB\u5C55\u958B",
+  "confirmation": "\u78BA\u8A8D\u30FB\u540C\u610F\u8981\u6C42",
+  "rephrasing": "\u8A00\u3044\u63DB\u3048\u30FB\u4FEE\u6B63",
+  "filler": "\u30D5\u30A3\u30E9\u30FC\u30FB\u30D8\u30C3\u30B8",
+  "quotation": "\u5F15\u7528\u30FB\u4F1D\u805E"
+};
+var CATEGORY_COLOURS = {
+  "topic-initiation": "#4a9eff",
+  "reasoning": "#f5a623",
+  "modality": "#9b59b6",
+  "connective": "#2ecc71",
+  "confirmation": "#e74c3c",
+  "rephrasing": "#1abc9c",
+  "filler": "#95a5a6",
+  "quotation": "#e67e22"
+};
+var DiscourseStatsView = class extends import_obsidian7.ItemView {
+  constructor(leaf, discourseStore, collocationStore) {
+    super(leaf);
+    this.discourseStore = discourseStore;
+    this.collocationStore = collocationStore;
+  }
+  getViewType() {
+    return DISCOURSE_STATS_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "Discourse Stats";
+  }
+  getIcon() {
+    return "bar-chart-2";
+  }
+  async onOpen() {
+    this.render();
+  }
+  async onClose() {
+  }
+  render() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-discourse-stats-view");
+    const header = container.createDiv("jp-col-header");
+    header.createEl("h4", { text: "\u8AC7\u8A71\u6587\u6CD5 \u2014 Discourse Stats", cls: "jp-col-title" });
+    const refreshBtn = header.createEl("button", {
+      text: "\u21BB",
+      cls: "jp-col-action-btn",
+      title: "Refresh"
+    });
+    refreshBtn.addEventListener("click", () => this.render());
+    const stats = this.discourseStore.getStats();
+    const summary = container.createDiv("jp-discourse-stats-summary");
+    summary.createEl("span", {
+      text: `Total captured chunks: ${stats.totalContexts}`,
+      cls: "jp-col-stat-text"
+    });
+    if (stats.totalContexts === 0) {
+      container.createDiv({ text: "No discourse contexts captured yet.", cls: "jp-col-empty" });
+      return;
+    }
+    container.createEl("h5", { text: "Category Breakdown", cls: "jp-discourse-stats-section-title" });
+    const categorySection = container.createDiv("jp-discourse-stats-categories");
+    this.renderCategoryBreakdown(categorySection, stats.categoryBreakdown);
+    container.createEl("h5", { text: "Most Frequent Discourse Markers", cls: "jp-discourse-stats-section-title" });
+    const markerSection = container.createDiv("jp-discourse-stats-markers");
+    this.renderTopMarkers(markerSection, stats.markerFrequency, 20);
+    container.createEl("h5", { text: "Collocations with Most Contexts", cls: "jp-discourse-stats-section-title" });
+    const colSection = container.createDiv("jp-discourse-stats-collocations");
+    this.renderTopCollocations(colSection, 10);
+  }
+  renderCategoryBreakdown(parent, breakdown) {
+    var _a, _b;
+    const entries = Object.entries(breakdown);
+    if (entries.length === 0) {
+      parent.createDiv({ text: "No category data.", cls: "jp-col-empty" });
+      return;
+    }
+    const total = entries.reduce((sum, [, n]) => sum + n, 0);
+    entries.sort((a, b) => b[1] - a[1]);
+    for (const [cat, count] of entries) {
+      const row = parent.createDiv("jp-discourse-stat-bar-row");
+      const label = row.createDiv("jp-discourse-stat-bar-label");
+      label.createSpan({
+        text: (_a = CATEGORY_LABELS[cat]) != null ? _a : cat,
+        cls: "jp-discourse-category-label"
+      });
+      label.createSpan({
+        text: ` (${cat})`,
+        cls: "jp-discourse-category-code"
+      });
+      const barWrap = row.createDiv("jp-discourse-stat-bar-wrap");
+      const pct = total > 0 ? count / total * 100 : 0;
+      const bar = barWrap.createDiv("jp-discourse-stat-bar");
+      bar.style.width = `${pct.toFixed(1)}%`;
+      bar.style.backgroundColor = (_b = CATEGORY_COLOURS[cat]) != null ? _b : "#888";
+      row.createSpan({ text: String(count), cls: "jp-discourse-stat-count" });
+    }
+  }
+  renderTopMarkers(parent, markerFreq, topN) {
+    const entries = Object.entries(markerFreq).sort((a, b) => b[1] - a[1]).slice(0, topN);
+    if (entries.length === 0) {
+      parent.createDiv({ text: "No marker data.", cls: "jp-col-empty" });
+      return;
+    }
+    const maxCount = entries[0][1];
+    for (const [surface, count] of entries) {
+      const row = parent.createDiv("jp-discourse-stat-bar-row");
+      const label = row.createDiv("jp-discourse-stat-bar-label");
+      label.createSpan({ text: surface, cls: "jp-discourse-marker-surface" });
+      const barWrap = row.createDiv("jp-discourse-stat-bar-wrap");
+      const pct = maxCount > 0 ? count / maxCount * 100 : 0;
+      const bar = barWrap.createDiv("jp-discourse-stat-bar");
+      bar.style.width = `${pct.toFixed(1)}%`;
+      bar.style.backgroundColor = "#4a9eff";
+      row.createSpan({ text: String(count), cls: "jp-discourse-stat-count" });
+    }
+  }
+  renderTopCollocations(parent, topN) {
+    const index = this.discourseStore.getIndex();
+    const entries = Object.entries(index.collocationToChunkIds).map(([colId, ids]) => ({ colId, count: ids.length })).sort((a, b) => b.count - a.count).slice(0, topN);
+    if (entries.length === 0) {
+      parent.createDiv({ text: "No data.", cls: "jp-col-empty" });
+      return;
+    }
+    for (const { colId, count } of entries) {
+      const entry2 = this.collocationStore.getById(colId);
+      const label = entry2 ? entry2.fullPhrase || entry2.headword : colId;
+      const row = parent.createDiv("jp-discourse-stat-col-row");
+      row.createSpan({ text: label, cls: "jp-col-headword" });
+      row.createSpan({ text: ` \u2014 ${count} context${count !== 1 ? "s" : ""}`, cls: "jp-col-stat-text" });
+    }
+  }
+};
+
 // src/main.ts
-var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
+var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULT_SETTINGS };
@@ -2576,10 +3231,23 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
     const dataPath = `${this.app.vault.configDir}/plugins/jp-collocations/${this.settings.dataFilePath}`;
     this.store = new CollocationStore(this.app, dataPath);
     await this.store.load();
+    const discourseIndexPath = `${this.app.vault.configDir}/plugins/jp-collocations/${this.settings.discourseIndexPath}`;
+    this.discourseStore = new DiscourseStore(
+      this.app,
+      this.store,
+      discourseIndexPath,
+      this.settings.maxContextsPerCollocation
+    );
+    await this.discourseStore.load();
+    this.discourseStore.rebuildIndex();
     this.engine = new SearchEngine(this.store);
     this.registerView(
       JP_COLLOCATIONS_VIEW_TYPE,
-      (leaf) => new CollocationView(leaf, this.store, this.engine, this.settings)
+      (leaf) => new CollocationView(leaf, this.store, this.engine, this.settings, this.discourseStore)
+    );
+    this.registerView(
+      DISCOURSE_STATS_VIEW_TYPE,
+      (leaf) => new DiscourseStatsView(leaf, this.discourseStore, this.store)
     );
     this.addSettingTab(new SettingsTab(
       this.app,
@@ -2613,7 +3281,7 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       editorCallback: (editor) => {
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian7.Notice("Select some Japanese text first!");
+          new import_obsidian8.Notice("Select some Japanese text first!");
           return;
         }
         const classifier = new TextClassifier();
@@ -2635,6 +3303,11 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       id: "fetch-hyogen",
       name: "Fetch from Hyogen",
       callback: () => this.fetchFromHyogen()
+    });
+    this.addCommand({
+      id: "open-discourse-stats",
+      name: "Open Discourse Stats",
+      callback: () => this.openDiscourseStatsView()
     });
     this.addRibbonIcon("languages", "JP Collocations", () => this.openLexiconView());
   }
@@ -2679,10 +3352,10 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       try {
         const parsed = JSON.parse(text);
         const count = this.store.bulkImport(parsed);
-        new import_obsidian7.Notice(`Imported ${count} entries.`);
+        new import_obsidian8.Notice(`Imported ${count} entries.`);
         this.refreshViews();
       } catch (e) {
-        new import_obsidian7.Notice("Failed to parse JSON file.");
+        new import_obsidian8.Notice("Failed to parse JSON file.");
       }
     };
     input.click();
@@ -2696,31 +3369,129 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
     a.download = "jp-collocations-export.json";
     a.click();
     URL.revokeObjectURL(url);
-    new import_obsidian7.Notice("Exported collocations.");
+    new import_obsidian8.Notice("Exported collocations.");
   }
   async fetchFromHyogen() {
     var _a;
     if (!this.settings.hyogenEnabled) {
-      new import_obsidian7.Notice("Hyogen scraping is disabled. Enable it in settings first.");
+      new import_obsidian8.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
     }
     if (this.settings.hyogenWordList.length === 0) {
-      new import_obsidian7.Notice("No words configured. Add words to the scrape list in settings.");
+      new import_obsidian8.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
     if ((_a = this.scraper) == null ? void 0 : _a.isRunning()) {
-      new import_obsidian7.Notice("Scraper is already running.");
+      new import_obsidian8.Notice("Scraper is already running.");
       return;
     }
     this.scraper = new HyogenScraper(this.app, this.store, {
       rateLimit: this.settings.hyogenRateLimit,
-      onProgress: (msg) => new import_obsidian7.Notice(msg, 3e3),
+      onProgress: (msg) => new import_obsidian8.Notice(msg, 3e3),
       onEntry: () => this.refreshViews()
     });
     this.scraper.enqueue(this.settings.hyogenWordList);
-    new import_obsidian7.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
+    new import_obsidian8.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
     const count = await this.scraper.run();
-    new import_obsidian7.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    new import_obsidian8.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
+  }
+  async openDiscourseStatsView() {
+    const existing = this.app.workspace.getLeavesOfType(DISCOURSE_STATS_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: DISCOURSE_STATS_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+  // ── Bridge API (called by jp-sentence-surfer) ─────────────────────────────
+  /**
+   * Creates a new collocation entry from surfer data, or merges discourse
+   * contexts into an existing entry with the same expression.
+   * Returns the ID of the created/updated entry.
+   */
+  async addEntryFromSurfer(entry2) {
+    return this.discourseStore.addEntryFromSurfer(
+      entry2,
+      this.settings.maxContextsPerCollocation
+    );
+  }
+  /**
+   * Attaches a discourse context to an existing collocation entry.
+   * Deduplicates on chunkText + source.file.
+   */
+  async addDiscourseContext(collocationId, context) {
+    await this.discourseStore.addContext(
+      collocationId,
+      context,
+      this.settings.maxContextsPerCollocation
+    );
+  }
+  /**
+   * Adds an example sentence to an existing collocation entry,
+   * storing source metadata and skipping exact duplicates.
+   */
+  async saveExampleSentence(collocationId, sentence, source) {
+    await this.discourseStore.saveExampleSentence(collocationId, sentence, source);
+  }
+  /**
+   * Scans all stored collocations against the given text and returns
+   * matches with character positions. Designed to be fast — called on
+   * every chunk capture during surfing.
+   */
+  findCollocationsInText(text) {
+    const matches = [];
+    const all = this.store.getAll();
+    for (const entry2 of all) {
+      const expressions = [entry2.fullPhrase, entry2.headword].filter(Boolean);
+      for (const expr of expressions) {
+        let start = 0;
+        while (start <= text.length - expr.length) {
+          const idx = text.indexOf(expr, start);
+          if (idx === -1)
+            break;
+          matches.push({
+            collocationId: entry2.id,
+            expression: expr,
+            matchStart: idx,
+            matchEnd: idx + expr.length
+          });
+          start = idx + 1;
+        }
+      }
+    }
+    matches.sort((a, b) => a.matchStart - b.matchStart);
+    return matches;
+  }
+  /**
+   * Returns all collocations that have been seen in chunks containing
+   * the given discourse marker surface text.
+   */
+  searchByDiscourseMarker(markerSurface) {
+    return this.discourseStore.getEntriesByMarker(markerSurface);
+  }
+  /**
+   * Returns all collocations whose stored discourse contexts include the
+   * given category.
+   */
+  searchByCategory(category) {
+    return this.discourseStore.getEntriesByCategory(category);
+  }
+  /**
+   * Returns all stored collocation entries in SurferCollocationEntry format
+   * for cross-referencing.
+   */
+  getAllEntries() {
+    return this.discourseStore.getAllEntries();
+  }
+  /**
+   * Returns frequency statistics about stored discourse contexts.
+   */
+  getDiscourseStats() {
+    return this.discourseStore.getStats();
   }
 };

@@ -3,3 +3,4 @@ node_modules/
 .DS_Store
 *.d.ts
 # main.js and dist/ are committed so iOS/mobile users can install without building
+node_modules/

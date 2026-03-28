@@ -160,6 +160,42 @@ export class SettingsTab extends PluginSettingTab {
         new Notice("All data cleared.");
       }));
 
+    // ── Discourse Grammar ──────────────────────────────────────────
+    containerEl.createEl("h3", { text: "Discourse Grammar (談話文法)" });
+
+    new Setting(containerEl)
+      .setName("Show discourse contexts")
+      .setDesc("Display captured discourse chunks in entry detail view")
+      .addToggle(t => t.setValue(this.settings.showDiscourseContexts).onChange(async v => {
+        this.settings.showDiscourseContexts = v;
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("Discourse index file")
+      .setDesc("File name for the discourse index (stored alongside collocation data)")
+      .addText(t => t.setValue(this.settings.discourseIndexPath).onChange(async v => {
+        this.settings.discourseIndexPath = v.trim() || "discourse-index.json";
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("Max contexts per collocation")
+      .setDesc("Maximum number of discourse contexts stored per collocation entry (default: 50)")
+      .addSlider(s => s.setLimits(5, 200, 5).setValue(this.settings.maxContextsPerCollocation)
+        .setDynamicTooltip().onChange(async v => {
+          this.settings.maxContextsPerCollocation = v;
+          await this.onSettingsChange();
+        }));
+
+    new Setting(containerEl)
+      .setName("Auto-clean old contexts")
+      .setDesc("Automatically remove oldest contexts when the per-collocation limit is reached")
+      .addToggle(t => t.setValue(this.settings.autoCleanOldContexts).onChange(async v => {
+        this.settings.autoCleanOldContexts = v;
+        await this.onSettingsChange();
+      }));
+
     // ── Stats ──────────────────────────────────────────────────────
     containerEl.createEl("h3", { text: "Statistics" });
     const stats = this.store.getStats();
