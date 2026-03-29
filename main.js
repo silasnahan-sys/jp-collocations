@@ -27,7 +27,7 @@ __export(main_exports, {
   default: () => JPCollocationsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian7 = require("obsidian");
+var import_obsidian8 = require("obsidian");
 
 // src/types.ts
 var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
@@ -2564,8 +2564,920 @@ var ClassifyModal = class extends import_obsidian6.Modal {
   }
 };
 
+// src/ui/DictionaryView.ts
+var import_obsidian7 = require("obsidian");
+
+// src/yomitan/constants.ts
+var DICTIONARY_COLORS = {
+  "\u5927\u8F9E\u6797": "#2563eb",
+  "\u5927\u8F9E\u67974": "#2563eb",
+  "\u5927\u8F9E\u6797 \u7B2C\u56DB\u7248": "#2563eb",
+  "\u5927\u8F9E\u6CC9": "#0891b2",
+  "\u30C7\u30B8\u30BF\u30EB\u5927\u8F9E\u6CC9": "#0891b2",
+  "\u660E\u93E1\u56FD\u8A9E\u8F9E\u5178": "#16a34a",
+  "\u660E\u93E1": "#16a34a",
+  "\u65E5\u672C\u56FD\u8A9E\u5927\u8F9E\u5178": "#7c3aed",
+  "\u7CBE\u9078\u7248 \u65E5\u672C\u56FD\u8A9E\u5927\u8F9E\u5178": "#7c3aed",
+  "\u4E09\u7701\u5802\u56FD\u8A9E\u8F9E\u5178": "#dc2626",
+  "\u65B0\u660E\u89E3\u56FD\u8A9E\u8F9E\u5178": "#ea580c",
+  "\u65B0\u660E\u89E3": "#ea580c",
+  "\u5168\u8A33\u6F22\u8F9E\u6D77": "#854d0e",
+  "\u89D2\u5DDD\u65B0\u5B57\u6E90": "#92400e",
+  "\u65FA\u6587\u793E \u5168\u8A33\u53E4\u8A9E\u8F9E\u5178": "#065f46",
+  "\u4E09\u7701\u5802 \u5168\u8A33\u8AAD\u89E3\u53E4\u8A9E\u8F9E\u5178": "#064e3b",
+  "\u89D2\u5DDD\u985E\u8A9E\u65B0\u8F9E\u5178": "#6d28d9",
+  "\u65E5\u672C\u8A9E\u30B7\u30BD\u30FC\u30E9\u30B9": "#4c1d95",
+  "NHK\u65E5\u672C\u8A9E\u767A\u97F3\u30A2\u30AF\u30BB\u30F3\u30C8\u8F9E\u5178": "#be185d",
+  "NHK": "#be185d",
+  "\u6F22\u691C \u6F22\u5B57\u8F9E\u5178": "#1e3a5f",
+  "\u6709\u6590\u95A3 \u6CD5\u5F8B\u7528\u8A9E\u8F9E\u5178": "#374151",
+  "\u6709\u6590\u95A3 \u73FE\u4EE3\u5FC3\u7406\u5B66\u8F9E\u5178": "#1f2937"
+};
+var DEFAULT_DICTIONARY_COLOR = "#6b7280";
+var DICT_VIEW_TYPE = "yomitan-dictionary-view";
+var YOMITAN_STORE_DB = "yomitan-dictionaries";
+var YOMITAN_STORE_VERSION = 1;
+var MAX_HISTORY = 100;
+var MAX_SUGGESTIONS = 8;
+
+// src/yomitan/YomitanStore.ts
+var YomitanStore = class {
+  constructor() {
+    this.db = null;
+  }
+  async open() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(YOMITAN_STORE_DB, YOMITAN_STORE_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains("entries")) {
+          const store = db.createObjectStore("entries", { keyPath: ["dictionaryTitle", "expression", "sequence"] });
+          store.createIndex("expression", "expression");
+          store.createIndex("dictionaryTitle", "dictionaryTitle");
+          store.createIndex("expressionReading", ["expression", "reading"]);
+        }
+        if (!db.objectStoreNames.contains("dictionaries")) {
+          db.createObjectStore("dictionaries", { keyPath: "id" });
+        }
+        if (!db.objectStoreNames.contains("bookmarks")) {
+          db.createObjectStore("bookmarks", { keyPath: "id" });
+        }
+        if (!db.objectStoreNames.contains("history")) {
+          db.createObjectStore("history", { keyPath: "query" });
+        }
+      };
+      req.onsuccess = () => {
+        this.db = req.result;
+        resolve();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+  tx(storeNames, mode = "readonly") {
+    if (!this.db)
+      throw new Error("Database not open");
+    return this.db.transaction(storeNames, mode);
+  }
+  async addDictionary(meta, entries) {
+    await this.put("dictionaries", meta);
+    const BATCH = 500;
+    for (let i = 0; i < entries.length; i += BATCH) {
+      const batch = entries.slice(i, i + BATCH);
+      await new Promise((resolve, reject) => {
+        const t = this.tx("entries", "readwrite");
+        const store = t.objectStore("entries");
+        for (const entry2 of batch)
+          store.put(entry2);
+        t.oncomplete = () => resolve();
+        t.onerror = () => reject(t.error);
+      });
+    }
+  }
+  async deleteDictionary(id) {
+    const meta = await this.get("dictionaries", id);
+    if (!meta)
+      return;
+    await this.delete("dictionaries", id);
+    await new Promise((resolve, reject) => {
+      const t = this.tx("entries", "readwrite");
+      const store = t.objectStore("entries");
+      const idx = store.index("dictionaryTitle");
+      const req = idx.openCursor(IDBKeyRange.only(meta.title));
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (cursor) {
+          cursor.delete();
+          cursor.continue();
+        }
+      };
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error);
+    });
+  }
+  async getDictionaries() {
+    return this.getAll("dictionaries");
+  }
+  async searchEntries(query, dictTitles) {
+    if (!query.trim())
+      return [];
+    return new Promise((resolve, reject) => {
+      const t = this.tx("entries", "readonly");
+      const store = t.objectStore("entries");
+      const idx = store.index("expression");
+      const results = [];
+      const req = idx.openCursor(IDBKeyRange.bound(query, query + "\uFFFF"));
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) {
+          resolve(results);
+          return;
+        }
+        const entry2 = cursor.value;
+        if (!dictTitles || dictTitles.includes(entry2.dictionaryTitle)) {
+          results.push(entry2);
+        }
+        cursor.continue();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async getBookmarks() {
+    return this.getAll("bookmarks");
+  }
+  async addBookmark(bm) {
+    await this.put("bookmarks", bm);
+  }
+  async removeBookmark(id) {
+    await this.delete("bookmarks", id);
+  }
+  async getHistory() {
+    const all = await this.getAll("history");
+    return all.sort((a, b) => b.timestamp - a.timestamp);
+  }
+  async addHistory(query) {
+    await this.put("history", { query, timestamp: Date.now() });
+    const all = await this.getHistory();
+    if (all.length > MAX_HISTORY) {
+      const toRemove = all.slice(MAX_HISTORY);
+      for (const item of toRemove)
+        await this.delete("history", item.query);
+    }
+  }
+  async clearHistory() {
+    const t = this.tx("history", "readwrite");
+    t.objectStore("history").clear();
+    await new Promise((resolve, reject) => {
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error);
+    });
+  }
+  get(storeName, key) {
+    return new Promise((resolve, reject) => {
+      const t = this.tx(storeName);
+      const req = t.objectStore(storeName).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  getAll(storeName) {
+    return new Promise((resolve, reject) => {
+      const t = this.tx(storeName);
+      const req = t.objectStore(storeName).getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  put(storeName, value) {
+    return new Promise((resolve, reject) => {
+      const t = this.tx(storeName, "readwrite");
+      const req = t.objectStore(storeName).put(value);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+  delete(storeName, key) {
+    return new Promise((resolve, reject) => {
+      const t = this.tx(storeName, "readwrite");
+      const req = t.objectStore(storeName).delete(key);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+};
+
+// src/yomitan/YomitanDictionary.ts
+var YomitanDictionary = class _YomitanDictionary {
+  static async importFromZip(file, onProgress) {
+    onProgress == null ? void 0 : onProgress("Reading ZIP file\u2026");
+    const buffer = await file.arrayBuffer();
+    const files = await _YomitanDictionary.parseZip(buffer);
+    onProgress == null ? void 0 : onProgress("Parsing index.json\u2026");
+    const indexFile = files["index.json"];
+    if (!indexFile)
+      throw new Error("Missing index.json in dictionary ZIP");
+    const index = JSON.parse(new TextDecoder().decode(indexFile));
+    const tags = {};
+    for (const [name, data] of Object.entries(files)) {
+      if (/^tag_bank_\d+\.json$/.test(name)) {
+        const rows = JSON.parse(new TextDecoder().decode(data));
+        for (const [tagName, , , notes] of rows) {
+          tags[tagName] = notes;
+        }
+      }
+    }
+    const entries = [];
+    const termBankNames = Object.keys(files).filter((n) => /^term_bank_\d+\.json$/.test(n)).sort((a, b) => {
+      var _a, _b, _c, _d;
+      const na = parseInt((_b = (_a = a.match(/\d+/)) == null ? void 0 : _a[0]) != null ? _b : "0");
+      const nb = parseInt((_d = (_c = b.match(/\d+/)) == null ? void 0 : _c[0]) != null ? _d : "0");
+      return na - nb;
+    });
+    for (const bankName of termBankNames) {
+      onProgress == null ? void 0 : onProgress(`Parsing ${bankName}\u2026`);
+      const rows = JSON.parse(new TextDecoder().decode(files[bankName]));
+      for (const [expression, reading, definitionTags, rules, score, definitions, sequence, termTags] of rows) {
+        entries.push({
+          expression,
+          reading,
+          definitionTags,
+          rules,
+          score,
+          definitions,
+          sequence,
+          termTags,
+          dictionaryTitle: index.title
+        });
+      }
+    }
+    const meta = {
+      id: `${index.title}-${index.revision}`,
+      title: index.title,
+      revision: index.revision,
+      format: index.format,
+      entryCount: entries.length,
+      importedAt: Date.now(),
+      enabled: true
+    };
+    return { meta, entries };
+  }
+  // Minimal ZIP parser (handles stored + deflated files)
+  static async parseZip(buffer) {
+    const view = new DataView(buffer);
+    const bytes = new Uint8Array(buffer);
+    const files = {};
+    let eocdOffset = -1;
+    for (let i = bytes.length - 22; i >= 0; i--) {
+      if (view.getUint32(i, true) === 101010256) {
+        eocdOffset = i;
+        break;
+      }
+    }
+    if (eocdOffset < 0)
+      throw new Error("Invalid ZIP: no EOCD signature");
+    const centralDirOffset = view.getUint32(eocdOffset + 16, true);
+    const totalEntries = view.getUint16(eocdOffset + 10, true);
+    let offset = centralDirOffset;
+    for (let i = 0; i < totalEntries; i++) {
+      if (view.getUint32(offset, true) !== 33639248)
+        break;
+      const method = view.getUint16(offset + 10, true);
+      const compressedSize = view.getUint32(offset + 20, true);
+      const uncompressedSize = view.getUint32(offset + 24, true);
+      const fileNameLen = view.getUint16(offset + 28, true);
+      const extraLen = view.getUint16(offset + 30, true);
+      const commentLen = view.getUint16(offset + 32, true);
+      const localOffset = view.getUint32(offset + 42, true);
+      const fileName = new TextDecoder().decode(bytes.slice(offset + 46, offset + 46 + fileNameLen));
+      offset += 46 + fileNameLen + extraLen + commentLen;
+      const lhExtraLen = view.getUint16(localOffset + 28, true);
+      const dataStart = localOffset + 30 + fileNameLen + lhExtraLen;
+      const compressedData = bytes.slice(dataStart, dataStart + compressedSize);
+      if (method === 0) {
+        files[fileName] = compressedData;
+      } else if (method === 8) {
+        const ds = new DecompressionStream("deflate-raw");
+        const writer = ds.writable.getWriter();
+        writer.write(compressedData);
+        writer.close();
+        const chunks = [];
+        const reader = ds.readable.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done)
+            break;
+          chunks.push(value);
+        }
+        const out = new Uint8Array(uncompressedSize);
+        let pos = 0;
+        for (const chunk of chunks) {
+          out.set(chunk, pos);
+          pos += chunk.length;
+        }
+        files[fileName] = out;
+      }
+    }
+    return files;
+  }
+};
+
+// src/yomitan/YomitanSearchEngine.ts
+var YomitanSearchEngine = class {
+  constructor(store) {
+    this.store = store;
+  }
+  async search(query, enabledDicts) {
+    if (!query.trim())
+      return [];
+    const titles = enabledDicts.filter((d) => d.enabled).map((d) => d.title);
+    const entries = await this.store.searchEntries(query.trim(), titles);
+    const groups = /* @__PURE__ */ new Map();
+    for (const title of titles)
+      groups.set(title, []);
+    for (const entry2 of entries) {
+      const g = groups.get(entry2.dictionaryTitle);
+      if (g)
+        g.push(entry2);
+    }
+    return Array.from(groups.entries()).filter(([, e]) => e.length > 0).map(([dictionaryTitle, entries2]) => ({ dictionaryTitle, entries: entries2 }));
+  }
+  async suggest(query, enabledDicts) {
+    if (!query.trim())
+      return [];
+    const titles = enabledDicts.filter((d) => d.enabled).map((d) => d.title);
+    const entries = await this.store.searchEntries(query.trim(), titles);
+    const seen = /* @__PURE__ */ new Set();
+    const suggestions = [];
+    for (const entry2 of entries) {
+      if (!seen.has(entry2.expression)) {
+        seen.add(entry2.expression);
+        suggestions.push(entry2.expression);
+        if (suggestions.length >= MAX_SUGGESTIONS)
+          break;
+      }
+    }
+    return suggestions;
+  }
+};
+
+// src/ui/DictionaryEntryRenderer.ts
+function renderEntry(entry2, container, onJump) {
+  const headRow = container.createDiv("mkd-headword-row");
+  if (entry2.reading && entry2.reading !== entry2.expression) {
+    headRow.createEl("ruby", {}, (ruby) => {
+      ruby.createEl("span", { text: entry2.expression, cls: "mkd-rb" });
+      ruby.createEl("rt", { text: entry2.reading });
+    });
+  } else {
+    headRow.createEl("span", { text: entry2.expression, cls: "mkd-headword" });
+  }
+  if (entry2.termTags || entry2.definitionTags) {
+    const tagsRow = container.createDiv("mkd-tags-row");
+    for (const tag of [...entry2.termTags.split(" "), ...entry2.definitionTags.split(" ")].filter(Boolean)) {
+      tagsRow.createEl("span", { text: tag, cls: "mkd-tag-chip" });
+    }
+  }
+  const defsEl = container.createDiv("mkd-definitions");
+  if (entry2.definitions.length === 1) {
+    renderDefinition(entry2.definitions[0], defsEl, onJump, false);
+  } else {
+    entry2.definitions.forEach((def, i) => {
+      const senseEl = defsEl.createDiv("mkd-sense");
+      const num = circledNumber(i + 1);
+      senseEl.createEl("span", { text: num, cls: "mkd-sense-num" });
+      renderDefinition(def, senseEl, onJump, true);
+    });
+  }
+}
+function renderDefinition(def, container, onJump, inline) {
+  if (typeof def === "string") {
+    const p = container.createEl(inline ? "span" : "p", { cls: "mkd-def-text" });
+    p.textContent = def;
+    renderInlineRefs(p, def, onJump);
+    return;
+  }
+  renderStructuredContent(def, container, onJump);
+}
+function renderInlineRefs(el, text, onJump) {
+  const refPattern = /[→⇒▷]([^\s。、]+)/g;
+  const matches = [...text.matchAll(refPattern)];
+  if (!matches.length)
+    return;
+  el.textContent = "";
+  let last = 0;
+  for (const m of matches) {
+    if (m.index > last) {
+      el.appendText(text.slice(last, m.index));
+    }
+    const link = el.createEl("a", { text: m[0], cls: "mkd-xref" });
+    link.addEventListener("click", () => onJump(m[1]));
+    last = m.index + m[0].length;
+  }
+  if (last < text.length)
+    el.appendText(text.slice(last));
+}
+function renderStructuredContent(node, container, onJump) {
+  if (!node || typeof node !== "object")
+    return;
+  const tag = node.tag || "span";
+  const el = container.createEl(tag);
+  if (node.data) {
+    for (const [k, v] of Object.entries(node.data)) {
+      if (k === "content")
+        el.addClass(`mkd-sc-${v}`);
+    }
+  }
+  if (node.style) {
+    for (const [k, v] of Object.entries(node.style)) {
+      el.style[k] = v;
+    }
+  }
+  if (tag === "a" && node.href) {
+    el.addClass("mkd-xref");
+    const term = String(node.href).replace(/^.*\//, "");
+    el.addEventListener("click", () => onJump(term));
+  }
+  if (typeof node.content === "string") {
+    el.textContent = node.content;
+  } else if (Array.isArray(node.content)) {
+    for (const child of node.content) {
+      if (typeof child === "string") {
+        el.appendText(child);
+      } else {
+        renderStructuredContent(child, el, onJump);
+      }
+    }
+  } else if (node.content && typeof node.content === "object") {
+    renderStructuredContent(node.content, el, onJump);
+  }
+}
+function circledNumber(n) {
+  const circles = "\u2460\u2461\u2462\u2463\u2464\u2465\u2466\u2467\u2468\u2469\u246A\u246B\u246C\u246D\u246E\u246F\u2470\u2471\u2472\u2473";
+  return n <= 20 ? circles[n - 1] : `(${n})`;
+}
+
+// src/ui/DictionaryView.ts
+var DictionaryView = class extends import_obsidian7.ItemView {
+  constructor(leaf) {
+    super(leaf);
+    this.dictionaries = [];
+    this.currentTab = "shelf";
+    this.searchQuery = "";
+    this.selectedDictTitle = null;
+    this.searchResults = [];
+    this.activeEntry = null;
+    this.bookmarks = [];
+    this.history = [];
+    this.fontSize = 15;
+    this.store = new YomitanStore();
+    this.engine = new YomitanSearchEngine(this.store);
+  }
+  getViewType() {
+    return DICT_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "\u8F9E\u66F8";
+  }
+  getIcon() {
+    return "book-open";
+  }
+  async onOpen() {
+    await this.store.open();
+    this.dictionaries = await this.store.getDictionaries();
+    this.bookmarks = await this.store.getBookmarks();
+    this.history = await this.store.getHistory();
+    this.build();
+  }
+  async onClose() {
+  }
+  build() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("mkd-view");
+    this.rootEl = container.createDiv("mkd-root");
+    this.buildSearchHeader();
+    this.mainContent = this.rootEl.createDiv("mkd-main");
+    this.buildTabBar();
+    this.renderCurrentTab();
+  }
+  buildSearchHeader() {
+    const header = this.rootEl.createDiv("mkd-search-header");
+    const scopePill = header.createDiv("mkd-scope-pill");
+    scopePill.style.display = "none";
+    const searchWrap = header.createDiv("mkd-search-wrap");
+    const searchIcon = searchWrap.createEl("span", { text: "\u{1F50D}" });
+    searchIcon.addClass("mkd-search-icon");
+    this.searchInput = searchWrap.createEl("input", {
+      type: "text",
+      placeholder: "\u8F9E\u66F8\u3092\u691C\u7D22\u2026",
+      cls: "mkd-search-input"
+    });
+    const clearBtn = searchWrap.createEl("button", { text: "\u2715", cls: "mkd-search-clear" });
+    clearBtn.style.display = "none";
+    const cancelBtn = header.createEl("button", { text: "\u30AD\u30E3\u30F3\u30BB\u30EB", cls: "mkd-search-cancel" });
+    cancelBtn.style.display = "none";
+    this.suggestionsEl = this.rootEl.createDiv("mkd-suggestions");
+    this.suggestionsEl.style.display = "none";
+    this.searchInput.addEventListener("input", async () => {
+      const q = this.searchInput.value;
+      this.searchQuery = q;
+      clearBtn.style.display = q ? "flex" : "none";
+      cancelBtn.style.display = q ? "block" : "none";
+      if (!q) {
+        this.suggestionsEl.style.display = "none";
+        return;
+      }
+      const suggestions = await this.engine.suggest(q, this.dictionaries);
+      this.renderSuggestions(suggestions);
+    });
+    this.searchInput.addEventListener("keydown", async (e) => {
+      if (e.key === "Enter") {
+        this.suggestionsEl.style.display = "none";
+        await this.doSearch(this.searchInput.value);
+      }
+    });
+    this.searchInput.addEventListener("focus", () => {
+      header.addClass("mkd-search-focused");
+    });
+    this.searchInput.addEventListener("blur", () => {
+      setTimeout(() => {
+        header.removeClass("mkd-search-focused");
+        this.suggestionsEl.style.display = "none";
+      }, 200);
+    });
+    clearBtn.addEventListener("click", () => {
+      this.searchInput.value = "";
+      this.searchQuery = "";
+      clearBtn.style.display = "none";
+      cancelBtn.style.display = "none";
+      this.searchResults = [];
+      this.activeEntry = null;
+      this.suggestionsEl.style.display = "none";
+      this.renderCurrentTab();
+    });
+    cancelBtn.addEventListener("click", () => {
+      this.searchInput.value = "";
+      this.searchQuery = "";
+      clearBtn.style.display = "none";
+      cancelBtn.style.display = "none";
+      this.searchResults = [];
+      this.activeEntry = null;
+      this.suggestionsEl.style.display = "none";
+      this.renderCurrentTab();
+    });
+  }
+  renderSuggestions(suggestions) {
+    this.suggestionsEl.empty();
+    if (!suggestions.length) {
+      this.suggestionsEl.style.display = "none";
+      return;
+    }
+    this.suggestionsEl.style.display = "block";
+    for (const s of suggestions) {
+      const row = this.suggestionsEl.createDiv("mkd-suggestion-row");
+      row.createEl("span", { text: "\u{1F50D}", cls: "mkd-suggest-icon" });
+      row.createEl("span", { text: s, cls: "mkd-suggest-text" });
+      row.addEventListener("mousedown", async (e) => {
+        e.preventDefault();
+        this.searchInput.value = s;
+        this.searchQuery = s;
+        this.suggestionsEl.style.display = "none";
+        await this.doSearch(s);
+      });
+    }
+  }
+  async doSearch(query) {
+    if (!query.trim())
+      return;
+    await this.store.addHistory(query);
+    this.history = await this.store.getHistory();
+    this.searchResults = await this.engine.search(query, this.dictionaries);
+    this.activeEntry = null;
+    this.renderSearchResults();
+  }
+  buildTabBar() {
+    this.tabBar = this.rootEl.createDiv("mkd-tab-bar");
+    const tabs = [
+      { id: "shelf", icon: "\u{1F4DA}", label: "\u8F9E\u66F8\u68DA" },
+      { id: "bookmarks", icon: "\u{1F516}", label: "\u3057\u304A\u308A" },
+      { id: "history", icon: "\u{1F550}", label: "\u5C65\u6B74" },
+      { id: "more", icon: "\u22EF", label: "\u305D\u306E\u4ED6" }
+    ];
+    for (const tab of tabs) {
+      const btn = this.tabBar.createDiv("mkd-tab-btn");
+      btn.createEl("span", { text: tab.icon, cls: "mkd-tab-icon" });
+      btn.createEl("span", { text: tab.label, cls: "mkd-tab-label" });
+      if (tab.id === this.currentTab)
+        btn.addClass("mkd-tab-active");
+      btn.addEventListener("click", () => {
+        this.currentTab = tab.id;
+        this.activeEntry = null;
+        this.searchResults = [];
+        this.searchInput.value = "";
+        this.searchQuery = "";
+        this.updateTabActive();
+        this.renderCurrentTab();
+      });
+    }
+  }
+  updateTabActive() {
+    for (let i = 0; i < this.tabBar.children.length; i++) {
+      const child = this.tabBar.children[i];
+      child.removeClass("mkd-tab-active");
+    }
+    const tabs = ["shelf", "bookmarks", "history", "more"];
+    const idx = tabs.indexOf(this.currentTab);
+    if (idx >= 0)
+      this.tabBar.children[idx].addClass("mkd-tab-active");
+  }
+  renderCurrentTab() {
+    this.mainContent.empty();
+    if (this.activeEntry) {
+      this.renderEntryDetail(this.activeEntry);
+      return;
+    }
+    if (this.searchResults.length > 0 || this.searchQuery) {
+      this.renderSearchResults();
+      return;
+    }
+    switch (this.currentTab) {
+      case "shelf":
+        this.renderShelf();
+        break;
+      case "bookmarks":
+        this.renderBookmarks();
+        break;
+      case "history":
+        this.renderHistory();
+        break;
+      case "more":
+        this.renderMore();
+        break;
+    }
+  }
+  renderShelf() {
+    const shelf = this.mainContent.createDiv("mkd-shelf");
+    if (this.dictionaries.length === 0) {
+      const empty = shelf.createDiv("mkd-empty");
+      empty.createEl("p", { text: "\u8F9E\u66F8\u304C\u307E\u3060\u30A4\u30F3\u30DD\u30FC\u30C8\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002", cls: "mkd-empty-text" });
+      const importBtn2 = shelf.createEl("button", { text: "\uFF0B \u8F9E\u66F8\u3092\u30A4\u30F3\u30DD\u30FC\u30C8", cls: "mkd-import-btn" });
+      importBtn2.addEventListener("click", () => this.importDictionary());
+      return;
+    }
+    shelf.createEl("p", { text: "\u8F9E\u66F8\u68DA", cls: "mkd-section-title" });
+    const grid = shelf.createDiv("mkd-dict-grid");
+    for (const dict of this.dictionaries) {
+      this.buildDictTile(grid, dict);
+    }
+    const importBtn = shelf.createEl("button", { text: "\uFF0B \u8F9E\u66F8\u3092\u8FFD\u52A0", cls: "mkd-add-dict-btn" });
+    importBtn.addEventListener("click", () => this.importDictionary());
+  }
+  buildDictTile(container, dict) {
+    const tile = container.createDiv("mkd-dict-tile");
+    const color = this.getDictColor(dict.title);
+    tile.style.setProperty("--dict-color", color);
+    if (!dict.enabled)
+      tile.addClass("mkd-dict-tile--disabled");
+    const icon = tile.createDiv("mkd-dict-icon");
+    icon.style.background = color;
+    const initials = dict.title.slice(0, 2);
+    icon.createEl("span", { text: initials, cls: "mkd-dict-initials" });
+    tile.createEl("span", { text: dict.title, cls: "mkd-dict-name" });
+    tile.createEl("span", { text: `${dict.entryCount.toLocaleString()}\u8A9E`, cls: "mkd-dict-count" });
+    tile.addEventListener("click", () => {
+      this.selectedDictTitle = dict.title;
+      this.searchInput.focus();
+    });
+  }
+  renderSearchResults() {
+    const wrap = this.mainContent.createDiv("mkd-results-wrap");
+    if (!this.searchResults.length) {
+      wrap.createEl("p", { text: `\u300C${this.searchQuery}\u300D\u306E\u691C\u7D22\u7D50\u679C\u304C\u3042\u308A\u307E\u305B\u3093\u3002`, cls: "mkd-empty-text" });
+      return;
+    }
+    for (const group of this.searchResults) {
+      const color = this.getDictColor(group.dictionaryTitle);
+      const section = wrap.createDiv("mkd-result-section");
+      const badge = section.createEl("span", { text: group.dictionaryTitle, cls: "mkd-dict-badge" });
+      badge.style.background = color;
+      for (const entry2 of group.entries) {
+        const card = section.createDiv("mkd-result-card");
+        const mainRow = card.createDiv("mkd-result-main");
+        mainRow.createEl("span", { text: entry2.expression, cls: "mkd-result-headword" });
+        if (entry2.reading && entry2.reading !== entry2.expression) {
+          mainRow.createEl("span", { text: entry2.reading, cls: "mkd-result-reading" });
+        }
+        const defPreview = this.getDefPreview(entry2);
+        if (defPreview) {
+          card.createEl("p", { text: defPreview, cls: "mkd-result-def-preview" });
+        }
+        card.addEventListener("click", () => {
+          this.activeEntry = entry2;
+          this.renderEntryDetail(entry2);
+        });
+      }
+    }
+  }
+  renderEntryDetail(entry2) {
+    this.mainContent.empty();
+    const detail = this.mainContent.createDiv("mkd-entry-detail");
+    const topBar = detail.createDiv("mkd-entry-top-bar");
+    const backBtn = topBar.createEl("button", { text: "\u2039 \u623B\u308B", cls: "mkd-back-btn" });
+    backBtn.addEventListener("click", () => {
+      this.activeEntry = null;
+      this.renderSearchResults();
+    });
+    const badge = topBar.createEl("span", { text: entry2.dictionaryTitle, cls: "mkd-dict-badge" });
+    badge.style.background = this.getDictColor(entry2.dictionaryTitle);
+    const bmBtn = topBar.createEl("button", { text: "\u{1F516}", cls: "mkd-bookmark-btn" });
+    const isBookmarked = this.bookmarks.some((b) => b.expression === entry2.expression && b.dictionaryTitle === entry2.dictionaryTitle);
+    if (isBookmarked)
+      bmBtn.addClass("mkd-bookmarked");
+    bmBtn.addEventListener("click", async () => {
+      if (isBookmarked) {
+        const bm = this.bookmarks.find((b) => b.expression === entry2.expression && b.dictionaryTitle === entry2.dictionaryTitle);
+        if (bm) {
+          await this.store.removeBookmark(bm.id);
+        }
+      } else {
+        const bm = {
+          id: `${entry2.dictionaryTitle}-${entry2.expression}-${Date.now()}`,
+          expression: entry2.expression,
+          reading: entry2.reading,
+          dictionaryTitle: entry2.dictionaryTitle,
+          savedAt: Date.now(),
+          folder: "default"
+        };
+        await this.store.addBookmark(bm);
+      }
+      this.bookmarks = await this.store.getBookmarks();
+      new import_obsidian7.Notice(isBookmarked ? "\u3057\u304A\u308A\u3092\u524A\u9664\u3057\u307E\u3057\u305F" : "\u3057\u304A\u308A\u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F");
+    });
+    const fontCtrl = topBar.createDiv("mkd-font-ctrl");
+    const smallBtn = fontCtrl.createEl("button", { text: "A\u207B", cls: "mkd-font-btn" });
+    const bigBtn = fontCtrl.createEl("button", { text: "A\u207A", cls: "mkd-font-btn" });
+    smallBtn.addEventListener("click", () => {
+      this.fontSize = Math.max(11, this.fontSize - 1);
+      this.updateFontSize(entryBody);
+    });
+    bigBtn.addEventListener("click", () => {
+      this.fontSize = Math.min(24, this.fontSize + 1);
+      this.updateFontSize(entryBody);
+    });
+    const entryBody = detail.createDiv("mkd-entry-body");
+    this.updateFontSize(entryBody);
+    renderEntry(entry2, entryBody, (term) => this.doSearch(term));
+  }
+  updateFontSize(el) {
+    el.style.fontSize = `${this.fontSize}px`;
+  }
+  renderBookmarks() {
+    const wrap = this.mainContent.createDiv("mkd-bookmarks-wrap");
+    wrap.createEl("h3", { text: "\u3057\u304A\u308A", cls: "mkd-section-title" });
+    if (!this.bookmarks.length) {
+      wrap.createEl("p", { text: "\u3057\u304A\u308A\u304C\u3042\u308A\u307E\u305B\u3093\u3002", cls: "mkd-empty-text" });
+      return;
+    }
+    const list = wrap.createEl("ul", { cls: "mkd-bookmark-list" });
+    for (const bm of this.bookmarks.sort((a, b) => b.savedAt - a.savedAt)) {
+      const item = list.createEl("li", { cls: "mkd-bookmark-item" });
+      const left = item.createDiv("mkd-bm-left");
+      left.createEl("span", { text: bm.expression, cls: "mkd-bm-word" });
+      if (bm.reading && bm.reading !== bm.expression) {
+        left.createEl("span", { text: bm.reading, cls: "mkd-bm-reading" });
+      }
+      const badge = item.createEl("span", { text: bm.dictionaryTitle, cls: "mkd-dict-badge mkd-dict-badge--sm" });
+      badge.style.background = this.getDictColor(bm.dictionaryTitle);
+      const removeBtn = item.createEl("button", { text: "\xD7", cls: "mkd-bm-remove" });
+      removeBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await this.store.removeBookmark(bm.id);
+        this.bookmarks = await this.store.getBookmarks();
+        this.renderCurrentTab();
+      });
+      item.addEventListener("click", async () => {
+        this.searchInput.value = bm.expression;
+        this.searchQuery = bm.expression;
+        await this.doSearch(bm.expression);
+      });
+    }
+  }
+  renderHistory() {
+    const wrap = this.mainContent.createDiv("mkd-history-wrap");
+    const titleRow = wrap.createDiv("mkd-history-header");
+    titleRow.createEl("h3", { text: "\u5C65\u6B74", cls: "mkd-section-title" });
+    if (this.history.length) {
+      const clearBtn = titleRow.createEl("button", { text: "\u30AF\u30EA\u30A2", cls: "mkd-clear-history-btn" });
+      clearBtn.addEventListener("click", async () => {
+        await this.store.clearHistory();
+        this.history = [];
+        this.renderCurrentTab();
+      });
+    }
+    if (!this.history.length) {
+      wrap.createEl("p", { text: "\u691C\u7D22\u5C65\u6B74\u304C\u3042\u308A\u307E\u305B\u3093\u3002", cls: "mkd-empty-text" });
+      return;
+    }
+    const list = wrap.createEl("ul", { cls: "mkd-history-list" });
+    for (const item of this.history) {
+      const li = list.createEl("li", { cls: "mkd-history-item" });
+      li.createEl("span", { text: "\u{1F550}", cls: "mkd-hist-icon" });
+      li.createEl("span", { text: item.query, cls: "mkd-hist-query" });
+      const date = new Date(item.timestamp);
+      li.createEl("span", { text: `${date.getMonth() + 1}/${date.getDate()}`, cls: "mkd-hist-date" });
+      li.addEventListener("click", async () => {
+        this.searchInput.value = item.query;
+        this.searchQuery = item.query;
+        await this.doSearch(item.query);
+      });
+    }
+  }
+  renderMore() {
+    const wrap = this.mainContent.createDiv("mkd-more-wrap");
+    wrap.createEl("h3", { text: "\u305D\u306E\u4ED6", cls: "mkd-section-title" });
+    const fsRow = wrap.createDiv("mkd-more-row");
+    fsRow.createEl("span", { text: "\u6587\u5B57\u30B5\u30A4\u30BA", cls: "mkd-more-label" });
+    const fsCtrl = fsRow.createDiv("mkd-font-slider-wrap");
+    const fsSlider = fsCtrl.createEl("input", { type: "range", cls: "mkd-font-slider" });
+    fsSlider.min = "11";
+    fsSlider.max = "24";
+    fsSlider.value = String(this.fontSize);
+    const fsDisplay = fsCtrl.createEl("span", { text: `${this.fontSize}px`, cls: "mkd-font-display" });
+    fsSlider.addEventListener("input", () => {
+      this.fontSize = parseInt(fsSlider.value);
+      fsDisplay.textContent = `${this.fontSize}px`;
+    });
+    const manageRow = wrap.createDiv("mkd-more-row");
+    manageRow.createEl("span", { text: "\u8F9E\u66F8\u306E\u7BA1\u7406", cls: "mkd-more-label" });
+    const importBtn2 = manageRow.createEl("button", { text: "\uFF0B \u30A4\u30F3\u30DD\u30FC\u30C8", cls: "mkd-import-btn" });
+    importBtn2.addEventListener("click", () => this.importDictionary());
+    if (this.dictionaries.length) {
+      const dictList = wrap.createEl("ul", { cls: "mkd-manage-dict-list" });
+      for (const dict of this.dictionaries) {
+        const li = dictList.createEl("li", { cls: "mkd-manage-dict-item" });
+        const color = this.getDictColor(dict.title);
+        const dot = li.createEl("span", { cls: "mkd-manage-dot" });
+        dot.style.background = color;
+        li.createEl("span", { text: dict.title, cls: "mkd-manage-dict-title" });
+        li.createEl("span", { text: `${dict.entryCount.toLocaleString()}\u8A9E`, cls: "mkd-manage-dict-count" });
+        const toggle = li.createEl("input", { type: "checkbox", cls: "mkd-manage-toggle" });
+        toggle.checked = dict.enabled;
+        toggle.addEventListener("change", async () => {
+          dict.enabled = toggle.checked;
+          this.dictionaries = this.dictionaries.map((d) => d.id === dict.id ? dict : d);
+        });
+        const delBtn = li.createEl("button", { text: "\u524A\u9664", cls: "mkd-manage-delete" });
+        delBtn.addEventListener("click", async () => {
+          await this.store.deleteDictionary(dict.id);
+          this.dictionaries = await this.store.getDictionaries();
+          this.renderCurrentTab();
+        });
+      }
+    }
+  }
+  getDictColor(title) {
+    for (const [key, color] of Object.entries(DICTIONARY_COLORS)) {
+      if (title.includes(key))
+        return color;
+    }
+    return DEFAULT_DICTIONARY_COLOR;
+  }
+  getDefPreview(entry2) {
+    const first = entry2.definitions[0];
+    if (!first)
+      return "";
+    if (typeof first === "string")
+      return first.slice(0, 80);
+    return "";
+  }
+  async importDictionary() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".zip";
+    input.onchange = async () => {
+      var _a;
+      const file = (_a = input.files) == null ? void 0 : _a[0];
+      if (!file)
+        return;
+      new import_obsidian7.Notice("\u8F9E\u66F8\u3092\u30A4\u30F3\u30DD\u30FC\u30C8\u4E2D\u2026");
+      try {
+        const { meta, entries } = await YomitanDictionary.importFromZip(
+          file,
+          (msg) => new import_obsidian7.Notice(msg, 2e3)
+        );
+        await this.store.addDictionary(meta, entries);
+        this.dictionaries = await this.store.getDictionaries();
+        new import_obsidian7.Notice(`\u300C${meta.title}\u300D\u306E\u30A4\u30F3\u30DD\u30FC\u30C8\u5B8C\u4E86 (${meta.entryCount.toLocaleString()}\u8A9E)`);
+        this.renderCurrentTab();
+      } catch (err) {
+        new import_obsidian7.Notice(`\u30A4\u30F3\u30DD\u30FC\u30C8\u30A8\u30E9\u30FC: ${err}`);
+      }
+    };
+    input.click();
+  }
+};
+
 // src/main.ts
-var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
+var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULT_SETTINGS };
@@ -2581,6 +3493,7 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       JP_COLLOCATIONS_VIEW_TYPE,
       (leaf) => new CollocationView(leaf, this.store, this.engine, this.settings)
     );
+    this.registerView(DICT_VIEW_TYPE, (leaf) => new DictionaryView(leaf));
     this.addSettingTab(new SettingsTab(
       this.app,
       this,
@@ -2613,7 +3526,7 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       editorCallback: (editor) => {
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian7.Notice("Select some Japanese text first!");
+          new import_obsidian8.Notice("Select some Japanese text first!");
           return;
         }
         const classifier = new TextClassifier();
@@ -2636,12 +3549,29 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       name: "Fetch from Hyogen",
       callback: () => this.fetchFromHyogen()
     });
+    this.addCommand({
+      id: "open-dictionary",
+      name: "Open Dictionary",
+      callback: () => this.openDictionaryView()
+    });
+    this.addCommand({
+      id: "import-yomitan-dictionary",
+      name: "Import Yomitan Dictionary",
+      callback: () => this.importYomitanDictionary()
+    });
+    this.addCommand({
+      id: "search-dictionaries",
+      name: "Search Dictionaries",
+      callback: () => this.openDictionaryView()
+    });
     this.addRibbonIcon("languages", "JP Collocations", () => this.openLexiconView());
+    this.addRibbonIcon("book-open", "\u8F9E\u66F8 (Dictionary)", () => this.openDictionaryView());
   }
   async onunload() {
     var _a;
     (_a = this.scraper) == null ? void 0 : _a.abort();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(DICT_VIEW_TYPE);
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -2679,10 +3609,10 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       try {
         const parsed = JSON.parse(text);
         const count = this.store.bulkImport(parsed);
-        new import_obsidian7.Notice(`Imported ${count} entries.`);
+        new import_obsidian8.Notice(`Imported ${count} entries.`);
         this.refreshViews();
       } catch (e) {
-        new import_obsidian7.Notice("Failed to parse JSON file.");
+        new import_obsidian8.Notice("Failed to parse JSON file.");
       }
     };
     input.click();
@@ -2696,31 +3626,57 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
     a.download = "jp-collocations-export.json";
     a.click();
     URL.revokeObjectURL(url);
-    new import_obsidian7.Notice("Exported collocations.");
+    new import_obsidian8.Notice("Exported collocations.");
   }
   async fetchFromHyogen() {
     var _a;
     if (!this.settings.hyogenEnabled) {
-      new import_obsidian7.Notice("Hyogen scraping is disabled. Enable it in settings first.");
+      new import_obsidian8.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
     }
     if (this.settings.hyogenWordList.length === 0) {
-      new import_obsidian7.Notice("No words configured. Add words to the scrape list in settings.");
+      new import_obsidian8.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
     if ((_a = this.scraper) == null ? void 0 : _a.isRunning()) {
-      new import_obsidian7.Notice("Scraper is already running.");
+      new import_obsidian8.Notice("Scraper is already running.");
       return;
     }
     this.scraper = new HyogenScraper(this.app, this.store, {
       rateLimit: this.settings.hyogenRateLimit,
-      onProgress: (msg) => new import_obsidian7.Notice(msg, 3e3),
+      onProgress: (msg) => new import_obsidian8.Notice(msg, 3e3),
       onEntry: () => this.refreshViews()
     });
     this.scraper.enqueue(this.settings.hyogenWordList);
-    new import_obsidian7.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
+    new import_obsidian8.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
     const count = await this.scraper.run();
-    new import_obsidian7.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    new import_obsidian8.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
+  }
+  async openDictionaryView() {
+    const existing = this.app.workspace.getLeavesOfType(DICT_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: DICT_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+  importYomitanDictionary() {
+    const existing = this.app.workspace.getLeavesOfType(DICT_VIEW_TYPE);
+    if (existing.length > 0) {
+      const view = existing[0].view;
+      view.importDictionary();
+    } else {
+      this.openDictionaryView().then(() => {
+        const leaves = this.app.workspace.getLeavesOfType(DICT_VIEW_TYPE);
+        if (leaves.length > 0) {
+          leaves[0].view.importDictionary();
+        }
+      });
+    }
   }
 };

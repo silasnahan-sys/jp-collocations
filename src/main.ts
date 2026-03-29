@@ -10,6 +10,7 @@ import { AddEntryModal } from "./ui/AddEntryModal.ts";
 import { SettingsTab } from "./ui/SettingsTab.ts";
 import { TextClassifier } from "./classifier/TextClassifier.ts";
 import { ClassifyModal } from "./ui/ClassifyModal.ts";
+import { DictionaryView, DICT_VIEW_TYPE } from "./ui/DictionaryView.ts";
 
 export default class JPCollocationsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
@@ -32,6 +33,9 @@ export default class JPCollocationsPlugin extends Plugin {
     this.registerView(JP_COLLOCATIONS_VIEW_TYPE, leaf =>
       new CollocationView(leaf, this.store, this.engine, this.settings)
     );
+
+    // Register dictionary view
+    this.registerView(DICT_VIEW_TYPE, leaf => new DictionaryView(leaf));
 
     // Settings tab
     this.addSettingTab(new SettingsTab(
@@ -96,13 +100,35 @@ export default class JPCollocationsPlugin extends Plugin {
       callback: () => this.fetchFromHyogen(),
     });
 
+    this.addCommand({
+      id: "open-dictionary",
+      name: "Open Dictionary",
+      callback: () => this.openDictionaryView(),
+    });
+
+    this.addCommand({
+      id: "import-yomitan-dictionary",
+      name: "Import Yomitan Dictionary",
+      callback: () => this.importYomitanDictionary(),
+    });
+
+    this.addCommand({
+      id: "search-dictionaries",
+      name: "Search Dictionaries",
+      callback: () => this.openDictionaryView(),
+    });
+
     // Ribbon icon
     this.addRibbonIcon("languages", "JP Collocations", () => this.openLexiconView());
+
+    // Dictionary ribbon icon
+    this.addRibbonIcon("book-open", "辞書 (Dictionary)", () => this.openDictionaryView());
   }
 
   async onunload(): Promise<void> {
     this.scraper?.abort();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(DICT_VIEW_TYPE);
   }
 
   async loadSettings(): Promise<void> {
@@ -187,5 +213,33 @@ export default class JPCollocationsPlugin extends Plugin {
     const count = await this.scraper.run();
     new Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
+  }
+
+  private async openDictionaryView(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(DICT_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: DICT_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+
+  private importYomitanDictionary(): void {
+    const existing = this.app.workspace.getLeavesOfType(DICT_VIEW_TYPE);
+    if (existing.length > 0) {
+      const view = existing[0].view as DictionaryView;
+      view.importDictionary();
+    } else {
+      this.openDictionaryView().then(() => {
+        const leaves = this.app.workspace.getLeavesOfType(DICT_VIEW_TYPE);
+        if (leaves.length > 0) {
+          (leaves[0].view as DictionaryView).importDictionary();
+        }
+      });
+    }
   }
 }
