@@ -10,6 +10,7 @@ import { AddEntryModal } from "./ui/AddEntryModal.ts";
 import { SettingsTab } from "./ui/SettingsTab.ts";
 import { TextClassifier } from "./classifier/TextClassifier.ts";
 import { ClassifyModal } from "./ui/ClassifyModal.ts";
+import { DictionaryView, DICTIONARY_VIEW_TYPE } from "./ui/DictionaryView.ts";
 
 export default class JPCollocationsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
@@ -28,9 +29,13 @@ export default class JPCollocationsPlugin extends Plugin {
     // Search engine
     this.engine = new SearchEngine(this.store);
 
-    // Register view
+    // Register views
     this.registerView(JP_COLLOCATIONS_VIEW_TYPE, leaf =>
       new CollocationView(leaf, this.store, this.engine, this.settings)
+    );
+
+    this.registerView(DICTIONARY_VIEW_TYPE, leaf =>
+      new DictionaryView(leaf, this.app)
     );
 
     // Settings tab
@@ -91,6 +96,18 @@ export default class JPCollocationsPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "open-dictionary",
+      name: "Open Dictionary",
+      callback: () => this.openDictionaryView(),
+    });
+
+    this.addCommand({
+      id: "import-yomitan-dictionary",
+      name: "Import Yomitan Dictionary",
+      callback: () => this.importYomitanDictionary(),
+    });
+
+    this.addCommand({
       id: "fetch-hyogen",
       name: "Fetch from Hyogen",
       callback: () => this.fetchFromHyogen(),
@@ -103,6 +120,7 @@ export default class JPCollocationsPlugin extends Plugin {
   async onunload(): Promise<void> {
     this.scraper?.abort();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(DICTIONARY_VIEW_TYPE);
   }
 
   async loadSettings(): Promise<void> {
@@ -123,6 +141,30 @@ export default class JPCollocationsPlugin extends Plugin {
     if (leaf) {
       await leaf.setViewState({ type: JP_COLLOCATIONS_VIEW_TYPE, active: true });
       this.app.workspace.revealLeaf(leaf);
+    }
+  }
+
+  private async openDictionaryView(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(DICTIONARY_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: DICTIONARY_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+
+  private async importYomitanDictionary(): Promise<void> {
+    const leaves = this.app.workspace.getLeavesOfType(DICTIONARY_VIEW_TYPE);
+    if (leaves.length === 0) {
+      await this.openDictionaryView();
+    }
+    const leaf = this.app.workspace.getLeavesOfType(DICTIONARY_VIEW_TYPE)[0];
+    if (leaf?.view instanceof DictionaryView) {
+      (leaf.view as DictionaryView).importDictionary();
     }
   }
 
