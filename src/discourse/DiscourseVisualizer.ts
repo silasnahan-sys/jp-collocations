@@ -157,9 +157,10 @@ export class DiscourseVisualizer {
         if (!bSurface) continue;
         allSurfaces.add(bSurface);
 
-        // Canonical key (alphabetical order for symmetry)
-        const key = aSurface <= bSurface ? `${aSurface}\0${bSurface}` : `${bSurface}\0${aSurface}`;
-        pairCounts.set(key, (pairCounts.get(key) ?? 0) + 1);
+        // Canonical key (alphabetical order for symmetry) — stored as tuple to avoid delimiter collisions
+        const [first, second] = aSurface <= bSurface ? [aSurface, bSurface] : [bSurface, aSurface];
+        const pairKey = `${first}|||${second}`;
+        pairCounts.set(pairKey, (pairCounts.get(pairKey) ?? 0) + 1);
       }
     }
 
@@ -168,7 +169,9 @@ export class DiscourseVisualizer {
     const cells: CoOccurrenceCell[] = [];
 
     for (const [key, count] of pairCounts) {
-      const [row, col] = key.split('\0');
+      const sepIdx = key.indexOf('|||');
+      const row = key.slice(0, sepIdx);
+      const col = key.slice(sepIdx + 3);
       if (count > maxCount) maxCount = count;
       cells.push({ row, col, count, strength: 0 });
       if (row !== col) {
@@ -273,6 +276,8 @@ export class DiscourseVisualizer {
         category: e.discourseCategory,
       };
     });
+
+    if (items.length === 0) return [];
 
     // Normalise to 1–100 (single-pass min/max)
     let minRaw = items[0].weight;

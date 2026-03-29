@@ -68,6 +68,12 @@ interface MarkerDef {
 
 // ── CollocationParser ───────────────────────────────────────────────────────
 
+// Unicode ranges for Japanese character classes — used in segmentation regexes
+const KANJI_RANGE   = '\u4E00-\u9FFF\u3400-\u4DBF';
+const HIRAGANA_RANGE = '\u3041-\u3096';
+const KATAKANA_RANGE = '\u30A1-\u30FA';
+const JP_WORD_RANGE  = `${KANJI_RANGE}${HIRAGANA_RANGE}${KATAKANA_RANGE}`;
+
 export class CollocationParser {
   // 80 markers — 10 per category
   private readonly DISCOURSE_MARKERS: readonly MarkerDef[] = [
@@ -575,8 +581,10 @@ export class CollocationParser {
 
   /** Morpheme: split on hiragana/katakana token boundaries (simplified regex) */
   private segmentMorpheme(text: string): TextSegment[] {
-    // Split into runs of: kanji, hiragana, katakana, or other
-    const tokens = text.match(/[\u4E00-\u9FFF\u3400-\u4DBF]+|[\u3040-\u309F]+|[\u30A0-\u30FF]+|[^\u4E00-\u9FFF\u3400-\u4DBF\u3040-\u309F\u30A0-\u30FF]+/g);
+    // Split into runs of: kanji, hiragana, katakana, or other (uses named Unicode range constants)
+    const tokens = text.match(
+      new RegExp(`[${KANJI_RANGE}]+|[${HIRAGANA_RANGE}\u3040-\u3040]+|[${KATAKANA_RANGE}\u30A0-\u30A0]+|[^${JP_WORD_RANGE}]+`, 'g')
+    );
     return this.buildSegments(tokens ?? [], 'morpheme', text);
   }
 
@@ -641,7 +649,7 @@ export class CollocationParser {
     for (let i = 0; i < parts.length; i++) {
       if (parts[i].length === 0) continue;
       // If this part looks like a delimiter and there's a previous chunk, attach it
-      if (i > 0 && parts[i].length <= 3 && merged.length > 0 && !/[\u4E00-\u9FFF\u3400-\u4DBF]{2,}/.test(parts[i])) {
+      if (i > 0 && parts[i].length <= 3 && merged.length > 0 && !new RegExp(`[${KANJI_RANGE}]{2,}`).test(parts[i])) {
         merged[merged.length - 1] += parts[i];
       } else {
         merged.push(parts[i]);
