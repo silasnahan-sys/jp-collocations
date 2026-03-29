@@ -2677,6 +2677,9 @@ var YomitanStore = class {
   async getDictionaries() {
     return this.getAll("dictionaries");
   }
+  async updateDictionary(meta) {
+    await this.put("dictionaries", meta);
+  }
   async searchEntries(query, dictTitles) {
     if (!query.trim())
       return [];
@@ -3424,6 +3427,7 @@ var DictionaryView = class extends import_obsidian7.ItemView {
         toggle.addEventListener("change", async () => {
           dict.enabled = toggle.checked;
           this.dictionaries = this.dictionaries.map((d) => d.id === dict.id ? dict : d);
+          await this.store.updateDictionary(dict);
         });
         const delBtn = li.createEl("button", { text: "\u524A\u9664", cls: "mkd-manage-delete" });
         delBtn.addEventListener("click", async () => {

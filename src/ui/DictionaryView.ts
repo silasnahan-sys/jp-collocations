@@ -454,6 +454,7 @@ export class DictionaryView extends ItemView {
         toggle.addEventListener("change", async () => {
           dict.enabled = toggle.checked;
           this.dictionaries = this.dictionaries.map(d => d.id === dict.id ? dict : d);
+          await this.store.updateDictionary(dict);
         });
         const delBtn = li.createEl("button", { text: "削除", cls: "mkd-manage-delete" });
         delBtn.addEventListener("click", async () => {

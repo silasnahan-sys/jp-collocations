@@ -76,6 +76,10 @@ export class YomitanStore {
     return this.getAll<ImportedDictionary>("dictionaries");
   }
 
+  async updateDictionary(meta: ImportedDictionary): Promise<void> {
+    await this.put("dictionaries", meta);
+  }
+
   async searchEntries(query: string, dictTitles?: string[]): Promise<YomitanEntry[]> {
     if (!query.trim()) return [];
     return new Promise((resolve, reject) => {
