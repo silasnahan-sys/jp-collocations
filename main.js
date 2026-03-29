@@ -7852,7 +7852,7 @@ __export(main_exports, {
   default: () => JPCollocationsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian8 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 
 // src/types.ts
 var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
@@ -11903,8 +11903,583 @@ var DictionaryView = class extends import_obsidian7.ItemView {
   }
 };
 
+// src/ui/DiscourseView.ts
+var import_obsidian8 = require("obsidian");
+
+// src/parser/CollocationParser.ts
+var DISCOURSE_MARKER_MAP = /* @__PURE__ */ new Map([
+  // topic-initiation
+  ["\u3055\u3066", "topic-initiation"],
+  ["\u3068\u3053\u308D\u3067", "topic-initiation"],
+  ["\u3067\u306F", "topic-initiation"],
+  ["\u305D\u308C\u3067\u306F", "topic-initiation"],
+  ["\u8A71\u306F\u5909\u308F\u308A\u307E\u3059\u304C", "topic-initiation"],
+  ["\u3061\u306A\u307F\u306B", "topic-initiation"],
+  // reasoning
+  ["\u306A\u305C\u306A\u3089", "reasoning"],
+  ["\u306A\u305C\u304B\u3068\u3044\u3046\u3068", "reasoning"],
+  ["\u3068\u3044\u3046\u306E\u306F", "reasoning"],
+  ["\u3060\u304B\u3089", "reasoning"],
+  ["\u3057\u305F\u304C\u3063\u3066", "reasoning"],
+  ["\u3086\u3048\u306B", "reasoning"],
+  ["\u3088\u3063\u3066", "reasoning"],
+  ["\u305D\u306E\u305F\u3081", "reasoning"],
+  ["\u305D\u308C\u3086\u3048", "reasoning"],
+  ["\u8981\u3059\u308B\u306B", "reasoning"],
+  ["\u7D50\u5C40", "reasoning"],
+  // modality
+  ["\u305F\u3076\u3093", "modality"],
+  ["\u304A\u305D\u3089\u304F", "modality"],
+  ["\u304D\u3063\u3068", "modality"],
+  ["\u3082\u3057\u304B\u3057\u305F\u3089", "modality"],
+  ["\u3069\u3046\u3084\u3089", "modality"],
+  ["\u306F\u305A\u3060", "modality"],
+  ["\u3079\u304D\u3060", "modality"],
+  ["\u304B\u3082\u3057\u308C\u306A\u3044", "modality"],
+  ["\u306B\u3061\u304C\u3044\u306A\u3044", "modality"],
+  ["\u306F\u305A\u304C\u306A\u3044", "modality"],
+  ["\u308F\u3051\u304C\u306A\u3044", "modality"],
+  ["\u3088\u3046\u3060", "modality"],
+  ["\u3089\u3057\u3044", "modality"],
+  // connective
+  ["\u305D\u3057\u3066", "connective"],
+  ["\u307E\u305F", "connective"],
+  ["\u3055\u3089\u306B", "connective"],
+  ["\u52A0\u3048\u3066", "connective"],
+  ["\u4E00\u65B9", "connective"],
+  ["\u4ED6\u65B9", "connective"],
+  ["\u3057\u304B\u3057", "connective"],
+  ["\u3067\u3082", "connective"],
+  ["\u305F\u3060\u3057", "connective"],
+  ["\u3051\u308C\u3069\u3082", "connective"],
+  ["\u3068\u3053\u308D\u304C", "connective"],
+  ["\u305D\u308C\u306B", "connective"],
+  ["\u305D\u306E\u4E0A", "connective"],
+  ["\u3057\u304B\u3082", "connective"],
+  ["\u3060\u304C", "connective"],
+  // confirmation
+  ["\u305D\u3046\u3067\u3059\u306D", "confirmation"],
+  ["\u306A\u308B\u307B\u3069", "confirmation"],
+  ["\u78BA\u304B\u306B", "confirmation"],
+  ["\u305F\u3057\u304B\u306B", "confirmation"],
+  ["\u3067\u3059\u3088\u306D", "confirmation"],
+  ["\u3067\u3059\u306D", "confirmation"],
+  ["\u3088\u306D", "confirmation"],
+  ["\u306D", "confirmation"],
+  // rephrasing
+  ["\u3064\u307E\u308A", "rephrasing"],
+  ["\u8A00\u3044\u63DB\u3048\u308B\u3068", "rephrasing"],
+  ["\u63DB\u8A00\u3059\u308B\u3068", "rephrasing"],
+  ["\u5225\u306E\u8A00\u3044\u65B9\u3092\u3059\u308B\u3068", "rephrasing"],
+  ["\u8981\u306F", "rephrasing"],
+  ["\u3080\u3057\u308D", "rephrasing"],
+  // filler
+  ["\u3048\u30FC\u3068", "filler"],
+  ["\u3048\u3048\u3068", "filler"],
+  ["\u3042\u306E", "filler"],
+  ["\u307E\u3042", "filler"],
+  ["\u306A\u3093\u304B", "filler"],
+  ["\u305D\u306E", "filler"],
+  // quotation
+  ["\u306B\u3088\u308B\u3068", "quotation"],
+  ["\u306B\u3088\u308C\u3070", "quotation"],
+  ["\u66F0\u304F", "quotation"],
+  ["\u3044\u308F\u304F", "quotation"],
+  ["\u3044\u308F\u3086\u308B", "quotation"],
+  ["\u301C\u3068\u306E\u3053\u3068\u3060", "quotation"]
+]);
+var INITIAL_MARKERS = /* @__PURE__ */ new Set([
+  "\u3055\u3066",
+  "\u3068\u3053\u308D\u3067",
+  "\u3067\u306F",
+  "\u305D\u308C\u3067\u306F",
+  "\u305D\u3057\u3066",
+  "\u307E\u305F",
+  "\u3055\u3089\u306B",
+  "\u52A0\u3048\u3066",
+  "\u4E00\u65B9",
+  "\u4ED6\u65B9",
+  "\u3057\u304B\u3057",
+  "\u3067\u3082",
+  "\u305F\u3060\u3057",
+  "\u3051\u308C\u3069\u3082",
+  "\u3068\u3053\u308D\u304C",
+  "\u305D\u308C\u306B",
+  "\u305D\u306E\u4E0A",
+  "\u3057\u304B\u3082",
+  "\u3060\u304C",
+  "\u306A\u305C\u306A\u3089",
+  "\u3068\u3044\u3046\u306E\u306F",
+  "\u3060\u304B\u3089",
+  "\u3057\u305F\u304C\u3063\u3066",
+  "\u3086\u3048\u306B",
+  "\u3088\u3063\u3066",
+  "\u305D\u306E\u305F\u3081",
+  "\u305D\u308C\u3086\u3048",
+  "\u3064\u307E\u308A",
+  "\u3059\u306A\u308F\u3061",
+  "\u8981\u3059\u308B\u306B",
+  "\u7D50\u5C40",
+  "\u8A71\u306F\u5909\u308F\u308A\u307E\u3059\u304C",
+  "\u3061\u306A\u307F\u306B",
+  "\u8A00\u3044\u63DB\u3048\u308B\u3068",
+  "\u63DB\u8A00\u3059\u308B\u3068",
+  "\u8981\u306F",
+  "\u3080\u3057\u308D",
+  "\u306A\u308B\u307B\u3069"
+]);
+var FINAL_MARKERS = /* @__PURE__ */ new Set([
+  "\u3067\u3059\u306D",
+  "\u3088\u306D",
+  "\u306D",
+  "\u3067\u3059\u3088\u306D",
+  "\u305D\u3046\u3067\u3059\u306D",
+  "\u306A\u308B\u307B\u3069",
+  "\u306F\u305A\u3060",
+  "\u3079\u304D\u3060",
+  "\u304B\u3082\u3057\u308C\u306A\u3044",
+  "\u306B\u3061\u304C\u3044\u306A\u3044",
+  "\u306F\u305A\u304C\u306A\u3044",
+  "\u308F\u3051\u304C\u306A\u3044",
+  "\u3088\u3046\u3060",
+  "\u3089\u3057\u3044"
+]);
+var PATTERN_RULES = [
+  { test: (s) => DISCOURSE_MARKER_MAP.has(s), pattern: "discourse-marker" },
+  { test: (s) => /[てでた]から/.test(s), pattern: "V+\u3066\u304B\u3089" },
+  { test: (s) => /ながら/.test(s), pattern: "V+\u306A\u304C\u3089" },
+  { test: (s) => /[てで][いるたた]/.test(s) || /[てで][行来帰]/.test(s), pattern: "V+\u3066+V" },
+  { test: (s) => /を[するしたして]/.test(s) || /を[^\sのにをがもはで]{1,6}(する|した|して)/.test(s), pattern: "N+\u3092+V" },
+  { test: (s) => /に[取組取組取組つい]/.test(s) || /に[^\sのにをがもはで]{1,4}する/.test(s), pattern: "N+\u306B+V" },
+  { test: (s) => /の[^\sのにをがもはで]+$/.test(s), pattern: "N+\u306E+N" },
+  { test: (s) => /[いうえおつく]い[^\s]/.test(s), pattern: "Adj+N" },
+  { test: (s) => /[するしたして]$/.test(s), pattern: "N+V" }
+];
+var FORMAL_ENDINGS = ["\u307E\u3059", "\u3067\u3059", "\u3054\u3056\u3044\u307E\u3059", "\u3067\u3042\u308A\u307E\u3059", "\u3067\u3042\u308D\u3046", "\u3067\u3057\u3087\u3046"];
+var INFORMAL_ENDINGS = ["\u3060", "\u3058\u3083", "\u3093\u3060", "\u3093\u3067", "\u3066\u308B", "\u3067\u308B", "\u3084", "\u3084\u3093", "\u3061\u3083\u3046"];
+var PARTICLES = /* @__PURE__ */ new Set(["\u306F", "\u304C", "\u3092", "\u306B", "\u3067", "\u3078", "\u3068", "\u304B\u3089", "\u307E\u3067", "\u3088\u308A", "\u306E", "\u3082", "\u304B"]);
+function inferRegister(surface) {
+  if (FORMAL_ENDINGS.some((e) => surface.endsWith(e)))
+    return "formal";
+  if (INFORMAL_ENDINGS.some((e) => surface.endsWith(e)))
+    return "informal";
+  return "neutral";
+}
+function detectPattern(entry2) {
+  var _a;
+  const phrase = (_a = entry2.fullPhrase) != null ? _a : `${entry2.headword}${entry2.collocate}`;
+  for (const rule of PATTERN_RULES) {
+    if (rule.test(phrase))
+      return rule.pattern;
+  }
+  return "unknown";
+}
+function tokenise(entry2) {
+  var _a;
+  const tokens = [];
+  tokens.push({ surface: entry2.headword, role: "headword", pos: entry2.headwordPOS });
+  const phrase = (_a = entry2.fullPhrase) != null ? _a : `${entry2.headword}${entry2.collocate}`;
+  const afterHeadword = phrase.slice(entry2.headword.length);
+  let remaining = afterHeadword;
+  while (remaining.length > 0) {
+    const ch = remaining[0];
+    if (PARTICLES.has(ch)) {
+      tokens.push({ surface: ch, role: "particle" });
+      remaining = remaining.slice(1);
+    } else {
+      break;
+    }
+  }
+  if (entry2.collocate) {
+    const collocateIdx = remaining.indexOf(entry2.collocate);
+    if (collocateIdx > 0) {
+      tokens.push({ surface: remaining.slice(0, collocateIdx), role: "connector" });
+    }
+    tokens.push({ surface: entry2.collocate, role: "collocate", pos: entry2.collocatePOS });
+    remaining = remaining.slice(Math.max(0, collocateIdx) + entry2.collocate.length);
+  }
+  if (remaining.length > 0) {
+    tokens.push({ surface: remaining, role: "auxiliary" });
+  }
+  return tokens;
+}
+function buildDiscourseAnnotation(entry2) {
+  var _a, _b;
+  const surface = (_a = entry2.fullPhrase) != null ? _a : entry2.headword;
+  const category = (_b = DISCOURSE_MARKER_MAP.get(surface)) != null ? _b : DISCOURSE_MARKER_MAP.get(entry2.headword);
+  if (!category)
+    return null;
+  let position = "any";
+  if (INITIAL_MARKERS.has(surface) || INITIAL_MARKERS.has(entry2.headword)) {
+    position = "utterance-initial";
+  } else if (FINAL_MARKERS.has(surface) || FINAL_MARKERS.has(entry2.headword)) {
+    position = "utterance-final";
+  }
+  const PRAGMATIC_FUNCTIONS = {
+    "topic-initiation": "\u65B0\u8A71\u984C\u306E\u5C0E\u5165",
+    "reasoning": "\u7406\u7531\u30FB\u6839\u62E0\u306E\u63D0\u793A",
+    "modality": "\u8A71\u8005\u306E\u614B\u5EA6\u30FB\u78BA\u4FE1\u5EA6\u306E\u8868\u660E",
+    "connective": "\u547D\u984C\u9593\u306E\u8AD6\u7406\u95A2\u4FC2\u306E\u660E\u793A",
+    "confirmation": "\u805E\u304D\u624B\u3068\u306E\u8A8D\u8B58\u5171\u6709\u306E\u78BA\u8A8D",
+    "rephrasing": "\u5148\u884C\u547D\u984C\u306E\u8A00\u3044\u63DB\u3048\u30FB\u660E\u78BA\u5316",
+    "filler": "\u767A\u8A71\u6A29\u306E\u4FDD\u6301\u30FB\u601D\u8003\u306E\u9593\u7E4B\u304E",
+    "quotation": "\u4ED6\u8005\u306E\u767A\u8A71\u30FB\u60C5\u5831\u6E90\u306E\u5F15\u7528"
+  };
+  return {
+    category,
+    position,
+    pragmaticFunction: PRAGMATIC_FUNCTIONS[category]
+  };
+}
+function parseCollocation(entry2) {
+  var _a;
+  return {
+    entry: entry2,
+    pattern: detectPattern(entry2),
+    tokens: tokenise(entry2),
+    discourseAnnotation: buildDiscourseAnnotation(entry2),
+    register: inferRegister((_a = entry2.fullPhrase) != null ? _a : entry2.headword),
+    isSetPhrase: detectPattern(entry2) === "set-phrase" || detectPattern(entry2) === "discourse-marker"
+  };
+}
+function parseAll(entries) {
+  return entries.map(parseCollocation);
+}
+function groupByPattern(parsed) {
+  var _a;
+  const map = /* @__PURE__ */ new Map();
+  for (const p of parsed) {
+    const group = (_a = map.get(p.pattern)) != null ? _a : [];
+    group.push(p);
+    map.set(p.pattern, group);
+  }
+  return map;
+}
+function filterDiscourseMarkers(parsed) {
+  return parsed.filter((p) => p.discourseAnnotation !== null);
+}
+function computeDiscourseStats(entries) {
+  var _a, _b, _c;
+  const parsed = parseAll(entries);
+  const byCategoryCount = /* @__PURE__ */ new Map();
+  const byPatternCount = /* @__PURE__ */ new Map();
+  const byRegisterCount = /* @__PURE__ */ new Map();
+  let discourseMarkerCount = 0;
+  for (const p of parsed) {
+    if (p.discourseAnnotation) {
+      const cat = p.discourseAnnotation.category;
+      byCategoryCount.set(cat, ((_a = byCategoryCount.get(cat)) != null ? _a : 0) + 1);
+      discourseMarkerCount++;
+    }
+    byPatternCount.set(p.pattern, ((_b = byPatternCount.get(p.pattern)) != null ? _b : 0) + 1);
+    byRegisterCount.set(p.register, ((_c = byRegisterCount.get(p.register)) != null ? _c : 0) + 1);
+  }
+  return {
+    byCategoryCount,
+    byPatternCount,
+    byRegisterCount,
+    discourseMarkerCount,
+    totalCount: entries.length
+  };
+}
+
+// src/ui/DiscourseView.ts
+var DISCOURSE_VIEW_TYPE = "jp-collocations-discourse-view";
+var CATEGORY_COLOURS = {
+  "topic-initiation": "#4C9BE8",
+  "reasoning": "#E8854C",
+  "modality": "#9B59B6",
+  "connective": "#27AE60",
+  "confirmation": "#F1C40F",
+  "rephrasing": "#1ABC9C",
+  "filler": "#95A5A6",
+  "quotation": "#E74C3C"
+};
+var CATEGORY_LABELS = {
+  "topic-initiation": "\u8A71\u984C\u8EE2\u63DB",
+  "reasoning": "\u7406\u7531\u30FB\u6839\u62E0",
+  "modality": "\u30E2\u30C0\u30EA\u30C6\u30A3",
+  "connective": "\u63A5\u7D9A\u8868\u73FE",
+  "confirmation": "\u78BA\u8A8D\u30FB\u5171\u6709",
+  "rephrasing": "\u8A00\u3044\u63DB\u3048",
+  "filler": "\u30D5\u30A3\u30E9\u30FC",
+  "quotation": "\u5F15\u7528"
+};
+var PATTERN_LABELS = {
+  "N+V": "\u540D\u8A5E\uFF0B\u52D5\u8A5E",
+  "V+N": "\u52D5\u8A5E\uFF0B\u540D\u8A5E",
+  "N+\u306E+N": "\u540D\u8A5E\uFF0B\u306E\uFF0B\u540D\u8A5E",
+  "V+\u3066+V": "V\u3066\uFF0BV",
+  "Adj+N": "\u5F62\u5BB9\u8A5E\uFF0B\u540D\u8A5E",
+  "N+\u306B+V": "\u540D\u8A5E\uFF0B\u306B\uFF0B\u52D5\u8A5E",
+  "N+\u3092+V": "\u540D\u8A5E\uFF0B\u3092\uFF0B\u52D5\u8A5E",
+  "V+\u306A\u304C\u3089": "V\u306A\u304C\u3089",
+  "V+\u3066\u304B\u3089": "V\u3066\u304B\u3089",
+  "set-phrase": "\u6163\u7528\u8868\u73FE",
+  "discourse-marker": "\u8AC7\u8A71\u6A19\u8B58",
+  "unknown": "\u305D\u306E\u4ED6"
+};
+var DiscourseView = class extends import_obsidian8.ItemView {
+  constructor(leaf, store) {
+    super(leaf);
+    this.store = store;
+  }
+  getViewType() {
+    return DISCOURSE_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "Discourse Analysis";
+  }
+  getIcon() {
+    return "bar-chart-2";
+  }
+  async onOpen() {
+    this.render();
+  }
+  async onClose() {
+  }
+  /** Re-render the view (called after store updates). */
+  refresh() {
+    this.render();
+  }
+  render() {
+    var _a, _b, _c;
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-discourse-view");
+    const entries = this.store.getAll();
+    const stats = computeDiscourseStats(entries);
+    const parsed = parseAll(entries);
+    const discourseMarkers = filterDiscourseMarkers(parsed);
+    const byPattern = groupByPattern(parsed);
+    const header = container.createEl("div", { cls: "jp-discourse-header" });
+    header.createEl("h2", { text: "\u8AC7\u8A71\u6587\u6CD5 Discourse Grammar" });
+    header.createEl("p", {
+      text: `${entries.length} entries \xB7 ${stats.discourseMarkerCount} discourse markers`,
+      cls: "jp-discourse-subtitle"
+    });
+    const catSection = container.createEl("div", { cls: "jp-discourse-section" });
+    catSection.createEl("h3", { text: "\u30AB\u30C6\u30B4\u30EA\u30FC\u5206\u5E03 Category Distribution" });
+    const chartWrap = catSection.createEl("div", { cls: "jp-discourse-chart" });
+    const allCats = Object.keys(CATEGORY_COLOURS);
+    const maxCatCount = Math.max(1, ...allCats.map((c) => {
+      var _a2;
+      return (_a2 = stats.byCategoryCount.get(c)) != null ? _a2 : 0;
+    }));
+    for (const cat of allCats) {
+      const count = (_a = stats.byCategoryCount.get(cat)) != null ? _a : 0;
+      const pct = Math.round(count / maxCatCount * 100);
+      const row = chartWrap.createEl("div", { cls: "jp-discourse-bar-row" });
+      const label = row.createEl("span", { cls: "jp-discourse-bar-label" });
+      label.setText(CATEGORY_LABELS[cat]);
+      const barWrap = row.createEl("div", { cls: "jp-discourse-bar-wrap" });
+      const bar = barWrap.createEl("div", { cls: "jp-discourse-bar" });
+      bar.style.width = `${pct}%`;
+      bar.style.backgroundColor = CATEGORY_COLOURS[cat];
+      bar.setAttribute("title", `${count} entries`);
+      row.createEl("span", { cls: "jp-discourse-bar-count", text: String(count) });
+    }
+    const patSection = container.createEl("div", { cls: "jp-discourse-section" });
+    patSection.createEl("h3", { text: "\u69CB\u9020\u30D1\u30BF\u30FC\u30F3 Structural Patterns" });
+    const patGrid = patSection.createEl("div", { cls: "jp-discourse-pattern-grid" });
+    const sortedPatterns = [...byPattern.entries()].sort((a, b) => b[1].length - a[1].length);
+    for (const [pattern, group] of sortedPatterns) {
+      const tile = patGrid.createEl("div", { cls: "jp-discourse-pattern-tile" });
+      tile.createEl("div", { cls: "jp-discourse-pattern-name", text: PATTERN_LABELS[pattern] });
+      tile.createEl("div", { cls: "jp-discourse-pattern-count", text: String(group.length) });
+    }
+    const regSection = container.createEl("div", { cls: "jp-discourse-section" });
+    regSection.createEl("h3", { text: "\u8A9E\u7528\u8AD6\u7684\u30EC\u30B8\u30B9\u30BF\u30FC Register" });
+    const regRow = regSection.createEl("div", { cls: "jp-discourse-register-row" });
+    const registers = [
+      ["formal", "\u4E01\u5BE7\u4F53", "#3498DB"],
+      ["neutral", "\u666E\u901A\u4F53", "#2ECC71"],
+      ["informal", "\u304F\u3060\u3051\u305F", "#E67E22"]
+    ];
+    for (const [reg, label, colour] of registers) {
+      const count = (_b = stats.byRegisterCount.get(reg)) != null ? _b : 0;
+      const badge = regRow.createEl("div", { cls: "jp-discourse-register-badge" });
+      badge.style.borderColor = colour;
+      badge.createEl("span", { cls: "jp-discourse-register-label", text: label });
+      badge.createEl("span", { cls: "jp-discourse-register-count", text: String(count) });
+    }
+    if (discourseMarkers.length > 0) {
+      const dmSection = container.createEl("div", { cls: "jp-discourse-section" });
+      dmSection.createEl("h3", { text: "\u8AC7\u8A71\u6A19\u8B58\u4E00\u89A7 Discourse Marker List" });
+      const table3 = dmSection.createEl("table", { cls: "jp-discourse-table" });
+      const thead = table3.createEl("thead");
+      const headRow = thead.createEl("tr");
+      ["\u8868\u5C64\u5F62", "\u30AB\u30C6\u30B4\u30EA\u30FC", "\u4F4D\u7F6E", "\u8A9E\u7528\u6A5F\u80FD"].forEach(
+        (h) => headRow.createEl("th", { text: h })
+      );
+      const tbody = table3.createEl("tbody");
+      for (const p of discourseMarkers) {
+        const ann = p.discourseAnnotation;
+        if (!ann)
+          continue;
+        const tr = tbody.createEl("tr");
+        tr.createEl("td", { text: (_c = p.entry.fullPhrase) != null ? _c : p.entry.headword });
+        const catTd = tr.createEl("td");
+        const catBadge = catTd.createEl("span", {
+          cls: "jp-discourse-cat-badge",
+          text: CATEGORY_LABELS[ann.category]
+        });
+        catBadge.style.backgroundColor = CATEGORY_COLOURS[ann.category];
+        tr.createEl("td", { text: ann.position });
+        tr.createEl("td", { text: ann.pragmaticFunction });
+      }
+    }
+    if (entries.length === 0) {
+      container.createEl("div", {
+        cls: "jp-discourse-empty",
+        text: "\u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3\u3092\u307E\u305A\u767B\u9332\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
+      });
+    }
+  }
+};
+
+// src/surfer-bridge.ts
+var import_obsidian9 = require("obsidian");
+var SurferBridge = class {
+  constructor(plugin) {
+    this.entries = /* @__PURE__ */ new Map();
+    this.plugin = plugin;
+  }
+  load(entries) {
+    this.entries.clear();
+    for (const e of entries) {
+      this.entries.set(e.id, e);
+    }
+  }
+  getAllEntriesMap() {
+    return this.entries;
+  }
+  async persist() {
+    await this.plugin.saveData({
+      ...this.plugin.settings,
+      _surferEntries: [...this.entries.values()]
+    });
+  }
+  // === Write operations ===
+  async addEntryFromSurfer(entry2) {
+    this.entries.set(entry2.id, { ...entry2 });
+    await this.persist();
+    new import_obsidian9.Notice(`JP Collocations: saved "${entry2.surface}"`);
+  }
+  async addDiscourseContext(collocationId, context) {
+    var _a;
+    const entry2 = this.entries.get(collocationId);
+    if (!entry2)
+      return;
+    const updated = {
+      ...entry2,
+      _discourseContexts: [...(_a = entry2._discourseContexts) != null ? _a : [], context]
+    };
+    this.entries.set(collocationId, updated);
+    await this.persist();
+  }
+  async saveExampleSentence(collocationId, sentence, source) {
+    var _a;
+    const entry2 = this.entries.get(collocationId);
+    if (!entry2)
+      return;
+    const updated = {
+      ...entry2,
+      exampleSentences: [
+        ...(_a = entry2.exampleSentences) != null ? _a : [],
+        { text: sentence, source }
+      ]
+    };
+    this.entries.set(collocationId, updated);
+    await this.persist();
+    new import_obsidian9.Notice(`JP Collocations: saved example for "${entry2.surface}"`);
+  }
+  // === Read operations ===
+  findCollocationsInText(text) {
+    if (!text)
+      return [];
+    const matches = [];
+    for (const entry2 of this.entries.values()) {
+      if (!entry2.surface)
+        continue;
+      let searchFrom = 0;
+      while (searchFrom < text.length) {
+        const idx = text.indexOf(entry2.surface, searchFrom);
+        if (idx === -1)
+          break;
+        matches.push({
+          entry: entry2,
+          startOffset: idx,
+          endOffset: idx + entry2.surface.length,
+          matchedSurface: entry2.surface
+        });
+        searchFrom = idx + 1;
+      }
+    }
+    matches.sort((a, b) => a.startOffset - b.startOffset);
+    return matches;
+  }
+  searchByDiscourseMarker(surface) {
+    if (!surface)
+      return [];
+    const lower = surface.toLowerCase();
+    return [...this.entries.values()].filter(
+      (e) => {
+        var _a;
+        return (_a = e.surface) == null ? void 0 : _a.toLowerCase().includes(lower);
+      }
+    );
+  }
+  searchByCategory(category) {
+    return [...this.entries.values()].filter((e) => e.discourseCategory === category);
+  }
+  getAllEntries() {
+    return [...this.entries.values()];
+  }
+  getDiscourseStats() {
+    var _a, _b, _c;
+    const allEntries = [...this.entries.values()];
+    const byCategory = {};
+    const byPosition = {};
+    const coOccurrencePairs = /* @__PURE__ */ new Map();
+    for (const entry2 of allEntries) {
+      if (entry2.discourseCategory) {
+        byCategory[entry2.discourseCategory] = ((_a = byCategory[entry2.discourseCategory]) != null ? _a : 0) + 1;
+      }
+      if (entry2.discoursePosition) {
+        byPosition[entry2.discoursePosition] = ((_b = byPosition[entry2.discoursePosition]) != null ? _b : 0) + 1;
+      }
+      if (entry2.coOccurrences) {
+        for (const coId of entry2.coOccurrences) {
+          const pair = [entry2.id, coId].sort();
+          const key = pair.join("::");
+          coOccurrencePairs.set(key, ((_c = coOccurrencePairs.get(key)) != null ? _c : 0) + 1);
+        }
+      }
+    }
+    const topCoOccurrences = [...coOccurrencePairs.entries()].map(([key, count]) => {
+      const [a, b] = key.split("::");
+      return { pair: [a, b], count };
+    }).sort((a, b) => b.count - a.count).slice(0, 20);
+    const topMarkers = allEntries.filter((e) => e.surface).sort((a, b) => {
+      var _a2, _b2, _c2, _d;
+      return ((_b2 = (_a2 = b.exampleSentences) == null ? void 0 : _a2.length) != null ? _b2 : 0) - ((_d = (_c2 = a.exampleSentences) == null ? void 0 : _c2.length) != null ? _d : 0);
+    }).slice(0, 20).map((e) => {
+      var _a2, _b2;
+      return { surface: e.surface, count: (_b2 = (_a2 = e.exampleSentences) == null ? void 0 : _a2.length) != null ? _b2 : 0 };
+    });
+    return {
+      totalEntries: allEntries.length,
+      byCategory,
+      byPosition,
+      topCoOccurrences,
+      topMarkers
+    };
+  }
+};
+
 // src/main.ts
-var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
+var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULT_SETTINGS };
@@ -11912,6 +12487,10 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
   }
   async onload() {
     await this.loadSettings();
+    this.surferBridge = new SurferBridge(this);
+    const rawData = await this.loadData();
+    const storedEntries = Array.isArray(rawData == null ? void 0 : rawData._surferEntries) ? rawData._surferEntries : [];
+    this.surferBridge.load(storedEntries);
     const dataPath = `${this.app.vault.configDir}/plugins/jp-collocations/${this.settings.dataFilePath}`;
     this.store = new CollocationStore(this.app, dataPath);
     await this.store.load();
@@ -11923,6 +12502,10 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
     this.registerView(
       DICTIONARY_VIEW_TYPE,
       (leaf) => new DictionaryView(leaf, this.app)
+    );
+    this.registerView(
+      DISCOURSE_VIEW_TYPE,
+      (leaf) => new DiscourseView(leaf, this.store)
     );
     this.addSettingTab(new SettingsTab(
       this.app,
@@ -11956,7 +12539,7 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
       editorCallback: (editor) => {
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian8.Notice("Select some Japanese text first!");
+          new import_obsidian10.Notice("Select some Japanese text first!");
           return;
         }
         const classifier = new TextClassifier();
@@ -11973,6 +12556,11 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
       id: "export-data",
       name: "Export Data",
       callback: () => this.exportData()
+    });
+    this.addCommand({
+      id: "open-discourse-view",
+      name: "Open Discourse Analysis",
+      callback: () => this.openDiscourseView()
     });
     this.addCommand({
       id: "open-dictionary",
@@ -11996,12 +12584,16 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
     (_a = this.scraper) == null ? void 0 : _a.abort();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(DICTIONARY_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(DISCOURSE_VIEW_TYPE);
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
   }
   async saveSettings() {
-    await this.saveData(this.settings);
+    await this.saveData({
+      ...this.settings,
+      _surferEntries: [...this.surferBridge.getAllEntriesMap().values()]
+    });
   }
   async openLexiconView() {
     const existing = this.app.workspace.getLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
@@ -12055,10 +12647,10 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
       try {
         const parsed = JSON.parse(text);
         const count = this.store.bulkImport(parsed);
-        new import_obsidian8.Notice(`Imported ${count} entries.`);
+        new import_obsidian10.Notice(`Imported ${count} entries.`);
         this.refreshViews();
       } catch (e) {
-        new import_obsidian8.Notice("Failed to parse JSON file.");
+        new import_obsidian10.Notice("Failed to parse JSON file.");
       }
     };
     input.click();
@@ -12072,31 +12664,69 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
     a.download = "jp-collocations-export.json";
     a.click();
     URL.revokeObjectURL(url);
-    new import_obsidian8.Notice("Exported collocations.");
+    new import_obsidian10.Notice("Exported collocations.");
+  }
+  async openDiscourseView() {
+    const existing = this.app.workspace.getLeavesOfType(DISCOURSE_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: DISCOURSE_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+  // === Surfer Bridge API ===
+  // Called by jp-sentence-surfer- via app.plugins.plugins['jp-collocations']
+  async addEntryFromSurfer(entry2) {
+    return this.surferBridge.addEntryFromSurfer(entry2);
+  }
+  async addDiscourseContext(collocationId, context) {
+    return this.surferBridge.addDiscourseContext(collocationId, context);
+  }
+  async saveExampleSentence(collocationId, sentence, source) {
+    return this.surferBridge.saveExampleSentence(collocationId, sentence, source);
+  }
+  findCollocationsInText(text) {
+    return this.surferBridge.findCollocationsInText(text);
+  }
+  searchByDiscourseMarker(surface) {
+    return this.surferBridge.searchByDiscourseMarker(surface);
+  }
+  searchByCategory(category) {
+    return this.surferBridge.searchByCategory(category);
+  }
+  getAllEntries() {
+    return this.surferBridge.getAllEntries();
+  }
+  getDiscourseStats() {
+    return this.surferBridge.getDiscourseStats();
   }
   async fetchFromHyogen() {
     var _a;
     if (!this.settings.hyogenEnabled) {
-      new import_obsidian8.Notice("Hyogen scraping is disabled. Enable it in settings first.");
+      new import_obsidian10.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
     }
     if (this.settings.hyogenWordList.length === 0) {
-      new import_obsidian8.Notice("No words configured. Add words to the scrape list in settings.");
+      new import_obsidian10.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
     if ((_a = this.scraper) == null ? void 0 : _a.isRunning()) {
-      new import_obsidian8.Notice("Scraper is already running.");
+      new import_obsidian10.Notice("Scraper is already running.");
       return;
     }
     this.scraper = new HyogenScraper(this.app, this.store, {
       rateLimit: this.settings.hyogenRateLimit,
-      onProgress: (msg) => new import_obsidian8.Notice(msg, 3e3),
+      onProgress: (msg) => new import_obsidian10.Notice(msg, 3e3),
       onEntry: () => this.refreshViews()
     });
     this.scraper.enqueue(this.settings.hyogenWordList);
-    new import_obsidian8.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
+    new import_obsidian10.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
     const count = await this.scraper.run();
-    new import_obsidian8.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    new import_obsidian10.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
   }
 };
