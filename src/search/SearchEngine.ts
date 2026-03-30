@@ -87,6 +87,22 @@ export class SearchEngine {
     if (minMiScore !== undefined) {
       entries = entries.filter(e => e.miScore !== undefined && e.miScore >= minMiScore);
     }
+    if (options.idiomaticityLayerFilter && options.idiomaticityLayerFilter.length > 0) {
+      entries = entries.filter(e =>
+        e.idiomaticityLayer !== undefined && options.idiomaticityLayerFilter!.includes(e.idiomaticityLayer)
+      );
+    }
+    if (options.collocationRelationFilter && options.collocationRelationFilter.length > 0) {
+      entries = entries.filter(e =>
+        e.collocationRelation !== undefined && options.collocationRelationFilter!.includes(e.collocationRelation)
+      );
+    }
+    if (options.hasCrossRegisterVariants) {
+      entries = entries.filter(e => e.crossRegisterVariants && e.crossRegisterVariants.length > 0);
+    }
+    if (options.hasRationale) {
+      entries = entries.filter(e => !!e.collocationalRationale);
+    }
 
     if (!normalized) {
       return this.sortAndLimit(entries.map(e => ({ entry: e, score: e.frequency })), sortBy, sortDir, maxResults);
@@ -131,6 +147,7 @@ export class SearchEngine {
     if (entry.literalMeaning) fields.push(entry.literalMeaning);
     if (entry.figurativeMeaning) fields.push(entry.figurativeMeaning);
     if (entry.typicalContext) fields.push(entry.typicalContext);
+    if (entry.collocationalRationale) fields.push(entry.collocationalRationale);
 
     let best = 0;
 
@@ -234,6 +251,22 @@ export class SearchEngine {
     const seen = new Set<string>([entryId]);
     const results: CollocationEntry[] = [];
 
+    // Cross-register variants
+    if (entry.crossRegisterVariants) {
+      for (const id of entry.crossRegisterVariants) {
+        const e = this.store.getById(id);
+        if (e && !seen.has(id)) { seen.add(id); results.push(e); }
+      }
+    }
+
+    // Competing expressions
+    if (entry.competingExpressions) {
+      for (const id of entry.competingExpressions) {
+        const e = this.store.getById(id);
+        if (e && !seen.has(id)) { seen.add(id); results.push(e); }
+      }
+    }
+
     // Related entries explicitly linked
     if (entry.relatedEntries) {
       for (const id of entry.relatedEntries) {
@@ -266,5 +299,65 @@ export class SearchEngine {
   /** Pattern-based search (e.g. "名詞+を+動詞") */
   patternSearch(pattern: string, maxResults = 50): SearchResult[] {
     return this.search({ query: "", patternFilter: pattern, maxResults });
+  }
+
+  /**
+   * Find all scale-mates for an intensifier-gradient collocation.
+   * e.g. given "とても疲れている" returns めっちゃ疲れている, 非常に疲れている, etc.
+   * Uses the crossRegisterVariants links plus relation-type matching.
+   */
+  findIntensifierScaleMates(entryId: string): CollocationEntry[] {
+    const entry = this.store.getById(entryId);
+    if (!entry) return [];
+    const seen = new Set<string>([entryId]);
+    const results: CollocationEntry[] = [];
+
+    // Direct cross-register variants
+    for (const e of this.store.getCrossRegisterVariants(entryId)) {
+      if (!seen.has(e.id)) { seen.add(e.id); results.push(e); }
+    }
+
+    // Same intensifier relation type with same headword/predicate
+    if (entry.collocationRelation === "intensifier-gradient") {
+      const byRelation = this.store.getByCollocationRelation("intensifier-gradient");
+      for (const e of byRelation) {
+        if (seen.has(e.id)) continue;
+        // Match if they share the same collocate (the predicate being intensified)
+        if (e.collocate === entry.collocate || e.headword === entry.headword) {
+          seen.add(e.id);
+          results.push(e);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Find competing expressions for a given entry.
+   * e.g. for 激しい雨: returns 強い雨, 大雨, 豪雨 with notes on why
+   * each is preferred/dispreferred in different contexts.
+   */
+  findCompetingExpressions(entryId: string): CollocationEntry[] {
+    const entry = this.store.getById(entryId);
+    if (!entry) return [];
+    const seen = new Set<string>([entryId]);
+    const results: CollocationEntry[] = [];
+
+    for (const e of this.store.getCompetingExpressions(entryId)) {
+      if (!seen.has(e.id)) { seen.add(e.id); results.push(e); }
+    }
+
+    return results;
+  }
+
+  /**
+   * Return all entries that have a collocationalRationale — useful for
+   * learners who want to understand WHY certain combinations are preferred.
+   */
+  getRationaleEntries(maxResults = 50): CollocationEntry[] {
+    return this.store.getAll()
+      .filter(e => !!e.collocationalRationale)
+      .slice(0, maxResults);
   }
 }

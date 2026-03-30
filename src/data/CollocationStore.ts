@@ -14,6 +14,8 @@ export class CollocationStore {
     byBoundaryType: new Map(),
     byStrength: new Map(),
     byConstituent: new Map(),
+    byIdiomaticityLayer: new Map(),
+    byCollocationRelation: new Map(),
   };
   private app: App;
   private dataPath: string;
@@ -59,6 +61,8 @@ export class CollocationStore {
       byBoundaryType: new Map(),
       byStrength: new Map(),
       byConstituent: new Map(),
+      byIdiomaticityLayer: new Map(),
+      byCollocationRelation: new Map(),
     };
     for (const entry of this.entries.values()) {
       this.indexEntry(entry);
@@ -81,6 +85,8 @@ export class CollocationStore {
         if (token) this.addToIndex(this.index.byConstituent, token, entry.id);
       }
     }
+    if (entry.idiomaticityLayer) this.addToIndex(this.index.byIdiomaticityLayer, entry.idiomaticityLayer, entry.id);
+    if (entry.collocationRelation) this.addToIndex(this.index.byCollocationRelation, entry.collocationRelation, entry.id);
   }
 
   private deindexEntry(entry: CollocationEntry): void {
@@ -99,6 +105,8 @@ export class CollocationStore {
         if (token) this.removeFromIndex(this.index.byConstituent, token, entry.id);
       }
     }
+    if (entry.idiomaticityLayer) this.removeFromIndex(this.index.byIdiomaticityLayer, entry.idiomaticityLayer, entry.id);
+    if (entry.collocationRelation) this.removeFromIndex(this.index.byCollocationRelation, entry.collocationRelation, entry.id);
   }
 
   private addToIndex(map: Map<string, string[]>, key: string, id: string): void {
@@ -182,6 +190,34 @@ export class CollocationStore {
   getByConstituent(token: string): CollocationEntry[] {
     const ids = this.index.byConstituent.get(token) ?? [];
     return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  getByIdiomaticityLayer(layer: string): CollocationEntry[] {
+    const ids = this.index.byIdiomaticityLayer.get(layer) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  getByCollocationRelation(relation: string): CollocationEntry[] {
+    const ids = this.index.byCollocationRelation.get(relation) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  /** Get all cross-register variants for a given entry */
+  getCrossRegisterVariants(entryId: string): CollocationEntry[] {
+    const entry = this.entries.get(entryId);
+    if (!entry?.crossRegisterVariants) return [];
+    return entry.crossRegisterVariants
+      .map(id => this.entries.get(id))
+      .filter((e): e is CollocationEntry => e !== undefined);
+  }
+
+  /** Get all competing expressions for a given entry */
+  getCompetingExpressions(entryId: string): CollocationEntry[] {
+    const entry = this.entries.get(entryId);
+    if (!entry?.competingExpressions) return [];
+    return entry.competingExpressions
+      .map(id => this.entries.get(id))
+      .filter((e): e is CollocationEntry => e !== undefined);
   }
 
   add(entry: CollocationEntry): void {

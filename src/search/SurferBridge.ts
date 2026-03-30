@@ -117,4 +117,18 @@ export class SurferBridge {
   rebuildIndex(): void {
     this.scanner.buildIndex();
   }
+
+  /**
+   * Find all cross-register variants for an entry (e.g. intensifier scale-mates).
+   */
+  findIntensifierScaleMates(entryId: string): import("../types.ts").CollocationEntry[] {
+    return this.engine.findIntensifierScaleMates(entryId);
+  }
+
+  /**
+   * Find competing expressions (e.g. 激しい雨 vs 強い雨 vs 大雨).
+   */
+  findCompetingExpressions(entryId: string): import("../types.ts").CollocationEntry[] {
+    return this.engine.findCompetingExpressions(entryId);
+  }
 }

@@ -166,6 +166,24 @@ export class SettingsTab extends PluginSettingTab {
           await this.onSettingsChange();
         }));
 
+    new Setting(containerEl)
+      .setName("Show idiomaticity layer")
+      .setDesc("Display free / preferred / collocation / semi-idiom / full-idiom layer badge")
+      .addToggle((t: { setValue: (v: boolean) => typeof t; onChange: (fn: (v: boolean) => Promise<void>) => typeof t }) =>
+        t.setValue(this.settings.showIdiomaticityLayer).onChange(async (v: boolean) => {
+          this.settings.showIdiomaticityLayer = v;
+          await this.onSettingsChange();
+        }));
+
+    new Setting(containerEl)
+      .setName("Show collocation rationale")
+      .setDesc("Show linguistic explanation of why this specific pairing is preferred over alternatives")
+      .addToggle((t: { setValue: (v: boolean) => typeof t; onChange: (fn: (v: boolean) => Promise<void>) => typeof t }) =>
+        t.setValue(this.settings.showCollocationRationale).onChange(async (v: boolean) => {
+          this.settings.showCollocationRationale = v;
+          await this.onSettingsChange();
+        }));
+
     // ── Surfer Bridge ──────────────────────────────────────────────
     containerEl.createEl("h3", { text: "Surfer Bridge (jp-sentence-surfer integration)" });
 
