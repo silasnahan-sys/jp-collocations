@@ -19,6 +19,42 @@ export enum CollocationSource {
   Manual = "manual",
   Import = "import",
   Classified = "classified",
+  Tsukuba = "tsukuba",
+  NinjAL = "ninjal",
+  UserCorpus = "user-corpus",
+}
+
+export enum Register {
+  Spoken = "spoken",
+  Written = "written",
+  Formal = "formal",
+  Casual = "casual",
+  Literary = "literary",
+  Academic = "academic",
+  Slang = "slang",
+}
+
+export enum JLPTLevel {
+  N5 = "N5",
+  N4 = "N4",
+  N3 = "N3",
+  N2 = "N2",
+  N1 = "N1",
+}
+
+export enum BoundaryType {
+  Phrase = "phrase",
+  MultiPhrase = "multi-phrase",
+  Clause = "clause",
+  Idiom = "idiom",
+  Compound = "compound",
+}
+
+export enum CollocationStrength {
+  Weak = "weak",
+  Moderate = "moderate",
+  Strong = "strong",
+  Fixed = "fixed",
 }
 
 export interface CollocationEntry {
@@ -37,6 +73,22 @@ export interface CollocationEntry {
   frequency: number;
   createdAt: number;
   updatedAt: number;
+  // Extended fields (all optional for backward compatibility)
+  register?: Register;
+  jlptLevel?: JLPTLevel;
+  boundaryType?: BoundaryType;
+  strength?: CollocationStrength;
+  miScore?: number;
+  tScore?: number;
+  logDice?: number;
+  constituentTokens?: string[];
+  synonymCollocations?: string[];
+  antonymCollocations?: string[];
+  negativeExamples?: string[];
+  literalMeaning?: string;
+  figurativeMeaning?: string;
+  typicalContext?: string;
+  relatedEntries?: string[];
 }
 
 export interface CollocationIndex {
@@ -44,6 +96,11 @@ export interface CollocationIndex {
   byPOS: Map<string, string[]>;
   byPattern: Map<string, string[]>;
   byTag: Map<string, string[]>;
+  byRegister: Map<string, string[]>;
+  byJLPT: Map<string, string[]>;
+  byBoundaryType: Map<string, string[]>;
+  byStrength: Map<string, string[]>;
+  byConstituent: Map<string, string[]>;
 }
 
 export interface SearchOptions {
@@ -54,8 +111,14 @@ export interface SearchOptions {
   patternFilter?: string;
   fuzzy?: boolean;
   maxResults?: number;
-  sortBy?: "headword" | "frequency" | "createdAt" | "updatedAt";
+  sortBy?: "headword" | "frequency" | "createdAt" | "updatedAt" | "miScore" | "tScore" | "logDice" | "strength";
   sortDir?: "asc" | "desc";
+  registerFilter?: Register[];
+  jlptFilter?: JLPTLevel[];
+  boundaryTypeFilter?: BoundaryType[];
+  strengthFilter?: CollocationStrength[];
+  minMiScore?: number;
+  includeNegativeExamples?: boolean;
 }
 
 export interface SearchResult {
@@ -73,6 +136,15 @@ export interface PluginSettings {
   fuzzySearchSensitivity: number;
   maxResults: number;
   dataFilePath: string;
+  tsukubaEnabled: boolean;
+  tsukubaRateLimit: number;
+  tsukubaWordList: string[];
+  showRegisterBadges: boolean;
+  showJLPTBadges: boolean;
+  showStrengthMeter: boolean;
+  showNegativeExamples: boolean;
+  enableSurferBridge: boolean;
+  collocationScanCacheSize: number;
 }
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -85,6 +157,15 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   fuzzySearchSensitivity: 0.6,
   maxResults: 100,
   dataFilePath: "jp-collocations-data.json",
+  tsukubaEnabled: false,
+  tsukubaRateLimit: 2000,
+  tsukubaWordList: [],
+  showRegisterBadges: true,
+  showJLPTBadges: true,
+  showStrengthMeter: true,
+  showNegativeExamples: true,
+  enableSurferBridge: true,
+  collocationScanCacheSize: 50,
 };
 
 export interface StoreStats {

@@ -3,7 +3,10 @@ import type { PluginSettings } from "./types.ts";
 import { DEFAULT_SETTINGS } from "./types.ts";
 import { CollocationStore } from "./data/CollocationStore.ts";
 import { SearchEngine } from "./search/SearchEngine.ts";
+import { SurferBridge } from "./search/SurferBridge.ts";
+import type { CollocationSpan } from "./search/SurferBridge.ts";
 import { HyogenScraper } from "./scraper/HyogenScraper.ts";
+import { TsukubaScraper } from "./scraper/TsukubaScraper.ts";
 import { CollocationView, JP_COLLOCATIONS_VIEW_TYPE } from "./ui/CollocationView.ts";
 import { SearchModal } from "./ui/SearchModal.ts";
 import { AddEntryModal } from "./ui/AddEntryModal.ts";
@@ -16,7 +19,9 @@ export default class JPCollocationsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   store!: CollocationStore;
   engine!: SearchEngine;
+  surferBridge!: SurferBridge;
   private scraper: HyogenScraper | null = null;
+  private tsukubaScraper: TsukubaScraper | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -28,6 +33,12 @@ export default class JPCollocationsPlugin extends Plugin {
 
     // Search engine
     this.engine = new SearchEngine(this.store);
+
+    // Surfer bridge (public API for jp-sentence-surfer)
+    if (this.settings.enableSurferBridge) {
+      this.surferBridge = new SurferBridge(this.store, this.engine);
+      this.surferBridge.setCacheSize(this.settings.collocationScanCacheSize);
+    }
 
     // Register views
     this.registerView(JP_COLLOCATIONS_VIEW_TYPE, leaf =>
@@ -113,12 +124,20 @@ export default class JPCollocationsPlugin extends Plugin {
       callback: () => this.fetchFromHyogen(),
     });
 
+    this.addCommand({
+      id: "fetch-tsukuba",
+      name: "Fetch from Tsukuba Web Corpus",
+      callback: () => this.fetchFromTsukuba(),
+    });
+
     // Ribbon icon
     this.addRibbonIcon("languages", "JP Collocations", () => this.openLexiconView());
   }
 
   async onunload(): Promise<void> {
     this.scraper?.abort();
+    this.tsukubaScraper?.abort();
+    this.surferBridge?.destroy();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(DICTIONARY_VIEW_TYPE);
   }
@@ -129,6 +148,24 @@ export default class JPCollocationsPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+  }
+
+  /** Public API for jp-sentence-surfer to call — open search modal pre-filled */
+  searchTerm(term: string): void {
+    const modal = new SearchModal(this.app, this.engine);
+    modal.open();
+    // Pre-fill via internal API
+    const inputEl = (modal as unknown as { inputEl?: HTMLInputElement }).inputEl;
+    if (inputEl) {
+      inputEl.value = term;
+      inputEl.dispatchEvent(new Event("input"));
+    }
+  }
+
+  /** Public API for surfer: get collocation spans */
+  getCollocationSpans(text: string): CollocationSpan[] {
+    if (!this.surferBridge) return [];
+    return this.surferBridge.getCollocationSpans(text);
   }
 
   private async openLexiconView(): Promise<void> {
@@ -228,6 +265,31 @@ export default class JPCollocationsPlugin extends Plugin {
     new Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
     const count = await this.scraper.run();
     new Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    this.refreshViews();
+  }
+
+  private async fetchFromTsukuba(): Promise<void> {
+    if (!this.settings.tsukubaEnabled) {
+      new Notice("Tsukuba scraping is disabled. Enable it in settings first.");
+      return;
+    }
+    if (this.settings.tsukubaWordList.length === 0) {
+      new Notice("No words configured. Add words to the Tsukuba scrape list in settings.");
+      return;
+    }
+    if (this.tsukubaScraper?.isRunning()) {
+      new Notice("Tsukuba scraper is already running.");
+      return;
+    }
+    this.tsukubaScraper = new TsukubaScraper(this.app, this.store, {
+      rateLimit: this.settings.tsukubaRateLimit,
+      onProgress: msg => new Notice(msg, 3000),
+      onEntry: () => this.refreshViews(),
+    });
+    this.tsukubaScraper.enqueue(this.settings.tsukubaWordList);
+    new Notice(`Starting Tsukuba scrape for ${this.settings.tsukubaWordList.length} words...`);
+    const count = await this.tsukubaScraper.run();
+    new Notice(`Tsukuba scrape complete. Added ${count} new entries.`);
     this.refreshViews();
   }
 }
