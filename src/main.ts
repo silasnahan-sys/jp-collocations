@@ -11,12 +11,20 @@ import { SettingsTab } from "./ui/SettingsTab.ts";
 import { TextClassifier } from "./classifier/TextClassifier.ts";
 import { ClassifyModal } from "./ui/ClassifyModal.ts";
 import { DictionaryView, DICTIONARY_VIEW_TYPE } from "./ui/DictionaryView.ts";
+import { DiscourseStore } from "./data/DiscourseStore.ts";
+import { ContextStore } from "./data/ContextStore.ts";
+import { DiscourseAnalyzer } from "./discourse/DiscourseAnalyzer.ts";
+import { DiscourseCardView, DISCOURSE_CARD_VIEW_TYPE } from "./ui/DiscourseCardView.ts";
+import { ContextLexiconView, CONTEXT_LEXICON_VIEW_TYPE } from "./ui/ContextLexiconView.ts";
 
 export default class JPCollocationsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
   store!: CollocationStore;
   engine!: SearchEngine;
   private scraper: HyogenScraper | null = null;
+  discourseStore!: DiscourseStore;
+  contextStore!: ContextStore;
+  private discourseAnalyzer: DiscourseAnalyzer = new DiscourseAnalyzer();
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -29,6 +37,14 @@ export default class JPCollocationsPlugin extends Plugin {
     // Search engine
     this.engine = new SearchEngine(this.store);
 
+    // Discourse store
+    const discoursePath = `${this.app.vault.configDir}/plugins/jp-collocations/discourse-index.json`;
+    this.discourseStore = new DiscourseStore(this.app, discoursePath);
+    await this.discourseStore.load();
+
+    // Context store
+    this.contextStore = new ContextStore();
+
     // Register views
     this.registerView(JP_COLLOCATIONS_VIEW_TYPE, leaf =>
       new CollocationView(leaf, this.store, this.engine, this.settings)
@@ -36,6 +52,14 @@ export default class JPCollocationsPlugin extends Plugin {
 
     this.registerView(DICTIONARY_VIEW_TYPE, leaf =>
       new DictionaryView(leaf, this.app)
+    );
+
+    this.registerView(DISCOURSE_CARD_VIEW_TYPE, leaf =>
+      new DiscourseCardView(leaf)
+    );
+
+    this.registerView(CONTEXT_LEXICON_VIEW_TYPE, leaf =>
+      new ContextLexiconView(leaf, this.contextStore)
     );
 
     // Settings tab
@@ -102,6 +126,34 @@ export default class JPCollocationsPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "open-discourse-cards",
+      name: "Open Discourse Cards",
+      callback: () => this.openDiscourseCardView(),
+    });
+
+    this.addCommand({
+      id: "open-context-lexicon",
+      name: "Open Context Lexicon",
+      callback: () => this.openContextLexiconView(),
+    });
+
+    this.addCommand({
+      id: "analyse-selected-discourse",
+      name: "Analyse Selected Text (Discourse)",
+      editorCallback: (editor) => {
+        const selected = editor.getSelection();
+        if (!selected || !selected.trim()) {
+          new Notice("Select annotated text with || boundaries first!");
+          return;
+        }
+        const graph = this.discourseAnalyzer.analyze(selected.trim());
+        this.contextStore.ingestGraph(graph, "editor-selection");
+        new Notice(`Analysed ${graph.bits.length} discourse bits.`);
+        this.refreshContextViews();
+      },
+    });
+
+    this.addCommand({
       id: "import-yomitan-dictionary",
       name: "Import Yomitan Dictionary",
       callback: () => this.importYomitanDictionary(),
@@ -121,6 +173,8 @@ export default class JPCollocationsPlugin extends Plugin {
     this.scraper?.abort();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(DICTIONARY_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(DISCOURSE_CARD_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(CONTEXT_LEXICON_VIEW_TYPE);
   }
 
   async loadSettings(): Promise<void> {
@@ -229,5 +283,67 @@ export default class JPCollocationsPlugin extends Plugin {
     const count = await this.scraper.run();
     new Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
+  }
+
+  private async openDiscourseCardView(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(DISCOURSE_CARD_VIEW_TYPE);
+    if (existing.length > 0) { this.app.workspace.revealLeaf(existing[0]); return; }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: DISCOURSE_CARD_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+
+  private async openContextLexiconView(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(CONTEXT_LEXICON_VIEW_TYPE);
+    if (existing.length > 0) { this.app.workspace.revealLeaf(existing[0]); return; }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: CONTEXT_LEXICON_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+
+  private refreshContextViews(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(CONTEXT_LEXICON_VIEW_TYPE)) {
+      (leaf.view as ContextLexiconView).refresh();
+    }
+  }
+
+  // ─── Bridge API for jp-sentence-surfer ───────────────────────────────────
+  /** Query stored discourse chunks. */
+  queryDiscourseChunks(opts: Parameters<DiscourseStore["queryChunks"]>[0]) {
+    return this.discourseStore.queryChunks(opts);
+  }
+  /** Count chunks by category. */
+  getDiscourseCategoryCounts() {
+    return this.discourseStore.countByCategory();
+  }
+  /** Get all stored chunks. */
+  getAllDiscourseChunks() {
+    return this.discourseStore.exportAll();
+  }
+  /** Analyse raw annotated text and ingest into context store. */
+  analyseDiscourseText(text: string, source?: string) {
+    const graph = this.discourseAnalyzer.analyze(text, undefined, source);
+    this.contextStore.ingestGraph(graph, source ?? "bridge");
+    return graph;
+  }
+  /** Get context bits by category. */
+  getContextBitsByCategory(category: import("./types.ts").DiscourseCategory) {
+    return this.contextStore.getByCategory(category);
+  }
+  /** Get context bits by speaker. */
+  getContextBitsBySpeaker(speaker: string) {
+    return this.contextStore.getBySpeaker(speaker);
+  }
+  /** Get total discourse store size. */
+  getDiscourseStoreSize() {
+    return this.discourseStore.size();
+  }
+  /** Get total context store size. */
+  getContextStoreSize() {
+    return this.contextStore.size();
   }
 }

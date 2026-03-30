@@ -92,3 +92,87 @@ export interface StoreStats {
   byPOS: Record<string, number>;
   bySource: Record<string, number>;
 }
+
+// ─── Discourse Grammar Types ─────────────────────────────────────────────────
+
+/** Eight high-level categories grounded in 石黒圭, 佐久間まゆみ, メイナード泉子. */
+export type DiscourseCategory =
+  | "hedging"
+  | "epistemic"
+  | "interactional"
+  | "causal-logical"
+  | "enumerative"
+  | "referential"
+  | "stance"
+  | "structural";
+
+/** 33 fine-grained discourse functions. */
+export type DiscourseFunction =
+  // hedging (4)
+  | "hedge-softening"
+  | "hedge-approximation"
+  | "hedge-quotative"
+  | "hedge-deflation"
+  // epistemic (5)
+  | "epistemic-certainty"
+  | "epistemic-speculation"
+  | "epistemic-evidential"
+  | "epistemic-concession"
+  | "epistemic-continuation-blend"
+  // interactional (5)
+  | "interaction-pivot"
+  | "interaction-backChannel"
+  | "interaction-repair"
+  | "interaction-co-construction"
+  | "interaction-acknowledgement"
+  // causal-logical (4)
+  | "causal-reason"
+  | "causal-concessive"
+  | "causal-cascade"
+  | "causal-result"
+  // enumerative (3)
+  | "enum-parallel"
+  | "enum-discontinuous"
+  | "enum-alternative"
+  // referential (4)
+  | "ref-deictic"
+  | "ref-fuzzy-chain"
+  | "ref-anaphora"
+  | "ref-split-morpheme"
+  // stance (4)
+  | "stance-framing"
+  | "stance-cap"
+  | "stance-assertion"
+  | "stance-trail-off"
+  // structural (4)
+  | "struct-connector-compound"
+  | "struct-extended-reasoning"
+  | "struct-cascade-speculation"
+  | "struct-boundary";
+
+/** Per-category colour tokens (CSS hex). */
+export const CATEGORY_COLOURS: Record<DiscourseCategory, string> = {
+  "hedging":        "#f0a500",
+  "epistemic":      "#7c5cbf",
+  "interactional":  "#e05c5c",
+  "causal-logical": "#3a86ff",
+  "enumerative":    "#06a77d",
+  "referential":    "#f77f00",
+  "stance":         "#c77dff",
+  "structural":     "#4cc9f0",
+};
+
+/** A persisted discourse chunk stored in discourse-index.json. */
+export interface StoredChunk {
+  id: string;
+  surface: string;
+  category: DiscourseCategory;
+  functions: DiscourseFunction[];
+  collocations: string[];        // CollocationEntry ids
+  source: string;                // e.g. video ID or note path
+  timestamp?: string;            // e.g. "[08:15]"
+  bits: string[];                // bit texts in order
+  notes: string;
+  createdAt: number;
+  updatedAt: number;
+}
