@@ -1,29 +1,7 @@
 import type { DiscourseBit, DiscourseEdge, DiscourseGraph } from "./discourse-types.ts";
+import { categoryForType } from "./discourse-types.ts";
 import { CATEGORY_COLOURS } from "../types.ts";
 import type { DiscourseCategory } from "../types.ts";
-
-/** Map seed relationship types to their closest DiscourseCategory. */
-const TYPE_TO_CATEGORY: Record<string, DiscourseCategory> = {
-  "hedge-stance-softening":         "hedging",
-  "split-morpheme-co-construction": "referential",
-  "perspective-framing":            "stance",
-  "interactional-pivot":            "interactional",
-  "epistemic-continuation-blend":   "epistemic",
-  "discontinuous-parallel":         "enumerative",
-  "causal-concessive-cascade":      "causal-logical",
-  "assertion-deflation":            "hedging",
-  "connector-compounding":          "structural",
-  "fuzzy-reference-chain":          "referential",
-  "extended-reasoning-stance-cap":  "stance",
-  "epistemic-speculation-cascade":  "epistemic",
-  "discourse-fade-trail-off":       "structural",
-  "sequential-adjacency":           "structural",
-  "unknown":                        "structural",
-};
-
-function categoryForType(type: string): DiscourseCategory {
-  return TYPE_TO_CATEGORY[type] ?? "structural";
-}
 
 export class DiscourseVisualizer {
   /** Render a graph as a DOT language string for Graphviz. */

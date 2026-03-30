@@ -12070,7 +12070,7 @@ var DiscourseStore = class {
   }
 };
 
-// src/data/ContextStore.ts
+// src/discourse/discourse-types.ts
 var TYPE_TO_CATEGORY = {
   "hedge-stance-softening": "hedging",
   "split-morpheme-co-construction": "referential",
@@ -12092,6 +12092,39 @@ function categoryForType(type) {
   var _a;
   return (_a = TYPE_TO_CATEGORY[type]) != null ? _a : "structural";
 }
+var SEED_RELATIONSHIP_TYPES = [
+  "hedge-stance-softening",
+  "split-morpheme-co-construction",
+  "perspective-framing",
+  "interactional-pivot",
+  "epistemic-continuation-blend",
+  "discontinuous-parallel",
+  "causal-concessive-cascade",
+  "assertion-deflation",
+  "connector-compounding",
+  "fuzzy-reference-chain",
+  "extended-reasoning-stance-cap",
+  "epistemic-speculation-cascade",
+  "discourse-fade-trail-off"
+];
+var _RelationshipRegistry = class _RelationshipRegistry {
+  static register(type) {
+    _RelationshipRegistry.registered.add(type);
+  }
+  static has(type) {
+    return _RelationshipRegistry.registered.has(type);
+  }
+  static all() {
+    return Array.from(_RelationshipRegistry.registered);
+  }
+  static seeds() {
+    return [...SEED_RELATIONSHIP_TYPES];
+  }
+};
+_RelationshipRegistry.registered = new Set(SEED_RELATIONSHIP_TYPES);
+var RelationshipRegistry = _RelationshipRegistry;
+
+// src/data/ContextStore.ts
 var ContextStore = class {
   constructor() {
     this.records = /* @__PURE__ */ new Map();
@@ -12161,39 +12194,6 @@ var ContextStore = class {
     this.index.byConnectionGroup.clear();
   }
 };
-
-// src/discourse/discourse-types.ts
-var SEED_RELATIONSHIP_TYPES = [
-  "hedge-stance-softening",
-  "split-morpheme-co-construction",
-  "perspective-framing",
-  "interactional-pivot",
-  "epistemic-continuation-blend",
-  "discontinuous-parallel",
-  "causal-concessive-cascade",
-  "assertion-deflation",
-  "connector-compounding",
-  "fuzzy-reference-chain",
-  "extended-reasoning-stance-cap",
-  "epistemic-speculation-cascade",
-  "discourse-fade-trail-off"
-];
-var _RelationshipRegistry = class _RelationshipRegistry {
-  static register(type) {
-    _RelationshipRegistry.registered.add(type);
-  }
-  static has(type) {
-    return _RelationshipRegistry.registered.has(type);
-  }
-  static all() {
-    return Array.from(_RelationshipRegistry.registered);
-  }
-  static seeds() {
-    return [...SEED_RELATIONSHIP_TYPES];
-  }
-};
-_RelationshipRegistry.registered = new Set(SEED_RELATIONSHIP_TYPES);
-var RelationshipRegistry = _RelationshipRegistry;
 
 // src/discourse/DiscourseAnalyzer.ts
 var _bitCounter = 0;
@@ -12460,34 +12460,13 @@ var DiscourseAnalyzer = class {
 var import_obsidian8 = require("obsidian");
 
 // src/discourse/DiscourseVisualizer.ts
-var TYPE_TO_CATEGORY2 = {
-  "hedge-stance-softening": "hedging",
-  "split-morpheme-co-construction": "referential",
-  "perspective-framing": "stance",
-  "interactional-pivot": "interactional",
-  "epistemic-continuation-blend": "epistemic",
-  "discontinuous-parallel": "enumerative",
-  "causal-concessive-cascade": "causal-logical",
-  "assertion-deflation": "hedging",
-  "connector-compounding": "structural",
-  "fuzzy-reference-chain": "referential",
-  "extended-reasoning-stance-cap": "stance",
-  "epistemic-speculation-cascade": "epistemic",
-  "discourse-fade-trail-off": "structural",
-  "sequential-adjacency": "structural",
-  "unknown": "structural"
-};
-function categoryForType2(type) {
-  var _a;
-  return (_a = TYPE_TO_CATEGORY2[type]) != null ? _a : "structural";
-}
 var DiscourseVisualizer = class {
   /** Render a graph as a DOT language string for Graphviz. */
   toDot(graph) {
     var _a;
     const lines = ["digraph discourse {", "  rankdir=LR;", "  node [shape=box, style=filled, fontname=Helvetica];"];
     for (const bit of graph.bits) {
-      const cat = categoryForType2(bit.bitType);
+      const cat = categoryForType(bit.bitType);
       const colour = (_a = CATEGORY_COLOURS[cat]) != null ? _a : "#cccccc";
       const label = bit.text.replace(/"/g, "'").slice(0, 30);
       lines.push(`  "${bit.id}" [label="${label}", fillcolor="${colour}", fontcolor="#ffffff"];`);
@@ -12504,7 +12483,7 @@ var DiscourseVisualizer = class {
     const bitMap = new Map(graph.bits.map((b) => [b.id, b]));
     const lines = [];
     for (const bit of graph.bits) {
-      const cat = categoryForType2(bit.bitType);
+      const cat = categoryForType(bit.bitType);
       lines.push(`[${cat}] ${bit.text.trim()}`);
       const outEdges = graph.edges.filter((e) => e.sourceId === bit.id);
       for (const e of outEdges) {
@@ -12526,7 +12505,7 @@ var DiscourseVisualizer = class {
     }
     return Array.from(counts.entries()).map(([type, count]) => {
       var _a2;
-      const cat = categoryForType2(type);
+      const cat = categoryForType(type);
       return { type, count, category: cat, colour: (_a2 = CATEGORY_COLOURS[cat]) != null ? _a2 : "#cccccc" };
     });
   }
@@ -12534,7 +12513,7 @@ var DiscourseVisualizer = class {
   toColouredTokens(graph) {
     return graph.bits.map((bit) => {
       var _a;
-      const cat = categoryForType2(bit.bitType);
+      const cat = categoryForType(bit.bitType);
       return { text: bit.text, colour: (_a = CATEGORY_COLOURS[cat]) != null ? _a : "#cccccc", type: bit.bitType };
     });
   }

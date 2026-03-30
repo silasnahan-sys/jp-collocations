@@ -7,24 +7,6 @@ import { DiscourseVisualizer } from "../discourse/DiscourseVisualizer.ts";
 
 export const DISCOURSE_CARD_VIEW_TYPE = "jp-discourse-card-view";
 
-const TYPE_TO_CATEGORY: Record<string, DiscourseCategory> = {
-  "hedge-stance-softening":         "hedging",
-  "split-morpheme-co-construction": "referential",
-  "perspective-framing":            "stance",
-  "interactional-pivot":            "interactional",
-  "epistemic-continuation-blend":   "epistemic",
-  "discontinuous-parallel":         "enumerative",
-  "causal-concessive-cascade":      "causal-logical",
-  "assertion-deflation":            "hedging",
-  "connector-compounding":          "structural",
-  "fuzzy-reference-chain":          "referential",
-  "extended-reasoning-stance-cap":  "stance",
-  "epistemic-speculation-cascade":  "epistemic",
-  "discourse-fade-trail-off":       "structural",
-  "sequential-adjacency":           "structural",
-  "unknown":                        "structural",
-};
-
 export class DiscourseCardView extends ItemView {
   private analyzer = new DiscourseAnalyzer();
   private visualizer = new DiscourseVisualizer();

@@ -3,6 +3,31 @@
  * be added at runtime without a rebuild.
  */
 
+import type { DiscourseCategory } from "../types.ts";
+
+// ─── Shared type-to-category mapping ─────────────────────────────────────────
+export const TYPE_TO_CATEGORY: Record<string, DiscourseCategory> = {
+  "hedge-stance-softening":         "hedging",
+  "split-morpheme-co-construction": "referential",
+  "perspective-framing":            "stance",
+  "interactional-pivot":            "interactional",
+  "epistemic-continuation-blend":   "epistemic",
+  "discontinuous-parallel":         "enumerative",
+  "causal-concessive-cascade":      "causal-logical",
+  "assertion-deflation":            "hedging",
+  "connector-compounding":          "structural",
+  "fuzzy-reference-chain":          "referential",
+  "extended-reasoning-stance-cap":  "stance",
+  "epistemic-speculation-cascade":  "epistemic",
+  "discourse-fade-trail-off":       "structural",
+  "sequential-adjacency":           "structural",
+  "unknown":                        "structural",
+};
+
+export function categoryForType(type: string): DiscourseCategory {
+  return TYPE_TO_CATEGORY[type] ?? "structural";
+}
+
 // ─── Seed relationship type names ─────────────────────────────────────────────
 const SEED_RELATIONSHIP_TYPES = [
   "hedge-stance-softening",

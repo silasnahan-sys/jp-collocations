@@ -1,5 +1,6 @@
 import type { DiscourseCategory, DiscourseFunction } from "../types.ts";
 import type { DiscourseBit, DiscourseGraph } from "../discourse/discourse-types.ts";
+import { categoryForType } from "../discourse/discourse-types.ts";
 
 export interface ContextBitRecord {
   bit: DiscourseBit;
@@ -16,29 +17,6 @@ export interface DiscourseBitIndex {
   byFunction: Map<DiscourseFunction, ContextBitRecord[]>;
   bySpeaker: Map<string, ContextBitRecord[]>;
   byConnectionGroup: Map<string, ContextBitRecord[]>;
-}
-
-/** TYPE_TO_CATEGORY helper (same mapping as DiscourseVisualizer, kept in sync). */
-const TYPE_TO_CATEGORY: Record<string, DiscourseCategory> = {
-  "hedge-stance-softening":         "hedging",
-  "split-morpheme-co-construction": "referential",
-  "perspective-framing":            "stance",
-  "interactional-pivot":            "interactional",
-  "epistemic-continuation-blend":   "epistemic",
-  "discontinuous-parallel":         "enumerative",
-  "causal-concessive-cascade":      "causal-logical",
-  "assertion-deflation":            "hedging",
-  "connector-compounding":          "structural",
-  "fuzzy-reference-chain":          "referential",
-  "extended-reasoning-stance-cap":  "stance",
-  "epistemic-speculation-cascade":  "epistemic",
-  "discourse-fade-trail-off":       "structural",
-  "sequential-adjacency":           "structural",
-  "unknown":                        "structural",
-};
-
-function categoryForType(type: string): DiscourseCategory {
-  return TYPE_TO_CATEGORY[type] ?? "structural";
 }
 
 export class ContextStore {
