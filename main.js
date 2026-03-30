@@ -7852,7 +7852,7 @@ __export(main_exports, {
   default: () => JPCollocationsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian8 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 
 // src/types.ts
 var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
@@ -7881,6 +7881,16 @@ var DEFAULT_SETTINGS = {
   fuzzySearchSensitivity: 0.6,
   maxResults: 100,
   dataFilePath: "jp-collocations-data.json"
+};
+var CATEGORY_COLOURS = {
+  "hedging": "#f0a500",
+  "epistemic": "#7c5cbf",
+  "interactional": "#e05c5c",
+  "causal-logical": "#3a86ff",
+  "enumerative": "#06a77d",
+  "referential": "#f77f00",
+  "stance": "#c77dff",
+  "structural": "#4cc9f0"
 };
 
 // src/data/seed-data.ts
@@ -11903,12 +11913,807 @@ var DictionaryView = class extends import_obsidian7.ItemView {
   }
 };
 
+// src/data/DiscourseStore.ts
+var DiscourseStore = class {
+  constructor(app, dataPath) {
+    this.chunks = /* @__PURE__ */ new Map();
+    this.index = {
+      byMarker: /* @__PURE__ */ new Map(),
+      byCategory: /* @__PURE__ */ new Map(),
+      byCollocation: /* @__PURE__ */ new Map()
+    };
+    this.counter = 0;
+    this.saveTimer = null;
+    this.app = app;
+    this.dataPath = dataPath;
+  }
+  async load() {
+    try {
+      const exists = await this.app.vault.adapter.exists(this.dataPath);
+      if (exists) {
+        const raw = await this.app.vault.adapter.read(this.dataPath);
+        const parsed = JSON.parse(raw);
+        for (const c of parsed) {
+          this.chunks.set(c.id, c);
+        }
+      }
+    } catch (e) {
+    }
+    this.rebuildIndex();
+  }
+  rebuildIndex() {
+    this.index = { byMarker: /* @__PURE__ */ new Map(), byCategory: /* @__PURE__ */ new Map(), byCollocation: /* @__PURE__ */ new Map() };
+    for (const chunk of this.chunks.values()) {
+      this.indexChunk(chunk);
+    }
+  }
+  indexChunk(chunk) {
+    this.addToIndex(this.index.byMarker, chunk.surface, chunk.id);
+    this.addToIndex(this.index.byCategory, chunk.category, chunk.id);
+    for (const col of chunk.collocations) {
+      this.addToIndex(this.index.byCollocation, col, chunk.id);
+    }
+  }
+  deindexChunk(chunk) {
+    this.removeFromIndex(this.index.byMarker, chunk.surface, chunk.id);
+    this.removeFromIndex(this.index.byCategory, chunk.category, chunk.id);
+    for (const col of chunk.collocations) {
+      this.removeFromIndex(this.index.byCollocation, col, chunk.id);
+    }
+  }
+  addToIndex(map, key, id) {
+    if (!map.has(key))
+      map.set(key, []);
+    const arr = map.get(key);
+    if (!arr.includes(id))
+      arr.push(id);
+  }
+  removeFromIndex(map, key, id) {
+    const arr = map.get(key);
+    if (!arr)
+      return;
+    const i = arr.indexOf(id);
+    if (i !== -1)
+      arr.splice(i, 1);
+  }
+  generateId() {
+    return `chunk_${++this.counter}_${Date.now()}`;
+  }
+  // ─── CRUD ───────────────────────────────────────────────────────────────────
+  add(chunk) {
+    this.chunks.set(chunk.id, chunk);
+    this.indexChunk(chunk);
+    this.scheduleSave();
+  }
+  update(chunk) {
+    const old = this.chunks.get(chunk.id);
+    if (old)
+      this.deindexChunk(old);
+    chunk.updatedAt = Date.now();
+    this.chunks.set(chunk.id, chunk);
+    this.indexChunk(chunk);
+    this.scheduleSave();
+  }
+  delete(id) {
+    const chunk = this.chunks.get(id);
+    if (chunk) {
+      this.deindexChunk(chunk);
+      this.chunks.delete(id);
+      this.scheduleSave();
+    }
+  }
+  getById(id) {
+    return this.chunks.get(id);
+  }
+  getAll() {
+    return Array.from(this.chunks.values());
+  }
+  // ─── Index lookups ──────────────────────────────────────────────────────────
+  getByMarker(surface) {
+    var _a;
+    const ids = (_a = this.index.byMarker.get(surface)) != null ? _a : [];
+    return ids.map((id) => this.chunks.get(id)).filter(Boolean);
+  }
+  getByCategory(category) {
+    var _a;
+    const ids = (_a = this.index.byCategory.get(category)) != null ? _a : [];
+    return ids.map((id) => this.chunks.get(id)).filter(Boolean);
+  }
+  getByCollocation(colId) {
+    var _a;
+    const ids = (_a = this.index.byCollocation.get(colId)) != null ? _a : [];
+    return ids.map((id) => this.chunks.get(id)).filter(Boolean);
+  }
+  // ─── Bridge API methods (8) for jp-sentence-surfer ─────────────────────────
+  queryChunks(opts) {
+    if (opts.category)
+      return this.getByCategory(opts.category);
+    if (opts.marker)
+      return this.getByMarker(opts.marker);
+    if (opts.colId)
+      return this.getByCollocation(opts.colId);
+    return this.getAll();
+  }
+  countByCategory() {
+    const out = {};
+    for (const [cat, ids] of this.index.byCategory.entries()) {
+      out[cat] = ids.length;
+    }
+    return out;
+  }
+  size() {
+    return this.chunks.size;
+  }
+  exportAll() {
+    return this.getAll();
+  }
+  bulkImport(chunks) {
+    let count = 0;
+    for (const c of chunks) {
+      this.chunks.set(c.id, c);
+      this.indexChunk(c);
+      count++;
+    }
+    this.scheduleSave();
+    return count;
+  }
+  scheduleSave() {
+    if (this.saveTimer)
+      clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.save().catch(console.error);
+    }, 1e3);
+  }
+  async save() {
+    const data = JSON.stringify(this.getAll(), null, 2);
+    await this.app.vault.adapter.write(this.dataPath, data);
+  }
+};
+
+// src/discourse/discourse-types.ts
+var TYPE_TO_CATEGORY = {
+  "hedge-stance-softening": "hedging",
+  "split-morpheme-co-construction": "referential",
+  "perspective-framing": "stance",
+  "interactional-pivot": "interactional",
+  "epistemic-continuation-blend": "epistemic",
+  "discontinuous-parallel": "enumerative",
+  "causal-concessive-cascade": "causal-logical",
+  "assertion-deflation": "hedging",
+  "connector-compounding": "structural",
+  "fuzzy-reference-chain": "referential",
+  "extended-reasoning-stance-cap": "stance",
+  "epistemic-speculation-cascade": "epistemic",
+  "discourse-fade-trail-off": "structural",
+  "sequential-adjacency": "structural",
+  "unknown": "structural"
+};
+function categoryForType(type) {
+  var _a;
+  return (_a = TYPE_TO_CATEGORY[type]) != null ? _a : "structural";
+}
+var SEED_RELATIONSHIP_TYPES = [
+  "hedge-stance-softening",
+  "split-morpheme-co-construction",
+  "perspective-framing",
+  "interactional-pivot",
+  "epistemic-continuation-blend",
+  "discontinuous-parallel",
+  "causal-concessive-cascade",
+  "assertion-deflation",
+  "connector-compounding",
+  "fuzzy-reference-chain",
+  "extended-reasoning-stance-cap",
+  "epistemic-speculation-cascade",
+  "discourse-fade-trail-off"
+];
+var _RelationshipRegistry = class _RelationshipRegistry {
+  static register(type) {
+    _RelationshipRegistry.registered.add(type);
+  }
+  static has(type) {
+    return _RelationshipRegistry.registered.has(type);
+  }
+  static all() {
+    return Array.from(_RelationshipRegistry.registered);
+  }
+  static seeds() {
+    return [...SEED_RELATIONSHIP_TYPES];
+  }
+};
+_RelationshipRegistry.registered = new Set(SEED_RELATIONSHIP_TYPES);
+var RelationshipRegistry = _RelationshipRegistry;
+
+// src/data/ContextStore.ts
+var ContextStore = class {
+  constructor() {
+    this.records = /* @__PURE__ */ new Map();
+    this.index = {
+      byCategory: /* @__PURE__ */ new Map(),
+      byFunction: /* @__PURE__ */ new Map(),
+      bySpeaker: /* @__PURE__ */ new Map(),
+      byConnectionGroup: /* @__PURE__ */ new Map()
+    };
+  }
+  /** Ingest a full graph, assigning categories and indexing all bits. */
+  ingestGraph(graph, source, speaker, connectionGroup) {
+    for (const bit of graph.bits) {
+      const category = categoryForType(bit.bitType);
+      const record = {
+        bit,
+        category,
+        functions: [],
+        speaker,
+        connectionGroup,
+        graphId: graph.id,
+        source
+      };
+      this.records.set(bit.id, record);
+      this.indexRecord(record);
+    }
+  }
+  indexRecord(rec) {
+    this.addToMap(this.index.byCategory, rec.category, rec);
+    for (const fn of rec.functions) {
+      this.addToMap(this.index.byFunction, fn, rec);
+    }
+    if (rec.speaker)
+      this.addToMap(this.index.bySpeaker, rec.speaker, rec);
+    if (rec.connectionGroup)
+      this.addToMap(this.index.byConnectionGroup, rec.connectionGroup, rec);
+  }
+  addToMap(map, key, rec) {
+    if (!map.has(key))
+      map.set(key, []);
+    map.get(key).push(rec);
+  }
+  getByCategory(cat) {
+    var _a;
+    return (_a = this.index.byCategory.get(cat)) != null ? _a : [];
+  }
+  getByFunction(fn) {
+    var _a;
+    return (_a = this.index.byFunction.get(fn)) != null ? _a : [];
+  }
+  getBySpeaker(speaker) {
+    var _a;
+    return (_a = this.index.bySpeaker.get(speaker)) != null ? _a : [];
+  }
+  getByConnectionGroup(group) {
+    var _a;
+    return (_a = this.index.byConnectionGroup.get(group)) != null ? _a : [];
+  }
+  size() {
+    return this.records.size;
+  }
+  clear() {
+    this.records.clear();
+    this.index.byCategory.clear();
+    this.index.byFunction.clear();
+    this.index.bySpeaker.clear();
+    this.index.byConnectionGroup.clear();
+  }
+};
+
+// src/discourse/DiscourseAnalyzer.ts
+var _bitCounter = 0;
+var _edgeCounter = 0;
+var _graphCounter = 0;
+var _chunkCounter = 0;
+function bitId() {
+  return `bit_${++_bitCounter}_${Date.now()}`;
+}
+function edgeId() {
+  return `edge_${++_edgeCounter}_${Date.now()}`;
+}
+function graphId() {
+  return `graph_${++_graphCounter}_${Date.now()}`;
+}
+function chunkId() {
+  return `chunk_${++_chunkCounter}_${Date.now()}`;
+}
+function splitBits(raw) {
+  const segments = [];
+  const parts = raw.split("||");
+  let offset = 0;
+  for (const part of parts) {
+    if (part.trim().length > 0) {
+      segments.push({ text: part, start: offset, end: offset + part.length });
+    }
+    offset += part.length + 2;
+  }
+  return segments;
+}
+function tokenize(text) {
+  return text.split(/(?<=[はがをにでもとのへからまでよりか。、！？…])|(?=[はがをにでもとのへからまでよりか。、！？…])/).map((t2) => t2.trim()).filter((t2) => t2.length > 0);
+}
+var DETECTORS = {
+  /** 1. Hedge/Stance Softening — "ような感じ", "みたいな", "っぽい", "ようだ" */
+  "hedge-stance-softening": (bit) => {
+    if (/ような感じ|みたいな|っぽい|ようだ|ように|らしい|くらい|ぐらい/.test(bit)) {
+      return { type: "hedge-stance-softening", confidence: 0.9, evidence: bit, features: { marker: "\u3088\u3046\u306A/\u307F\u305F\u3044\u306A/\u3089\u3057\u3044" } };
+    }
+    return null;
+  },
+  /** 2. Split-Morpheme Co-construction — verb stem split across bits */
+  "split-morpheme-co-construction": (bit, prev) => {
+    if (prev && /[んいきしちにびみり]$/.test(prev.trim()) && /^[でてでても]/.test(bit.trim())) {
+      return { type: "split-morpheme-co-construction", confidence: 0.8, evidence: `${prev}||${bit}`, features: { splitType: "verb-stem" } };
+    }
+    if (/[いきしちにびみり]$/.test(bit.trim())) {
+      return { type: "split-morpheme-co-construction", confidence: 0.6, evidence: bit, features: { splitType: "potential-stem" } };
+    }
+    return null;
+  },
+  /** 3. Perspective Framing — "X的には", "的には", "的に" */
+  "perspective-framing": (bit) => {
+    if (/的には|的に|から見ると|としては|にとって|にとっては/.test(bit)) {
+      return { type: "perspective-framing", confidence: 0.85, evidence: bit, features: { frameType: "perspective" } };
+    }
+    return null;
+  },
+  /** 4. Interactional Pivot — single short realisation marker あ, え, へえ, うん, そう */
+  "interactional-pivot": (bit) => {
+    const trimmed = bit.trim().replace(/[。、！？…]/g, "");
+    if (/^(あ|え|えー|へえ|うん|そう|なるほど|ふーん|ほう|おー)$/.test(trimmed)) {
+      return { type: "interactional-pivot", confidence: 0.95, evidence: bit, features: { marker: trimmed } };
+    }
+    return null;
+  },
+  /** 5. Epistemic-Continuation Blend — んでると, ているのに, ながら + certainty */
+  "epistemic-continuation-blend": (bit) => {
+    if (/んでると|てると確かに|ながら確かに|ているのに|てるのに確かに/.test(bit)) {
+      return { type: "epistemic-continuation-blend", confidence: 0.85, evidence: bit, features: { blendType: "progressive-certainty" } };
+    }
+    return null;
+  },
+  /** 6. Discontinuous Parallel — があったり ... たりしてて (たり...たり pattern) */
+  "discontinuous-parallel": (bit, _prev, _next, allBits) => {
+    if (/があったり|[でし]たり/.test(bit)) {
+      const hasPartner = allBits.some((b) => b !== bit && /[でし]たり/.test(b));
+      if (hasPartner) {
+        return { type: "discontinuous-parallel", confidence: 0.9, evidence: bit, features: { pattern: "\u305F\u308A-\u305F\u308A" } };
+      }
+    }
+    return null;
+  },
+  /** 7. Causal-Concessive Cascade — から...んだけど, から...が, ので...が */
+  "causal-concessive-cascade": (bit, _prev, next) => {
+    if (/から$|ので$/.test(bit.trim()) && next && /けど|が$|のに$/.test(next.trim())) {
+      return { type: "causal-concessive-cascade", confidence: 0.85, evidence: `${bit} \u2192 ${next}`, features: { causalMarker: "\u304B\u3089/\u306E\u3067", concedeMarker: "\u3051\u3069/\u304C" } };
+    }
+    if (/んだけど|なんだけど|けれど/.test(bit)) {
+      return { type: "causal-concessive-cascade", confidence: 0.75, evidence: bit, features: { causalMarker: "\u3051\u3069" } };
+    }
+    return null;
+  },
+  /** 8. Assertion-Deflation — sequential modifiers weakening: んじゃない → ? → みたいな */
+  "assertion-deflation": (bit, prev) => {
+    if (/んじゃない|んじゃないか|でしょ/.test(bit)) {
+      return { type: "assertion-deflation", confidence: 0.8, evidence: bit, features: { deflationStage: "initial" } };
+    }
+    if (prev && /んじゃない/.test(prev) && /\?|みたいな|ような/.test(bit)) {
+      return { type: "assertion-deflation", confidence: 0.9, evidence: `${prev}\u2192${bit}`, features: { deflationStage: "progressive" } };
+    }
+    return null;
+  },
+  /** 9. Connector Compounding — ま、だからそれで言うと, そういえば, ところで */
+  "connector-compounding": (bit) => {
+    if (/^(ま、?だから|まあ、?だから|まあそれで|だからそれで|ところで|そういえば|それで言うと|ていうか、?つまり)/.test(bit.trim())) {
+      return { type: "connector-compounding", confidence: 0.9, evidence: bit, features: { connectorType: "stacked-filler" } };
+    }
+    return null;
+  },
+  /** 10. Fuzzy Reference Chain — X + っぽいものとか, あたりの, その辺の */
+  "fuzzy-reference-chain": (bit) => {
+    if (/っぽいものとか|その辺の|あたりの|的なもの|みたいなもの|そういった/.test(bit)) {
+      return { type: "fuzzy-reference-chain", confidence: 0.85, evidence: bit, features: { fuzzyMarker: "\u3063\u307D\u3044/\u305D\u306E\u8FBA/\u3042\u305F\u308A" } };
+    }
+    return null;
+  },
+  /** 11. Extended Reasoning → Stance Cap — わけだ, わけだけど, わけで */
+  "extended-reasoning-stance-cap": (bit) => {
+    if (/わけだ|わけだけど|わけで|わけです|わけじゃない/.test(bit)) {
+      return { type: "extended-reasoning-stance-cap", confidence: 0.9, evidence: bit, features: { stanceCap: "\u308F\u3051" } };
+    }
+    return null;
+  },
+  /** 12. Epistemic Speculation Cascade — きっと...のかもしれない, たぶん...かも */
+  "epistemic-speculation-cascade": (bit, _prev, _next, allBits) => {
+    if (/^きっと|^たぶん|^もしかして/.test(bit.trim())) {
+      const hasClose = allBits.some((b) => /のかもしれない|かもしれない|かも/.test(b));
+      return {
+        type: "epistemic-speculation-cascade",
+        confidence: hasClose ? 0.9 : 0.65,
+        evidence: bit,
+        features: { speculationAnchor: bit.trim(), hasClosure: hasClose }
+      };
+    }
+    if (/のかもしれない|かもしれない$/.test(bit.trim())) {
+      return { type: "epistemic-speculation-cascade", confidence: 0.85, evidence: bit, features: { speculationClose: true } };
+    }
+    return null;
+  },
+  /** 13. Discourse Fade/Trail-off — == marker or sentence-ending …, trail particles */
+  "discourse-fade-trail-off": (bit) => {
+    if (/==|…$|…。$|ね。$|よね。$|かな。$|だけど。$/.test(bit.trim())) {
+      return { type: "discourse-fade-trail-off", confidence: 0.95, evidence: bit, features: { fadeMarker: "==/\u2026/\u306D" } };
+    }
+    return null;
+  }
+};
+var DiscourseAnalyzer = class {
+  /**
+   * Parse a raw annotated string (with || delimiters) into a DiscourseGraph.
+   * Optionally pass a timestamp string (e.g. "[08:15]").
+   */
+  analyze(raw, timestamp, source = "manual") {
+    const segments = splitBits(raw);
+    const texts = segments.map((s) => s.text);
+    const bits = segments.map((seg, i) => {
+      var _a, _b, _c, _d;
+      const detected = this.detectBitType(seg.text, (_a = texts[i - 1]) != null ? _a : null, (_b = texts[i + 1]) != null ? _b : null, texts);
+      return {
+        id: bitId(),
+        text: seg.text,
+        startOffset: seg.start,
+        endOffset: seg.end,
+        timestamp,
+        bitType: (_c = detected == null ? void 0 : detected.type) != null ? _c : "unknown",
+        morphemes: tokenize(seg.text),
+        features: (_d = detected == null ? void 0 : detected.features) != null ? _d : {}
+      };
+    });
+    const edges = this.buildEdges(bits, texts);
+    return {
+      id: graphId(),
+      bits,
+      edges,
+      source,
+      timestamp,
+      createdAt: Date.now()
+    };
+  }
+  /** Parse a full transcript into chunks, one per timestamped line. */
+  parseTranscript(transcript, source = "transcript") {
+    const chunks = [];
+    const lines = transcript.split("\n").map((l) => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      const tsMatch = line.match(/^\[(\d+:\d+)\]\s*/);
+      const timestamp = tsMatch ? `[${tsMatch[1]}]` : void 0;
+      const raw = tsMatch ? line.slice(tsMatch[0].length) : line;
+      if (!raw.includes("||") && raw.trim().length === 0)
+        continue;
+      const graph = this.analyze(raw, timestamp, source);
+      chunks.push({
+        id: chunkId(),
+        raw,
+        timestamp,
+        bits: graph.bits,
+        graph
+      });
+    }
+    return chunks;
+  }
+  detectBitType(text, prev, next, all) {
+    let best = null;
+    for (const detector of Object.values(DETECTORS)) {
+      const result = detector(text, prev, next, all);
+      if (result && (!best || result.confidence > best.confidence)) {
+        best = result;
+      }
+    }
+    return best;
+  }
+  buildEdges(bits, _texts) {
+    const edges = [];
+    for (let i = 0; i < bits.length; i++) {
+      const current = bits[i];
+      if (i + 1 < bits.length) {
+        const next = bits[i + 1];
+        edges.push(this.makeEdge(current, next, 1, "sequential-adjacency", 0.7, "adjacent bits"));
+      }
+      if (current.bitType === "discontinuous-parallel") {
+        for (let j = i + 2; j < bits.length; j++) {
+          if (bits[j].bitType === "discontinuous-parallel") {
+            edges.push(this.makeEdge(current, bits[j], j - i, "discontinuous-parallel", 0.85, "\u305F\u308A-\u305F\u308A span"));
+            break;
+          }
+        }
+      }
+      if (/^きっと|^たぶん/.test(current.text.trim())) {
+        for (let j = i + 1; j < bits.length; j++) {
+          if (/のかもしれない|かもしれない/.test(bits[j].text)) {
+            edges.push(this.makeEdge(current, bits[j], j - i, "epistemic-speculation-cascade", 0.9, "speculation span"));
+            break;
+          }
+        }
+      }
+      if (/から$|ので$/.test(current.text.trim())) {
+        if (i + 1 < bits.length && /けど|が$/.test(bits[i + 1].text.trim())) {
+          edges.push(this.makeEdge(current, bits[i + 1], 1, "causal-concessive-cascade", 0.88, "\u304B\u3089\u2192\u3051\u3069"));
+        }
+      }
+    }
+    return edges;
+  }
+  makeEdge(source, target, distance, type, confidence, evidence) {
+    return {
+      id: edgeId(),
+      sourceId: source.id,
+      targetId: target.id,
+      relationshipType: type,
+      confidence,
+      direction: "forward",
+      bitDistance: distance,
+      evidence,
+      metadata: {}
+    };
+  }
+  /** Register a new relationship type at runtime. */
+  registerType(type) {
+    RelationshipRegistry.register(type);
+  }
+};
+
+// src/ui/DiscourseCardView.ts
+var import_obsidian8 = require("obsidian");
+
+// src/discourse/DiscourseVisualizer.ts
+var DiscourseVisualizer = class {
+  /** Render a graph as a DOT language string for Graphviz. */
+  toDot(graph) {
+    var _a;
+    const lines = ["digraph discourse {", "  rankdir=LR;", "  node [shape=box, style=filled, fontname=Helvetica];"];
+    for (const bit of graph.bits) {
+      const cat = categoryForType(bit.bitType);
+      const colour = (_a = CATEGORY_COLOURS[cat]) != null ? _a : "#cccccc";
+      const label = bit.text.replace(/"/g, "'").slice(0, 30);
+      lines.push(`  "${bit.id}" [label="${label}", fillcolor="${colour}", fontcolor="#ffffff"];`);
+    }
+    for (const edge of graph.edges) {
+      const label = edge.relationshipType.slice(0, 20);
+      lines.push(`  "${edge.sourceId}" -> "${edge.targetId}" [label="${label}", penwidth=${(edge.confidence * 2).toFixed(1)}];`);
+    }
+    lines.push("}");
+    return lines.join("\n");
+  }
+  /** Render an adjacency list as plain text. */
+  toAdjacencyList(graph) {
+    const bitMap = new Map(graph.bits.map((b) => [b.id, b]));
+    const lines = [];
+    for (const bit of graph.bits) {
+      const cat = categoryForType(bit.bitType);
+      lines.push(`[${cat}] ${bit.text.trim()}`);
+      const outEdges = graph.edges.filter((e) => e.sourceId === bit.id);
+      for (const e of outEdges) {
+        const target = bitMap.get(e.targetId);
+        if (target) {
+          lines.push(`  --[${e.relationshipType} conf:${e.confidence.toFixed(2)}]--> ${target.text.trim().slice(0, 40)}`);
+        }
+      }
+    }
+    return lines.join("\n");
+  }
+  /** Render a summary table of bit types and counts. */
+  toSummaryTable(graph) {
+    var _a;
+    const counts = /* @__PURE__ */ new Map();
+    for (const bit of graph.bits) {
+      const t2 = bit.bitType;
+      counts.set(t2, ((_a = counts.get(t2)) != null ? _a : 0) + 1);
+    }
+    return Array.from(counts.entries()).map(([type, count]) => {
+      var _a2;
+      const cat = categoryForType(type);
+      return { type, count, category: cat, colour: (_a2 = CATEGORY_COLOURS[cat]) != null ? _a2 : "#cccccc" };
+    });
+  }
+  /** Return bits coloured by category as an array of {text, colour} tokens. */
+  toColouredTokens(graph) {
+    return graph.bits.map((bit) => {
+      var _a;
+      const cat = categoryForType(bit.bitType);
+      return { text: bit.text, colour: (_a = CATEGORY_COLOURS[cat]) != null ? _a : "#cccccc", type: bit.bitType };
+    });
+  }
+};
+
+// src/ui/DiscourseCardView.ts
+var DISCOURSE_CARD_VIEW_TYPE = "jp-discourse-card-view";
+var DiscourseCardView = class extends import_obsidian8.ItemView {
+  constructor(leaf) {
+    super(leaf);
+    this.analyzer = new DiscourseAnalyzer();
+    this.visualizer = new DiscourseVisualizer();
+    this.currentGraph = null;
+    this.textArea = null;
+    this.graphContainer = null;
+  }
+  getViewType() {
+    return DISCOURSE_CARD_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "Discourse Cards";
+  }
+  getIcon() {
+    return "git-fork";
+  }
+  async onOpen() {
+    this.buildUI();
+  }
+  async onClose() {
+  }
+  buildUI() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-discourse-card-view");
+    const header = container.createDiv("jp-discourse-header");
+    header.createEl("h4", { text: "Discourse Graph", cls: "jp-discourse-title" });
+    const inputRow = container.createDiv("jp-discourse-input-row");
+    this.textArea = inputRow.createEl("textarea", {
+      cls: "jp-discourse-textarea",
+      placeholder: "Paste annotated text with || boundaries\u2026"
+    });
+    const analyzeBtn = inputRow.createEl("button", { text: "Analyse", cls: "jp-discourse-btn" });
+    analyzeBtn.addEventListener("click", () => this.runAnalysis());
+    this.graphContainer = container.createDiv("jp-discourse-graph");
+    this.renderEmpty();
+  }
+  renderEmpty() {
+    if (!this.graphContainer)
+      return;
+    this.graphContainer.empty();
+    this.graphContainer.createDiv({ text: "Paste annotated text above and click Analyse.", cls: "jp-discourse-empty" });
+  }
+  runAnalysis() {
+    var _a, _b;
+    const text = (_b = (_a = this.textArea) == null ? void 0 : _a.value) != null ? _b : "";
+    if (!text.trim())
+      return;
+    this.currentGraph = this.analyzer.analyze(text);
+    this.renderGraph();
+  }
+  renderGraph() {
+    if (!this.graphContainer || !this.currentGraph)
+      return;
+    this.graphContainer.empty();
+    const tokens = this.visualizer.toColouredTokens(this.currentGraph);
+    const tokenRow = this.graphContainer.createDiv("jp-discourse-tokens");
+    for (const token of tokens) {
+      const span = tokenRow.createEl("span", { cls: "jp-discourse-token" });
+      span.setText(token.text);
+      span.style.borderLeft = `4px solid ${token.colour}`;
+      span.setAttribute("title", token.type);
+    }
+    const summary = this.visualizer.toSummaryTable(this.currentGraph);
+    const table3 = this.graphContainer.createEl("table", { cls: "jp-discourse-summary" });
+    const thead = table3.createEl("thead");
+    const headerRow = thead.createEl("tr");
+    ["Type", "Count", "Category"].forEach((h) => headerRow.createEl("th", { text: h }));
+    const tbody = table3.createEl("tbody");
+    for (const row of summary) {
+      const tr = tbody.createEl("tr");
+      tr.createEl("td", { text: row.type });
+      tr.createEl("td", { text: String(row.count) });
+      const catTd = tr.createEl("td", { text: row.category });
+      catTd.style.color = row.colour;
+    }
+    const adjPre = this.graphContainer.createEl("pre", { cls: "jp-discourse-adj" });
+    adjPre.setText(this.visualizer.toAdjacencyList(this.currentGraph));
+  }
+};
+
+// src/ui/ContextLexiconView.ts
+var import_obsidian9 = require("obsidian");
+var CONTEXT_LEXICON_VIEW_TYPE = "jp-context-lexicon-view";
+var CATEGORIES = [
+  "hedging",
+  "epistemic",
+  "interactional",
+  "causal-logical",
+  "enumerative",
+  "referential",
+  "stance",
+  "structural"
+];
+var ContextLexiconView = class extends import_obsidian9.ItemView {
+  constructor(leaf, contextStore) {
+    super(leaf);
+    this.analyzer = new DiscourseAnalyzer();
+    this.activeCategory = null;
+    this.bodyContainer = null;
+    this.contextStore = contextStore;
+  }
+  getViewType() {
+    return CONTEXT_LEXICON_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "Context Lexicon";
+  }
+  getIcon() {
+    return "library";
+  }
+  async onOpen() {
+    this.buildUI();
+  }
+  async onClose() {
+  }
+  buildUI() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-context-lexicon-view");
+    const header = container.createDiv("jp-ctx-header");
+    header.createEl("h4", { text: "Context Lexicon", cls: "jp-ctx-title" });
+    const chipRow = container.createDiv("jp-ctx-chips");
+    for (const cat of CATEGORIES) {
+      const chip = chipRow.createEl("span", { text: cat, cls: "jp-ctx-chip" });
+      chip.style.borderColor = CATEGORY_COLOURS[cat];
+      chip.addEventListener("click", () => {
+        if (this.activeCategory === cat) {
+          this.activeCategory = null;
+          chip.removeClass("jp-ctx-chip--active");
+        } else {
+          this.activeCategory = cat;
+          chipRow.querySelectorAll(".jp-ctx-chip--active").forEach((el) => el.removeClass("jp-ctx-chip--active"));
+          chip.addClass("jp-ctx-chip--active");
+        }
+        this.renderBody();
+      });
+    }
+    this.bodyContainer = container.createDiv("jp-ctx-body");
+    this.renderBody();
+  }
+  refresh() {
+    this.renderBody();
+  }
+  renderBody() {
+    if (!this.bodyContainer)
+      return;
+    this.bodyContainer.empty();
+    const records = this.activeCategory ? this.contextStore.getByCategory(this.activeCategory) : this.getAllRecords();
+    if (records.length === 0) {
+      this.bodyContainer.createDiv({ text: "No discourse bits loaded. Analyse text via the Discourse Cards view.", cls: "jp-ctx-empty" });
+      return;
+    }
+    for (const rec of records) {
+      this.renderCard(this.bodyContainer, rec);
+    }
+  }
+  getAllRecords() {
+    const all = [];
+    for (const cat of CATEGORIES) {
+      all.push(...this.contextStore.getByCategory(cat));
+    }
+    return all;
+  }
+  renderCard(parent, rec) {
+    var _a;
+    const card = parent.createDiv("jp-ctx-card");
+    const colour = (_a = CATEGORY_COLOURS[rec.category]) != null ? _a : "#cccccc";
+    card.style.borderLeft = `4px solid ${colour}`;
+    const topRow = card.createDiv("jp-ctx-card-top");
+    topRow.createEl("span", { text: rec.bit.text, cls: "jp-ctx-bit-text" });
+    topRow.createEl("span", { text: rec.category, cls: "jp-ctx-cat-badge" }).style.color = colour;
+    const meta = card.createDiv("jp-ctx-card-meta");
+    meta.createEl("span", { text: `type: ${rec.bit.bitType}`, cls: "jp-ctx-meta-item" });
+    if (rec.speaker)
+      meta.createEl("span", { text: `speaker: ${rec.speaker}`, cls: "jp-ctx-meta-item" });
+    if (rec.bit.timestamp)
+      meta.createEl("span", { text: rec.bit.timestamp, cls: "jp-ctx-meta-item" });
+    if (rec.bit.morphemes.length > 0) {
+      meta.createEl("span", { text: `morphemes: ${rec.bit.morphemes.join(" | ")}`, cls: "jp-ctx-meta-item" });
+    }
+  }
+};
+
 // src/main.ts
-var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
+var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULT_SETTINGS };
     this.scraper = null;
+    this.discourseAnalyzer = new DiscourseAnalyzer();
   }
   async onload() {
     await this.loadSettings();
@@ -11916,6 +12721,10 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
     this.store = new CollocationStore(this.app, dataPath);
     await this.store.load();
     this.engine = new SearchEngine(this.store);
+    const discoursePath = `${this.app.vault.configDir}/plugins/jp-collocations/discourse-index.json`;
+    this.discourseStore = new DiscourseStore(this.app, discoursePath);
+    await this.discourseStore.load();
+    this.contextStore = new ContextStore();
     this.registerView(
       JP_COLLOCATIONS_VIEW_TYPE,
       (leaf) => new CollocationView(leaf, this.store, this.engine, this.settings)
@@ -11923,6 +12732,14 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
     this.registerView(
       DICTIONARY_VIEW_TYPE,
       (leaf) => new DictionaryView(leaf, this.app)
+    );
+    this.registerView(
+      DISCOURSE_CARD_VIEW_TYPE,
+      (leaf) => new DiscourseCardView(leaf)
+    );
+    this.registerView(
+      CONTEXT_LEXICON_VIEW_TYPE,
+      (leaf) => new ContextLexiconView(leaf, this.contextStore)
     );
     this.addSettingTab(new SettingsTab(
       this.app,
@@ -11956,7 +12773,7 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
       editorCallback: (editor) => {
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian8.Notice("Select some Japanese text first!");
+          new import_obsidian10.Notice("Select some Japanese text first!");
           return;
         }
         const classifier = new TextClassifier();
@@ -11980,6 +12797,31 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
       callback: () => this.openDictionaryView()
     });
     this.addCommand({
+      id: "open-discourse-cards",
+      name: "Open Discourse Cards",
+      callback: () => this.openDiscourseCardView()
+    });
+    this.addCommand({
+      id: "open-context-lexicon",
+      name: "Open Context Lexicon",
+      callback: () => this.openContextLexiconView()
+    });
+    this.addCommand({
+      id: "analyse-selected-discourse",
+      name: "Analyse Selected Text (Discourse)",
+      editorCallback: (editor) => {
+        const selected = editor.getSelection();
+        if (!selected || !selected.trim()) {
+          new import_obsidian10.Notice("Select annotated text with || boundaries first!");
+          return;
+        }
+        const graph = this.discourseAnalyzer.analyze(selected.trim());
+        this.contextStore.ingestGraph(graph, "editor-selection");
+        new import_obsidian10.Notice(`Analysed ${graph.bits.length} discourse bits.`);
+        this.refreshContextViews();
+      }
+    });
+    this.addCommand({
       id: "import-yomitan-dictionary",
       name: "Import Yomitan Dictionary",
       callback: () => this.importYomitanDictionary()
@@ -11996,6 +12838,8 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
     (_a = this.scraper) == null ? void 0 : _a.abort();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(DICTIONARY_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(DISCOURSE_CARD_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(CONTEXT_LEXICON_VIEW_TYPE);
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -12055,10 +12899,10 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
       try {
         const parsed = JSON.parse(text);
         const count = this.store.bulkImport(parsed);
-        new import_obsidian8.Notice(`Imported ${count} entries.`);
+        new import_obsidian10.Notice(`Imported ${count} entries.`);
         this.refreshViews();
       } catch (e) {
-        new import_obsidian8.Notice("Failed to parse JSON file.");
+        new import_obsidian10.Notice("Failed to parse JSON file.");
       }
     };
     input.click();
@@ -12072,31 +12916,95 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
     a.download = "jp-collocations-export.json";
     a.click();
     URL.revokeObjectURL(url);
-    new import_obsidian8.Notice("Exported collocations.");
+    new import_obsidian10.Notice("Exported collocations.");
   }
   async fetchFromHyogen() {
     var _a;
     if (!this.settings.hyogenEnabled) {
-      new import_obsidian8.Notice("Hyogen scraping is disabled. Enable it in settings first.");
+      new import_obsidian10.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
     }
     if (this.settings.hyogenWordList.length === 0) {
-      new import_obsidian8.Notice("No words configured. Add words to the scrape list in settings.");
+      new import_obsidian10.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
     if ((_a = this.scraper) == null ? void 0 : _a.isRunning()) {
-      new import_obsidian8.Notice("Scraper is already running.");
+      new import_obsidian10.Notice("Scraper is already running.");
       return;
     }
     this.scraper = new HyogenScraper(this.app, this.store, {
       rateLimit: this.settings.hyogenRateLimit,
-      onProgress: (msg) => new import_obsidian8.Notice(msg, 3e3),
+      onProgress: (msg) => new import_obsidian10.Notice(msg, 3e3),
       onEntry: () => this.refreshViews()
     });
     this.scraper.enqueue(this.settings.hyogenWordList);
-    new import_obsidian8.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
+    new import_obsidian10.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
     const count = await this.scraper.run();
-    new import_obsidian8.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    new import_obsidian10.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
+  }
+  async openDiscourseCardView() {
+    const existing = this.app.workspace.getLeavesOfType(DISCOURSE_CARD_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: DISCOURSE_CARD_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+  async openContextLexiconView() {
+    const existing = this.app.workspace.getLeavesOfType(CONTEXT_LEXICON_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: CONTEXT_LEXICON_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+  refreshContextViews() {
+    for (const leaf of this.app.workspace.getLeavesOfType(CONTEXT_LEXICON_VIEW_TYPE)) {
+      leaf.view.refresh();
+    }
+  }
+  // ─── Bridge API for jp-sentence-surfer ───────────────────────────────────
+  /** Query stored discourse chunks. */
+  queryDiscourseChunks(opts) {
+    return this.discourseStore.queryChunks(opts);
+  }
+  /** Count chunks by category. */
+  getDiscourseCategoryCounts() {
+    return this.discourseStore.countByCategory();
+  }
+  /** Get all stored chunks. */
+  getAllDiscourseChunks() {
+    return this.discourseStore.exportAll();
+  }
+  /** Analyse raw annotated text and ingest into context store. */
+  analyseDiscourseText(text, source) {
+    const graph = this.discourseAnalyzer.analyze(text, void 0, source);
+    this.contextStore.ingestGraph(graph, source != null ? source : "bridge");
+    return graph;
+  }
+  /** Get context bits by category. */
+  getContextBitsByCategory(category) {
+    return this.contextStore.getByCategory(category);
+  }
+  /** Get context bits by speaker. */
+  getContextBitsBySpeaker(speaker) {
+    return this.contextStore.getBySpeaker(speaker);
+  }
+  /** Get total discourse store size. */
+  getDiscourseStoreSize() {
+    return this.discourseStore.size();
+  }
+  /** Get total context store size. */
+  getContextStoreSize() {
+    return this.contextStore.size();
   }
 };
