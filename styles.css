@@ -1076,3 +1076,365 @@
 [data-dict-abbr="SOEJCD"]      { --mkd-tile-color: #4A7C59; }
 [data-dict-abbr="SOEJT"]       { --mkd-tile-color: #5C7C4A; }
 [data-dict-abbr="WISDOM3"]     { --mkd-tile-color: #1B3A5C; }
+
+/* ── JP Collocations — Extended Styles ─────────────────────
+   Register badges, JLPT badges, strength meter, negative
+   examples, boundary type badges, filter chips, see-also.
+   Works in both light and dark Obsidian themes.
+   Mobile-optimized: min 44px touch targets.
+   ─────────────────────────────────────────────────────────── */
+
+/* ── Badge base ───────────────────────────────────────────── */
+.jp-col-badge {
+  display: inline-block;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin: 0 2px;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+  line-height: 1.4;
+}
+
+.jp-col-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 2px 0 4px;
+}
+
+/* ── Register badges ──────────────────────────────────────── */
+.jp-coll-register-spoken   { background: #2563EB22; color: #2563EB; border: 1px solid #2563EB44; }
+.jp-coll-register-written  { background: #16A34A22; color: #16A34A; border: 1px solid #16A34A44; }
+.jp-coll-register-formal   { background: #7C3AED22; color: #7C3AED; border: 1px solid #7C3AED44; }
+.jp-coll-register-casual   { background: #EA580C22; color: #EA580C; border: 1px solid #EA580C44; }
+.jp-coll-register-literary { background: #D97706AA; color: #92400E; border: 1px solid #D9770644; }
+.jp-coll-register-academic { background: #0891B222; color: #0891B2; border: 1px solid #0891B244; }
+.jp-coll-register-slang    { background: #DC262622; color: #DC2626; border: 1px solid #DC262644; }
+
+.theme-dark .jp-coll-register-spoken   { background: #2563EB33; color: #93C5FD; border-color: #2563EB55; }
+.theme-dark .jp-coll-register-written  { background: #16A34A33; color: #86EFAC; border-color: #16A34A55; }
+.theme-dark .jp-coll-register-formal   { background: #7C3AED33; color: #C4B5FD; border-color: #7C3AED55; }
+.theme-dark .jp-coll-register-casual   { background: #EA580C33; color: #FED7AA; border-color: #EA580C55; }
+.theme-dark .jp-coll-register-literary { background: #D9770633; color: #FDE68A; border-color: #D9770655; }
+.theme-dark .jp-coll-register-academic { background: #0891B233; color: #7DD3FC; border-color: #0891B255; }
+.theme-dark .jp-coll-register-slang    { background: #DC262633; color: #FCA5A5; border-color: #DC262655; }
+
+/* ── JLPT badges ──────────────────────────────────────────── */
+.jp-coll-jlpt-n5 { background: #22C55E22; color: #15803D; border: 1px solid #22C55E44; }
+.jp-coll-jlpt-n4 { background: #84CC1622; color: #4D7C0F; border: 1px solid #84CC1644; }
+.jp-coll-jlpt-n3 { background: #EAB30822; color: #92400E; border: 1px solid #EAB30844; }
+.jp-coll-jlpt-n2 { background: #F9730522; color: #C2410C; border: 1px solid #F9730544; }
+.jp-coll-jlpt-n1 { background: #EF444422; color: #B91C1C; border: 1px solid #EF444444; }
+
+.theme-dark .jp-coll-jlpt-n5 { background: #22C55E33; color: #86EFAC; border-color: #22C55E55; }
+.theme-dark .jp-coll-jlpt-n4 { background: #84CC1633; color: #BEF264; border-color: #84CC1655; }
+.theme-dark .jp-coll-jlpt-n3 { background: #EAB30833; color: #FDE68A; border-color: #EAB30855; }
+.theme-dark .jp-coll-jlpt-n2 { background: #F9730533; color: #FDBA74; border-color: #F9730555; }
+.theme-dark .jp-coll-jlpt-n1 { background: #EF444433; color: #FCA5A5; border-color: #EF444455; }
+
+/* ── Boundary type badge ──────────────────────────────────── */
+.jp-col-boundary {
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+}
+
+/* ── Strength meter ───────────────────────────────────────── */
+.jp-coll-strength-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0 4px;
+}
+
+.jp-coll-strength-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  min-width: 56px;
+  text-transform: capitalize;
+}
+
+.jp-coll-strength-bar {
+  flex: 1;
+  height: 5px;
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+  overflow: hidden;
+  max-width: 80px;
+}
+
+.jp-coll-strength-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #3B82F6, #8B5CF6);
+  transition: width 0.3s ease;
+}
+
+/* ── Negative example callout ─────────────────────────────── */
+.jp-coll-negative {
+  border-left: 3px solid #EF4444;
+  background: #EF444411;
+  padding: 6px 10px;
+  border-radius: 0 4px 4px 0;
+  margin: 4px 0;
+}
+
+.jp-coll-negative strong {
+  color: #DC2626;
+  font-size: 0.8rem;
+}
+
+.jp-coll-negative-example {
+  margin: 2px 0;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-decoration: line-through;
+  text-decoration-color: #DC2626;
+}
+
+.theme-dark .jp-coll-negative {
+  border-left-color: #F87171;
+  background: #EF444422;
+}
+.theme-dark .jp-coll-negative strong { color: #F87171; }
+
+/* ── See also links ───────────────────────────────────────── */
+.jp-col-see-also {
+  padding: 4px 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.jp-col-see-also-link {
+  display: inline-block;
+  margin: 0 4px;
+  color: var(--text-accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+
+.jp-col-see-also-link:hover {
+  text-decoration-style: solid;
+}
+
+/* ── Filter chips (extended) ──────────────────────────────── */
+.jp-coll-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: background 0.1s, border-color 0.1s;
+  min-height: 28px;
+  touch-action: manipulation;
+}
+
+.jp-coll-filter-chip.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.jp-col-filter-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-right: 2px;
+  font-weight: 500;
+}
+
+/* ── Score display ────────────────────────────────────────── */
+.jp-col-score {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  font-family: var(--font-monospace);
+  margin: 2px 0;
+}
+
+/* ── Meaning display ──────────────────────────────────────── */
+.jp-col-meaning {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 2px 0;
+}
+
+/* ── Suggest modal strength ───────────────────────────────── */
+.jp-col-suggest-strength {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: 4px;
+  letter-spacing: -0.05em;
+}
+
+/* ── Mobile / iOS touch targets ───────────────────────────── */
+@media (max-width: 768px) {
+  .jp-col-action-btn {
+    min-height: 44px;
+    min-width: 44px;
+    font-size: 0.9rem;
+  }
+
+  .jp-col-chip {
+    min-height: 36px;
+    padding: 6px 12px;
+  }
+
+  .jp-col-search-input {
+    min-height: 44px;
+    font-size: 1rem;
+  }
+
+  .jp-col-card {
+    padding: 12px;
+  }
+}
+
+/* iOS safe areas */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .jp-collocations-view {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* ── Idiomaticity Layer badges ────────────────────────────── */
+.jp-coll-layer-badge {
+  font-family: var(--font-monospace);
+  font-size: 0.65rem;
+}
+
+.jp-coll-layer-free         { background: #E5E7EB; color: #374151; border: 1px solid #D1D5DB; }
+.jp-coll-layer-preferred    { background: #DBEAFE; color: #1E40AF; border: 1px solid #BFDBFE; }
+.jp-coll-layer-collocation  { background: #D1FAE5; color: #065F46; border: 1px solid #6EE7B7; }
+.jp-coll-layer-semi-idiom   { background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
+.jp-coll-layer-full-idiom   { background: #FCE7F3; color: #831843; border: 1px solid #F9A8D4; }
+
+.theme-dark .jp-coll-layer-free         { background: #1F2937; color: #9CA3AF; border-color: #374151; }
+.theme-dark .jp-coll-layer-preferred    { background: #1E3A5F; color: #93C5FD; border-color: #2563EB44; }
+.theme-dark .jp-coll-layer-collocation  { background: #064E3B; color: #6EE7B7; border-color: #10B98144; }
+.theme-dark .jp-coll-layer-semi-idiom   { background: #451A03; color: #FCD34D; border-color: #F5930044; }
+.theme-dark .jp-coll-layer-full-idiom   { background: #500724; color: #F9A8D4; border-color: #EC489944; }
+
+/* ── Collocation relation badge ───────────────────────────── */
+.jp-coll-relation {
+  font-size: 0.6rem;
+  background: var(--background-modifier-hover);
+  color: var(--text-faint);
+  border: 1px solid var(--background-modifier-border);
+  font-family: var(--font-monospace);
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Collocation rationale box ────────────────────────────── */
+.jp-coll-rationale {
+  background: var(--background-secondary);
+  border-left: 3px solid var(--text-accent);
+  padding: 6px 10px;
+  border-radius: 0 4px 4px 0;
+  margin: 6px 0;
+  font-size: 0.82rem;
+  color: var(--text-normal);
+  line-height: 1.5;
+}
+
+.jp-coll-rationale strong {
+  color: var(--text-accent);
+  display: block;
+  margin-bottom: 2px;
+  font-size: 0.75rem;
+}
+
+/* ── Intensifier scale display ────────────────────────────── */
+.jp-coll-scale-info {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-monospace);
+  padding: 3px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jp-coll-scale-level {
+  color: var(--text-normal);
+}
+
+.jp-coll-scale-alts {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+/* ── Cross-register variant chips ─────────────────────────── */
+.jp-coll-cross-register,
+.jp-coll-competing {
+  padding: 4px 0;
+  font-size: 0.8rem;
+}
+
+.jp-coll-cross-register strong,
+.jp-coll-competing strong {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  display: block;
+  margin-bottom: 3px;
+}
+
+.jp-coll-variant-link {
+  cursor: pointer;
+  margin: 2px;
+}
+
+.jp-coll-variant-link:hover {
+  opacity: 0.8;
+  transform: translateY(-1px);
+  transition: transform 0.1s;
+}
+
+/* Competing expressions: preferred vs. weaker alternatives */
+.jp-coll-competing-preferred {
+  background: #D1FAE5;
+  color: #065F46;
+  border: 1px solid #6EE7B7;
+  cursor: pointer;
+  margin: 2px;
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.jp-coll-competing-weak {
+  background: #FEF2F2;
+  color: #991B1B;
+  border: 1px dashed #FCA5A5;
+  cursor: pointer;
+  margin: 2px;
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-decoration: line-through;
+  text-decoration-color: #FCA5A5;
+}
+
+.theme-dark .jp-coll-competing-preferred {
+  background: #064E3B;
+  color: #6EE7B7;
+  border-color: #10B981;
+}
+
+.theme-dark .jp-coll-competing-weak {
+  background: #450A0A;
+  color: #FCA5A5;
+  border-color: #DC262644;
+}

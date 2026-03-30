@@ -9,10 +9,18 @@ export class CollocationStore {
     byPOS: new Map(),
     byPattern: new Map(),
     byTag: new Map(),
+    byRegister: new Map(),
+    byJLPT: new Map(),
+    byBoundaryType: new Map(),
+    byStrength: new Map(),
+    byConstituent: new Map(),
+    byIdiomaticityLayer: new Map(),
+    byCollocationRelation: new Map(),
   };
   private app: App;
   private dataPath: string;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private changeCallbacks: Array<() => void> = [];
 
   constructor(app: App, dataPath: string) {
     this.app = app;
@@ -29,14 +37,12 @@ export class CollocationStore {
           this.entries.set(e.id, e);
         }
       } else {
-        // Seed with initial data
         for (const e of SEED_DATA) {
           this.entries.set(e.id, e);
         }
         await this.save();
       }
     } catch {
-      // Fall back to seed data on any error
       for (const e of SEED_DATA) {
         this.entries.set(e.id, e);
       }
@@ -50,6 +56,13 @@ export class CollocationStore {
       byPOS: new Map(),
       byPattern: new Map(),
       byTag: new Map(),
+      byRegister: new Map(),
+      byJLPT: new Map(),
+      byBoundaryType: new Map(),
+      byStrength: new Map(),
+      byConstituent: new Map(),
+      byIdiomaticityLayer: new Map(),
+      byCollocationRelation: new Map(),
     };
     for (const entry of this.entries.values()) {
       this.indexEntry(entry);
@@ -63,6 +76,17 @@ export class CollocationStore {
     for (const tag of entry.tags) {
       this.addToIndex(this.index.byTag, tag, entry.id);
     }
+    if (entry.register) this.addToIndex(this.index.byRegister, entry.register, entry.id);
+    if (entry.jlptLevel) this.addToIndex(this.index.byJLPT, entry.jlptLevel, entry.id);
+    if (entry.boundaryType) this.addToIndex(this.index.byBoundaryType, entry.boundaryType, entry.id);
+    if (entry.strength) this.addToIndex(this.index.byStrength, entry.strength, entry.id);
+    if (entry.constituentTokens) {
+      for (const token of entry.constituentTokens) {
+        if (token) this.addToIndex(this.index.byConstituent, token, entry.id);
+      }
+    }
+    if (entry.idiomaticityLayer) this.addToIndex(this.index.byIdiomaticityLayer, entry.idiomaticityLayer, entry.id);
+    if (entry.collocationRelation) this.addToIndex(this.index.byCollocationRelation, entry.collocationRelation, entry.id);
   }
 
   private deindexEntry(entry: CollocationEntry): void {
@@ -72,6 +96,17 @@ export class CollocationStore {
     for (const tag of entry.tags) {
       this.removeFromIndex(this.index.byTag, tag, entry.id);
     }
+    if (entry.register) this.removeFromIndex(this.index.byRegister, entry.register, entry.id);
+    if (entry.jlptLevel) this.removeFromIndex(this.index.byJLPT, entry.jlptLevel, entry.id);
+    if (entry.boundaryType) this.removeFromIndex(this.index.byBoundaryType, entry.boundaryType, entry.id);
+    if (entry.strength) this.removeFromIndex(this.index.byStrength, entry.strength, entry.id);
+    if (entry.constituentTokens) {
+      for (const token of entry.constituentTokens) {
+        if (token) this.removeFromIndex(this.index.byConstituent, token, entry.id);
+      }
+    }
+    if (entry.idiomaticityLayer) this.removeFromIndex(this.index.byIdiomaticityLayer, entry.idiomaticityLayer, entry.id);
+    if (entry.collocationRelation) this.removeFromIndex(this.index.byCollocationRelation, entry.collocationRelation, entry.id);
   }
 
   private addToIndex(map: Map<string, string[]>, key: string, id: string): void {
@@ -85,6 +120,23 @@ export class CollocationStore {
     if (!arr) return;
     const idx = arr.indexOf(id);
     if (idx !== -1) arr.splice(idx, 1);
+  }
+
+  private notifyChange(): void {
+    for (const cb of this.changeCallbacks) {
+      try { cb(); } catch { /* ignore */ }
+    }
+  }
+
+  onStoreChange(callback: () => void): void {
+    if (!this.changeCallbacks.includes(callback)) {
+      this.changeCallbacks.push(callback);
+    }
+  }
+
+  offStoreChange(callback: () => void): void {
+    const idx = this.changeCallbacks.indexOf(callback);
+    if (idx !== -1) this.changeCallbacks.splice(idx, 1);
   }
 
   getAll(): CollocationEntry[] {
@@ -115,10 +167,64 @@ export class CollocationStore {
     return ids.map(id => this.entries.get(id)!).filter(Boolean);
   }
 
+  getByRegister(register: string): CollocationEntry[] {
+    const ids = this.index.byRegister.get(register) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  getByJLPT(level: string): CollocationEntry[] {
+    const ids = this.index.byJLPT.get(level) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  getByBoundaryType(type: string): CollocationEntry[] {
+    const ids = this.index.byBoundaryType.get(type) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  getByStrength(strength: string): CollocationEntry[] {
+    const ids = this.index.byStrength.get(strength) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  getByConstituent(token: string): CollocationEntry[] {
+    const ids = this.index.byConstituent.get(token) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  getByIdiomaticityLayer(layer: string): CollocationEntry[] {
+    const ids = this.index.byIdiomaticityLayer.get(layer) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  getByCollocationRelation(relation: string): CollocationEntry[] {
+    const ids = this.index.byCollocationRelation.get(relation) ?? [];
+    return ids.map(id => this.entries.get(id)!).filter(Boolean);
+  }
+
+  /** Get all cross-register variants for a given entry */
+  getCrossRegisterVariants(entryId: string): CollocationEntry[] {
+    const entry = this.entries.get(entryId);
+    if (!entry?.crossRegisterVariants) return [];
+    return entry.crossRegisterVariants
+      .map(id => this.entries.get(id))
+      .filter((e): e is CollocationEntry => e !== undefined);
+  }
+
+  /** Get all competing expressions for a given entry */
+  getCompetingExpressions(entryId: string): CollocationEntry[] {
+    const entry = this.entries.get(entryId);
+    if (!entry?.competingExpressions) return [];
+    return entry.competingExpressions
+      .map(id => this.entries.get(id))
+      .filter((e): e is CollocationEntry => e !== undefined);
+  }
+
   add(entry: CollocationEntry): void {
     this.entries.set(entry.id, entry);
     this.indexEntry(entry);
     this.scheduleSave();
+    this.notifyChange();
   }
 
   update(entry: CollocationEntry): void {
@@ -128,6 +234,7 @@ export class CollocationStore {
     this.entries.set(entry.id, entry);
     this.indexEntry(entry);
     this.scheduleSave();
+    this.notifyChange();
   }
 
   delete(id: string): void {
@@ -136,6 +243,7 @@ export class CollocationStore {
       this.deindexEntry(entry);
       this.entries.delete(id);
       this.scheduleSave();
+      this.notifyChange();
     }
   }
 
@@ -147,6 +255,7 @@ export class CollocationStore {
       count++;
     }
     this.scheduleSave();
+    this.notifyChange();
     return count;
   }
 
@@ -161,12 +270,14 @@ export class CollocationStore {
     }
     this.rebuildIndex();
     await this.save();
+    this.notifyChange();
   }
 
   async clearAll(): Promise<void> {
     this.entries.clear();
     this.rebuildIndex();
     await this.save();
+    this.notifyChange();
   }
 
   getStats(): StoreStats {

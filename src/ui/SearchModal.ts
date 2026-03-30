@@ -1,7 +1,15 @@
 import { SuggestModal, Notice } from "obsidian";
 import type { App } from "obsidian";
 import type { CollocationEntry } from "../types.ts";
+import { CollocationStrength } from "../types.ts";
 import type { SearchEngine } from "../search/SearchEngine.ts";
+
+const STRENGTH_SYMBOL: Record<CollocationStrength, string> = {
+  [CollocationStrength.Weak]: "▱",
+  [CollocationStrength.Moderate]: "▰▱",
+  [CollocationStrength.Strong]: "▰▰▱",
+  [CollocationStrength.Fixed]: "▰▰▰",
+};
 
 export class SearchModal extends SuggestModal<CollocationEntry> {
   private engine: SearchEngine;
@@ -38,6 +46,31 @@ export class SearchModal extends SuggestModal<CollocationEntry> {
     right.createSpan({ cls: "jp-col-suggest-pos", text: entry.headwordPOS });
     if (entry.pattern) {
       right.createSpan({ cls: "jp-col-suggest-pattern", text: entry.pattern });
+    }
+
+    // Register badge
+    if (entry.register) {
+      right.createSpan({
+        cls: `jp-col-badge jp-coll-register-${entry.register}`,
+        text: entry.register,
+      });
+    }
+
+    // JLPT badge
+    if (entry.jlptLevel) {
+      right.createSpan({
+        cls: `jp-col-badge jp-coll-jlpt-${entry.jlptLevel.toLowerCase()}`,
+        text: entry.jlptLevel,
+      });
+    }
+
+    // Strength indicator
+    if (entry.strength) {
+      right.createSpan({
+        cls: "jp-col-suggest-strength",
+        text: STRENGTH_SYMBOL[entry.strength] ?? "",
+        title: entry.strength,
+      });
     }
   }
 

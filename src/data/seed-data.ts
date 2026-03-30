@@ -1,5 +1,5 @@
 import type { CollocationEntry } from "../types.ts";
-import { PartOfSpeech, CollocationSource } from "../types.ts";
+import { PartOfSpeech, CollocationSource, Register, JLPTLevel, BoundaryType, CollocationStrength, IdiomaticityLayer, CollocationRelation } from "../types.ts";
 
 function entry(
   id: string,
@@ -30,6 +30,46 @@ function entry(
     frequency,
     createdAt: 1700000000000,
     updatedAt: 1700000000000,
+  };
+}
+
+function entry2(
+  id: string,
+  headword: string,
+  headwordReading: string,
+  collocate: string,
+  fullPhrase: string,
+  headwordPOS: PartOfSpeech,
+  collocatePOS: PartOfSpeech,
+  pattern: string,
+  exampleSentences: string[],
+  frequency: number,
+  tags: string[],
+  register: Register,
+  jlptLevel: JLPTLevel,
+  boundaryType: BoundaryType,
+  strength: CollocationStrength,
+  idiomaticityLayer: IdiomaticityLayer,
+  collocationRelation: CollocationRelation,
+  constituentTokens: string[],
+  opts: {
+    negativeExamples?: string[];
+    relatedEntries?: string[];
+    crossRegisterVariants?: string[];
+    competingExpressions?: string[];
+    literalMeaning?: string;
+    figurativeMeaning?: string;
+    collocationalRationale?: string;
+  } = {}
+): CollocationEntry {
+  return {
+    id, headword, headwordReading, collocate, fullPhrase,
+    headwordPOS, collocatePOS, pattern, exampleSentences,
+    source: CollocationSource.Hyogen, tags, notes: "", frequency,
+    createdAt: 1700000000000, updatedAt: 1700000000000,
+    register, jlptLevel, boundaryType, strength,
+    idiomaticityLayer, collocationRelation, constituentTokens,
+    ...opts,
   };
 }
 
@@ -314,4 +354,424 @@ export const SEED_DATA: CollocationEntry[] = [
   entry("s218", "意識", "いしき", "が変わる", "意識が変わる", N, V, "N+が+V", ["体験をして意識が変わった。", "社会の意識が変わりつつある。"], 84, ["思考", "変化"]),
   entry("s219", "感謝", "かんしゃ", "を伝える", "感謝を伝える", N, V, "N+を+V", ["言葉で感謝を伝えた。", "行動で感謝を伝える。"], 87, ["感情", "社会"]),
   entry("s220", "礼", "れい", "を言う", "礼を言う", N, V, "N+を+V", ["助けてもらって礼を言った。", "丁寧に礼を言う。"], 83, ["礼儀", "社会"]),
+
+  // ── IntensifierGradient collocations (とても/めっちゃ/かなり etc.) ──
+  // These exemplify the SAME semantic relation (intensifier + stative predicate)
+  // at different register levels and idiomaticity layers.
+
+  entry2("s221", "とても", "とても", "疲れている", "とても疲れている",
+    Adv, V, "Adv+V", ["今日はとても疲れている。", "長旅でとても疲れた。"], 95,
+    ["程度", "状態"], Register.Written, JLPTLevel.N5, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Preferred, CollocationRelation.IntensifierGradient,
+    ["とても", "疲れている"],
+    {
+      crossRegisterVariants: ["s222", "s223", "s224"],
+      collocationalRationale: "とても is the neutral-register degree adverb. Paired with 疲れている (stative progressive), it forms a Preferred collocation: any degree adverb could work grammatically, but とても is the most unmarked choice for written/spoken neutral Japanese.",
+    }
+  ),
+
+  entry2("s222", "めっちゃ", "めっちゃ", "疲れている", "めっちゃ疲れている",
+    Adv, V, "Adv+V", ["めっちゃ疲れてる！", "今日めっちゃ疲れた。"], 80,
+    ["程度", "状態", "口語"], Register.Slang, JLPTLevel.N3, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Preferred, CollocationRelation.RegisterBound,
+    ["めっちゃ", "疲れている"],
+    {
+      crossRegisterVariants: ["s221", "s223", "s224"],
+      collocationalRationale: "めっちゃ is register-BOUND to casual/Kansai-origin youth speech. Though grammatically identical to とても+疲れている, the register constraint is so strong that using めっちゃ in a formal report creates a marked, humorous effect. The collocation layer is Preferred (adverb scales are always Preferred) but the binding is RegisterBound.",
+      negativeExamples: ["×ご報告ですが、めっちゃ疲れています（公式文書では不適）"],
+    }
+  ),
+
+  entry2("s223", "かなり", "かなり", "疲れている", "かなり疲れている",
+    Adv, V, "Adv+V", ["かなり疲れているので早めに帰る。", "試験勉強でかなり疲れた。"], 88,
+    ["程度", "状態"], Register.Written, JLPTLevel.N3, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Preferred, CollocationRelation.IntensifierGradient,
+    ["かなり", "疲れている"],
+    {
+      crossRegisterVariants: ["s221", "s222", "s224"],
+      collocationalRationale: "かなり implies 'considerably/quite' — slightly higher on the intensity scale than とても in some contexts, but both are register-neutral. かなり has a slight preference for negative-prosody predicates (かなり困った, かなり疲れた) vs positive (かなり嬉しい sounds slightly marked).",
+    }
+  ),
+
+  entry2("s224", "非常に", "ひじょうに", "疲れている", "非常に疲れている",
+    Adv, V, "Adv+V", ["非常に疲れているため欠席します。", "非常に疲れた一日だった。"], 75,
+    ["程度", "状態", "改まり"], Register.Formal, JLPTLevel.N2, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Preferred, CollocationRelation.IntensifierGradient,
+    ["非常に", "疲れている"],
+    {
+      crossRegisterVariants: ["s221", "s222", "s223"],
+      collocationalRationale: "非常に is formal/written register. In casual speech it sounds stiff; in formal writing it is neutral. This register binding is a Preferred constraint (not Fixed), because 非常に can appear in spoken Japanese for emphasis, but it marks the speaker as formal.",
+    }
+  ),
+
+  // かなりの量 vs 量が多い — syntactic preference + nominal chunk
+  entry2("s225", "かなりの量", "かなりのりょう", "", "かなりの量",
+    Adv, N, "Adv+の+N", ["かなりの量の資料を読んだ。", "かなりの量が必要だ。"], 85,
+    ["量", "程度"], Register.Written, JLPTLevel.N3, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.NominalChunk,
+    ["かなり", "の", "量"],
+    {
+      competingExpressions: ["s226"],
+      collocationalRationale: "かなりの量 is a tight pre-nominal chunk. かなり+の scopes directly over 量 as a compact modifier NP, making it a true Collocation (Layer 3). This is STRONGER than 量が多い because: (1) かなり has a statistical preference for measurable-quantity nouns, (2) the nominal-chunk pattern resists modification — you cannot insert an adjective: *かなりの大きな量 is odd.",
+    }
+  ),
+
+  entry2("s226", "量", "りょう", "が多い", "量が多い",
+    N, Adv, "N+が+Adj-i", ["この資料は量が多い。", "宿題の量が多くて大変だ。"], 90,
+    ["量", "程度"], Register.Spoken, JLPTLevel.N5, BoundaryType.Phrase,
+    CollocationStrength.Moderate, IdiomaticityLayer.Free, CollocationRelation.SemanticPreference,
+    ["量", "が", "多い"],
+    {
+      competingExpressions: ["s225"],
+      collocationalRationale: "量が多い is a Free combination (Layer 1/2): 多い is semantically general and combines with almost any countable noun as a predicative adjective. It is NOT a strong collocation — you can say 量が少ない, 量が適切だ, etc. Compare to かなりの量 where the adverb-noun bond is much tighter.",
+    }
+  ),
+
+  // SemanticPreference: 激しい雨 vs 強い雨
+  entry2("s227", "激しい", "はげしい", "雨", "激しい雨",
+    Adv, N, "Adj-i+N", ["激しい雨が降り続けた。", "激しい雨の中を走った。"], 92,
+    ["天気", "自然"], Register.Written, JLPTLevel.N3, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.SemanticPreference,
+    ["激しい", "雨"],
+    {
+      competingExpressions: ["s228"],
+      collocationalRationale: "激しい encodes 'violent/uncontrolled intensity' — it matches 雨's quality of being relentless and fierce. 強い encodes 'raw power/strength' which fits physical objects better. Japanese speakers strongly prefer 激しい雨 because rain RAGES rather than being STRONG. 激しい also collocates with 競争・戦闘・変化 (intense competition, battle, change) — things that rage.",
+      negativeExamples: ["△強い雨（不自然ではないが激しい雨の方が自然）"],
+    }
+  ),
+
+  entry2("s228", "強い", "つよい", "雨", "強い雨",
+    Adv, N, "Adj-i+N", ["強い雨が降った。", "強い雨に傘が役に立たない。"], 55,
+    ["天気", "自然"], Register.Spoken, JLPTLevel.N5, BoundaryType.Phrase,
+    CollocationStrength.Weak, IdiomaticityLayer.Free, CollocationRelation.SemanticPreference,
+    ["強い", "雨"],
+    {
+      competingExpressions: ["s227"],
+      collocationalRationale: "強い雨 is grammatically correct but DISPREFERRED. 強い's semantic core is 'strength/power' and is better suited to animate or physical-force nouns (強い選手, 強い風). For rain, 激しい is the conventional collocate. Using 強い雨 sounds like a translation from another language.",
+    }
+  ),
+
+  // BodyIdiom entries
+  entry2("s229", "腰", "こし", "が低い", "腰が低い",
+    N, Adv, "N+が+Adj-i", ["彼はとても腰が低い人だ。", "腰が低い態度で接する。"], 82,
+    ["性格", "礼儀"], Register.Spoken, JLPTLevel.N2, BoundaryType.Phrase,
+    CollocationStrength.Fixed, IdiomaticityLayer.SemiIdiom, CollocationRelation.BodyIdiom,
+    ["腰", "が", "低い"],
+    {
+      literalMeaning: "One's waist is low (physically bowing)",
+      figurativeMeaning: "Humble, modest, deferential in attitude",
+      collocationalRationale: "腰が低い is a SemiIdiom: the body part (腰) retains a physical connection (bowing lowers the waist) but the meaning extends to personality/attitude. You cannot say 頭が低い for the same meaning — only 腰 works for humility in this frame.",
+    }
+  ),
+
+  entry2("s230", "鼻", "はな", "が高い", "鼻が高い",
+    N, Adv, "N+が+Adj-i", ["息子が賞をもらって鼻が高い。", "鼻が高くなる出来事があった。"], 78,
+    ["感情", "身体"], Register.Spoken, JLPTLevel.N2, BoundaryType.Phrase,
+    CollocationStrength.Fixed, IdiomaticityLayer.SemiIdiom, CollocationRelation.BodyIdiom,
+    ["鼻", "が", "高い"],
+    {
+      literalMeaning: "One's nose is high",
+      figurativeMeaning: "Feeling proud about someone else's achievement",
+      collocationalRationale: "鼻が高い expresses pride ABOUT another person's success (not one's own arrogance — that would be 自慢する). The nose-pride metaphor is specific to Japanese; no other body part substitutes here.",
+    }
+  ),
+
+  entry2("s231", "足", "あし", "を引っ張る", "足を引っ張る",
+    N, V, "N+を+V", ["チームの足を引っ張らないようにする。", "彼の行動がプロジェクトの足を引っ張った。"], 88,
+    ["社会", "妨害"], Register.Spoken, JLPTLevel.N2, BoundaryType.Phrase,
+    CollocationStrength.Fixed, IdiomaticityLayer.SemiIdiom, CollocationRelation.BodyIdiom,
+    ["足", "を", "引っ張る"],
+    {
+      literalMeaning: "Pull someone's leg/foot",
+      figurativeMeaning: "Hold someone back, be a drag on someone's progress",
+      collocationalRationale: "SemiIdiom: the physical image of pulling a foot back is directly mapped to the metaphor of impeding progress. The object must be 足 (not 手 or other body part). The idiom is fully conventionalized but the physical motivation is still transparent.",
+    }
+  ),
+
+  entry2("s232", "顔", "かお", "を出す", "顔を出す",
+    N, V, "N+を+V", ["たまには顔を出してよ。", "会議に顔を出した。"], 86,
+    ["社会", "出席"], Register.Spoken, JLPTLevel.N2, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.SemiIdiom, CollocationRelation.BodyIdiom,
+    ["顔", "を", "出す"],
+    {
+      literalMeaning: "Put one's face out / show one's face",
+      figurativeMeaning: "Make a brief appearance, attend briefly",
+      collocationalRationale: "顔を出す is a SemiIdiom where the face-showing creates metonymically the concept of attendance. Compare 顔を見せる (show one's face — more literal) vs 顔を出す (make an appearance — more idiomatic, implies brief or occasional attendance).",
+    }
+  ),
+
+  // AdverbialColoring: じっくり vs ゆっくり
+  entry2("s233", "じっくり", "じっくり", "考える", "じっくり考える",
+    Adv, V, "Adv+V", ["じっくり考えてから決める。", "じっくり考える時間が必要だ。"], 88,
+    ["思考", "慎重"], Register.Spoken, JLPTLevel.N3, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.AdverbialColoring,
+    ["じっくり", "考える"],
+    {
+      competingExpressions: ["s234"],
+      collocationalRationale: "じっくり encodes qualitative DEPTH and thoroughness — it implies taking as much time as needed to think something through carefully. It is almost exclusively used with deliberative cognitive verbs (考える, 検討する, 選ぶ, 話し合う). じっくり考える is a strong Collocation (Layer 3) because じっくり's distribution is restricted to this semantic class.",
+    }
+  ),
+
+  entry2("s234", "ゆっくり", "ゆっくり", "考える", "ゆっくり考える",
+    Adv, V, "Adv+V", ["ゆっくり考えていいよ。", "ゆっくり考えた末に決めた。"], 82,
+    ["思考", "時間"], Register.Spoken, JLPTLevel.N5, BoundaryType.Phrase,
+    CollocationStrength.Moderate, IdiomaticityLayer.Preferred, CollocationRelation.AdverbialColoring,
+    ["ゆっくり", "考える"],
+    {
+      competingExpressions: ["s233"],
+      collocationalRationale: "ゆっくり encodes PACE (slow, unhurried tempo) rather than depth. ゆっくり考える means 'think without rushing' — tempo focus. じっくり考える means 'think carefully/deeply' — quality focus. Both are grammatical and natural, but they foreground different aspects of the thinking process.",
+    }
+  ),
+
+  // VerbComplement entries
+  entry2("s235", "決断", "けつだん", "を下す", "決断を下す",
+    N, V, "N+を+V", ["重大な決断を下した。", "経営者として決断を下す責任がある。"], 84,
+    ["思考", "行動", "改まり"], Register.Written, JLPTLevel.N2, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.VerbComplement,
+    ["決断", "を", "下す"],
+    {
+      collocationalRationale: "下す is a Collocation verb that requires an 'authority' noun in object position: 判決を下す, 命令を下す, 決断を下す. The verb implies top-down authority or finality. You cannot say *決断を出す or *決断を作る — these violate the verb's selectional requirements.",
+      negativeExamples: ["×決断を出す", "×決断を作る"],
+    }
+  ),
+
+  entry2("s236", "判断", "はんだん", "を下す", "判断を下す",
+    N, V, "N+を+V", ["専門家が判断を下した。", "冷静に判断を下す。"], 82,
+    ["思考", "行動", "改まり"], Register.Written, JLPTLevel.N2, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.VerbComplement,
+    ["判断", "を", "下す"],
+    {
+      relatedEntries: ["s235"],
+      collocationalRationale: "Same VerbComplement pattern as 決断を下す. 判断 (judgment/assessment) also requires 下す because judgment implies authority and finality. These two entries are semantically related cluster members.",
+    }
+  ),
+
+  // NominalChunk: な形容詞+名詞
+  entry2("s237", "重大な", "じゅうだいな", "決断", "重大な決断",
+    Adv, N, "na-Adj+N", ["重大な決断を迫られた。", "これは重大な決断だ。"], 86,
+    ["思考", "重要性"], Register.Written, JLPTLevel.N2, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.NominalChunk,
+    ["重大な", "決断"],
+    {
+      collocationalRationale: "重大な strongly prefers nouns of high-stakes decision, consequence, or incident (決断, 問題, ミス, 発表). It encodes 'grave/serious' with implications of irreversibility or high stakes. Compare 大切な決断 (important decision — affectively positive) vs 重大な決断 (grave decision — serious, weighty).",
+    }
+  ),
+
+  entry2("s238", "深刻な", "しんこくな", "問題", "深刻な問題",
+    Adv, N, "na-Adj+N", ["深刻な問題が山積みだ。", "深刻な問題として受け止める。"], 89,
+    ["社会", "重要性"], Register.Written, JLPTLevel.N2, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.NominalChunk,
+    ["深刻な", "問題"],
+    {
+      collocationalRationale: "深刻な collocates almost exclusively with nouns representing negative situations (問題, 状況, 不足, 打撃). It encodes 'grave/serious in a negative way' — stronger than 重大な (which can be positive-neutral). 深刻な問題 is a tight Collocation because 深刻 has strong negative semantic prosody.",
+    }
+  ),
+
+  entry2("s239", "貴重な", "きちょうな", "経験", "貴重な経験",
+    Adv, N, "na-Adj+N", ["貴重な経験を積んだ。", "貴重な経験として活かす。"], 85,
+    ["成長", "価値"], Register.Written, JLPTLevel.N2, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.NominalChunk,
+    ["貴重な", "経験"],
+    {
+      collocationalRationale: "貴重な (precious/valuable) has positive semantic prosody and prefers nouns representing rare or enriching things: 経験, 資料, 機会, 時間. 貴重な経験 is a set chunk in formal Japanese for 'a valuable learning experience'.",
+    }
+  ),
+
+  // FullIdiom entries
+  entry2("s240", "猫の手も", "ねこのてもかりたい", "借りたい", "猫の手も借りたい",
+    N, V, "Idiom", ["繁忙期で猫の手も借りたいほど忙しい。", "猫の手も借りたいくらい仕事が多い。"], 75,
+    ["慣用句", "忙しさ"], Register.Spoken, JLPTLevel.N1, BoundaryType.Idiom,
+    CollocationStrength.Fixed, IdiomaticityLayer.FullIdiom, CollocationRelation.FixedFormula,
+    ["猫", "の", "手", "も", "借りたい"],
+    {
+      literalMeaning: "I want to borrow even a cat's paw",
+      figurativeMeaning: "So desperately busy/short-handed that any help is welcome",
+      collocationalRationale: "FullIdiom: no element can be substituted (×犬の手も借りたい is unnatural). The meaning 'desperately short-handed' is entirely non-compositional. Often used with ほど: 猫の手も借りたいほど忙しい.",
+    }
+  ),
+
+  entry2("s241", "石の上にも", "いしのうえにも", "三年", "石の上にも三年",
+    N, N, "Proverb", ["石の上にも三年というから、もう少し頑張ろう。", "石の上にも三年で、やっと成果が出た。"], 70,
+    ["慣用句", "忍耐"], Register.Written, JLPTLevel.N1, BoundaryType.Idiom,
+    CollocationStrength.Fixed, IdiomaticityLayer.FullIdiom, CollocationRelation.FixedFormula,
+    ["石", "の", "上", "にも", "三年"],
+    {
+      literalMeaning: "Even sitting on a cold stone for three years (it will warm up)",
+      figurativeMeaning: "Perseverance eventually pays off",
+      collocationalRationale: "Fixed proverb. The 三年 (three years) is non-substitutable — the number is conventionalized. Used to encourage persistence in difficult endeavors.",
+    }
+  ),
+
+  // DiscourseConnector entries
+  entry2("s242", "それにしても", "それにしても", "", "それにしても",
+    Expr, Expr, "Discourse", ["それにしても、よく頑張ったね。", "それにしても、なぜこんなことになったのか。"], 82,
+    ["談話", "接続"], Register.Spoken, JLPTLevel.N2, BoundaryType.Clause,
+    CollocationStrength.Fixed, IdiomaticityLayer.Collocation, CollocationRelation.DiscourseConnector,
+    ["それ", "にしても"],
+    {
+      collocationalRationale: "それにしても is a DiscourseConnector that signals a shift to an evaluative comment on what was just said, often with a sense of mild surprise or reflection. Its collocational strength comes from its discourse-structural role, not from the meaning of its parts.",
+    }
+  ),
+
+  entry2("s243", "だからこそ", "だからこそ", "", "だからこそ",
+    Expr, Expr, "Discourse", ["だからこそ努力が必要だ。", "だからこそ、諦めないでほしい。"], 85,
+    ["談話", "強調"], Register.Written, JLPTLevel.N2, BoundaryType.Clause,
+    CollocationStrength.Fixed, IdiomaticityLayer.Collocation, CollocationRelation.DiscourseConnector,
+    ["だから", "こそ"],
+    {
+      collocationalRationale: "だからこそ = だから (therefore) + こそ (emphatic focus particle). The こそ attaches to だから to create 'precisely BECAUSE of that'. It is a strong Collocation because こそ only attaches to a closed set of elements in discourse-initial position. The combination is semi-grammaticalized.",
+    }
+  ),
+
+  // AspectualPattern entries
+  entry2("s244", "ようやく", "ようやく", "〜た", "ようやく完成した",
+    Adv, V, "Adv+V-past", ["ようやく完成した。", "ようやく解決できた。"], 83,
+    ["達成", "安堵"], Register.Written, JLPTLevel.N3, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.AspectualPattern,
+    ["ようやく", "完成", "した"],
+    {
+      collocationalRationale: "ようやく specifically marks 'finally achieving something after difficulty/waiting' — it has strong negative-positive semantic prosody (difficult past → relief at completion). It co-occurs almost exclusively with completive past tense or potential forms. Compare ついに (finally — more triumphant) vs ようやく (finally — more relieved).",
+      crossRegisterVariants: ["s245"],
+    }
+  ),
+
+  entry2("s245", "ついに", "ついに", "〜た", "ついに実現した",
+    Adv, V, "Adv+V-past", ["ついに夢が実現した。", "ついに成功を収めた。"], 85,
+    ["達成", "感動"], Register.Written, JLPTLevel.N3, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.AspectualPattern,
+    ["ついに", "実現", "した"],
+    {
+      collocationalRationale: "ついに marks 'finally' with triumphant or emotionally significant completion. It often appears with long-awaited positive outcomes. The difference from ようやく: ついに focuses on the significance/inevitability of the endpoint; ようやく focuses on the difficulty of the waiting period.",
+      crossRegisterVariants: ["s244"],
+    }
+  ),
+
+  // CulturalFixed entries
+  entry2("s246", "お世話に", "おせわに", "なっております", "お世話になっております",
+    Expr, V, "Fixed-Formula", ["いつもお世話になっております。", "大変お世話になっております。"], 95,
+    ["敬語", "挨拶", "ビジネス"], Register.Formal, JLPTLevel.N2, BoundaryType.Phrase,
+    CollocationStrength.Fixed, IdiomaticityLayer.FullIdiom, CollocationRelation.CulturalFixed,
+    ["お世話", "に", "なって", "おります"],
+    {
+      literalMeaning: "I am being taken care of / I have been in your care",
+      figurativeMeaning: "Standard business opening greeting acknowledging the ongoing relationship",
+      collocationalRationale: "Fully conventionalized Japanese business formula. Completely non-compositional in actual use — speakers do not analyze the meaning. Using it signals social competence in formal Japanese business contexts. The verb なっています can be in various forms (なっております, なっています) but the core phrase is fixed.",
+    }
+  ),
+
+  entry2("s247", "よろしく", "よろしく", "お願いします", "よろしくお願いします",
+    Adv, V, "Fixed-Formula", ["どうぞよろしくお願いします。", "引き続きよろしくお願いいたします。"], 98,
+    ["敬語", "挨拶", "依頼"], Register.Formal, JLPTLevel.N5, BoundaryType.Phrase,
+    CollocationStrength.Fixed, IdiomaticityLayer.FullIdiom, CollocationRelation.CulturalFixed,
+    ["よろしく", "お願いします"],
+    {
+      literalMeaning: "Please treat me favorably / Please do as appropriate",
+      figurativeMeaning: "Multi-functional social formula: farewell, request, introduction, sign-off",
+      collocationalRationale: "よろしくお願いします is one of the most culturally embedded fixed formulas in Japanese. The meaning varies entirely by context (introduction, farewell, email sign-off, request). It is a FullIdiom with CulturalFixed relation — its collocational force comes from social ritual, not semantic composition.",
+    }
+  ),
+
+  // More na-Adj + N collocations
+  entry2("s248", "穏やかな", "おだやかな", "性格", "穏やかな性格",
+    Adv, N, "na-Adj+N", ["穏やかな性格の人と話すと落ち着く。", "彼女は穏やかな性格で慕われている。"], 83,
+    ["性格"], Register.Written, JLPTLevel.N3, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.NominalChunk,
+    ["穏やかな", "性格"],
+    { collocationalRationale: "穏やかな (calm, gentle) has strong preference for character/personality nouns (性格, 人, 口調). It encodes serenity rather than strength. Compare 優しい性格 (kind personality) which is more emotional, and 穏やかな性格 which emphasizes calm stability." }
+  ),
+
+  entry2("s249", "膨大な", "ぼうだいな", "量", "膨大な量",
+    Adv, N, "na-Adj+N", ["膨大な量のデータを処理する。", "膨大な量の情報が押し寄せてきた。"], 85,
+    ["量", "規模"], Register.Written, JLPTLevel.N1, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.NominalChunk,
+    ["膨大な", "量"],
+    {
+      competingExpressions: ["s225"],
+      collocationalRationale: "膨大な (enormous, vast) has strong preference for abstract measurable nouns (量, 数, データ, 情報). Unlike かなりの量 (considerable amount — mid-scale), 膨大な量 implies an overwhelming, almost unmanageable quantity. The adjective encodes qualitative vastness beyond just degree.",
+    }
+  ),
+
+  entry2("s250", "適切な", "てきせつな", "対応", "適切な対応",
+    Adv, N, "na-Adj+N", ["適切な対応をとる。", "状況に応じた適切な対応が求められる。"], 87,
+    ["行動", "対処"], Register.Written, JLPTLevel.N2, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.NominalChunk,
+    ["適切な", "対応"],
+    { collocationalRationale: "適切な (appropriate/fitting) strongly collocates with procedural/response nouns (対応, 処置, 措置, 方法). The implication is situational fit — 適切 assesses fit to context, not absolute quality." }
+  ),
+
+  // Compound verbs
+  entry2("s251", "読み", "よみ", "取る", "読み取る",
+    V, V, "V+V-compound", ["文章の意図を読み取る。", "表情から気持ちを読み取った。"], 86,
+    ["認知", "言語"], Register.Written, JLPTLevel.N3, BoundaryType.Compound,
+    CollocationStrength.Strong, IdiomaticityLayer.SemiIdiom, CollocationRelation.VerbComplement,
+    ["読み", "取る"],
+    {
+      literalMeaning: "Read and take/extract",
+      figurativeMeaning: "Comprehend the intent/meaning; read between the lines",
+      collocationalRationale: "読み取る is a compound verb where 取る adds an 'extraction/acquisition' nuance to 読む. The compound is a SemiIdiom — the metaphor of 'extracting meaning from text/expression' is transparent but conventionalized. 意図を読み取る (read the intent) is a very strong collocation within this compound.",
+    }
+  ),
+
+  entry2("s252", "書き", "かき", "上げる", "書き上げる",
+    V, V, "V+V-compound", ["レポートをやっと書き上げた。", "小説を書き上げるのに三年かかった。"], 83,
+    ["創作", "完成"], Register.Written, JLPTLevel.N3, BoundaryType.Compound,
+    CollocationStrength.Strong, IdiomaticityLayer.SemiIdiom, CollocationRelation.AspectualPattern,
+    ["書き", "上げる"],
+    {
+      literalMeaning: "Write up / complete writing",
+      collocationalRationale: "書き上げる encodes COMPLETIVE aspect — 上げる adds 'completion, raising to a finished state'. The compound is a SemiIdiom because 上げる's spatial meaning (up) has been bleached to completive aspect. 書き終える (finish writing) is a freer alternative without the completive-achievement nuance.",
+    }
+  ),
+
+  // Onomatopoeia collocations
+  entry2("s253", "ぐっすり", "ぐっすり", "眠る", "ぐっすり眠る",
+    Adv, V, "Adv+V", ["ぐっすり眠ることができた。", "ぐっすり眠れる夜が欲しい。"], 88,
+    ["睡眠", "擬態語"], Register.Spoken, JLPTLevel.N4, BoundaryType.Phrase,
+    CollocationStrength.Fixed, IdiomaticityLayer.Collocation, CollocationRelation.AdverbialColoring,
+    ["ぐっすり", "眠る"],
+    {
+      collocationalRationale: "ぐっすり is an onomatopoeic adverb encoding 'deeply and soundly (asleep)'. Its distribution is RESTRICTED to sleep verbs (眠る, 寝る, 寝付く). You cannot say *ぐっすり休む or *ぐっすり座る. This restriction makes it a strong Collocation — the adverb and verb have mutual selectional preference.",
+    }
+  ),
+
+  entry2("s254", "きっぱり", "きっぱり", "断る", "きっぱり断る",
+    Adv, V, "Adv+V", ["きっぱり断った。", "きっぱりとした態度で断る。"], 85,
+    ["拒絶", "決断", "擬態語"], Register.Spoken, JLPTLevel.N3, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.AdverbialColoring,
+    ["きっぱり", "断る"],
+    {
+      collocationalRationale: "きっぱり encodes 'decisively, clearly, without hesitation'. It selects for verbs of decisive action or refusal (断る, 言う, 決める). きっぱり断る is a tight Collocation because the adverb adds a specific nuance of clean refusal with no ambiguity — softer adverbs would change the meaning completely.",
+    }
+  ),
+
+  entry2("s255", "のんびり", "のんびり", "過ごす", "のんびり過ごす",
+    Adv, V, "Adv+V", ["休日はのんびり過ごした。", "のんびり過ごせる場所を探している。"], 90,
+    ["生活", "リラックス", "擬態語"], Register.Spoken, JLPTLevel.N4, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.AdverbialColoring,
+    ["のんびり", "過ごす"],
+    {
+      collocationalRationale: "のんびり encodes 'leisurely, without pressure or rush'. It collocates with time-spending verbs (過ごす, 暮らす, 旅する). のんびり過ごす is a strong Collocation because the adverb specifically frames the time-spending as unhurried and relaxed — it profiles the MANNER of spending time, which 過ごす alone does not specify.",
+    }
+  ),
+
+  entry2("s256", "すっかり", "すっかり", "忘れる", "すっかり忘れる",
+    Adv, V, "Adv+V", ["すっかり忘れていた。", "彼のことはすっかり忘れた。"], 86,
+    ["記憶", "完全"], Register.Spoken, JLPTLevel.N3, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.AdverbialColoring,
+    ["すっかり", "忘れる"],
+    {
+      collocationalRationale: "すっかり encodes 'completely, totally, without remainder'. It strongly prefers change-of-state verbs (忘れる, 変わる, なくなる) and especially verbs of COMPLETE forgetting or transformation. すっかり忘れる means 'have completely forgotten' — the completeness is the key nuance.",
+    }
+  ),
+
+  entry2("s257", "じっくり", "じっくり", "選ぶ", "じっくり選ぶ",
+    Adv, V, "Adv+V", ["じっくり選んで買う。", "じっくり選ぶ時間を作る。"], 80,
+    ["選択", "慎重"], Register.Spoken, JLPTLevel.N3, BoundaryType.Phrase,
+    CollocationStrength.Strong, IdiomaticityLayer.Collocation, CollocationRelation.AdverbialColoring,
+    ["じっくり", "選ぶ"],
+    {
+      relatedEntries: ["s233"],
+      collocationalRationale: "じっくり with 選ぶ forms the same AdverbialColoring pattern as じっくり考える — deliberative cognitive/evaluative verbs. The adverb encodes taking time for quality deliberation.",
+    }
+  ),
 ];
