@@ -92,3 +92,69 @@ export interface StoreStats {
   byPOS: Record<string, number>;
   bySource: Record<string, number>;
 }
+
+// ── Discourse types (shared with jp-sentence-surfer) ──────────────────────────
+
+export type DiscourseCategory =
+  | 'topic-initiation'
+  | 'reasoning'
+  | 'modality'
+  | 'connective'
+  | 'confirmation'
+  | 'rephrasing'
+  | 'filler'
+  | 'quotation';
+
+export type DiscourseGranularity =
+  | 'morpheme'
+  | 'bunsetsu'
+  | 'clause'
+  | 'utterance'
+  | 'turn'
+  | 'exchange'
+  | 'topic-segment';
+
+export interface DiscourseMarker {
+  id: string;
+  surface: string;
+  category: DiscourseCategory;
+  position: 'initial' | 'medial' | 'final' | 'any';
+  charStart: number;
+  charEnd: number;
+}
+
+export interface DiscourseContext {
+  chunkText: string;
+  cleanText: string;
+  granularity: DiscourseGranularity;
+  markers: DiscourseMarker[];
+  relatedCollocations: string[];
+  source: {
+    file: string;
+    lineStart: number;
+    lineEnd: number;
+    ytTimestamp?: string;
+    ytUrl?: string;
+  };
+  capturedAt: string;
+  contextBefore?: string;
+  contextAfter?: string;
+  patternTags: string[];
+}
+
+export interface SurferCollocationEntry {
+  expression: string;
+  reading?: string;
+  meaning?: string;
+  exampleSentence?: string;
+  exampleSource?: string;
+  discourseContexts: DiscourseContext[];
+  tags: string[];
+}
+
+export interface CollocationMatch {
+  collocationId: string;
+  expression: string;
+  matchStart: number;
+  matchEnd: number;
+}
