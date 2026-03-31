@@ -1,15 +1,28 @@
-import type { DiscourseBit, DiscourseEdge, DiscourseGraph, TranscriptChunk } from "./discourse-types.ts";
-import { RelationshipRegistry } from "./discourse-types.ts";
+import type {
+  DiscourseBit,
+  DiscourseEdge,
+  DiscourseGraph,
+  DiscourseRelationshipType,
+  TranscriptChunk,
+  PatternRule,
+  PatternMatch,
+  AnalysisContext,
+  DiscourseCascade,
+} from "./discourse-types.ts";
+import { RelationshipRegistry, PatternRegistry } from "./discourse-types.ts";
+import { buildSeedRegistry } from "./seed-patterns.ts";
 
 let _bitCounter = 0;
 let _edgeCounter = 0;
 let _graphCounter = 0;
 let _chunkCounter = 0;
+let _cascadeCounter = 0;
 
 function bitId(): string { return `bit_${++_bitCounter}_${Date.now()}`; }
 function edgeId(): string { return `edge_${++_edgeCounter}_${Date.now()}`; }
 function graphId(): string { return `graph_${++_graphCounter}_${Date.now()}`; }
 function chunkId(): string { return `chunk_${++_chunkCounter}_${Date.now()}`; }
+function cascadeId(): string { return `cascade_${++_cascadeCounter}_${Date.now()}`; }
 
 /**
  * Split raw annotated text on `||` markers and return an array of non-empty
@@ -30,156 +43,21 @@ function splitBits(raw: string): Array<{ text: string; start: number; end: numbe
 
 /** Very lightweight Japanese morpheme splitter (no external lib). */
 function tokenize(text: string): string[] {
-  // Split on common boundary characters while keeping tokens
   return text
     .split(/(?<=[はがをにでもとのへからまでよりか。、！？…])|(?=[はがをにでもとのへからまでよりか。、！？…])/)
     .map(t => t.trim())
     .filter(t => t.length > 0);
 }
 
-// ─── 13 relationship detectors ────────────────────────────────────────────────
-
-interface DetectorResult {
-  type: string;
-  confidence: number;
-  evidence: string;
-  features: Record<string, string | number | boolean | string[]>;
-}
-
-type Detector = (bit: string, prev: string | null, next: string | null, allBits: string[]) => DetectorResult | null;
-
-const DETECTORS: Record<string, Detector> = {
-  /** 1. Hedge/Stance Softening — "ような感じ", "みたいな", "っぽい", "ようだ" */
-  "hedge-stance-softening": (bit) => {
-    if (/ような感じ|みたいな|っぽい|ようだ|ように|らしい|くらい|ぐらい/.test(bit)) {
-      return { type: "hedge-stance-softening", confidence: 0.9, evidence: bit, features: { marker: "ような/みたいな/らしい" } };
-    }
-    return null;
-  },
-
-  /** 2. Split-Morpheme Co-construction — verb stem split across bits */
-  "split-morpheme-co-construction": (bit, prev) => {
-    // Detect verb-stem (no ending) + continuation in next
-    if (prev && /[んいきしちにびみり]$/.test(prev.trim()) && /^[でてでても]/.test(bit.trim())) {
-      return { type: "split-morpheme-co-construction", confidence: 0.8, evidence: `${prev}||${bit}`, features: { splitType: "verb-stem" } };
-    }
-    if (/[いきしちにびみり]$/.test(bit.trim())) {
-      return { type: "split-morpheme-co-construction", confidence: 0.6, evidence: bit, features: { splitType: "potential-stem" } };
-    }
-    return null;
-  },
-
-  /** 3. Perspective Framing — "X的には", "的には", "的に" */
-  "perspective-framing": (bit) => {
-    if (/的には|的に|から見ると|としては|にとって|にとっては/.test(bit)) {
-      return { type: "perspective-framing", confidence: 0.85, evidence: bit, features: { frameType: "perspective" } };
-    }
-    return null;
-  },
-
-  /** 4. Interactional Pivot — single short realisation marker あ, え, へえ, うん, そう */
-  "interactional-pivot": (bit) => {
-    const trimmed = bit.trim().replace(/[。、！？…]/g, "");
-    if (/^(あ|え|えー|へえ|うん|そう|なるほど|ふーん|ほう|おー)$/.test(trimmed)) {
-      return { type: "interactional-pivot", confidence: 0.95, evidence: bit, features: { marker: trimmed } };
-    }
-    return null;
-  },
-
-  /** 5. Epistemic-Continuation Blend — んでると, ているのに, ながら + certainty */
-  "epistemic-continuation-blend": (bit) => {
-    if (/んでると|てると確かに|ながら確かに|ているのに|てるのに確かに/.test(bit)) {
-      return { type: "epistemic-continuation-blend", confidence: 0.85, evidence: bit, features: { blendType: "progressive-certainty" } };
-    }
-    return null;
-  },
-
-  /** 6. Discontinuous Parallel — があったり ... たりしてて (たり...たり pattern) */
-  "discontinuous-parallel": (bit, _prev, _next, allBits) => {
-    if (/があったり|[でし]たり/.test(bit)) {
-      const hasPartner = allBits.some(b => b !== bit && /[でし]たり/.test(b));
-      if (hasPartner) {
-        return { type: "discontinuous-parallel", confidence: 0.9, evidence: bit, features: { pattern: "たり-たり" } };
-      }
-    }
-    return null;
-  },
-
-  /** 7. Causal-Concessive Cascade — から...んだけど, から...が, ので...が */
-  "causal-concessive-cascade": (bit, _prev, next) => {
-    if (/から$|ので$/.test(bit.trim()) && next && /けど|が$|のに$/.test(next.trim())) {
-      return { type: "causal-concessive-cascade", confidence: 0.85, evidence: `${bit} → ${next}`, features: { causalMarker: "から/ので", concedeMarker: "けど/が" } as Record<string, string | number | boolean | string[]> };
-    }
-    if (/んだけど|なんだけど|けれど/.test(bit)) {
-      return { type: "causal-concessive-cascade", confidence: 0.75, evidence: bit, features: { causalMarker: "けど" } as Record<string, string | number | boolean | string[]> };
-    }
-    return null;
-  },
-
-  /** 8. Assertion-Deflation — sequential modifiers weakening: んじゃない → ? → みたいな */
-  "assertion-deflation": (bit, prev) => {
-    if (/んじゃない|んじゃないか|でしょ/.test(bit)) {
-      return { type: "assertion-deflation", confidence: 0.8, evidence: bit, features: { deflationStage: "initial" } };
-    }
-    if (prev && /んじゃない/.test(prev) && /\?|みたいな|ような/.test(bit)) {
-      return { type: "assertion-deflation", confidence: 0.9, evidence: `${prev}→${bit}`, features: { deflationStage: "progressive" } };
-    }
-    return null;
-  },
-
-  /** 9. Connector Compounding — ま、だからそれで言うと, そういえば, ところで */
-  "connector-compounding": (bit) => {
-    if (/^(ま、?だから|まあ、?だから|まあそれで|だからそれで|ところで|そういえば|それで言うと|ていうか、?つまり)/.test(bit.trim())) {
-      return { type: "connector-compounding", confidence: 0.9, evidence: bit, features: { connectorType: "stacked-filler" } };
-    }
-    return null;
-  },
-
-  /** 10. Fuzzy Reference Chain — X + っぽいものとか, あたりの, その辺の */
-  "fuzzy-reference-chain": (bit) => {
-    if (/っぽいものとか|その辺の|あたりの|的なもの|みたいなもの|そういった/.test(bit)) {
-      return { type: "fuzzy-reference-chain", confidence: 0.85, evidence: bit, features: { fuzzyMarker: "っぽい/その辺/あたり" } };
-    }
-    return null;
-  },
-
-  /** 11. Extended Reasoning → Stance Cap — わけだ, わけだけど, わけで */
-  "extended-reasoning-stance-cap": (bit) => {
-    if (/わけだ|わけだけど|わけで|わけです|わけじゃない/.test(bit)) {
-      return { type: "extended-reasoning-stance-cap", confidence: 0.9, evidence: bit, features: { stanceCap: "わけ" } };
-    }
-    return null;
-  },
-
-  /** 12. Epistemic Speculation Cascade — きっと...のかもしれない, たぶん...かも */
-  "epistemic-speculation-cascade": (bit, _prev, _next, allBits) => {
-    if (/^きっと|^たぶん|^もしかして/.test(bit.trim())) {
-      const hasClose = allBits.some(b => /のかもしれない|かもしれない|かも/.test(b));
-      return {
-        type: "epistemic-speculation-cascade",
-        confidence: hasClose ? 0.9 : 0.65,
-        evidence: bit,
-        features: { speculationAnchor: bit.trim(), hasClosure: hasClose } as Record<string, string | number | boolean | string[]>,
-      };
-    }
-    if (/のかもしれない|かもしれない$/.test(bit.trim())) {
-      return { type: "epistemic-speculation-cascade", confidence: 0.85, evidence: bit, features: { speculationClose: true } as Record<string, string | number | boolean | string[]> };
-    }
-    return null;
-  },
-
-  /** 13. Discourse Fade/Trail-off — == marker or sentence-ending …, trail particles */
-  "discourse-fade-trail-off": (bit) => {
-    if (/==|…$|…。$|ね。$|よね。$|かな。$|だけど。$/.test(bit.trim())) {
-      return { type: "discourse-fade-trail-off", confidence: 0.95, evidence: bit, features: { fadeMarker: "==/…/ね" } };
-    }
-    return null;
-  },
-};
-
 // ─── Main analyzer class ───────────────────────────────────────────────────────
 
 export class DiscourseAnalyzer {
+  private registry: PatternRegistry;
+
+  constructor(registry?: PatternRegistry) {
+    this.registry = registry ?? buildSeedRegistry();
+  }
+
   /**
    * Parse a raw annotated string (with || delimiters) into a DiscourseGraph.
    * Optionally pass a timestamp string (e.g. "[08:15]").
@@ -188,26 +66,47 @@ export class DiscourseAnalyzer {
     const segments = splitBits(raw);
     const texts = segments.map(s => s.text);
 
+    // First pass: build stub bits so detectors have a full bit array
+    const stubBits: DiscourseBit[] = segments.map((seg, i) => ({
+      id: `stub_${i}`,
+      text: seg.text,
+      startOffset: seg.start,
+      endOffset: seg.end,
+      timestamp,
+      bitType: "unknown" as const,
+      morphemes: [],
+      features: {},
+    }));
+
+    const context: AnalysisContext = {
+      allBits: stubBits,
+      allTexts: texts,
+      graphSoFar: { bits: stubBits, edges: [] },
+    };
+
+    // Second pass: run detectors, build real bits
     const bits: DiscourseBit[] = segments.map((seg, i) => {
-      const detected = this.detectBitType(seg.text, texts[i - 1] ?? null, texts[i + 1] ?? null, texts);
+      const best = this.runDetectorsOnContext(stubBits, i, context);
       return {
         id: bitId(),
         text: seg.text,
         startOffset: seg.start,
         endOffset: seg.end,
         timestamp,
-        bitType: detected?.type ?? "unknown",
+        bitType: (best?.rule.relationshipType ?? "unknown") as DiscourseRelationshipType | "unknown",
         morphemes: tokenize(seg.text),
-        features: detected?.features ?? {},
+        features: best?.match.features ?? {},
       };
     });
 
     const edges = this.buildEdges(bits, texts);
+    const cascades = this.detectCascades(bits, edges);
 
     return {
       id: graphId(),
       bits,
       edges,
+      cascades,
       source,
       timestamp,
       createdAt: Date.now(),
@@ -239,63 +138,114 @@ export class DiscourseAnalyzer {
     return chunks;
   }
 
-  private detectBitType(
-    text: string,
-    prev: string | null,
-    next: string | null,
-    all: string[]
-  ): DetectorResult | null {
-    let best: DetectorResult | null = null;
-    for (const detector of Object.values(DETECTORS)) {
-      const result = detector(text, prev, next, all);
-      if (result && (!best || result.confidence > best.confidence)) {
-        best = result;
+  /**
+   * Run all registry rules (priority-sorted) against one bit position.
+   * Returns the highest-confidence result and increments hitCount on winner.
+   */
+  private runDetectorsOnContext(
+    bits: DiscourseBit[],
+    index: number,
+    context: AnalysisContext
+  ): { rule: PatternRule; match: PatternMatch } | null {
+    const rules = this.registry.getAll(); // sorted by priority desc
+    let best: { rule: PatternRule; match: PatternMatch } | null = null;
+
+    for (const rule of rules) {
+      const result = rule.detector(bits, index, context);
+      if (result && (!best || result.confidence > best.match.confidence)) {
+        best = { rule, match: result };
       }
     }
+
+    if (best) {
+      best.rule.hitCount++;
+    }
+
     return best;
   }
 
-  private buildEdges(bits: DiscourseBit[], _texts: string[]): DiscourseEdge[] {
+  private buildEdges(bits: DiscourseBit[], texts: string[]): DiscourseEdge[] {
     const edges: DiscourseEdge[] = [];
+    const context: AnalysisContext = {
+      allBits: bits,
+      allTexts: texts,
+      graphSoFar: { bits, edges: [] },
+    };
+
+    const rules = this.registry.getAll();
 
     for (let i = 0; i < bits.length; i++) {
       const current = bits[i];
 
       // Adjacent edge (always)
       if (i + 1 < bits.length) {
-        const next = bits[i + 1];
-        edges.push(this.makeEdge(current, next, 1, "sequential-adjacency", 0.7, "adjacent bits"));
+        edges.push(this.makeEdge(current, bits[i + 1], 1, "sequential-adjacency", 0.7, ["adjacent bits"]));
       }
 
-      // Detect discontinuous parallels (たり...たり)
-      if (current.bitType === "discontinuous-parallel") {
-        for (let j = i + 2; j < bits.length; j++) {
-          if (bits[j].bitType === "discontinuous-parallel") {
-            edges.push(this.makeEdge(current, bits[j], j - i, "discontinuous-parallel", 0.85, "たり-たり span"));
-            break;
+      // Ask each rule if it finds a span-crossing edge
+      for (const rule of rules) {
+        const result = rule.detector(bits, i, context);
+        if (!result) continue;
+
+        if (result.targetIndex !== undefined && result.targetIndex !== i && result.targetIndex < bits.length) {
+          const distance = Math.abs(result.targetIndex - i);
+          // Only non-adjacent spans (adjacent already covered above)
+          if (distance > 1) {
+            edges.push(
+              this.makeEdge(bits[i], bits[result.targetIndex], distance, rule.relationshipType as string, result.confidence, result.evidence)
+            );
           }
-        }
-      }
-
-      // Speculation cascade: anchor → closure
-      if (/^きっと|^たぶん/.test(current.text.trim())) {
-        for (let j = i + 1; j < bits.length; j++) {
-          if (/のかもしれない|かもしれない/.test(bits[j].text)) {
-            edges.push(this.makeEdge(current, bits[j], j - i, "epistemic-speculation-cascade", 0.9, "speculation span"));
-            break;
-          }
-        }
-      }
-
-      // Causal chain: から → けど
-      if (/から$|ので$/.test(current.text.trim())) {
-        if (i + 1 < bits.length && /けど|が$/.test(bits[i + 1].text.trim())) {
-          edges.push(this.makeEdge(current, bits[i + 1], 1, "causal-concessive-cascade", 0.88, "から→けど"));
         }
       }
     }
 
     return edges;
+  }
+
+  /** Find chains of 3+ connected non-adjacency edges and build DiscourseCascade objects. */
+  detectCascades(bits: DiscourseBit[], edges: DiscourseEdge[]): DiscourseCascade[] {
+    const cascades: DiscourseCascade[] = [];
+
+    // Build adjacency: sourceId → outgoing semantic edges
+    const adjMap = new Map<string, DiscourseEdge[]>();
+    for (const edge of edges) {
+      if (edge.relationshipType === "sequential-adjacency") continue;
+      if (!adjMap.has(edge.sourceId)) adjMap.set(edge.sourceId, []);
+      adjMap.get(edge.sourceId)!.push(edge);
+    }
+
+    const usedChains = new Set<string>();
+
+    const dfs = (currentBitId: string, chain: DiscourseEdge[]): void => {
+      const outEdges = adjMap.get(currentBitId) ?? [];
+
+      for (const edge of outEdges) {
+        chain.push(edge);
+
+        if (chain.length >= 3) {
+          const chainKey = chain.map(e => e.id).join("\0");
+          if (!usedChains.has(chainKey)) {
+            usedChains.add(chainKey);
+            const types = chain.map(e => e.relationshipType as string);
+            cascades.push({
+              id: cascadeId(),
+              relationships: chain.map(e => e.id),
+              cascadeType: determineCascadeType(types),
+              overallFunction: describeCascadeFunction(types),
+            });
+          }
+        }
+
+        dfs(edge.targetId, chain);
+        chain.pop();
+      }
+    };
+
+    for (const bit of bits) {
+      dfs(bit.id, []);
+    }
+
+    return cascades;
   }
 
   private makeEdge(
@@ -304,7 +254,7 @@ export class DiscourseAnalyzer {
     distance: number,
     type: string,
     confidence: number,
-    evidence: string
+    evidence: string[]
   ): DiscourseEdge {
     return {
       id: edgeId(),
@@ -319,8 +269,67 @@ export class DiscourseAnalyzer {
     };
   }
 
-  /** Register a new relationship type at runtime. */
+  /** Register a new relationship type at runtime (keeps RelationshipRegistry in sync). */
   registerType(type: string): void {
     RelationshipRegistry.register(type);
   }
+
+  /** Register a full PatternRule (and its type) at runtime. */
+  registerRule(rule: PatternRule): void {
+    this.registry.register(rule);
+  }
+}
+
+// ─── Cascade helpers ──────────────────────────────────────────────────────────
+
+function determineCascadeType(types: string[]): string {
+  const typeSet = new Set(types);
+
+  if (typeSet.has("epistemic-speculation-cascade") && typeSet.has("hedge-stance-softening")) {
+    return "speculation-hedge-cascade";
+  }
+  if (typeSet.has("causal-concessive-cascade") && typeSet.has("connector-compounding")) {
+    return "causal-connector-cascade";
+  }
+  if (typeSet.has("assertion-deflation") && typeSet.has("discourse-fade-trail-off")) {
+    return "deflation-fade-cascade";
+  }
+  if (typeSet.has("extended-reasoning-stance-cap") && typeSet.has("perspective-framing")) {
+    return "reasoning-perspective-cascade";
+  }
+  if (typeSet.has("epistemic-continuation-blend") && typeSet.has("epistemic-speculation-cascade")) {
+    return "epistemic-blend-speculation-cascade";
+  }
+  if (typeSet.has("hedge-stance-softening") && typeSet.has("split-morpheme-co-construction")) {
+    return "hedge-coconstruction-cascade";
+  }
+
+  const unique = [...new Set(types)];
+  return unique.slice(0, 2).join("-") + "-cascade";
+}
+
+function describeCascadeFunction(types: string[]): string {
+  const typeSet = new Set(types);
+
+  if (typeSet.has("epistemic-speculation-cascade") && typeSet.has("hedge-stance-softening")) {
+    return "Speaker builds layered epistemic hedging through speculation then stance softening";
+  }
+  if (typeSet.has("causal-concessive-cascade") && typeSet.has("connector-compounding")) {
+    return "Stacked connectors navigate a causal-concessive argument while managing face";
+  }
+  if (typeSet.has("assertion-deflation") && typeSet.has("discourse-fade-trail-off")) {
+    return "Confident assertion progressively deflated toward fade/trail-off for social harmony";
+  }
+  if (typeSet.has("extended-reasoning-stance-cap") && typeSet.has("perspective-framing")) {
+    return "Extended reasoning framed by perspective and capped with evaluative stance";
+  }
+  if (typeSet.has("epistemic-continuation-blend") && typeSet.has("epistemic-speculation-cascade")) {
+    return "Progressive epistemic certainty blended into broader speculation arc";
+  }
+  if (typeSet.has("hedge-stance-softening") && typeSet.has("split-morpheme-co-construction")) {
+    return "Tentative stance co-constructed across bit boundaries";
+  }
+
+  const unique = [...new Set(types)];
+  return `Emergent meaning from chained ${unique.join(", ")} relationships`;
 }
