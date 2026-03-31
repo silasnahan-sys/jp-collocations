@@ -171,6 +171,8 @@ export interface DiscourseGraph {
   id: string;
   bits: DiscourseBit[];
   edges: DiscourseEdge[];
+  /** Multi-step cascade groups detected within this graph (optional). */
+  cascades?: DiscourseCascade[];
   source: string;
   timestamp?: string;
   createdAt: number;
@@ -184,4 +186,106 @@ export interface TranscriptChunk {
   timestamp?: string;
   bits: DiscourseBit[];
   graph: DiscourseGraph;
+}
+
+// ─── Analysis context ─────────────────────────────────────────────────────────
+/**
+ * Context object threaded through every PatternRule detector call.
+ * Carries source metadata; the full DiscourseBit array is passed as the first
+ * argument to the detector, so raw text access is always available via `bits[i].text`.
+ */
+export interface AnalysisContext {
+  /** Identifies the source of the transcript being analysed. */
+  source: string;
+}
+
+// ─── PatternMatch ─────────────────────────────────────────────────────────────
+/**
+ * The result returned by a `PatternRule.detector` when the rule fires.
+ *
+ * Fields like `assertionStrength`, `fuzziness`, and `speculationLevel` are
+ * carried in the `features` bag because they are rule-specific metadata.
+ */
+export interface PatternMatch {
+  /** Index of a non-adjacent target bit that this match relates to (optional). */
+  targetIndex?: number;
+  /** 0–1 confidence that the pattern was detected. */
+  confidence: number;
+  /** Human-readable evidence strings explaining why the rule fired. */
+  evidence: string[];
+  direction: "forward" | "backward" | "bidirectional";
+  /** Distance in bit-positions to `targetIndex` (1 = adjacent). */
+  span: number;
+  /** Arbitrary feature bag; rule-specific metadata lives here. */
+  features: Record<string, string | number | boolean | string[]>;
+}
+
+// ─── PatternRule ──────────────────────────────────────────────────────────────
+/**
+ * A single named discourse-pattern detector.
+ * Registered in a `PatternRegistry` and called during analysis.
+ */
+export interface PatternRule {
+  /** Unique kebab-case identifier (matches a `DiscourseRelationshipType`). */
+  id: string;
+  /** Human-readable name for display. */
+  name: string;
+  /**
+   * Core detector function.
+   * @param bits  — full bit array for the current analysis pass
+   * @param index — index of the bit being examined
+   * @param context — source/metadata context
+   * @returns A PatternMatch if the rule fires, otherwise null.
+   */
+  detector: (
+    bits: DiscourseBit[],
+    index: number,
+    context: AnalysisContext,
+  ) => PatternMatch | null;
+}
+
+// ─── DiscourseCascade ────────────────────────────────────────────────────────
+/**
+ * A group of bits and edges that together form a multi-step discourse
+ * cascade (e.g. a causal–concessive chain or a speculation arc).
+ */
+export interface DiscourseCascade {
+  id: string;
+  /** Ordered bits participating in this cascade. */
+  bits: DiscourseBit[];
+  /** Edges that link the cascade bits. */
+  edges: DiscourseEdge[];
+  /**
+   * Classifier for the cascade type (mirrors `CascadeArc.cascadeType`).
+   * E.g. `"epistemic-speculation"`, `"causal-concessive"`.
+   */
+  cascadeType: string;
+  /** Relative 0–1 complexity score (longer / richer cascades score higher). */
+  complexity: number;
+}
+
+// ─── PatternRegistry ─────────────────────────────────────────────────────────
+/**
+ * Runtime-extensible store of `PatternRule` objects.
+ * Seed rules are registered via `buildSeedRegistry()` in `seed-patterns.ts`;
+ * callers may add domain-specific rules at any time.
+ */
+export class PatternRegistry {
+  private rules: Map<string, PatternRule> = new Map();
+
+  /** Add (or replace) a rule by its `id`. */
+  register(rule: PatternRule): void {
+    this.rules.set(rule.id, rule);
+    RelationshipRegistry.register(rule.id);
+  }
+
+  /** Look up a single rule by id. */
+  get(id: string): PatternRule | undefined {
+    return this.rules.get(id);
+  }
+
+  /** Return all registered rules in insertion order. */
+  all(): PatternRule[] {
+    return Array.from(this.rules.values());
+  }
 }
