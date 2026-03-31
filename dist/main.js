@@ -7852,7 +7852,7 @@ __export(main_exports, {
   default: () => JPCollocationsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian8 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 
 // src/types.ts
 var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
@@ -7881,6 +7881,16 @@ var DEFAULT_SETTINGS = {
   fuzzySearchSensitivity: 0.6,
   maxResults: 100,
   dataFilePath: "jp-collocations-data.json"
+};
+var CATEGORY_COLOURS = {
+  "hedging": "#f0a500",
+  "epistemic": "#7c5cbf",
+  "interactional": "#e05c5c",
+  "causal-logical": "#3a86ff",
+  "enumerative": "#06a77d",
+  "referential": "#f77f00",
+  "stance": "#c77dff",
+  "structural": "#4cc9f0"
 };
 
 // src/data/seed-data.ts
@@ -9857,6 +9867,1569 @@ var EMOTION_WORDS = [
   "\u611F\u8B1D",
   "\u5F8C\u6094"
 ];
+function sp(regex, pattern, patternLabel, patternCategory, extractHead, extractCollocate, headPOS, colPOS, confidence) {
+  return { regex, pattern, patternLabel, patternCategory, extractHead, extractCollocate, headPOS, colPOS, confidence };
+}
+var _N = "\u540D\u8A5E" /* Noun */;
+var _V = "\u52D5\u8A5E" /* Verb */;
+var _Ai = "\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */;
+var _Ana = "\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */;
+var _Adv = "\u526F\u8A5E" /* Adverb */;
+var _Expr = "\u8868\u73FE" /* Expression */;
+var _AuxV = "\u52A9\u52D5\u8A5E" /* AuxVerb */;
+var CW = "[^\\s\u3002\u3001\uFF01\uFF1F\u300C\u300D\uFF08\uFF09\u300E\u300F\u3010\u3011\u2026\u301C\u30FB\\n\\r]{1,14}";
+function buildExtractionPatterns() {
+  const specs = [];
+  const CAT_A = "\u6BD4\u55A9\u7167\u5408\u578B";
+  specs.push(sp(
+    new RegExp(`(${CW})(\u307F\u305F\u3044\u306A|\u3088\u3046\u306A)\u3068\u3053\u308D\u304B\u3089(\u9060\u3044|\u7A0B\u9060\u3044|\u304B\u3051\u96E2\u308C\u305F|\u9060\u3056\u304B\u3063\u305F)`),
+    "N+\u307F\u305F\u3044\u306A\u3068\u3053\u308D\u304B\u3089+AdjPred",
+    "\u6BD4\u55A9\u8DDD\u96E2\u8FF0\u8A9E\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2] + "\u3068\u3053\u308D\u304B\u3089" + m[3],
+    _N,
+    _Ai,
+    85
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3088\u3046\u306A\u3068\u3053\u308D\u304B\u3089)(\u9060\u3044|\u7A0B\u9060\u3044|\u304B\u3051\u96E2\u308C\u305F)`),
+    "N+\u3088\u3046\u306A\u3068\u3053\u308D\u304B\u3089+AdjPred",
+    "\u6BD4\u55A9\u8DDD\u96E2\u8FF0\u8A9E\u578B(\u6587\u8A9E)",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2] + m[3],
+    _N,
+    _Ai,
+    82
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u307F\u305F\u3044\u306A|\u307F\u305F\u3044\u306B|\u307F\u305F\u304F)(${CW})`),
+    "N+\u307F\u305F\u3044\u306A+N",
+    "\u6BD4\u55A9\u9023\u4F53\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2] + m[3],
+    _N,
+    _Expr,
+    70
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3088\u3046\u306A|\u3088\u3046\u3067|\u3088\u3046\u306A\u3082\u306E)(${CW})`),
+    "N+\u3088\u3046\u306A+N",
+    "\u6BD4\u55A9\u9023\u4F53\u578B(\u6587\u8A9E)",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2] + m[3],
+    _N,
+    _Expr,
+    65
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3089\u3057\u3044|\u3089\u3057\u304F|\u3089\u3057\u3055|\u3089\u3057\u304B\u3063\u305F)`),
+    "N+\u3089\u3057\u3044",
+    "\u5178\u578B\u6027\u8FF0\u8A9E\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _N,
+    _Ai,
+    65
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3089\u3057\u304F\u306A\u3044|\u3089\u3057\u304F\u306A\u304B\u3063\u305F|\u3089\u3057\u304F\u3082\u306A\u3044)`),
+    "N+\u3089\u3057\u304F\u306A\u3044",
+    "\u975E\u5178\u578B\u8FF0\u8A9E\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _N,
+    _Ai,
+    70
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3063\u307D\u3044|\u3063\u307D\u304F|\u3063\u307D\u3055|\u3063\u307D\u304B\u3063\u305F)`),
+    "N+\u3063\u307D\u3044",
+    "\u985E\u4F3C\u6027\u8FF0\u8A9E\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _N,
+    _Ai,
+    70
+  ));
+  specs.push(sp(
+    new RegExp(`(\u307E\u308B\u3067)(${CW})(\u304B\u306E\u3088\u3046\u306A|\u304B\u306E\u3088\u3046\u306B|\u304B\u306E\u3054\u3068\u304F)`),
+    "\u307E\u308B\u3067+N+\u304B\u306E\u3088\u3046\u306A",
+    "\u76F4\u55A9\u7167\u5408\u578B",
+    CAT_A,
+    (m) => m[2],
+    (m) => m[3],
+    _N,
+    _Expr,
+    85
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u304F\u3055\u3044|\u304F\u3055\u304F|\u304F\u3055\u305D\u3046|\u304F\u3055\u304B\u3063\u305F)`),
+    "N+\u304F\u3055\u3044",
+    "\u81ED\u3044\u6BD4\u55A9\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _N,
+    _Ai,
+    65
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u306E\u3088\u3046\u306A|\u307F\u305F\u3044\u306A)(\u4EBA\u9593|\u4EBA|\u8005|\u5B58\u5728|\u6C17\u6301\u3061|\u611F\u3058|\u96F0\u56F2\u6C17)`),
+    "N+\u306E\u3088\u3046\u306A+\u4EBAN",
+    "\u6BD4\u55A9\u4EBA\u7269\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2] + m[3],
+    _N,
+    _Expr,
+    72
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u306B\u4F3C\u305F|\u306B\u4F3C\u3066\u3044\u308B|\u306B\u4F3C\u3066\u304D\u305F)(${CW})?`),
+    "N+\u306B\u4F3C\u305F+N",
+    "\u985E\u4F3C\u9023\u4F53\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Expr,
+    68
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u306B\u7B49\u3057\u3044|\u306B\u7B49\u3057\u304B\u3063\u305F|\u3082\u540C\u7136\u306E?)`),
+    "N+\u306B\u7B49\u3057\u3044",
+    "\u540C\u7B49\u8FF0\u8A9E\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _N,
+    _Ai,
+    75
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3068\u3082\u8A00\u3048\u308B|\u3068\u3082\u8A00\u3048\u306A\u304F\u3082\u306A\u3044|\u3068\u3082\u8A00\u3048\u305F)`),
+    "N+\u3068\u3082\u8A00\u3048\u308B",
+    "\u540C\u5B9A\u53EF\u80FD\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _Expr,
+    _V,
+    72
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u306E\u3054\u3068\u304F|\u306E\u3054\u3068\u304D|\u306E\u3054\u3068\u3057)`),
+    "N+\u306E\u3054\u3068\u304F",
+    "\u53E4\u6587\u76F4\u55A9\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _N,
+    _Expr,
+    75
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u306E\u3088\u3046\u306B|\u307F\u305F\u3044\u306B)(\u898B\u3048\u308B|\u601D\u3048\u308B|\u611F\u3058\u308B|\u805E\u3053\u3048\u308B|\u898B\u3048\u305F|\u611F\u3058\u305F)`),
+    "N+\u306E\u3088\u3046\u306B+\u611F\u899AV",
+    "\u6BD4\u55A9\u611F\u899A\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2] + m[3],
+    _N,
+    _V,
+    75
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3081\u3044\u305F|\u3058\u307F\u305F|\u3081\u304F)(${CW})?`),
+    "N+\u3081\u3044\u305F+N",
+    "\u64EC\u4F3C\u5C5E\u6027\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Expr,
+    68
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u306A\u3089\u3067\u306F\u306E|\u306A\u3089\u3067\u306F\u306A\u3044)(${CW})?`),
+    "N+\u306A\u3089\u3067\u306F\u306E+N",
+    "\u56FA\u6709\u6027\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Expr,
+    78
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3068\u306F\u4E00\u5473\u9055\u3046|\u3068\u306F\u4E00\u7DDA\u3092\u753B\u3059|\u3068\u4E00\u7DDA\u3092\u753B\u3059)`),
+    "N+\u3068\u306F\u4E00\u5473\u9055\u3046",
+    "\u72EC\u81EA\u6027\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _N,
+    _V,
+    75
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3092\u5F77\u5F7F\u3068\u3055\u305B\u308B|\u3092\u601D\u308F\u305B\u308B|\u3092\u9023\u60F3\u3055\u305B\u308B)(${CW})?`),
+    "N+\u3092\u5F77\u5F7F\u3068\u3055\u305B\u308B",
+    "\u9023\u60F3\u559A\u8D77\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _V,
+    78
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3070\u308A\u306E|\u3070\u308A)(${CW})?`),
+    "N+\u3070\u308A\u306E+N",
+    "\u53E3\u8A9E\u6BD4\u55A9\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Expr,
+    65
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3055\u306A\u304C\u3089|\u3055\u306A\u304C\u3089\u306B)(${CW})?`),
+    "N+\u3055\u306A\u304C\u3089",
+    "\u6587\u8A9E\u76F4\u55A9\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Expr,
+    75
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3082\u3069\u304D|\u3082\u3069\u304D\u306E)(${CW})?`),
+    "N+\u3082\u3069\u304D",
+    "\u507D\u4F3C\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _N,
+    _N,
+    65
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3088\u3046\u306A\u6C17\u304C\u3059\u308B|\u3088\u3046\u306A\u6C17\u304C\u3057\u305F|\u307F\u305F\u3044\u306A\u6C17\u304C\u3059\u308B)`),
+    "N+\u3088\u3046\u306A\u6C17\u304C\u3059\u308B",
+    "\u4E0D\u78BA\u304B\u6BD4\u55A9\u611F\u899A\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _Expr,
+    _Expr,
+    72
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u304B\u306E\u3088\u3046\u3060|\u304B\u306E\u3088\u3046\u3067\u3042\u308B|\u304B\u306E\u3088\u3046\u306B\u898B\u3048\u308B)`),
+    "N+\u304B\u306E\u3088\u3046\u3060",
+    "\u76F4\u55A9\u65AD\u5B9A\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _N,
+    _Expr,
+    78
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u9854\u8CA0\u3051\u306E|\u9854\u8CA0\u3051\u306A)(${CW})?`),
+    "N+\u9854\u8CA0\u3051\u306E+N",
+    "\u51CC\u99D5\u6BD4\u55A9\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Expr,
+    70
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3068\u306F\u4F3C\u3066\u3082\u4F3C\u3064\u304B\u306A\u3044|\u3068\u4F3C\u3066\u3082\u4F3C\u3064\u304B\u306A\u3044)`),
+    "N+\u3068\u306F\u4F3C\u3066\u3082\u4F3C\u3064\u304B\u306A\u3044",
+    "\u975E\u985E\u4F3C\u5F37\u8ABF\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _N,
+    _Expr,
+    80
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u306B\u901A\u3058\u308B|\u306B\u901A\u3058\u308B\u3082\u306E|\u306B\u901A\u3058\u308B\u90E8\u5206)(\u304C\u3042\u308B|\u304C\u3042\u308B)?`),
+    "N+\u306B\u901A\u3058\u308B\u3082\u306E",
+    "\u5171\u901A\u6027\u8FF0\u8A9E\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2],
+    _N,
+    _V,
+    68
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u307F\u305F\u3044\u306A|\u3088\u3046\u306A)\u3068\u3053\u308D\u304C\u3042\u308B`),
+    "N+\u307F\u305F\u3044\u306A\u3068\u3053\u308D\u304C\u3042\u308B",
+    "\u90E8\u5206\u6BD4\u55A9\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2] + "\u3068\u3053\u308D\u304C\u3042\u308B",
+    _N,
+    _Expr,
+    72
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u7684(\u306A|\u306E)(\u8981\u7D20|\u5074\u9762|\u90E8\u5206|\u96F0\u56F2\u6C17|\u6027\u683C|\u5074|\u9762)(\u304C\u3042\u308B|\u3082\u3042\u308B)?`),
+    "N+\u7684\u306A+\u8981\u7D20N",
+    "\u7684\u985E\u4F3C\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => "\u7684" + m[2] + m[3],
+    _N,
+    _Ana,
+    65
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u306E\u3088\u3046\u306A|\u307F\u305F\u3044\u306A)(\u96F0\u56F2\u6C17|\u611F\u3058|\u5370\u8C61|\u7A7A\u6C17|\u611F\u899A)(\u304C\u3042\u308B|\u304C\u3057\u305F)?`),
+    "N+\u306E\u3088\u3046\u306A+\u96F0\u56F2\u6C17N",
+    "\u96F0\u56F2\u6C17\u985E\u4F3C\u578B",
+    CAT_A,
+    (m) => m[1],
+    (m) => m[2] + m[3],
+    _N,
+    _N,
+    65
+  ));
+  const CAT_B = "\u8DDD\u96E2\u8FD1\u63A5\u8FF0\u8A9E\u578B";
+  const distAdjs = "\u9060\u3044|\u7A0B\u9060\u3044|\u304B\u3051\u96E2\u308C\u305F|\u96E2\u308C\u305F|\u9060\u3056\u304B\u3063\u305F|\u9060\u306E\u3044\u305F|\u7E01\u9060\u3044";
+  const proxAdjs = "\u8FD1\u3044|\u8FD1\u3057\u3044|\u4F3C\u305F|\u96A3\u63A5\u3057\u305F|\u89AA\u3057\u3044|\u5BC6\u63A5\u306A";
+  const humanNs = "\u4EBA\u9593|\u4EBA|\u8005|\u5B58\u5728|\u30BF\u30A4\u30D7|\u751F\u304D\u65B9|\u4E16\u754C|\u611F\u899A|\u90E8\u5206";
+  specs.push(sp(
+    new RegExp(`(${CW})\u304B\u3089(${distAdjs})(${humanNs})?`),
+    "N+\u304B\u3089+\u9060\u3044(N)",
+    "\u8DDD\u96E2\u8FF0\u8A9E\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return "\u304B\u3089" + m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Ai,
+    80
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u306B(${proxAdjs})(\u3082\u306E|\u4EBA|\u611F\u3058|\u5370\u8C61|\u5B58\u5728)?`),
+    "N+\u306B+\u8FD1\u3044(N)",
+    "\u8FD1\u63A5\u8FF0\u8A9E\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return "\u306B" + m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Ai,
+    75
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u3068\u306F(\u7A0B\u9060\u3044|\u304B\u3051\u96E2\u308C\u305F|\u4F3C\u3066\u3082\u4F3C\u3064\u304B\u306A\u3044|\u5168\u304F\u9055\u3046|\u6B63\u53CD\u5BFE\u306E?)`),
+    "N+\u3068\u306F+\u7A0B\u9060\u3044",
+    "\u5BFE\u6BD4\u8DDD\u96E2\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => "\u3068\u306F" + m[2],
+    _N,
+    _Ai,
+    85
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u306B\u306F(\u7E01\u9060\u3044|\u7E01\u304C\u306A\u3044|\u7E01\u306E\u306A\u3044|\u7E01\u3082\u3086\u304B\u308A\u3082\u306A\u3044)(${humanNs})?`),
+    "N+\u306B\u306F+\u7E01\u9060\u3044",
+    "\u7121\u7E01\u8FF0\u8A9E\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return "\u306B\u306F" + m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Ai,
+    80
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u3068\u306F(\u7121\u7E01\u306E|\u7121\u7E01\u306A|\u7121\u7E01\u3067\u3042\u308B|\u7121\u7E01\u3060)`),
+    "N+\u3068\u306F+\u7121\u7E01\u306E",
+    "\u7121\u7E01\u5BFE\u6BD4\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => "\u3068\u306F" + m[2],
+    _N,
+    _Ana,
+    80
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u304B\u3089(\u96E2\u308C\u305F|\u96E2\u308C\u3066\u3044\u308B|\u96E2\u308C\u3066\u3057\u307E\u3063\u305F|\u96E2\u308C\u6C17\u5473\u306E|\u96E2\u308C\u3064\u3064\u3042\u308B)`),
+    "N+\u304B\u3089+\u96E2\u308C\u305F",
+    "\u5206\u96E2\u8FF0\u8A9E\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => "\u304B\u3089" + m[2],
+    _N,
+    _V,
+    70
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u3068\u306F(\u304B\u3051\u96E2\u308C\u305F|\u304B\u3051\u96E2\u308C\u3066\u3044\u308B|\u304B\u3051\u96E2\u308C\u3066\u3057\u307E\u3063\u3066\u3044\u308B)`),
+    "N+\u3068\u306F+\u304B\u3051\u96E2\u308C\u305F",
+    "\u4E56\u96E2\u8FF0\u8A9E\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => "\u3068\u306F" + m[2],
+    _N,
+    _Ai,
+    82
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u3068(\u5BFE\u6975\u306B\u3042\u308B|\u5BFE\u6975\u306B\u4F4D\u7F6E\u3059\u308B|\u6B63\u53CD\u5BFE\u306B\u3042\u308B)`),
+    "N+\u3068\u5BFE\u6975\u306B\u3042\u308B",
+    "\u5BFE\u6975\u8FF0\u8A9E\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => "\u3068" + m[2],
+    _N,
+    _V,
+    82
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u3068\u306F(\u7121\u95A2\u4FC2\u306E|\u7121\u95A2\u4FC2\u306A|\u95A2\u4FC2\u306E\u306A\u3044|\u95A2\u4FC2\u306A\u3044)`),
+    "N+\u3068\u306F\u7121\u95A2\u4FC2\u306E",
+    "\u7121\u95A2\u4FC2\u8FF0\u8A9E\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => "\u3068\u306F" + m[2],
+    _N,
+    _Ana,
+    75
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u304B\u3089(\u5B8C\u5168\u306B|\u3059\u3063\u304B\u308A|\u3059\u3063\u304B\u308A\u3068)(\u96E2\u308C\u305F|\u96E2\u308C\u3066\u3044\u308B|\u9060\u3056\u304B\u3063\u305F)`),
+    "N+\u304B\u3089+\u5B8C\u5168\u306B\u96E2\u308C\u305F",
+    "\u5B8C\u5168\u5206\u96E2\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => "\u304B\u3089" + m[2] + m[3],
+    _N,
+    _V,
+    72
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u306B(\u307B\u3069\u9060\u3044|\u307B\u3069\u9060\u304B\u3063\u305F|\u307E\u3060\u9060\u3044|\u9060\u304F\u53CA\u3070\u306A\u3044)`),
+    "N+\u306B+\u307B\u3069\u9060\u3044",
+    "\u4E0D\u8DB3\u8DDD\u96E2\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => "\u306B" + m[2],
+    _N,
+    _Ai,
+    78
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u304B\u3089\u9060\u3044(\u5834\u6240|\u3068\u3053\u308D|\u4E16\u754C|\u9818\u57DF|\u5206\u91CE)(\u306B|\u3067|\u306E)?`),
+    "N+\u304B\u3089\u9060\u3044+\u5834\u6240N",
+    "\u8DDD\u96E2\u5834\u6240\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => "\u304B\u3089\u9060\u3044" + m[2],
+    _N,
+    _Ai,
+    78
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u306B(\u7E01\u9060\u3044|\u7E01\u304C\u306A\u3044|\u7E01\u306E\u306A\u3044)(${humanNs})?`),
+    "N+\u306B+\u7E01\u9060\u3044",
+    "\u8FD1\u7E01\u5426\u5B9A\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return "\u306B" + m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Ai,
+    75
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u3068(\u5225\u4E16\u754C\u306E|\u5225\u306E\u4E16\u754C\u306E|\u5168\u304F\u5225\u306E\u4E16\u754C\u306E?)`),
+    "N+\u3068\u5225\u4E16\u754C\u306E",
+    "\u5225\u4E16\u754C\u8FF0\u8A9E\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => "\u3068" + m[2],
+    _N,
+    _Expr,
+    72
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u304B\u3089(\u9694\u305F\u3063\u305F|\u9694\u7D76\u3055\u308C\u305F|\u906E\u65AD\u3055\u308C\u305F|\u5207\u308A\u96E2\u3055\u308C\u305F)`),
+    "N+\u304B\u3089+\u9694\u305F\u3063\u305F",
+    "\u9694\u7D76\u8FF0\u8A9E\u578B",
+    CAT_B,
+    (m) => m[1],
+    (m) => "\u304B\u3089" + m[2],
+    _N,
+    _V,
+    72
+  ));
+  const CAT_C = "\u8907\u5408\u5F8C\u7F6E\u8A5E\u578B";
+  const postPositions = [
+    ["\u306B\u3064\u3044\u3066", "N+\u306B\u3064\u3044\u3066", "\u4E3B\u984C\u5F8C\u7F6E\u8A5E\u578B", "\u306B\u3064\u3044\u3066\u306E", 70],
+    ["\u306B\u95A2\u3057\u3066", "N+\u306B\u95A2\u3057\u3066", "\u95A2\u4FC2\u5F8C\u7F6E\u8A5E\u578B", "\u306B\u95A2\u3059\u308B", 75],
+    ["\u306B\u5BFE\u3057\u3066", "N+\u306B\u5BFE\u3057\u3066", "\u5BFE\u8C61\u5F8C\u7F6E\u8A5E\u578B", "\u306B\u5BFE\u3059\u308B", 75],
+    ["\u306B\u3068\u3063\u3066", "N+\u306B\u3068\u3063\u3066", "\u8996\u70B9\u5F8C\u7F6E\u8A5E\u578B", "\u306B\u3068\u3063\u3066\u306E", 80],
+    ["\u306B\u3088\u3063\u3066", "N+\u306B\u3088\u3063\u3066", "\u624B\u6BB5\u56E0\u679C\u5F8C\u7F6E\u8A5E\u578B", "\u306B\u3088\u308B", 75],
+    ["\u3092\u3081\u3050\u3063\u3066", "N+\u3092\u3081\u3050\u3063\u3066", "\u8AD6\u70B9\u5F8C\u7F6E\u8A5E\u578B", "\u3092\u3081\u3050\u308B", 75],
+    ["\u3092\u901A\u3058\u3066", "N+\u3092\u901A\u3058\u3066", "\u5A92\u4ECB\u5F8C\u7F6E\u8A5E\u578B", "\u3092\u901A\u3058\u305F", 75],
+    ["\u3092\u901A\u3057\u3066", "N+\u3092\u901A\u3057\u3066", "\u5A92\u4ECB\u5F8C\u7F6E\u8A5E\u578B2", "\u3092\u901A\u3057\u305F", 72],
+    ["\u3092\u4ECB\u3057\u3066", "N+\u3092\u4ECB\u3057\u3066", "\u4EF2\u4ECB\u5F8C\u7F6E\u8A5E\u578B", "\u3092\u4ECB\u3057\u305F", 72],
+    ["\u306B\u57FA\u3065\u3044\u3066", "N+\u306B\u57FA\u3065\u3044\u3066", "\u6839\u62E0\u5F8C\u7F6E\u8A5E\u578B", "\u306B\u57FA\u3065\u3044\u305F", 80],
+    ["\u306B\u5FDC\u3058\u3066", "N+\u306B\u5FDC\u3058\u3066", "\u5BFE\u5FDC\u5F8C\u7F6E\u8A5E\u578B", "\u306B\u5FDC\u3058\u305F", 75],
+    ["\u306B\u308F\u305F\u3063\u3066", "N+\u306B\u308F\u305F\u3063\u3066", "\u7BC4\u56F2\u5F8C\u7F6E\u8A5E\u578B", "\u306B\u308F\u305F\u308B", 75],
+    ["\u306B\u969B\u3057\u3066", "N+\u306B\u969B\u3057\u3066", "\u6A5F\u4F1A\u5F8C\u7F6E\u8A5E\u578B", "\u306B\u969B\u3057\u305F", 75],
+    ["\u306B\u6CBF\u3063\u3066", "N+\u306B\u6CBF\u3063\u3066", "\u968F\u4F34\u65B9\u5411\u578B", "\u306B\u6CBF\u3063\u305F", 75],
+    ["\u306B\u5411\u3051\u3066", "N+\u306B\u5411\u3051\u3066", "\u65B9\u5411\u76EE\u6A19\u578B", "\u306B\u5411\u3051\u305F", 75],
+    ["\u306B\u4F34\u3063\u3066", "N+\u306B\u4F34\u3063\u3066", "\u968F\u4F34\u56E0\u679C\u578B", "\u306B\u4F34\u3046", 80],
+    ["\u306B\u7D9A\u3044\u3066", "N+\u306B\u7D9A\u3044\u3066", "\u7D99\u7D9A\u6642\u9593\u578B", "\u306B\u7D9A\u304F", 72],
+    ["\u306B\u5148\u7ACB\u3063\u3066", "N+\u306B\u5148\u7ACB\u3063\u3066", "\u5148\u884C\u6642\u9593\u578B", "\u306B\u5148\u7ACB\u3064", 78],
+    ["\u306B\u7167\u3089\u3057\u3066", "N+\u306B\u7167\u3089\u3057\u3066", "\u7167\u5408\u578B", "\u306B\u7167\u3089\u3057\u305F", 75],
+    ["\u306B\u9451\u307F\u3066", "N+\u306B\u9451\u307F\u3066", "\u53C2\u7167\u8003\u616E\u578B", "\u306B\u9451\u307F\u305F", 78],
+    ["\u3092\u53D7\u3051\u3066", "N+\u3092\u53D7\u3051\u3066", "\u5FDC\u7B54\u5F8C\u7F6E\u8A5E\u578B", "\u3092\u53D7\u3051\u3066\u306E", 75],
+    ["\u3092\u7D4C\u3066", "N+\u3092\u7D4C\u3066", "\u7D4C\u904E\u5F8C\u7F6E\u8A5E\u578B", "\u3092\u7D4C\u305F", 80],
+    ["\u3092\u304D\u3063\u304B\u3051\u306B", "N+\u3092\u304D\u3063\u304B\u3051\u306B", "\u5951\u6A5F\u56E0\u679C\u578B", "\u3092\u304D\u3063\u304B\u3051\u3068\u3057\u305F", 85],
+    ["\u3092\u5951\u6A5F\u306B", "N+\u3092\u5951\u6A5F\u306B", "\u5951\u6A5F\u56E0\u679C\u578B2", "\u3092\u5951\u6A5F\u3068\u3057\u305F", 83],
+    ["\u3092\u3082\u3068\u306B", "N+\u3092\u3082\u3068\u306B", "\u6839\u62E0\u578B", "\u3092\u3082\u3068\u306B\u3057\u305F", 80],
+    ["\u3092\u306F\u3058\u3081", "N+\u3092\u306F\u3058\u3081", "\u4F8B\u793A\u5217\u6319\u578B", "\u3092\u306F\u3058\u3081\u3068\u3057\u305F", 80],
+    ["\u3092\u8E0F\u307E\u3048\u3066", "N+\u3092\u8E0F\u307E\u3048\u3066", "\u8003\u616E\u578B", "\u3092\u8E0F\u307E\u3048\u305F", 80],
+    ["\u306E\u3082\u3068\u3067", "N+\u306E\u3082\u3068\u3067", "\u6761\u4EF6\u4E0B\u578B", "\u306E\u3082\u3068\u3067\u306E", 75],
+    ["\u306B\u304A\u3044\u3066", "N+\u306B\u304A\u3044\u3066", "\u5834\u6240\u7BC4\u56F2\u578B", "\u306B\u304A\u3051\u308B", 78],
+    ["\u3092\u8D85\u3048\u3066", "N+\u3092\u8D85\u3048\u3066", "\u8D85\u8D8A\u578B", "\u3092\u8D85\u3048\u305F", 72],
+    ["\u306B\u52A0\u3048\u3066", "N+\u306B\u52A0\u3048\u3066", "\u6DFB\u52A0\u578B", "\u306B\u52A0\u3048\u3066\u306E", 75],
+    ["\u3092\u629C\u304D\u306B", "N+\u3092\u629C\u304D\u306B", "\u9664\u5916\u578B", "\u3092\u629C\u304D\u306B\u3057\u305F", 78],
+    ["\u3092\u4E2D\u5FC3\u306B", "N+\u3092\u4E2D\u5FC3\u306B", "\u4E2D\u5FC3\u8EF8\u578B", "\u3092\u4E2D\u5FC3\u3068\u3057\u305F", 80],
+    ["\u3092\u76AE\u5207\u308A\u306B", "N+\u3092\u76AE\u5207\u308A\u306B", "\u958B\u59CB\u5951\u6A5F\u578B", "\u3092\u76AE\u5207\u308A\u3068\u3057\u305F", 80],
+    ["\u306B\u5F53\u305F\u3063\u3066", "N+\u306B\u5F53\u305F\u3063\u3066", "\u6A5F\u4F1A\u578B", "\u306B\u5F53\u305F\u3063\u3066\u306E", 78],
+    ["\u306B\u308F\u305F\u308B", "N+\u306B\u308F\u305F\u308B", "\u7BC4\u56F2\u9023\u4F53\u578B", "\u306B\u308F\u305F\u3063\u3066", 75],
+    ["\u306B\u95A2\u308F\u308B", "N+\u306B\u95A2\u308F\u308B", "\u95A2\u4E0E\u9023\u4F53\u578B", "\u306B\u95A2\u308F\u3063\u3066", 72],
+    ["\u3092\u3082\u3063\u3066", "N+\u3092\u3082\u3063\u3066", "\u624B\u6BB5\u578B", "\u3092\u3082\u3063\u3066\u306E", 75],
+    ["\u306B\u57FA\u3065\u304F", "N+\u306B\u57FA\u3065\u304F", "\u6839\u62E0\u9023\u4F53\u578B", "\u306B\u57FA\u3065\u3044\u305F", 78],
+    ["\u306B\u95A2\u3059\u308B", "N+\u306B\u95A2\u3059\u308B", "\u95A2\u4FC2\u9023\u4F53\u578B", "\u306B\u95A2\u3057\u3066", 75],
+    ["\u306B\u3088\u308B", "N+\u306B\u3088\u308B", "\u624B\u6BB5\u9023\u4F53\u578B", "\u306B\u3088\u3063\u3066", 75],
+    ["\u306B\u5BFE\u3059\u308B", "N+\u306B\u5BFE\u3059\u308B", "\u5BFE\u8C61\u9023\u4F53\u578B", "\u306B\u5BFE\u3057\u3066", 75],
+    ["\u3092\u901A\u3058\u305F", "N+\u3092\u901A\u3058\u305F", "\u5A92\u4ECB\u9023\u4F53\u578B", "\u3092\u901A\u3058\u3066", 72],
+    ["\u306B\u5411\u3051\u305F", "N+\u306B\u5411\u3051\u305F", "\u65B9\u5411\u9023\u4F53\u578B", "\u306B\u5411\u3051\u3066", 72],
+    ["\u306B\u4F34\u3046", "N+\u306B\u4F34\u3046", "\u968F\u4F34\u9023\u4F53\u578B", "\u306B\u4F34\u3063\u3066", 75],
+    ["\u306E\u7D50\u679C", "N+\u306E\u7D50\u679C", "\u7D50\u679C\u56E0\u679C\u578B", "\u306E\u7D50\u679C\u306E", 80],
+    ["\u306E\u672B\u306B", "N+\u306E\u672B\u306B", "\u7D4C\u904E\u7D50\u679C\u578B", "\u306E\u672B\u306E", 78],
+    ["\u306E\u6319\u53E5", "N+\u306E\u6319\u53E5", "\u60AA\u7D50\u679C\u578B", "\u306E\u6319\u53E5\u306E", 75],
+    ["\u306E\u304A\u304B\u3052\u3067", "N+\u306E\u304A\u304B\u3052\u3067", "\u6069\u6075\u56E0\u679C\u578B", "\u306E\u304A\u304B\u3052\u306E", 75],
+    ["\u306E\u305B\u3044\u3067", "N+\u306E\u305B\u3044\u3067", "\u8CAC\u4EFB\u56E0\u679C\u578B", "\u306E\u305B\u3044\u306E", 75]
+  ];
+  for (const [pp, pat, lbl, attrForm, conf] of postPositions) {
+    const escaped = pp.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`(${CW})${escaped}(\u306E)?`),
+      pat,
+      lbl,
+      CAT_C,
+      (m) => m[1],
+      () => pp,
+      _N,
+      _Expr,
+      conf
+    ));
+    const attrEsc = attrForm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`(${CW})${attrEsc}([^\\s\u3002\u3001\uFF01\uFF1F\u300C\u300D\uFF08\uFF09]{1,10})?`),
+      pat + "+N",
+      lbl + "(\u9023\u4F53)",
+      CAT_C,
+      (m) => m[1],
+      (m) => {
+        var _a;
+        return attrForm + ((_a = m[2]) != null ? _a : "");
+      },
+      _N,
+      _Expr,
+      conf - 2
+    ));
+  }
+  const CAT_D = "\u8907\u5408\u52D5\u8A5E\u578B";
+  const aspectMarkers = [
+    ["\u59CB\u3081\u308B", "\u958B\u59CB\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u59CB\u3081\u305F", "\u958B\u59CB\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u51FA\u3059", "\u7A81\u767A\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u51FA\u3057\u305F", "\u7A81\u767A\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u7D9A\u3051\u308B", "\u7D99\u7D9A\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u7D9A\u3051\u305F", "\u7D99\u7D9A\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u7D42\u308F\u308B", "\u5B8C\u4E86\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u7D42\u308F\u3063\u305F", "\u5B8C\u4E86\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u7D42\u3048\u308B", "\u5B8C\u4E86\u30A2\u30B9\u30DA\u30AF\u30C82"],
+    ["\u7D42\u3048\u305F", "\u5B8C\u4E86\u30A2\u30B9\u30DA\u30AF\u30C82(\u904E\u53BB)"],
+    ["\u304B\u3051\u308B", "\u4E2D\u65AD\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u304B\u3051\u305F", "\u4E2D\u65AD\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u8FBC\u3080", "\u6DF1\u5316\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u8FBC\u3093\u3060", "\u6DF1\u5316\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u5207\u308B", "\u5B8C\u9042\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u5207\u3063\u305F", "\u5B8C\u9042\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u5207\u308C\u306A\u3044", "\u5B8C\u9042\u4E0D\u80FD\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u5207\u308C\u306A\u304B\u3063\u305F", "\u5B8C\u9042\u4E0D\u80FD(\u904E\u53BB)"],
+    ["\u4E0A\u3052\u308B", "\u5B8C\u6210\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u4E0A\u3052\u305F", "\u5B8C\u6210\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u4E0B\u3052\u308B", "\u4E0B\u964D\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u4E0B\u3052\u305F", "\u4E0B\u964D\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u76F4\u3059", "\u518D\u884C\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u76F4\u3057\u305F", "\u518D\u884C\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u8FD4\u3059", "\u5FA9\u5E30\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u8FD4\u3057\u305F", "\u5FA9\u5E30\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u629C\u304F", "\u5B8C\u5FB9\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u629C\u3044\u305F", "\u5B8C\u5FB9\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"]
+  ];
+  for (const [marker, lbl] of aspectMarkers) {
+    const esc = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`([^\\s\u3002\u3001\uFF01\uFF1F\u300C\u300D\uFF08\uFF09]{2,12})${esc}`),
+      `V+${marker}`,
+      lbl,
+      CAT_D,
+      (m) => m[1],
+      () => marker,
+      _V,
+      _V,
+      68
+    ));
+  }
+  const teMarkers = [
+    ["\u3066\u304F\u308B", "\u63A5\u8FD1\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u3066\u304D\u305F", "\u63A5\u8FD1\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u3066\u3044\u304F", "\u96E2\u9060\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u3066\u3044\u3063\u305F", "\u96E2\u9060\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u3066\u3057\u307E\u3046", "\u5B8C\u4E86/\u5F8C\u6094\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u3066\u3057\u307E\u3063\u305F", "\u5B8C\u4E86/\u5F8C\u6094(\u904E\u53BB)"],
+    ["\u3066\u304A\u304F", "\u6E96\u5099\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u3066\u304A\u3044\u305F", "\u6E96\u5099\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u3066\u3042\u308B", "\u7D50\u679C\u72B6\u614B\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u3066\u307F\u308B", "\u8A66\u884C\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u3066\u307F\u305F", "\u8A66\u884C\u30A2\u30B9\u30DA\u30AF\u30C8(\u904E\u53BB)"],
+    ["\u3066\u307B\u3057\u3044", "\u5E0C\u671B\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u3066\u6B32\u3057\u3044", "\u5E0C\u671B\u30A2\u30B9\u30DA\u30AF\u30C82"],
+    ["\u3066\u3042\u3052\u308B", "\u6388\u4E0E\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u3066\u3082\u3089\u3046", "\u53D7\u76CA\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u3066\u304F\u308C\u308B", "\u6069\u6075\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u3066\u3084\u308B", "\u4E0A\u4F4D\u6388\u4E0E\u30A2\u30B9\u30DA\u30AF\u30C8"],
+    ["\u3066\u5F53\u7136", "\u5F53\u7136\u8A55\u4FA1\u578B"],
+    ["\u3066\u69CB\u308F\u306A\u3044", "\u8A31\u53EF\u578B"],
+    ["\u3066\u306F\u3044\u3051\u306A\u3044", "\u7981\u6B62\u578B"]
+  ];
+  for (const [marker, lbl] of teMarkers) {
+    const esc = marker.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`([^\\s\u3002\u3001\uFF01\uFF1F\u300C\u300D\uFF08\uFF09]{2,12})${esc}`),
+      `V+${marker}`,
+      lbl,
+      CAT_D,
+      (m) => m[1],
+      () => marker,
+      _V,
+      _V,
+      65
+    ));
+  }
+  const bodyIdioms = [
+    ["\u6C17", ["\u4ED8\u304F", "\u5411\u304F", "\u4E57\u308B", "\u5F15\u3051\u308B", "\u9060\u304F\u306A\u308B", "\u91CD\u3044", "\u697D\u306B\u306A\u308B", "\u5909\u308F\u308B", "\u3064\u304F", "\u3059\u308B", "\u5408\u3046", "\u6E08\u3080", "\u9032\u3080", "\u5F37\u3044", "\u5F31\u3044", "\u6563\u308B", "\u5C0F\u3055\u3044", "\u591A\u3044"], "\u6C17\u30A4\u30C7\u30A3\u30AA\u30E0\u578B"],
+    ["\u624B", ["\u5C4A\u304F", "\u5C4A\u304B\u306A\u3044", "\u96E2\u305B\u306A\u3044", "\u304B\u304B\u308B", "\u8DB3\u308A\u306A\u3044", "\u3044\u3044", "\u4F38\u3073\u308B", "\u9707\u3048\u308B", "\u7A7A\u304F", "\u585E\u304C\u308B", "\u8FBC\u3080", "\u5165\u308C\u308B"], "\u624B\u30A4\u30C7\u30A3\u30AA\u30E0\u578B"],
+    ["\u76EE", ["\u899A\u3081\u308B", "\u958B\u304F", "\u96E2\u305B\u306A\u3044", "\u7729\u3080", "\u8F1D\u304F", "\u898B\u3048\u306A\u3044", "\u7D30\u304F\u306A\u308B", "\u4E38\u304F\u306A\u308B", "\u5145\u8840\u3059\u308B", "\u6F64\u3080", "\u304C\u8D64\u3044"], "\u76EE\u30A4\u30C7\u30A3\u30AA\u30E0\u578B"],
+    ["\u5FC3", ["\u52D5\u304F", "\u75DB\u3080", "\u6298\u308C\u308B", "\u5F3E\u3080", "\u901A\u3058\u308B", "\u548C\u3080", "\u4E71\u308C\u308B", "\u63FA\u308C\u308B", "\u7652\u3055\u308C\u308B", "\u7DE0\u3081\u4ED8\u3051\u3089\u308C\u308B"], "\u5FC3\u30A4\u30C7\u30A3\u30AA\u30E0\u578B"],
+    ["\u982D", ["\u75DB\u3044", "\u4E0B\u304C\u308B", "\u4E0A\u304C\u308B", "\u3044\u3063\u3071\u3044", "\u51B7\u3048\u308B", "\u56FA\u3044", "\u304C\u771F\u3063\u767D\u306B\u306A\u308B"], "\u982D\u30A4\u30C7\u30A3\u30AA\u30E0\u578B"],
+    ["\u8033", ["\u75DB\u3044", "\u9060\u3044", "\u50BE\u304F", "\u958B\u304F", "\u306B\u5165\u308B", "\u306B\u6B8B\u308B"], "\u8033\u30A4\u30C7\u30A3\u30AA\u30E0\u578B"],
+    ["\u53E3", ["\u91CD\u3044", "\u8EFD\u3044", "\u3046\u307E\u3044", "\u6ED1\u308B", "\u5805\u3044", "\u6ED1\u3089\u304B\u306A", "\u304C\u4E7E\u304F"], "\u53E3\u30A4\u30C7\u30A3\u30AA\u30E0\u578B"],
+    ["\u8DB3", ["\u91CD\u3044", "\u8EFD\u3044", "\u51FA\u306A\u3044", "\u5411\u304F", "\u6B62\u307E\u308B", "\u9707\u3048\u308B", "\u7AE6\u3080", "\u304C\u68D2\u306B\u306A\u308B"], "\u8DB3\u30A4\u30C7\u30A3\u30AA\u30E0\u578B"],
+    ["\u8179", ["\u7ACB\u3064", "\u6E1B\u308B", "\u75DB\u3044", "\u304F\u304F\u308B", "\u6C7A\u307E\u308B", "\u304C\u9ED2\u3044"], "\u8179\u30A4\u30C7\u30A3\u30AA\u30E0\u578B"],
+    ["\u80F8", ["\u75DB\u3080", "\u8E8D\u308B", "\u8A70\u307E\u308B", "\u7DE0\u3081\u4ED8\u3051\u3089\u308C\u308B", "\u3056\u308F\u3064\u304F", "\u304C\u71B1\u304F\u306A\u308B"], "\u80F8\u30A4\u30C7\u30A3\u30AA\u30E0\u578B"]
+  ];
+  for (const [bodyPart, verbs, lbl] of bodyIdioms) {
+    const vAlt = verbs.join("|");
+    specs.push(sp(
+      new RegExp(`${bodyPart}\u304C(${vAlt})`),
+      `${bodyPart}\u304C+V/Adj`,
+      lbl,
+      CAT_D,
+      () => bodyPart,
+      (m) => "\u304C" + m[1],
+      _N,
+      _V,
+      85
+    ));
+  }
+  const modalStructures = [
+    ["\u3053\u3068\u304C\u3067\u304D\u308B", "V+\u3053\u3068\u304C\u3067\u304D\u308B", "\u53EF\u80FD\u578B"],
+    ["\u3053\u3068\u304C\u3067\u304D\u306A\u3044", "V+\u3053\u3068\u304C\u3067\u304D\u306A\u3044", "\u4E0D\u53EF\u80FD\u578B"],
+    ["\u3053\u3068\u304C\u3067\u304D\u305F", "V+\u3053\u3068\u304C\u3067\u304D\u305F", "\u53EF\u80FD(\u904E\u53BB)\u578B"],
+    ["\u3053\u3068\u304C\u3067\u304D\u306A\u304B\u3063\u305F", "V+\u3053\u3068\u304C\u3067\u304D\u306A\u304B\u3063\u305F", "\u4E0D\u53EF\u80FD(\u904E\u53BB)\u578B"],
+    ["\u3088\u3046\u306B\u306A\u308B", "V+\u3088\u3046\u306B\u306A\u308B", "\u5909\u5316\u53EF\u80FD\u578B"],
+    ["\u3088\u3046\u306B\u306A\u3063\u305F", "V+\u3088\u3046\u306B\u306A\u3063\u305F", "\u5909\u5316\u53EF\u80FD(\u904E\u53BB)\u578B"],
+    ["\u3088\u3046\u306B\u3059\u308B", "V+\u3088\u3046\u306B\u3059\u308B", "\u610F\u56F3\u578B"],
+    ["\u3088\u3046\u306B\u3057\u305F", "V+\u3088\u3046\u306B\u3057\u305F", "\u610F\u56F3(\u904E\u53BB)\u578B"],
+    ["\u3053\u3068\u304C\u3042\u308B", "V+\u3053\u3068\u304C\u3042\u308B", "\u7D4C\u9A13\u578B"],
+    ["\u3053\u3068\u304C\u306A\u3044", "V+\u3053\u3068\u304C\u306A\u3044", "\u7121\u7D4C\u9A13\u578B"],
+    ["\u3053\u3068\u306B\u306A\u308B", "V+\u3053\u3068\u306B\u306A\u308B", "\u6C7A\u5B9A\u578B"],
+    ["\u3053\u3068\u306B\u306A\u3063\u305F", "V+\u3053\u3068\u306B\u306A\u3063\u305F", "\u6C7A\u5B9A(\u904E\u53BB)\u578B"],
+    ["\u3053\u3068\u306B\u3059\u308B", "V+\u3053\u3068\u306B\u3059\u308B", "\u6C7A\u610F\u578B"],
+    ["\u3053\u3068\u306B\u3057\u305F", "V+\u3053\u3068\u306B\u3057\u305F", "\u6C7A\u610F(\u904E\u53BB)\u578B"],
+    ["\u3079\u304D\u3060", "V+\u3079\u304D\u3060", "\u7FA9\u52D9\u578B"],
+    ["\u3079\u304D\u3067\u306F\u306A\u3044", "V+\u3079\u304D\u3067\u306F\u306A\u3044", "\u7FA9\u52D9\u5426\u5B9A\u578B"],
+    ["\u3079\u304D\u3060\u3063\u305F", "V+\u3079\u304D\u3060\u3063\u305F", "\u5F8C\u6094\u7FA9\u52D9\u578B"],
+    ["\u306F\u305A\u3060", "V+\u306F\u305A\u3060", "\u671F\u5F85\u578B"],
+    ["\u306F\u305A\u304C\u306A\u3044", "V+\u306F\u305A\u304C\u306A\u3044", "\u671F\u5F85\u5426\u5B9A\u578B"],
+    ["\u306F\u305A\u3060\u3063\u305F", "V+\u306F\u305A\u3060\u3063\u305F", "\u671F\u5F85(\u904E\u53BB)\u578B"],
+    ["\u304B\u3082\u3057\u308C\u306A\u3044", "V+\u304B\u3082\u3057\u308C\u306A\u3044", "\u63A8\u91CF\u578B"],
+    ["\u304B\u3082\u3057\u308C\u306A\u304B\u3063\u305F", "V+\u304B\u3082\u3057\u308C\u306A\u304B\u3063\u305F", "\u63A8\u91CF(\u904E\u53BB)\u578B"],
+    ["\u305F\u3053\u3068\u304C\u3042\u308B", "V+\u305F\u3053\u3068\u304C\u3042\u308B", "\u7D4C\u9A13\u578B"],
+    ["\u305F\u3053\u3068\u304C\u306A\u3044", "V+\u305F\u3053\u3068\u304C\u306A\u3044", "\u7121\u7D4C\u9A13\u578B"],
+    ["\u305F\u3070\u304B\u308A\u3060", "V+\u305F\u3070\u304B\u308A\u3060", "\u76F4\u5F8C\u578B"],
+    ["\u305F\u3068\u3053\u308D\u3060", "V+\u305F\u3068\u3053\u308D\u3060", "\u76F4\u5F8C\u578B2"],
+    ["\u3066\u3044\u308B\u3068\u3053\u308D\u3060", "V+\u3066\u3044\u308B\u3068\u3053\u308D\u3060", "\u9032\u884C\u578B"],
+    ["\u3066\u3082\u3044\u3044", "V+\u3066\u3082\u3044\u3044", "\u8A31\u53EF\u578B"],
+    ["\u3066\u306F\u3044\u3051\u306A\u3044", "V+\u3066\u306F\u3044\u3051\u306A\u3044", "\u7981\u6B62\u578B"],
+    ["\u306A\u3051\u308C\u3070\u306A\u3089\u306A\u3044", "V+\u306A\u3051\u308C\u3070\u306A\u3089\u306A\u3044", "\u7FA9\u52D9\u578B2"]
+  ];
+  for (const [modal, pat, lbl] of modalStructures) {
+    const esc = modal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`([^\\s\u3002\u3001\uFF01\uFF1F\u300C\u300D\uFF08\uFF09]{2,14})${esc}`),
+      pat,
+      lbl,
+      CAT_D,
+      (m) => m[1],
+      () => modal,
+      _V,
+      _AuxV,
+      75
+    ));
+  }
+  const CAT_E = "\u5426\u5B9A\u5236\u9650\u578B";
+  const negPatterns = [
+    ["\u308F\u3051\u306B\u306F\u3044\u304B\u306A\u3044", "V+\u308F\u3051\u306B\u306F\u3044\u304B\u306A\u3044", "\u7FA9\u52D9\u5426\u5B9A\u578B", 85],
+    ["\u308F\u3051\u306B\u3082\u3044\u304B\u306A\u3044", "V+\u308F\u3051\u306B\u3082\u3044\u304B\u306A\u3044", "\u7FA9\u52D9\u5426\u5B9A\u578B2", 85],
+    ["\u308F\u3051\u304C\u306A\u3044", "N/V+\u308F\u3051\u304C\u306A\u3044", "\u8AD6\u7406\u5426\u5B9A\u578B", 80],
+    ["\u308F\u3051\u3067\u306F\u306A\u3044", "N/V+\u308F\u3051\u3067\u306F\u306A\u3044", "\u90E8\u5206\u5426\u5B9A\u578B", 78],
+    ["\u308F\u3051\u3067\u3082\u306A\u3044", "N/V+\u308F\u3051\u3067\u3082\u306A\u3044", "\u90E8\u5206\u5426\u5B9A\u578B2", 75],
+    ["\u306F\u305A\u304C\u306A\u3044", "V+\u306F\u305A\u304C\u306A\u3044", "\u671F\u5F85\u5426\u5B9A\u578B", 80],
+    ["\u306F\u305A\u3082\u306A\u3044", "V+\u306F\u305A\u3082\u306A\u3044", "\u671F\u5F85\u5426\u5B9A\u5F37\u8ABF\u578B", 80],
+    ["\u3056\u308B\u3092\u5F97\u306A\u3044", "V+\u3056\u308B\u3092\u5F97\u306A\u3044", "\u5F37\u5236\u4E0D\u53EF\u907F\u578B", 85],
+    ["\u3056\u308B\u3092\u5F97\u306A\u304B\u3063\u305F", "V+\u3056\u308B\u3092\u5F97\u306A\u304B\u3063\u305F", "\u5F37\u5236\u4E0D\u53EF\u907F(\u904E\u53BB)\u578B", 85],
+    ["\u306A\u3044\u3067\u306F\u3044\u3089\u308C\u306A\u3044", "V+\u306A\u3044\u3067\u306F\u3044\u3089\u308C\u306A\u3044", "\u885D\u52D5\u4E0D\u53EF\u5236\u578B", 85],
+    ["\u305A\u306B\u306F\u3044\u3089\u308C\u306A\u3044", "V+\u305A\u306B\u306F\u3044\u3089\u308C\u306A\u3044", "\u885D\u52D5\u4E0D\u53EF\u5236\u578B2", 85],
+    ["\u306A\u304F\u3066\u306F\u3044\u3089\u308C\u306A\u3044", "V+\u306A\u304F\u3066\u306F\u3044\u3089\u308C\u306A\u3044", "\u885D\u52D5\u4E0D\u53EF\u5236\u578B3", 83],
+    ["\u306A\u3044\u308F\u3051\u306B\u306F\u3044\u304B\u306A\u3044", "V+\u306A\u3044\u308F\u3051\u306B\u306F\u3044\u304B\u306A\u3044", "\u5FC5\u8981\u7FA9\u52D9\u578B", 85],
+    ["\u306B\u307B\u304B\u306A\u3089\u306A\u3044", "N+\u306B\u307B\u304B\u306A\u3089\u306A\u3044", "\u540C\u4E00\u6027\u65AD\u5B9A\u578B", 85],
+    ["\u306B\u307B\u304B\u306A\u3089\u306C", "N+\u306B\u307B\u304B\u306A\u3089\u306C", "\u540C\u4E00\u6027\u65AD\u5B9A\u578B(\u6587\u8A9E)", 83],
+    ["\u306B\u4ED6\u306A\u3089\u306A\u3044", "N+\u306B\u4ED6\u306A\u3089\u306A\u3044", "\u540C\u4E00\u6027\u65AD\u5B9A\u578B3", 85],
+    ["\u306B\u9055\u3044\u306A\u3044", "N/V+\u306B\u9055\u3044\u306A\u3044", "\u5F37\u3044\u63A8\u91CF\u578B", 85],
+    ["\u306B\u76F8\u9055\u306A\u3044", "N/V+\u306B\u76F8\u9055\u306A\u3044", "\u5F37\u3044\u63A8\u91CF\u578B(\u6587\u8A9E)", 83],
+    ["\u306B\u6C7A\u307E\u3063\u3066\u3044\u308B", "N/V+\u306B\u6C7A\u307E\u3063\u3066\u3044\u308B", "\u78BA\u4FE1\u578B", 82],
+    ["\u3068\u306F\u601D\u3048\u306A\u3044", "N+\u3068\u306F\u601D\u3048\u306A\u3044", "\u8A8D\u8B58\u5426\u5B9A\u578B", 80],
+    ["\u3068\u306F\u8A00\u3048\u306A\u3044", "N+\u3068\u306F\u8A00\u3048\u306A\u3044", "\u65AD\u8A00\u5426\u5B9A\u578B", 80],
+    ["\u3068\u306F\u8003\u3048\u3089\u308C\u306A\u3044", "N+\u3068\u306F\u8003\u3048\u3089\u308C\u306A\u3044", "\u601D\u8003\u5426\u5B9A\u578B", 80],
+    ["\u3068\u306F\u4FE1\u3058\u3089\u308C\u306A\u3044", "N+\u3068\u306F\u4FE1\u3058\u3089\u308C\u306A\u3044", "\u4FE1\u5FF5\u5426\u5B9A\u578B", 80],
+    ["\u3092\u554F\u308F\u305A", "N+\u3092\u554F\u308F\u305A", "\u7121\u5DEE\u5225\u5236\u9650\u578B", 85],
+    ["\u306B\u304B\u304B\u308F\u3089\u305A", "N+\u306B\u304B\u304B\u308F\u3089\u305A", "\u7121\u95A2\u4FC2\u5236\u9650\u578B", 82],
+    ["\u306B\u3082\u304B\u304B\u308F\u3089\u305A", "N+\u306B\u3082\u304B\u304B\u308F\u3089\u305A", "\u9006\u63A5\u5236\u9650\u578B", 85],
+    ["\u3069\u3053\u308D\u304B", "N+\u3069\u3053\u308D\u304B", "\u6975\u7AEF\u9006\u63A5\u578B", 85],
+    ["\u3069\u3053\u308D\u3067\u306F\u306A\u3044", "N+\u3069\u3053\u308D\u3067\u306F\u306A\u3044", "\u4F59\u88D5\u306A\u3057\u578B", 82],
+    ["\u304B\u306D\u306A\u3044", "V+\u304B\u306D\u306A\u3044", "\u5371\u60E7\u53EF\u80FD\u578B", 80],
+    ["\u304B\u306D\u308B", "V+\u304B\u306D\u308B", "\u56F0\u96E3\u578B", 78],
+    ["\u3066\u306F\u3044\u3089\u308C\u306A\u3044", "V+\u3066\u306F\u3044\u3089\u308C\u306A\u3044", "\u5207\u8FEB\u4E0D\u53EF\u578B", 80],
+    ["\u5834\u5408\u3067\u306F\u306A\u3044", "N+\u5834\u5408\u3067\u306F\u306A\u3044", "\u975E\u9069\u5207\u72B6\u6CC1\u578B", 78],
+    ["\u305D\u308C\u3069\u3053\u308D\u304B", "\u305D\u308C\u3069\u3053\u308D\u304B+N", "\u6975\u7AEF\u5BFE\u6BD4\u578B", 82],
+    ["\u306A\u3069\u3067\u306F\u5168\u304F\u306A\u3044", "N+\u306A\u3069\u3067\u306F\u5168\u304F\u306A\u3044", "\u5B8C\u5168\u5426\u5B9A\u578B", 80],
+    ["\u306A\u3057\u306B\u306F", "N+\u306A\u3057\u306B\u306F", "\u6761\u4EF6\u5426\u5B9A\u578B", 78],
+    ["\u306A\u3057\u306B\u306F\u3044\u3089\u308C\u306A\u3044", "V+\u306A\u3057\u306B\u306F\u3044\u3089\u308C\u306A\u3044", "\u885D\u52D5\u5FC5\u8981\u578B", 80],
+    ["\u307E\u3044", "V+\u307E\u3044", "\u5426\u5B9A\u610F\u5FD7\u578B", 70],
+    ["\u306A\u3044\u3067\u3044\u3089\u308C\u306A\u3044", "V+\u306A\u3044\u3067\u3044\u3089\u308C\u306A\u3044", "\u4E0D\u53EF\u6291\u5236\u578B", 80]
+  ];
+  for (const [neg, pat, lbl, conf] of negPatterns) {
+    const esc = neg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`(${CW})${esc}`),
+      pat,
+      lbl,
+      CAT_E,
+      (m) => m[1],
+      () => neg,
+      _V,
+      _Expr,
+      conf
+    ));
+  }
+  const CAT_F = "\u6163\u7528\u8907\u5408\u578B";
+  const fixedExprs = [
+    ["\u3068\u306F\u3044\u3048", "N+\u3068\u306F\u3044\u3048", "\u8B72\u6B69\u9006\u63A5\u578B", 82],
+    ["\u3068\u306F\u3044\u3063\u3066\u3082", "N+\u3068\u306F\u3044\u3063\u3066\u3082", "\u8B72\u6B69\u9006\u63A5\u578B2", 82],
+    ["\u3068\u306F\u3044\u3048\u3069\u3082", "N+\u3068\u306F\u3044\u3048\u3069\u3082", "\u8B72\u6B69\u9006\u63A5\u578B(\u6587\u8A9E)", 80],
+    ["\u306F\u3068\u3082\u304B\u304F", "N+\u306F\u3068\u3082\u304B\u304F", "\u4FDD\u7559\u9650\u5B9A\u578B", 82],
+    ["\u306F\u3068\u3082\u304B\u304F\u3068\u3057\u3066", "N+\u306F\u3068\u3082\u304B\u304F\u3068\u3057\u3066", "\u4FDD\u7559\u9650\u5B9A\u578B2", 82],
+    ["\u306F\u3055\u3066\u304A\u304D", "N+\u306F\u3055\u3066\u304A\u304D", "\u4FDD\u7559\u578B", 80],
+    ["\u306F\u3055\u3066\u304A\u3044\u3066", "N+\u306F\u3055\u3066\u304A\u3044\u3066", "\u4FDD\u7559\u578B2", 78],
+    ["\u3082\u3055\u308B\u3053\u3068\u306A\u304C\u3089", "N+\u3082\u3055\u308B\u3053\u3068\u306A\u304C\u3089", "\u5F53\u7136\u8FFD\u52A0\u578B", 82],
+    ["\u306A\u3089\u3044\u3056\u3057\u3089\u305A", "N+\u306A\u3089\u3044\u3056\u3057\u3089\u305A", "\u7279\u4F8B\u578B", 80],
+    ["\u306F\u3044\u3046\u307E\u3067\u3082\u306A\u304F", "N+\u306F\u3044\u3046\u307E\u3067\u3082\u306A\u304F", "\u81EA\u660E\u578B", 78],
+    ["\u3070\u304B\u308A\u304B", "N+\u3070\u304B\u308A\u304B", "\u7D2F\u7A4D\u578B", 80],
+    ["\u306E\u307F\u306A\u3089\u305A", "N+\u306E\u307F\u306A\u3089\u305A", "\u7D2F\u7A4D\u578B(\u6587\u8A9E)", 80],
+    ["\u3060\u3051\u3067\u306A\u304F", "N+\u3060\u3051\u3067\u306A\u304F", "\u8FFD\u52A0\u578B", 78],
+    ["\u3070\u304B\u308A\u3067\u306A\u304F", "N+\u3070\u304B\u308A\u3067\u306A\u304F", "\u7D2F\u7A4D\u8FFD\u52A0\u578B", 78],
+    ["\u306B\u3068\u3069\u307E\u3089\u305A", "N+\u306B\u3068\u3069\u307E\u3089\u305A", "\u8D85\u8D8A\u7D2F\u7A4D\u578B", 80],
+    ["\u3092\u306F\u3058\u3081\u3068\u3057\u3066", "N+\u3092\u306F\u3058\u3081\u3068\u3057\u3066", "\u4F8B\u793A\u5217\u6319\u578B2", 80],
+    ["\u3092\u76AE\u5207\u308A\u3068\u3057\u3066", "N+\u3092\u76AE\u5207\u308A\u3068\u3057\u3066", "\u958B\u59CB\u4F8B\u793A\u578B", 78],
+    ["\u306B\u9650\u3089\u305A", "N+\u306B\u9650\u3089\u305A", "\u7BC4\u56F2\u8D85\u8D8A\u578B", 78],
+    ["\u306B\u9650\u3089\u306A\u3044", "N+\u306B\u9650\u3089\u306A\u3044", "\u7BC4\u56F2\u8D85\u8D8A\u578B2", 75],
+    ["\u306B\u9650\u3063\u3066", "N+\u306B\u9650\u3063\u3066", "\u7279\u5B9A\u9650\u5B9A\u578B", 78],
+    ["\u306B\u5373\u3057\u3066", "N+\u306B\u5373\u3057\u3066", "\u5373\u5FDC\u578B", 75],
+    ["\u306B\u5247\u3063\u3066", "N+\u306B\u5247\u3063\u3066", "\u898F\u5247\u6E96\u62E0\u578B", 75],
+    ["\u306B\u4EE3\u308F\u3063\u3066", "N+\u306B\u4EE3\u308F\u3063\u3066", "\u4EE3\u66FF\u578B", 78],
+    ["\u306B\u4EE3\u3048\u3066", "N+\u306B\u4EE3\u3048\u3066", "\u7F6E\u63DB\u578B", 75],
+    ["\u3067\u306F\u306A\u304F", "N+\u3067\u306F\u306A\u304F", "\u5426\u5B9A\u7F6E\u63DB\u578B", 72],
+    ["\u3067\u306A\u304F", "N+\u3067\u306A\u304F", "\u5426\u5B9A\u7F6E\u63DB\u578B2", 70],
+    ["\u306B\u81F3\u3063\u3066\u306F", "N+\u306B\u81F3\u3063\u3066\u306F", "\u6975\u7AEF\u4F8B\u793A\u578B", 82],
+    ["\u306B\u81F3\u308B\u307E\u3067", "N+\u306B\u81F3\u308B\u307E\u3067", "\u5230\u9054\u7BC4\u56F2\u578B", 80],
+    ["\u307E\u3055\u306B", "\u307E\u3055\u306B+N", "\u5F37\u8ABF\u65AD\u5B9A\u578B", 72],
+    ["\u3053\u305D", "N+\u3053\u305D", "\u5F37\u8ABF\u7126\u70B9\u578B", 72],
+    ["\u3092\u3088\u305D\u306B", "N+\u3092\u3088\u305D\u306B", "\u7121\u8996\u578B", 82],
+    ["\u3092\u3082\u306E\u3068\u3082\u305B\u305A", "N+\u3092\u3082\u306E\u3068\u3082\u305B\u305A", "\u4E0D\u5C48\u578B", 82],
+    ["\u3092\u3082\u306E\u3068\u3082\u3057\u306A\u3044", "N+\u3092\u3082\u306E\u3068\u3082\u3057\u306A\u3044", "\u4E0D\u5C48\u578B2", 80],
+    ["\u3082\u3042\u3063\u3066", "N+\u3082\u3042\u3063\u3066", "\u8907\u5408\u8981\u56E0\u578B", 72],
+    ["\u306E\u304F\u305B\u306B", "N+\u306E\u304F\u305B\u306B", "\u610F\u5916\u9006\u63A5\u578B", 75],
+    ["\u306B\u3057\u3066\u306F", "N+\u306B\u3057\u3066\u306F", "\u57FA\u6E96\u9038\u8131\u578B", 75],
+    ["\u306B\u3057\u3066\u3082", "N+\u306B\u3057\u3066\u3082", "\u4EEE\u5B9A\u9006\u63A5\u578B", 72],
+    ["\u3068\u3082\u306A\u308B\u3068", "N+\u3068\u3082\u306A\u308B\u3068", "\u5230\u9054\u5909\u5316\u578B", 78],
+    ["\u3068\u3082\u306A\u308C\u3070", "N+\u3068\u3082\u306A\u308C\u3070", "\u5230\u9054\u5909\u5316\u578B2", 78],
+    ["\u3082\u3055\u308B\u3053\u3068\u306A\u304C\u3089", "N+\u3082\u3055\u308B\u3053\u3068\u306A\u304C\u30892", "\u81EA\u660E\u8FFD\u52A0\u578B", 80],
+    ["\u3068\u3044\u3048\u3069\u3082", "N+\u3068\u3044\u3048\u3069\u3082", "\u5F37\u8ABF\u8B72\u6B69\u578B", 78],
+    ["\u3068\u306F\u3044\u3048", "N+\u3068\u306F\u3044\u30482", "\u8EFD\u3044\u9006\u63A5\u578B", 78],
+    ["\u3068\u306F\u8A00\u3063\u3066\u3082", "N+\u3068\u306F\u8A00\u3063\u3066\u3082", "\u8EFD\u3044\u9006\u63A5\u578B2", 75],
+    ["\u306E\u307F", "N+\u306E\u307F", "\u552F\u4E00\u9650\u5B9A\u578B", 70],
+    ["\u3060\u3051\u306F", "N+\u3060\u3051\u306F", "\u6700\u4F4E\u4FDD\u8A3C\u578B", 70],
+    ["\u3053\u305D\u3042\u308C", "N+\u3053\u305D\u3042\u308C", "\u9006\u8AAC\u5F37\u8ABF\u578B", 78],
+    ["\u3059\u3089", "N+\u3059\u3089", "\u6975\u7AEF\u4F8B\u793A\u578B2", 75],
+    ["\u3055\u3048", "N+\u3055\u3048", "\u6700\u4F4E\u6761\u4EF6\u578B", 72],
+    ["\u307E\u3067", "N+\u307E\u3067", "\u5230\u9054/\u9650\u5EA6\u578B", 65],
+    ["\u3055\u3048\u3082", "N+\u3055\u3048\u3082", "\u5F37\u8ABF\u6700\u4F4E\u578B", 75],
+    ["\u3059\u3089\u3082", "N+\u3059\u3089\u3082", "\u5F37\u8ABF\u6975\u7AEF\u578B", 78]
+  ];
+  for (const [expr, pat, lbl, conf] of fixedExprs) {
+    const esc = expr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`(${CW})${esc}`),
+      pat,
+      lbl,
+      CAT_F,
+      (m) => m[1],
+      () => expr,
+      _N,
+      _Expr,
+      conf
+    ));
+  }
+  const CAT_G = "\u5F62\u5BB9\u8FF0\u8A9E\u578B";
+  const adjPreds = [
+    ["\u3084\u3059\u3044", "V+\u3084\u3059\u3044", "\u5BB9\u6613\u8907\u5408\u5F62\u5BB9\u578B", 75],
+    ["\u3084\u3059\u304F", "V+\u3084\u3059\u304F", "\u5BB9\u6613\u8907\u5408\u5F62\u5BB9\u578B(\u526F\u8A5E)", 72],
+    ["\u3084\u3059\u3055", "V+\u3084\u3059\u3055", "\u5BB9\u6613\u8907\u5408\u540D\u8A5E\u578B", 70],
+    ["\u306B\u304F\u3044", "V+\u306B\u304F\u3044", "\u56F0\u96E3\u8907\u5408\u5F62\u5BB9\u578B", 75],
+    ["\u306B\u304F\u304F", "V+\u306B\u304F\u304F", "\u56F0\u96E3\u8907\u5408\u5F62\u5BB9\u578B(\u526F\u8A5E)", 72],
+    ["\u306B\u304F\u3055", "V+\u306B\u304F\u3055", "\u56F0\u96E3\u8907\u5408\u540D\u8A5E\u578B", 70],
+    ["\u3065\u3089\u3044", "V+\u3065\u3089\u3044", "\u56F0\u96E3\u8907\u5408\u5F62\u5BB9\u578B2", 73],
+    ["\u3065\u3089\u304F", "V+\u3065\u3089\u304F", "\u56F0\u96E3\u8907\u5408\u5F62\u5BB9\u578B2(\u526F\u8A5E)", 70],
+    ["\u304C\u305F\u3044", "V+\u304C\u305F\u3044", "\u56F0\u96E3\u8907\u5408\u5F62\u5BB9\u578B3", 73],
+    ["\u304C\u305F\u304F", "V+\u304C\u305F\u304F", "\u56F0\u96E3\u8907\u5408\u5F62\u5BB9\u578B3(\u526F\u8A5E)", 70],
+    ["\u304C\u305F\u3055", "V+\u304C\u305F\u3055", "\u56F0\u96E3\u8907\u5408\u540D\u8A5E\u578B3", 68],
+    ["\u304C\u3061\u306A", "V+\u304C\u3061\u306A", "\u50BE\u5411\u8907\u5408\u5F62\u5BB9\u578B", 75],
+    ["\u304C\u3061\u306E", "V+\u304C\u3061\u306E", "\u50BE\u5411\u8907\u5408\u5F62\u5BB9\u578B2", 73],
+    ["\u304C\u3061", "V+\u304C\u3061", "\u50BE\u5411\u8FF0\u8A9E\u578B", 70],
+    ["\u304E\u307F\u306E", "V/Adj+\u304E\u307F\u306E", "\u5FAE\u50BE\u5411\u9023\u4F53\u578B", 68],
+    ["\u304E\u307F\u306A", "V/Adj+\u304E\u307F\u306A", "\u5FAE\u50BE\u5411\u5F62\u5BB9\u578B", 68],
+    ["\u304E\u307F\u306B", "V/Adj+\u304E\u307F\u306B", "\u5FAE\u50BE\u5411\u526F\u8A5E\u578B", 65],
+    ["\u3059\u304E\u308B", "V/Adj+\u3059\u304E\u308B", "\u904E\u5EA6\u578B", 72],
+    ["\u3059\u304E\u305F", "V/Adj+\u3059\u304E\u305F", "\u904E\u5EA6\u578B(\u904E\u53BB)", 70],
+    ["\u3059\u304E\u306A\u3044", "V/Adj+\u3059\u304E\u306A\u3044", "\u904E\u5EA6\u5426\u5B9A\u578B", 70],
+    ["\u3059\u304E\u3066", "V/Adj+\u3059\u304E\u3066", "\u904E\u5EA6\u7406\u7531\u578B", 68],
+    ["\u305D\u3046\u306A", "V/Adj+\u305D\u3046\u306A", "\u69D8\u614B\u9023\u4F53\u578B", 70],
+    ["\u305D\u3046\u306B", "V/Adj+\u305D\u3046\u306B", "\u69D8\u614B\u526F\u8A5E\u578B", 68],
+    ["\u305D\u3046\u3060", "V/Adj+\u305D\u3046\u3060", "\u69D8\u614B\u65AD\u5B9A\u578B", 70],
+    ["\u3089\u3057\u304D", "N+\u3089\u3057\u304D", "\u5178\u578B\u6027\u9023\u4F53\u578B", 68],
+    ["\u3052\u306A", "Adj+\u3052\u306A", "\u5916\u89B3\u9023\u4F53\u578B", 65],
+    ["\u3052\u306B", "Adj+\u3052\u306B", "\u5916\u89B3\u526F\u8A5E\u578B", 63],
+    ["\u3063\u307D\u3044", "N+\u3063\u307D\u3044", "\u985E\u4F3C\u5F62\u5BB9\u578B", 70],
+    ["\u306A\u308A\u306E", "N+\u306A\u308A\u306E", "\u76F8\u5FDC\u9023\u4F53\u578B", 70],
+    ["\u306A\u308A\u306B", "N+\u306A\u308A\u306B", "\u76F8\u5FDC\u526F\u8A5E\u578B", 68],
+    ["\u3067\u304D\u308B\u9650\u308A", "V+\u3067\u304D\u308B\u9650\u308A", "\u6700\u5927\u80FD\u529B\u526F\u8A5E\u578B", 75],
+    ["\u3067\u304D\u308B\u3060\u3051", "V+\u3067\u304D\u308B\u3060\u3051", "\u6700\u5927\u9650\u578B", 72],
+    ["\u3067\u304D\u3046\u308B", "V+\u3067\u304D\u3046\u308B", "\u53EF\u80FD\u6027\u9023\u4F53\u578B", 72],
+    ["\u3057\u3046\u308B", "V+\u3057\u3046\u308B", "\u53EF\u80FD\u6027\u578B", 70],
+    ["\u3057\u3048\u306A\u3044", "V+\u3057\u3048\u306A\u3044", "\u4E0D\u53EF\u80FD\u578B", 72],
+    ["\u3057\u304B\u306D\u308B", "V+\u3057\u304B\u306D\u308B", "\u56F0\u96E3\u5426\u5B9A\u578B", 75],
+    ["\u3057\u304B\u306D\u306A\u3044", "V+\u3057\u304B\u306D\u306A\u3044", "\u5371\u60E7\u578B", 78]
+  ];
+  for (const [adj, pat, lbl, conf] of adjPreds) {
+    const esc = adj.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`([^\\s\u3002\u3001\uFF01\uFF1F\u300C\u300D\uFF08\uFF09]{2,12})${esc}`),
+      pat,
+      lbl,
+      CAT_G,
+      (m) => m[1],
+      () => adj,
+      _V,
+      _Ai,
+      conf
+    ));
+  }
+  const CAT_H = "\u69D8\u614B\u63A8\u91CF\u578B";
+  const inferencePreds = [
+    ["\u3088\u3046\u306B\u898B\u3048\u308B", "V+\u3088\u3046\u306B\u898B\u3048\u308B", "\u5916\u89B3\u63A8\u91CF\u578B", 75],
+    ["\u3088\u3046\u306B\u898B\u3048\u305F", "V+\u3088\u3046\u306B\u898B\u3048\u305F", "\u5916\u89B3\u63A8\u91CF\u578B(\u904E\u53BB)", 73],
+    ["\u3088\u3046\u306B\u601D\u3048\u308B", "V+\u3088\u3046\u306B\u601D\u3048\u308B", "\u601D\u8003\u63A8\u91CF\u578B", 75],
+    ["\u3088\u3046\u306B\u611F\u3058\u308B", "V+\u3088\u3046\u306B\u611F\u3058\u308B", "\u611F\u899A\u63A8\u91CF\u578B", 73],
+    ["\u3088\u3046\u306B\u805E\u3053\u3048\u308B", "V+\u3088\u3046\u306B\u805E\u3053\u3048\u308B", "\u8074\u899A\u63A8\u91CF\u578B", 72],
+    ["\u3088\u3046\u306B\u53D7\u3051\u53D6\u308C\u308B", "V+\u3088\u3046\u306B\u53D7\u3051\u53D6\u308C\u308B", "\u89E3\u91C8\u63A8\u91CF\u578B", 70],
+    ["\u3088\u3046\u306B\u6620\u308B", "V+\u3088\u3046\u306B\u6620\u308B", "\u5370\u8C61\u63A8\u91CF\u578B", 68],
+    ["\u3089\u3057\u3044", "N/V+\u3089\u3057\u3044(\u4F1D\u805E)", "\u4F1D\u805E\u63A8\u91CF\u578B", 65],
+    ["\u3089\u3057\u304B\u3063\u305F", "N/V+\u3089\u3057\u304B\u3063\u305F(\u4F1D\u805E)", "\u4F1D\u805E\u63A8\u91CF\u578B(\u904E\u53BB)", 63],
+    ["\u3068\u306E\u3053\u3068\u3060", "N+\u3068\u306E\u3053\u3068\u3060", "\u4F1D\u9054\u578B", 72],
+    ["\u3068\u306E\u8A71\u3060", "N+\u3068\u306E\u8A71\u3060", "\u4F1D\u9054\u578B2", 70],
+    ["\u3068\u601D\u308F\u308C\u308B", "V+\u3068\u601D\u308F\u308C\u308B", "\u7B2C\u4E09\u8005\u63A8\u91CF\u578B", 75],
+    ["\u3068\u8003\u3048\u3089\u308C\u308B", "V+\u3068\u8003\u3048\u3089\u308C\u308B", "\u8AD6\u7406\u63A8\u91CF\u578B", 75],
+    ["\u3068\u307F\u3089\u308C\u308B", "V+\u3068\u307F\u3089\u308C\u308B", "\u89B3\u5BDF\u63A8\u91CF\u578B", 73],
+    ["\u3068\u63A8\u6E2C\u3055\u308C\u308B", "V+\u3068\u63A8\u6E2C\u3055\u308C\u308B", "\u63A8\u6E2C\u578B", 73],
+    ["\u3068\u3055\u308C\u308B", "N+\u3068\u3055\u308C\u308B", "\u898B\u89E3\u578B", 72],
+    ["\u3068\u3055\u308C\u3066\u3044\u308B", "N+\u3068\u3055\u308C\u3066\u3044\u308B", "\u901A\u8AAC\u578B", 73],
+    ["\u3060\u308D\u3046", "V+\u3060\u308D\u3046", "\u63A8\u91CF\u578B", 65],
+    ["\u3067\u3057\u3087\u3046", "V+\u3067\u3057\u3087\u3046", "\u63A8\u91CF\u578B(\u4E01\u5BE7)", 65],
+    ["\u53EF\u80FD\u6027\u304C\u3042\u308B", "N/V+\u53EF\u80FD\u6027\u304C\u3042\u308B", "\u53EF\u80FD\u6027\u578B", 75],
+    ["\u53EF\u80FD\u6027\u304C\u9AD8\u3044", "N/V+\u53EF\u80FD\u6027\u304C\u9AD8\u3044", "\u9AD8\u53EF\u80FD\u6027\u578B", 78],
+    ["\u53EF\u80FD\u6027\u304C\u4F4E\u3044", "N/V+\u53EF\u80FD\u6027\u304C\u4F4E\u3044", "\u4F4E\u53EF\u80FD\u6027\u578B", 75],
+    ["\u304A\u305D\u308C\u304C\u3042\u308B", "N/V+\u304A\u305D\u308C\u304C\u3042\u308B", "\u5371\u60E7\u53EF\u80FD\u6027\u578B", 78],
+    ["\u898B\u8FBC\u307F\u304C\u3042\u308B", "N/V+\u898B\u8FBC\u307F\u304C\u3042\u308B", "\u898B\u901A\u3057\u578B", 72],
+    ["\u3053\u3068\u304C\u3042\u308A\u3046\u308B", "V+\u3053\u3068\u304C\u3042\u308A\u3046\u308B", "\u53EF\u80FD\u4E8B\u4F8B\u578B", 72],
+    ["\u3068\u3044\u3046\u6C17\u304C\u3059\u308B", "N+\u3068\u3044\u3046\u6C17\u304C\u3059\u308B", "\u4E0D\u78BA\u304B\u8A8D\u8B58\u578B", 72],
+    ["\u3068\u3044\u3046\u5370\u8C61\u3060", "N+\u3068\u3044\u3046\u5370\u8C61\u3060", "\u5370\u8C61\u65AD\u5B9A\u578B", 70],
+    ["\u3068\u3044\u3046\u611F\u3058\u304C\u3059\u308B", "N+\u3068\u3044\u3046\u611F\u3058\u304C\u3059\u308B", "\u611F\u899A\u7684\u8A8D\u8B58\u578B", 68],
+    ["\u304B\u306E\u3088\u3046\u3060", "N+\u304B\u306E\u3088\u3046\u3060", "\u76F4\u55A9\u65AD\u5B9A\u578B", 78],
+    ["\u304B\u306E\u3088\u3046\u306B\u898B\u3048\u308B", "N+\u304B\u306E\u3088\u3046\u306B\u898B\u3048\u308B", "\u76F4\u55A9\u5916\u89B3\u578B", 78]
+  ];
+  for (const [pred, pat, lbl, conf] of inferencePreds) {
+    const esc = pred.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`(${CW})${esc}`),
+      pat,
+      lbl,
+      CAT_H,
+      (m) => m[1],
+      () => pred,
+      _Expr,
+      _AuxV,
+      conf
+    ));
+  }
+  const CAT_I = "\u6642\u9593\u56E0\u679C\u578B";
+  const tempCausal = [
+    ["\u3092\u304D\u3063\u304B\u3051\u306B", "N+\u3092\u304D\u3063\u304B\u3051\u306B", "\u5951\u6A5F\u578B", 85],
+    ["\u3092\u304D\u3063\u304B\u3051\u3068\u3057\u3066", "N+\u3092\u304D\u3063\u304B\u3051\u3068\u3057\u3066", "\u5951\u6A5F\u578B2", 83],
+    ["\u3092\u5951\u6A5F\u306B", "N+\u3092\u5951\u6A5F\u306B", "\u5951\u6A5F\u578B3", 83],
+    ["\u3092\u5951\u6A5F\u3068\u3057\u3066", "N+\u3092\u5951\u6A5F\u3068\u3057\u3066", "\u5951\u6A5F\u578B4", 82],
+    ["\u3092\u6A5F\u306B", "N+\u3092\u6A5F\u306B", "\u6A5F\u4F1A\u578B", 80],
+    ["\u304C\u5F15\u304D\u91D1\u3068\u306A\u3063\u3066", "N+\u304C\u5F15\u304D\u91D1\u3068\u306A\u3063\u3066", "\u8A98\u56E0\u578B", 82],
+    ["\u306B\u80CC\u4E2D\u3092\u62BC\u3055\u308C\u3066", "N+\u306B\u80CC\u4E2D\u3092\u62BC\u3055\u308C\u3066", "\u5F8C\u62BC\u3057\u578B", 78],
+    ["\u3092\u7D4C\u3066", "N+\u3092\u7D4C\u3066", "\u7D4C\u904E\u578B", 80],
+    ["\u3092\u7D4C\u305F\u5F8C\u306B", "N+\u3092\u7D4C\u305F\u5F8C\u306B", "\u7D4C\u904E\u5F8C\u578B", 78],
+    ["\u3092\u7D4C\u3066\u304B\u3089", "N+\u3092\u7D4C\u3066\u304B\u3089", "\u7D4C\u904E\u5F8C\u578B2", 75],
+    ["\u306E\u5F8C\u306B", "N+\u306E\u5F8C\u306B", "\u5F8C\u7D9A\u578B", 72],
+    ["\u306E\u5F8C\u3067", "N+\u306E\u5F8C\u3067", "\u5F8C\u7D9A\u578B2", 70],
+    ["\u306E\u7D50\u679C", "N+\u306E\u7D50\u679C", "\u7D50\u679C\u578B", 80],
+    ["\u306E\u672B\u306B", "N+\u306E\u672B\u306B", "\u7D4C\u904E\u7D50\u679C\u578B", 78],
+    ["\u306E\u6319\u53E5", "N+\u306E\u6319\u53E5", "\u60AA\u7D50\u679C\u578B", 75],
+    ["\u306E\u6319\u3052\u53E5", "N+\u306E\u6319\u3052\u53E5", "\u60AA\u7D50\u679C\u578B2", 73],
+    ["\u306B\u4F34\u3063\u3066", "N+\u306B\u4F34\u3063\u3066", "\u968F\u4F34\u578B", 80],
+    ["\u306B\u4F34\u3044", "N+\u306B\u4F34\u3044", "\u968F\u4F34\u578B2", 78],
+    ["\u3068\u540C\u6642\u306B", "N+\u3068\u540C\u6642\u306B", "\u540C\u6642\u578B", 75],
+    ["\u3068\u4E26\u884C\u3057\u3066", "N+\u3068\u4E26\u884C\u3057\u3066", "\u4E26\u884C\u578B", 75],
+    ["\u306B\u7D9A\u3044\u3066", "N+\u306B\u7D9A\u3044\u3066", "\u5F8C\u7D9A\u578B3", 73],
+    ["\u306B\u6B21\u3044\u3067", "N+\u306B\u6B21\u3044\u3067", "\u6B21\u4F4D\u578B", 72],
+    ["\u3068\u5171\u306B", "N+\u3068\u5171\u306B", "\u5171\u6642\u578B", 70],
+    ["\u305F\u3073\u306B", "N+\u305F\u3073\u306B", "\u53CD\u5FA9\u578B", 75],
+    ["\u3054\u3068\u306B", "N+\u3054\u3068\u306B", "\u5206\u914D\u53CD\u5FA9\u578B", 72],
+    ["\u304A\u304D\u306B", "N+\u304A\u304D\u306B", "\u9593\u9694\u53CD\u5FA9\u578B", 72],
+    ["\u306E\u305F\u3073\u306B", "N+\u306E\u305F\u3073\u306B", "\u53CD\u5FA9\u578B2", 75],
+    ["\u305F\u3081\u306B", "N+\u305F\u3081\u306B(\u539F\u56E0)", "\u539F\u56E0\u578B", 72],
+    ["\u305B\u3044\u3067", "N+\u305B\u3044\u3067", "\u8CAC\u4EFB\u539F\u56E0\u578B", 72],
+    ["\u304A\u304B\u3052\u3067", "N+\u304A\u304B\u3052\u3067", "\u6069\u6075\u539F\u56E0\u578B", 72],
+    ["\u304C\u539F\u56E0\u3067", "N+\u304C\u539F\u56E0\u3067", "\u539F\u56E0\u578B2", 75],
+    ["\u304C\u8981\u56E0\u3067", "N+\u304C\u8981\u56E0\u3067", "\u8981\u56E0\u578B", 73],
+    ["\u304C\u7406\u7531\u3067", "N+\u304C\u7406\u7531\u3067", "\u7406\u7531\u578B", 72],
+    ["\u3086\u3048\u306B", "N+\u3086\u3048\u306B", "\u6587\u8A9E\u539F\u56E0\u578B", 75],
+    ["\u304C\u6545\u306B", "N+\u304C\u6545\u306B", "\u6587\u8A9E\u539F\u56E0\u578B2", 73],
+    ["\u304C\u5F15\u304D\u8D77\u3053\u3057\u305F", "N+\u304C\u5F15\u304D\u8D77\u3053\u3057\u305F", "\u8A98\u767A\u578B", 78],
+    ["\u306E\u305B\u3044\u304B", "N+\u306E\u305B\u3044\u304B", "\u63A8\u91CF\u539F\u56E0\u578B", 70],
+    ["\u306E\u304A\u304B\u3052\u304B", "N+\u306E\u304A\u304B\u3052\u304B", "\u63A8\u91CF\u6069\u6075\u578B", 68],
+    ["\u3092\u304D\u3063\u304B\u3051\u306B\u3057\u3066", "N+\u3092\u304D\u3063\u304B\u3051\u306B\u3057\u3066", "\u5951\u6A5F\u578B5", 82],
+    ["\u306B\u7D9A\u304F", "N+\u306B\u7D9A\u304F", "\u5F8C\u7D9A\u9023\u4F53\u578B", 70]
+  ];
+  for (const [expr, pat, lbl, conf] of tempCausal) {
+    const esc = expr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`(${CW})${esc}`),
+      pat,
+      lbl,
+      CAT_I,
+      (m) => m[1],
+      () => expr,
+      _N,
+      _Expr,
+      conf
+    ));
+  }
+  const CAT_J = "\u5BFE\u6BD4\u95A2\u4FC2\u578B";
+  const contrastive = [
+    ["\u306B\u6BD4\u3079\u3066", "N+\u306B\u6BD4\u3079\u3066", "\u6BD4\u8F03\u578B", 80],
+    ["\u3068\u6BD4\u3079\u3066", "N+\u3068\u6BD4\u3079\u3066", "\u6BD4\u8F03\u578B2", 78],
+    ["\u306B\u6BD4\u3079", "N+\u306B\u6BD4\u3079", "\u6BD4\u8F03\u578B3", 75],
+    ["\u3068\u6BD4\u3079", "N+\u3068\u6BD4\u3079", "\u6BD4\u8F03\u578B4", 73],
+    ["\u3068\u6BD4\u8F03\u3057\u3066", "N+\u3068\u6BD4\u8F03\u3057\u3066", "\u6BD4\u8F03\u578B5", 78],
+    ["\u306B\u6BD4\u8F03\u3057\u3066", "N+\u306B\u6BD4\u8F03\u3057\u3066", "\u6BD4\u8F03\u578B6", 75],
+    ["\u3068\u6BD4\u8F03\u3059\u308B\u3068", "N+\u3068\u6BD4\u8F03\u3059\u308B\u3068", "\u6BD4\u8F03\u578B7", 75],
+    ["\u3068\u5BFE\u6BD4\u3057\u3066", "N+\u3068\u5BFE\u6BD4\u3057\u3066", "\u5BFE\u6BD4\u578B", 75],
+    ["\u3068\u306F\u9055\u3063\u3066", "N+\u3068\u306F\u9055\u3063\u3066", "\u76F8\u9055\u578B", 80],
+    ["\u3068\u9055\u3063\u3066", "N+\u3068\u9055\u3063\u3066", "\u76F8\u9055\u578B2", 78],
+    ["\u3068\u306F\u7570\u306A\u308A", "N+\u3068\u306F\u7570\u306A\u308A", "\u76F8\u9055\u578B3", 78],
+    ["\u3068\u306F\u7570\u306A\u308B", "N+\u3068\u306F\u7570\u306A\u308B", "\u76F8\u9055\u578B4", 75],
+    ["\u3068\u7570\u306A\u308A", "N+\u3068\u7570\u306A\u308A", "\u76F8\u9055\u578B5", 73],
+    ["\u3068\u306F\u5BFE\u7167\u7684\u306B", "N+\u3068\u306F\u5BFE\u7167\u7684\u306B", "\u5BFE\u7167\u578B", 78],
+    ["\u3068\u5BFE\u7167\u7684\u306B", "N+\u3068\u5BFE\u7167\u7684\u306B", "\u5BFE\u7167\u578B2", 75],
+    ["\u306B\u53CD\u3057\u3066", "N+\u306B\u53CD\u3057\u3066", "\u9006\u63A5\u578B", 78],
+    ["\u306B\u53CD\u3057\u305F", "N+\u306B\u53CD\u3057\u305F", "\u9006\u63A5\u578B2", 75],
+    ["\u306B\u53CD\u3059\u308B", "N+\u306B\u53CD\u3059\u308B", "\u9006\u63A5\u578B3", 73],
+    ["\u306B\u4EE3\u308F\u3063\u3066", "N+\u306B\u4EE3\u308F\u3063\u3066", "\u4EE3\u66FF\u578B", 78],
+    ["\u306B\u4EE3\u308F\u308A", "N+\u306B\u4EE3\u308F\u308A", "\u4EE3\u66FF\u578B2", 75],
+    ["\u306B\u4EE3\u308F\u308B", "N+\u306B\u4EE3\u308F\u308B", "\u4EE3\u66FF\u9023\u4F53\u578B", 73],
+    ["\u306E\u4EE3\u308F\u308A\u306B", "N+\u306E\u4EE3\u308F\u308A\u306B", "\u4EE3\u66FF\u578B3", 75],
+    ["\u3092\u3088\u305D\u306B", "N+\u3092\u3088\u305D\u306B", "\u7121\u8996\u578B", 82],
+    ["\u3092\u3082\u306E\u3068\u3082\u305B\u305A", "N+\u3092\u3082\u306E\u3068\u3082\u305B\u305A", "\u4E0D\u5C48\u578B", 82],
+    ["\u306B\u3057\u3066\u3082", "N+\u306B\u3057\u3066\u3082", "\u4EEE\u5B9A\u5BFE\u6BD4\u578B", 72],
+    ["\u306B\u3057\u3066\u306F", "N+\u306B\u3057\u3066\u306F", "\u57FA\u6E96\u9038\u8131\u578B", 75],
+    ["\u306A\u306E\u306B", "N+\u306A\u306E\u306B", "\u9006\u63A5\u578B4", 70],
+    ["\u3067\u3042\u3063\u3066\u3082", "N+\u3067\u3042\u3063\u3066\u3082", "\u4EEE\u5B9A\u9006\u63A5\u578B", 72],
+    ["\u306B\u5BFE\u3057\u3066(\u5BFE\u6BD4)", "N+\u306B\u5BFE\u3057\u3066", "\u5BFE\u6BD4\u578B2", 73],
+    ["\u3068\u76F8\u53CD\u3057\u3066", "N+\u3068\u76F8\u53CD\u3057\u3066", "\u5BFE\u7ACB\u578B", 75],
+    ["\u306B\u80CC\u3044\u3066", "N+\u306B\u80CC\u3044\u3066", "\u9055\u80CC\u578B", 72],
+    ["\u306B\u9006\u3089\u3063\u3066", "N+\u306B\u9006\u3089\u3063\u3066", "\u53CD\u6297\u578B", 72],
+    ["\u3068\u88CF\u8179\u306B", "N+\u3068\u88CF\u8179\u306B", "\u88CF\u8179\u578B", 78],
+    ["\u306E\u304B\u308F\u308A\u306B", "N+\u306E\u304B\u308F\u308A\u306B", "\u4EE3\u66FF\u578B4", 73],
+    ["\u3067\u306A\u304F", "N+\u3067\u306A\u304F", "\u5426\u5B9A\u7F6E\u63DB\u578B", 70],
+    ["\u3067\u306F\u306A\u304F", "N+\u3067\u306F\u306A\u304F", "\u5426\u5B9A\u7F6E\u63DB\u578B2", 72],
+    ["\u3068\u6253\u3063\u3066\u5909\u308F\u3063\u3066", "N+\u3068\u6253\u3063\u3066\u5909\u308F\u3063\u3066", "\u6025\u8EE2\u578B", 80],
+    ["\u306B\u6BD4\u3057", "N+\u306B\u6BD4\u3057(\u6587\u8A9E)", "\u6587\u8A9E\u6BD4\u8F03\u578B", 73],
+    ["\u306B\u6BD4\u3059\u308C\u3070", "N+\u306B\u6BD4\u3059\u308C\u3070(\u6587\u8A9E)", "\u6587\u8A9E\u6BD4\u8F03\u578B2", 73],
+    ["\u3068\u306F\u3046\u3063\u3066\u304B\u308F\u3063\u3066", "N+\u3068\u306F\u3046\u3063\u3066\u304B\u308F\u3063\u3066", "\u8EE2\u63DB\u5BFE\u6BD4\u578B", 78]
+  ];
+  for (const [expr, pat, lbl, conf] of contrastive) {
+    const esc = expr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`(${CW})${esc}`),
+      pat,
+      lbl,
+      CAT_J,
+      (m) => m[1],
+      () => expr,
+      _N,
+      _Expr,
+      conf
+    ));
+  }
+  const CAT_K = "\u7A7A\u9593\u65B9\u5411\u578B";
+  const spatial = [
+    ["\u306B\u5411\u3051\u3066", "N+\u306B\u5411\u3051\u3066", "\u65B9\u5411\u578B", 75],
+    ["\u306B\u5411\u304B\u3063\u3066", "N+\u306B\u5411\u304B\u3063\u3066", "\u65B9\u5411\u578B2", 75],
+    ["\u306B\u5411\u304B\u3044", "N+\u306B\u5411\u304B\u3044", "\u65B9\u5411\u578B3", 73],
+    ["\u306B\u5411\u304F", "N+\u306B\u5411\u304F", "\u65B9\u5411\u578B4", 70],
+    ["\u306B\u5411\u3044\u305F", "N+\u306B\u5411\u3044\u305F", "\u65B9\u5411\u578B5", 70],
+    ["\u3092\u76EE\u6307\u3057\u3066", "N+\u3092\u76EE\u6307\u3057\u3066", "\u76EE\u6A19\u578B", 80],
+    ["\u3092\u76EE\u6307\u3057", "N+\u3092\u76EE\u6307\u3057", "\u76EE\u6A19\u578B2", 78],
+    ["\u3092\u76EE\u6307\u3059", "N+\u3092\u76EE\u6307\u3059", "\u76EE\u6A19\u578B3", 75],
+    ["\u3092\u76EE\u6A19\u306B", "N+\u3092\u76EE\u6A19\u306B", "\u76EE\u6A19\u578B4", 78],
+    ["\u3092\u4E2D\u5FC3\u306B", "N+\u3092\u4E2D\u5FC3\u306B", "\u4E2D\u5FC3\u578B", 80],
+    ["\u3092\u4E2D\u5FC3\u3068\u3057\u3066", "N+\u3092\u4E2D\u5FC3\u3068\u3057\u3066", "\u4E2D\u5FC3\u578B2", 78],
+    ["\u3092\u4E2D\u5FC3\u3068\u3057\u305F", "N+\u3092\u4E2D\u5FC3\u3068\u3057\u305F", "\u4E2D\u5FC3\u578B3", 75],
+    ["\u3092\u53D6\u308A\u5DFB\u304F", "N+\u3092\u53D6\u308A\u5DFB\u304F", "\u5468\u56F2\u578B", 72],
+    ["\u3092\u53D6\u308A\u5DFB\u3044\u305F", "N+\u3092\u53D6\u308A\u5DFB\u3044\u305F", "\u5468\u56F2\u578B2", 70],
+    ["\u3092\u53D6\u308A\u56F2\u3080", "N+\u3092\u53D6\u308A\u56F2\u3080", "\u5305\u56F2\u578B", 72],
+    ["\u306B\u6CBF\u3063\u3066", "N+\u306B\u6CBF\u3063\u3066", "\u968F\u4F34\u65B9\u5411\u578B", 75],
+    ["\u306B\u6CBF\u3044", "N+\u306B\u6CBF\u3044", "\u968F\u4F34\u65B9\u5411\u578B2", 72],
+    ["\u306B\u6CBF\u3063\u305F", "N+\u306B\u6CBF\u3063\u305F", "\u968F\u4F34\u9023\u4F53\u578B", 72],
+    ["\u304B\u3089\u59CB\u307E\u3063\u3066", "N+\u304B\u3089\u59CB\u307E\u3063\u3066", "\u8D77\u70B9\u578B", 72],
+    ["\u304B\u3089\u59CB\u307E\u3063\u305F", "N+\u304B\u3089\u59CB\u307E\u3063\u305F", "\u8D77\u70B9\u578B2", 70],
+    ["\u306B\u81F3\u308B\u307E\u3067", "N+\u306B\u81F3\u308B\u307E\u3067", "\u5230\u9054\u7BC4\u56F2\u578B", 80],
+    ["\u306B\u81F3\u3063\u3066", "N+\u306B\u81F3\u3063\u3066", "\u5230\u9054\u578B", 78],
+    ["\u3092\u8D85\u3048\u3066", "N+\u3092\u8D85\u3048\u3066", "\u8D85\u8D8A\u578B", 72],
+    ["\u3092\u8D85\u3048\u305F", "N+\u3092\u8D85\u3048\u305F", "\u8D85\u8D8A\u9023\u4F53\u578B", 70],
+    ["\u304B\u3089\u96E2\u308C\u3066", "N+\u304B\u3089\u96E2\u308C\u3066", "\u96E2\u8131\u578B", 72],
+    ["\u304B\u3089\u96E2\u308C\u305F", "N+\u304B\u3089\u96E2\u308C\u305F", "\u96E2\u8131\u9023\u4F53\u578B", 70],
+    ["\u306B\u8FD1\u3065\u3044\u3066", "N+\u306B\u8FD1\u3065\u3044\u3066", "\u63A5\u8FD1\u578B", 70],
+    ["\u304B\u3089\u8131\u3057\u3066", "N+\u304B\u3089\u8131\u3057\u3066", "\u8131\u51FA\u578B", 72],
+    ["\u304B\u3089\u629C\u3051\u51FA\u3057\u3066", "N+\u304B\u3089\u629C\u3051\u51FA\u3057\u3066", "\u8131\u51FA\u578B2", 72],
+    ["\u304B\u3089\u9060\u3056\u304B\u3063\u3066", "N+\u304B\u3089\u9060\u3056\u304B\u3063\u3066", "\u9060\u96E2\u578B", 73],
+    ["\u3092\u5F8C\u306B\u3057\u3066", "N+\u3092\u5F8C\u306B\u3057\u3066", "\u96E2\u53BB\u578B", 72],
+    ["\u306B\u5411\u304B\u3046", "N+\u306B\u5411\u304B\u3046", "\u5411\u884C\u578B", 68],
+    ["\u304B\u3089\u9060\u306E\u3044\u3066", "N+\u304B\u3089\u9060\u306E\u3044\u3066", "\u6F38\u9060\u578B", 72],
+    ["\u3092\u901A\u308A\u904E\u304E\u3066", "N+\u3092\u901A\u308A\u904E\u304E\u3066", "\u901A\u904E\u578B", 68],
+    ["\u306E\u65B9\u5411\u3078", "N+\u306E\u65B9\u5411\u3078", "\u65B9\u5411\u526F\u8A5E\u578B", 65],
+    ["\u3092\u307E\u305F\u3044\u3067", "N+\u3092\u307E\u305F\u3044\u3067", "\u8DE8\u8D8A\u578B", 65],
+    ["\u306B\u8DE8\u3063\u3066", "N+\u306B\u8DE8\u3063\u3066", "\u8DE8\u8D8A\u578B2", 65],
+    ["\u3092\u304B\u3051\u3066", "N+\u3092\u304B\u3051\u3066(\u671F\u9593)", "\u671F\u9593\u578B", 68],
+    ["\u306B\u304B\u3051\u3066", "N+\u306B\u304B\u3051\u3066", "\u671F\u9593\u578B2", 68],
+    ["\u306B\u6E21\u3063\u3066", "N+\u306B\u6E21\u3063\u3066", "\u7BC4\u56F2\u578B", 72]
+  ];
+  for (const [expr, pat, lbl, conf] of spatial) {
+    const esc = expr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`(${CW})${esc}`),
+      pat,
+      lbl,
+      CAT_K,
+      (m) => m[1],
+      () => expr,
+      _N,
+      _V,
+      conf
+    ));
+  }
+  const CAT_L = "\u793E\u4F1A\u5F79\u5272\u578B";
+  const humanNouns2 = "\u4EBA\u9593|\u4EBA|\u8005|\u5B58\u5728|\u30BF\u30A4\u30D7|\u751F\u304D\u65B9|\u6027\u683C|\u30AD\u30E3\u30E9|\u6C17\u8CEA|\u4EBA\u7269";
+  specs.push(sp(
+    new RegExp(`(${CW})\u304B\u3089(\u9060\u3044|\u7A0B\u9060\u3044|\u304B\u3051\u96E2\u308C\u305F)(${humanNouns2})`),
+    "N+\u304B\u3089+\u9060\u3044+\u4EBAN",
+    "\u8DDD\u96E2\u4EBA\u7269\u578B",
+    CAT_L,
+    (m) => m[1],
+    (m) => "\u304B\u3089" + m[2] + m[3],
+    _N,
+    _Ai,
+    85
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u3068\u306F(\u7A0B\u9060\u3044|\u304B\u3051\u96E2\u308C\u305F)(${humanNouns2})?`),
+    "N+\u3068\u306F+\u7A0B\u9060\u3044+\u4EBAN",
+    "\u5BFE\u6BD4\u8DDD\u96E2\u4EBA\u7269\u578B",
+    CAT_L,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return "\u3068\u306F" + m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Ai,
+    85
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u7CFB(\u306E)?(${humanNouns2})`),
+    "N+\u7CFB\u306E+\u4EBAN",
+    "\u5C5E\u6027\u4EBA\u7269\u578B",
+    CAT_L,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return "\u7CFB" + ((_a = m[2]) != null ? _a : "") + m[3];
+    },
+    _N,
+    _N,
+    75
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u5411\u304D\u306E|\u5411\u3051\u306E|\u5411\u304D|\u5411\u3051)(${humanNouns2})?`),
+    "N+\u5411\u304D\u306E+\u4EBAN",
+    "\u9069\u6027\u4EBA\u7269\u578B",
+    CAT_L,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _N,
+    70
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u808C(\u306E)?(${humanNouns2})?`),
+    "N+\u808C\u306E+\u4EBAN",
+    "\u6C17\u8CEA\u4EBA\u7269\u578B",
+    CAT_L,
+    (m) => m[1],
+    (m) => {
+      var _a, _b;
+      return "\u808C" + ((_a = m[2]) != null ? _a : "") + ((_b = m[3]) != null ? _b : "");
+    },
+    _N,
+    _N,
+    70
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u578B(\u306E)?(${humanNouns2})?`),
+    "N+\u578B\u306E+\u4EBAN",
+    "\u985E\u578B\u4EBA\u7269\u578B",
+    CAT_L,
+    (m) => m[1],
+    (m) => {
+      var _a, _b;
+      return "\u578B" + ((_a = m[2]) != null ? _a : "") + ((_b = m[3]) != null ? _b : "");
+    },
+    _N,
+    _N,
+    70
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u306B\u306F(\u7E01\u9060\u3044|\u7E01\u306E\u306A\u3044|\u7E01\u304C\u306A\u3044)(${humanNouns2})?`),
+    "N+\u306B\u306F\u7E01\u9060\u3044+\u4EBAN",
+    "\u7121\u7E01\u4EBA\u7269\u578B",
+    CAT_L,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return "\u306B\u306F" + m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Ai,
+    80
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u3068\u306F(\u7121\u7E01\u306E|\u7121\u7E01\u306A)(${humanNouns2})?`),
+    "N+\u3068\u306F\u7121\u7E01\u306E+\u5B58\u5728N",
+    "\u7121\u7E01\u4EBA\u7269\u5BFE\u6BD4\u578B",
+    CAT_L,
+    (m) => m[1],
+    (m) => {
+      var _a;
+      return "\u3068\u306F" + m[2] + ((_a = m[3]) != null ? _a : "");
+    },
+    _N,
+    _Ana,
+    80
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u7684(\u306A|\u306E)(${humanNouns2})`),
+    "N+\u7684\u306A+\u4EBAN",
+    "\u7684\u5C5E\u6027\u4EBA\u7269\u578B",
+    CAT_L,
+    (m) => m[1],
+    (m) => "\u7684" + m[2] + m[3],
+    _N,
+    _Ana,
+    70
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})(\u3088\u308A|\u5BC4\u308A)(\u306E)?(${humanNouns2})?`),
+    "N+\u3088\u308A\u306E+\u4EBAN",
+    "\u50BE\u5411\u4EBA\u7269\u578B",
+    CAT_L,
+    (m) => m[1],
+    (m) => {
+      var _a, _b;
+      return m[2] + ((_a = m[3]) != null ? _a : "") + ((_b = m[4]) != null ? _b : "");
+    },
+    _N,
+    _N,
+    68
+  ));
+  specs.push(sp(
+    new RegExp(`(${CW})\u304B\u3089(\u9060\u3044|\u7A0B\u9060\u3044|\u304B\u3051\u96E2\u308C\u305F)(\u751F\u304D\u65B9|\u8003\u3048\u65B9|\u5728\u308A\u65B9|\u30B9\u30BF\u30A4\u30EB|\u3042\u308A\u65B9)`),
+    "N+\u304B\u3089\u9060\u3044+\u751F\u304D\u65B9N",
+    "\u8DDD\u96E2\u751F\u6D3B\u578B",
+    CAT_L,
+    (m) => m[1],
+    (m) => "\u304B\u3089" + m[2] + m[3],
+    _N,
+    _Ai,
+    80
+  ));
+  const CAT_M = "\u64EC\u614B\u8A9E\u8FF0\u8A9E\u578B";
+  specs.push(sp(
+    /([ぁ-ゖァ-ヶ]{1,4})\1(する|した|しない|な|の|と|で|だ|になる|としている)/,
+    "OnomPred+\u3059\u308B",
+    "\u64EC\u614B\u8A9E\u8FF0\u8A9E\u578B",
+    CAT_M,
+    (m) => m[1] + m[1],
+    (m) => m[2],
+    _Adv,
+    _V,
+    75
+  ));
+  specs.push(sp(
+    /(どんどん|ぐんぐん|みるみる|じわじわ|ずんずん|さくさく|ぐるぐる|ぎりぎり|ぼんぼん)([^\s。、！？「」（）]{1,10}[うくぐすつぬぶむる])/,
+    "\u901F\u5EA6\u64EC\u614B\u8A9E+V",
+    "\u901F\u5EA6\u64EC\u614B\u8A9E\u52D5\u8A5E\u578B",
+    CAT_M,
+    (m) => m[1],
+    (m) => m[2],
+    _Adv,
+    _V,
+    75
+  ));
+  const staticMimetics = "\u307C\u3093\u3084\u308A|\u307C\u30FC\u3063|\u3058\u3063\u3068|\u3075\u308F\u3075\u308F|\u306E\u3093\u3073\u308A|\u3086\u3063\u304F\u308A|\u3057\u3063\u304B\u308A|\u306F\u3063\u304D\u308A|\u3058\u3063\u304F\u308A|\u304E\u3063\u3057\u308A|\u305F\u3063\u3077\u308A|\u3059\u3063\u304D\u308A|\u3055\u3063\u3071\u308A|\u3046\u3063\u304B\u308A|\u307C\u30FC\u3063\u3068";
+  specs.push(sp(
+    new RegExp(`(${staticMimetics})(\u3068)?(\u3059\u308B|\u3057\u3066\u3044\u308B|\u898B\u308B|\u8003\u3048\u308B|\u5F85\u3064|\u773A\u3081\u308B|\u5EA7\u308B|\u7ACB\u3063\u3066\u3044\u308B)?`),
+    "\u9759\u614B\u64EC\u614B\u8A9E+V",
+    "\u9759\u614B\u64EC\u614B\u8A9E\u8FF0\u8A9E\u578B",
+    CAT_M,
+    (m) => m[1],
+    (m) => {
+      var _a, _b;
+      return ((_a = m[2]) != null ? _a : "") + ((_b = m[3]) != null ? _b : "");
+    },
+    _Adv,
+    _V,
+    70
+  ));
+  specs.push(sp(
+    /(ドキドキ|ワクワク|ソワソワ|イライラ|モヤモヤ|ガクガク|ブルブル|ハラハラ|ドキッと|ワクッと)(する|した|している|してしまう)/,
+    "\u611F\u60C5\u64EC\u614B\u8A9E+\u3059\u308B",
+    "\u611F\u60C5\u64EC\u614B\u8A9E\u8FF0\u8A9E\u578B",
+    CAT_M,
+    (m) => m[1],
+    (m) => m[2],
+    _Adv,
+    _V,
+    78
+  ));
+  const CAT_N = "\u6761\u4EF6\u4EEE\u5B9A\u578B";
+  const conditionals = [
+    ["\u306A\u3051\u308C\u3070\u306A\u3089\u306A\u3044", "V+\u306A\u3051\u308C\u3070\u306A\u3089\u306A\u3044", "\u7FA9\u52D9\u6761\u4EF6\u578B", 80],
+    ["\u306A\u3051\u308C\u3070\u3044\u3051\u306A\u3044", "V+\u306A\u3051\u308C\u3070\u3044\u3051\u306A\u3044", "\u7FA9\u52D9\u6761\u4EF6\u578B2", 80],
+    ["\u306A\u304F\u3066\u306F\u306A\u3089\u306A\u3044", "V+\u306A\u304F\u3066\u306F\u306A\u3089\u306A\u3044", "\u7FA9\u52D9\u6761\u4EF6\u578B3", 80],
+    ["\u306A\u304F\u3066\u306F\u3044\u3051\u306A\u3044", "V+\u306A\u304F\u3066\u306F\u3044\u3051\u306A\u3044", "\u7FA9\u52D9\u6761\u4EF6\u578B4", 80],
+    ["\u306A\u3044\u3068\u3044\u3051\u306A\u3044", "V+\u306A\u3044\u3068\u3044\u3051\u306A\u3044", "\u7FA9\u52D9\u6761\u4EF6\u578B5", 78],
+    ["\u306A\u3044\u3068\u3060\u3081", "V+\u306A\u3044\u3068\u3060\u3081", "\u7FA9\u52D9\u6761\u4EF6\u578B6", 72],
+    ["\u305F\u3081\u306B\u306F", "V+\u305F\u3081\u306B\u306F", "\u76EE\u7684\u6761\u4EF6\u578B", 75],
+    ["\u305F\u3081\u306A\u3089\u3070", "V+\u305F\u3081\u306A\u3089\u3070", "\u76EE\u7684\u6761\u4EF6\u578B2", 73],
+    ["\u304B\u304E\u308A", "V+\u304B\u304E\u308A", "\u6761\u4EF6\u9650\u5B9A\u578B", 72],
+    ["\u304B\u304E\u308A\u306F", "V+\u304B\u304E\u308A\u306F", "\u6761\u4EF6\u9650\u5B9A\u578B2", 73],
+    ["\u4EE5\u4E0A\u306F", "V+\u4EE5\u4E0A\u306F", "\u524D\u63D0\u6761\u4EF6\u578B", 75],
+    ["\u4EE5\u4E0A", "V+\u4EE5\u4E0A(\u6761\u4EF6)", "\u524D\u63D0\u6761\u4EF6\u578B2", 72],
+    ["\u3053\u3068\u306B\u3088\u3063\u3066", "V+\u3053\u3068\u306B\u3088\u3063\u3066", "\u624B\u6BB5\u6761\u4EF6\u578B", 75],
+    ["\u3053\u3068\u3067", "V+\u3053\u3068\u3067", "\u624B\u6BB5\u6761\u4EF6\u578B2", 70],
+    ["\u3068\u3057\u305F\u3089", "V+\u3068\u3057\u305F\u3089", "\u4EEE\u5B9A\u578B", 70],
+    ["\u3068\u3059\u308C\u3070", "V+\u3068\u3059\u308C\u3070", "\u4EEE\u5B9A\u578B2", 70],
+    ["\u3068\u306A\u308C\u3070", "V+\u3068\u306A\u308C\u3070", "\u5909\u5316\u4EEE\u5B9A\u578B", 73],
+    ["\u3060\u3068\u3057\u3066\u3082", "V+\u3060\u3068\u3057\u3066\u3082", "\u9006\u4EEE\u5B9A\u578B", 72],
+    ["\u3067\u3042\u3063\u3066\u3082", "V+\u3067\u3042\u3063\u3066\u3082", "\u9006\u4EEE\u5B9A\u578B2", 72],
+    ["\u305F\u3068\u3057\u3066\u3082", "V+\u305F\u3068\u3057\u3066\u3082", "\u904E\u53BB\u9006\u4EEE\u5B9A\u578B", 72],
+    ["\u3068\u306F\u3044\u3063\u3066\u3082", "V+\u3068\u306F\u3044\u3063\u3066\u3082", "\u8B72\u6B69\u578B", 72],
+    ["\u306B\u3057\u3066\u3082", "V+\u306B\u3057\u3066\u3082", "\u4EEE\u5B9A\u5BFE\u6BD4\u578B", 70],
+    ["\u3082\u3057\u3082", "\u3082\u3057\u3082+V", "\u5F37\u4EEE\u5B9A\u578B", 68],
+    ["\u4EEE\u306B", "\u4EEE\u306B+V", "\u4EEE\u5B9A\u526F\u8A5E\u578B", 70],
+    ["\u4E07\u304C\u4E00", "\u4E07\u304C\u4E00+V", "\u4E07\u4E00\u4EEE\u5B9A\u578B", 75],
+    ["\u3067\u306A\u3051\u308C\u3070", "V+\u3067\u306A\u3051\u308C\u3070", "\u5426\u5B9A\u6761\u4EF6\u578B", 70],
+    ["\u3067\u306A\u304B\u3063\u305F\u3089", "V+\u3067\u306A\u304B\u3063\u305F\u3089", "\u5426\u5B9A\u904E\u53BB\u4EEE\u5B9A\u578B", 68],
+    ["\u3058\u3083\u306A\u3051\u308C\u3070", "V+\u3058\u3083\u306A\u3051\u308C\u3070(\u53E3\u8A9E)", "\u5426\u5B9A\u6761\u4EF6\u578B\u53E3\u8A9E", 65],
+    ["\u3055\u3048\u3059\u308C\u3070", "N+\u3055\u3048\u3059\u308C\u3070", "\u6700\u4F4E\u6761\u4EF6\u578B", 75],
+    ["\u3055\u3048\u3042\u308C\u3070", "N+\u3055\u3048\u3042\u308C\u3070", "\u5B58\u5728\u6761\u4EF6\u578B", 75]
+  ];
+  for (const [cond, pat, lbl, conf] of conditionals) {
+    const esc = cond.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`(${CW})${esc}`),
+      pat,
+      lbl,
+      CAT_N,
+      (m) => m[1],
+      () => cond,
+      _V,
+      _AuxV,
+      conf
+    ));
+  }
+  const CAT_O = "\u5F15\u7528\u7167\u5408\u578B";
+  const quotation = [
+    ["\u3068\u8A00\u308F\u308C\u308B", "N+\u3068\u8A00\u308F\u308C\u308B", "\u547C\u79F0\u5F15\u7528\u578B", 70],
+    ["\u3068\u8A00\u308F\u308C\u305F", "N+\u3068\u8A00\u308F\u308C\u305F", "\u547C\u79F0\u5F15\u7528\u578B(\u904E\u53BB)", 68],
+    ["\u3068\u8A00\u308F\u308C\u3066\u3044\u308B", "N+\u3068\u8A00\u308F\u308C\u3066\u3044\u308B", "\u901A\u8AAC\u5F15\u7528\u578B", 73],
+    ["\u3068\u547C\u3070\u308C\u308B", "N+\u3068\u547C\u3070\u308C\u308B", "\u540D\u79F0\u5F15\u7528\u578B", 72],
+    ["\u3068\u547C\u3070\u308C\u305F", "N+\u3068\u547C\u3070\u308C\u305F", "\u540D\u79F0\u5F15\u7528\u578B(\u904E\u53BB)", 70],
+    ["\u3068\u547C\u3070\u308C\u3066\u3044\u308B", "N+\u3068\u547C\u3070\u308C\u3066\u3044\u308B", "\u901A\u79F0\u5F15\u7528\u578B", 73],
+    ["\u3068\u3057\u3066\u77E5\u3089\u308C\u308B", "N+\u3068\u3057\u3066\u77E5\u3089\u308C\u308B", "\u8457\u540D\u5F15\u7528\u578B", 75],
+    ["\u3068\u3057\u3066\u77E5\u3089\u308C\u3066\u3044\u308B", "N+\u3068\u3057\u3066\u77E5\u3089\u308C\u3066\u3044\u308B", "\u8457\u540D\u5F15\u7528\u578B2", 75],
+    ["\u3068\u79F0\u3055\u308C\u308B", "N+\u3068\u79F0\u3055\u308C\u308B", "\u79F0\u53F7\u5F15\u7528\u578B", 73],
+    ["\u3068\u8A00\u3063\u3066\u3082\u904E\u8A00\u3067\u306F\u306A\u3044", "N+\u3068\u8A00\u3063\u3066\u3082\u904E\u8A00\u3067\u306F\u306A\u3044", "\u8A87\u5F35\u8A31\u5BB9\u578B", 80],
+    ["\u3068\u65AD\u8A00\u3067\u304D\u308B", "N+\u3068\u65AD\u8A00\u3067\u304D\u308B", "\u65AD\u8A00\u53EF\u80FD\u578B", 75],
+    ["\u3068\u65AD\u8A00\u3067\u304D\u306A\u3044", "N+\u3068\u65AD\u8A00\u3067\u304D\u306A\u3044", "\u65AD\u8A00\u4E0D\u53EF\u578B", 73],
+    ["\u3068\u8A00\u3048\u308B\u3060\u308D\u3046", "N+\u3068\u8A00\u3048\u308B\u3060\u308D\u3046", "\u63A8\u91CF\u65AD\u8A00\u578B", 72],
+    ["\u3068\u3044\u3046\u5370\u8C61", "N+\u3068\u3044\u3046\u5370\u8C61", "\u5370\u8C61\u5F15\u7528\u578B", 70],
+    ["\u3068\u3044\u3046\u611F\u3058", "N+\u3068\u3044\u3046\u611F\u3058", "\u611F\u899A\u5F15\u7528\u578B", 68],
+    ["\u3068\u3044\u3046\u96F0\u56F2\u6C17", "N+\u3068\u3044\u3046\u96F0\u56F2\u6C17", "\u96F0\u56F2\u6C17\u5F15\u7528\u578B", 68],
+    ["\u3068\u3044\u3046\u30A4\u30E1\u30FC\u30B8", "N+\u3068\u3044\u3046\u30A4\u30E1\u30FC\u30B8", "\u30A4\u30E1\u30FC\u30B8\u5F15\u7528\u578B", 70],
+    ["\u3068\u3044\u3046\u6C17\u304C\u3059\u308B", "N+\u3068\u3044\u3046\u6C17\u304C\u3059\u308B", "\u611F\u899A\u63A8\u91CF\u578B", 70],
+    ["\u3068\u3044\u3046\u30A4\u30E1\u30FC\u30B8\u304C\u3042\u308B", "N+\u3068\u3044\u3046\u30A4\u30E1\u30FC\u30B8\u304C\u3042\u308B", "\u30A4\u30E1\u30FC\u30B8\u5B58\u5728\u578B", 72],
+    ["\u3068\u307F\u306A\u3055\u308C\u308B", "N+\u3068\u307F\u306A\u3055\u308C\u308B", "\u898B\u505A\u3057\u5F15\u7528\u578B", 73],
+    ["\u3068\u8A55\u4FA1\u3055\u308C\u308B", "N+\u3068\u8A55\u4FA1\u3055\u308C\u308B", "\u8A55\u4FA1\u5F15\u7528\u578B", 73],
+    ["\u3068\u8A55\u4FA1\u3055\u308C\u3066\u3044\u308B", "N+\u3068\u8A55\u4FA1\u3055\u308C\u3066\u3044\u308B", "\u8A55\u4FA1\u901A\u8AAC\u578B", 75],
+    ["\u3068\u3082\u8A00\u3048\u306A\u304F\u3082\u306A\u3044", "N+\u3068\u3082\u8A00\u3048\u306A\u304F\u3082\u306A\u3044", "\u6D88\u6975\u540C\u5B9A\u578B", 68],
+    ["\u3068\u8A00\u3063\u3066\u5DEE\u3057\u652F\u3048\u306A\u3044", "N+\u3068\u8A00\u3063\u3066\u5DEE\u3057\u652F\u3048\u306A\u3044", "\u8A31\u5BB9\u65AD\u8A00\u578B", 78],
+    ["\u3068\u3044\u3046\u540D\u306E", "N+\u3068\u3044\u3046\u540D\u306E", "\u540D\u79F0\u9023\u4F53\u578B", 70],
+    ["\u3068\u3082\u547C\u3079\u308B", "N+\u3068\u3082\u547C\u3079\u308B", "\u79F0\u547C\u53EF\u80FD\u578B", 68],
+    ["\u3068\u547C\u3093\u3067\u3082", "N+\u3068\u547C\u3093\u3067\u3082", "\u79F0\u547C\u8A31\u5BB9\u578B", 65],
+    ["\u3068\u3044\u3046\u5B58\u5728", "N+\u3068\u3044\u3046\u5B58\u5728", "\u5B9A\u7FA9\u9023\u4F53\u578B", 68],
+    ["\u3068\u306F\u4F55\u304B", "N+\u3068\u306F\u4F55\u304B", "\u5B9A\u7FA9\u7591\u554F\u578B", 72],
+    ["\u3068\u3044\u3046\u3082\u306E", "N+\u3068\u3044\u3046\u3082\u306E", "\u5B9A\u7FA9\u7684\u8868\u73FE\u578B", 65]
+  ];
+  for (const [expr, pat, lbl, conf] of quotation) {
+    const esc = expr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`(${CW})${esc}`),
+      pat,
+      lbl,
+      CAT_O,
+      (m) => m[1],
+      () => expr,
+      _Expr,
+      _V,
+      conf
+    ));
+  }
+  const CAT_P = "\u6570\u91CF\u7A0B\u5EA6\u578B";
+  const degree = [
+    ["\u307B\u3069", "N+\u307B\u3069", "\u7A0B\u5EA6\u6BD4\u8F03\u578B", 68],
+    ["\u307B\u3069\u306E", "N+\u307B\u3069\u306E", "\u7A0B\u5EA6\u9023\u4F53\u578B", 68],
+    ["\u307B\u3069\u3067\u3082\u306A\u3044", "N+\u307B\u3069\u3067\u3082\u306A\u3044", "\u7A0B\u5EA6\u5426\u5B9A\u578B", 70],
+    ["\u304F\u3089\u3044", "N+\u304F\u3089\u3044", "\u304A\u304A\u3088\u305D\u7A0B\u5EA6\u578B", 65],
+    ["\u304F\u3089\u3044\u306E", "N+\u304F\u3089\u3044\u306E", "\u304A\u304A\u3088\u305D\u7A0B\u5EA6\u9023\u4F53\u578B", 65],
+    ["\u3050\u3089\u3044", "N+\u3050\u3089\u3044", "\u304A\u304A\u3088\u305D\u7A0B\u5EA6\u578B2", 63],
+    ["\u7A0B\u5EA6\u306E", "N+\u7A0B\u5EA6\u306E", "\u7A0B\u5EA6\u9023\u4F53\u578B2", 65],
+    ["\u7A0B\u5EA6\u306B", "N+\u7A0B\u5EA6\u306B", "\u7A0B\u5EA6\u526F\u8A5E\u578B", 63],
+    ["\u3055\u3048\u3042\u308C\u3070", "N+\u3055\u3048\u3042\u308C\u3070", "\u6700\u4F4E\u6761\u4EF6\u578B", 75],
+    ["\u3055\u3048\u3044\u308C\u3070", "N+\u3055\u3048\u3044\u308C\u3070", "\u5B58\u5728\u6761\u4EF6\u578B", 73],
+    ["\u3055\u3048\u3059\u308C\u3070", "N+\u3055\u3048\u3059\u308C\u3070", "\u884C\u70BA\u6761\u4EF6\u578B", 73],
+    ["\u3055\u3048\u3067\u304D\u308C\u3070", "N+\u3055\u3048\u3067\u304D\u308C\u3070", "\u80FD\u529B\u6761\u4EF6\u578B", 73],
+    ["\u3060\u3051\u306E", "N+\u3060\u3051\u306E", "\u76F8\u5FDC\u9023\u4F53\u578B", 65],
+    ["\u3060\u3051\u3067", "N+\u3060\u3051\u3067", "\u9650\u5B9A\u578B", 65],
+    ["\u3060\u3051\u3067\u306A\u304F", "N+\u3060\u3051\u3067\u306A\u304F", "\u8FFD\u52A0\u578B", 70],
+    ["\u4E0A\u3067", "N+\u4E0A\u3067", "\u9818\u57DF\u6761\u4EF6\u578B", 68],
+    ["\u4E0A\u306E", "N+\u4E0A\u306E", "\u9818\u57DF\u9023\u4F53\u578B", 68],
+    ["\u4E0A\u306F", "N+\u4E0A\u306F", "\u524D\u63D0\u578B", 68],
+    ["\u9762\u3067\u306F", "N+\u9762\u3067\u306F", "\u5074\u9762\u578B", 68],
+    ["\u9762\u306B\u304A\u3044\u3066", "N+\u9762\u306B\u304A\u3044\u3066", "\u5074\u9762\u578B2", 68],
+    ["\u306B\u304A\u3044\u3066\u306F", "N+\u306B\u304A\u3044\u3066\u306F", "\u6587\u8A9E\u7BC4\u56F2\u578B", 72],
+    ["\u306B\u304A\u3044\u3066\u3082", "N+\u306B\u304A\u3044\u3066\u3082", "\u6587\u8A9E\u7BC4\u56F2\u578B2", 70],
+    ["\u306B\u308F\u305F\u3063\u3066", "N+\u306B\u308F\u305F\u3063\u3066", "\u7BC4\u56F2\u578B", 75],
+    ["\u4EE5\u4E0A\u306E", "N+\u4EE5\u4E0A\u306E", "\u8D85\u904E\u9023\u4F53\u578B", 68],
+    ["\u4EE5\u4E0B\u306E", "N+\u4EE5\u4E0B\u306E", "\u4EE5\u4E0B\u9023\u4F53\u578B", 68],
+    ["\u4EE5\u5185\u306E", "N+\u4EE5\u5185\u306E", "\u4EE5\u5185\u9023\u4F53\u578B", 65],
+    ["\u307E\u3067\u306E", "N+\u307E\u3067\u306E", "\u5230\u9054\u9023\u4F53\u578B", 65],
+    ["\u304B\u3089\u4EE5\u964D\u306E", "N+\u304B\u3089\u4EE5\u964D\u306E", "\u958B\u59CB\u4EE5\u964D\u578B", 65],
+    ["\u306B\u81F3\u308B\u307E\u3067\u306E", "N+\u306B\u81F3\u308B\u307E\u3067\u306E", "\u5230\u9054\u7BC4\u56F2\u9023\u4F53\u578B", 72],
+    ["\u306B\u53CA\u3076", "N+\u306B\u53CA\u3076", "\u5230\u9054\u578B", 70]
+  ];
+  for (const [expr, pat, lbl, conf] of degree) {
+    const esc = expr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`(${CW})${esc}`),
+      pat,
+      lbl,
+      CAT_P,
+      (m) => m[1],
+      () => expr,
+      _N,
+      _Expr,
+      conf
+    ));
+  }
+  const CAT_Q = "\u76EE\u7684\u539F\u56E0\u578B";
+  const purposeCause = [
+    ["\u306E\u305F\u3081\u306B", "N+\u306E\u305F\u3081\u306B", "\u76EE\u7684\u578B", 73],
+    ["\u306E\u305F\u3081\u306B\u306F", "N+\u306E\u305F\u3081\u306B\u306F", "\u76EE\u7684\u6761\u4EF6\u578B", 73],
+    ["\u306E\u305F\u3081\u306B\u3082", "N+\u306E\u305F\u3081\u306B\u3082", "\u76EE\u7684\u5F37\u8ABF\u578B", 70],
+    ["\u305F\u3081\u306B\u306A\u308B", "V+\u305F\u3081\u306B\u306A\u308B", "\u6709\u76CA\u578B", 70],
+    ["\u305F\u3081\u306B\u306A\u3063\u305F", "V+\u305F\u3081\u306B\u306A\u3063\u305F", "\u6709\u76CA\u578B(\u904E\u53BB)", 68],
+    ["\u304C\u76EE\u7684\u3067", "N+\u304C\u76EE\u7684\u3067", "\u76EE\u7684\u578B2", 73],
+    ["\u3092\u76EE\u7684\u3068\u3057\u3066", "N+\u3092\u76EE\u7684\u3068\u3057\u3066", "\u76EE\u7684\u578B3", 75],
+    ["\u3092\u76EE\u7684\u306B", "N+\u3092\u76EE\u7684\u306B", "\u76EE\u7684\u578B4", 73],
+    ["\u3092\u76EE\u6307\u3057\u3066(\u76EE\u7684)", "N+\u3092\u76EE\u6307\u3057\u3066", "\u76EE\u6307\u3057\u578B", 75],
+    ["\u306E\u305B\u3044\u3067", "N+\u306E\u305B\u3044\u3067", "\u8CAC\u4EFB\u539F\u56E0\u578B", 72],
+    ["\u306E\u305B\u3044\u304B", "N+\u306E\u305B\u3044\u304B", "\u63A8\u91CF\u539F\u56E0\u578B", 68],
+    ["\u306E\u304A\u304B\u3052\u3067", "N+\u306E\u304A\u304B\u3052\u3067", "\u6069\u6075\u578B", 73],
+    ["\u306E\u304A\u304B\u3052\u304B", "N+\u306E\u304A\u304B\u3052\u304B", "\u63A8\u91CF\u6069\u6075\u578B", 68],
+    ["\u304C\u539F\u56E0\u3067", "N+\u304C\u539F\u56E0\u3067", "\u76F4\u63A5\u539F\u56E0\u578B", 75],
+    ["\u304C\u8981\u56E0\u3067", "N+\u304C\u8981\u56E0\u3067", "\u8981\u56E0\u578B", 73],
+    ["\u304C\u7406\u7531\u3067", "N+\u304C\u7406\u7531\u3067", "\u7406\u7531\u578B", 72],
+    ["\u304C\u539F\u56E0\u3068\u306A\u3063\u3066", "N+\u304C\u539F\u56E0\u3068\u306A\u3063\u3066", "\u8A98\u56E0\u578B", 75],
+    ["\u3086\u3048\u306B", "N+\u3086\u3048\u306B", "\u6587\u8A9E\u539F\u56E0\u578B", 73],
+    ["\u304C\u6545\u306B", "N+\u304C\u6545\u306B", "\u6587\u8A9E\u539F\u56E0\u578B2", 72],
+    ["\u3060\u304B\u3089", "N+\u3060\u304B\u3089", "\u53E3\u8A9E\u539F\u56E0\u578B", 65],
+    ["\u306A\u306E\u3067", "N+\u306A\u306E\u3067", "\u53E3\u8A9E\u539F\u56E0\u578B2", 65],
+    ["\u305F\u3081\u306B(\u539F\u56E0)", "N+\u305F\u3081\u306B(\u539F\u56E0)", "\u539F\u56E0\u578B", 70],
+    ["\u304C\u5F71\u97FF\u3057\u3066", "N+\u304C\u5F71\u97FF\u3057\u3066", "\u5F71\u97FF\u578B", 72],
+    ["\u306B\u3088\u3063\u3066(\u539F\u56E0)", "N+\u306B\u3088\u3063\u3066(\u539F\u56E0)", "\u539F\u56E0\u624B\u6BB5\u578B", 72],
+    ["\u304B\u3089(\u539F\u56E0)", "N+\u304B\u3089(\u539F\u56E0)", "\u539F\u56E0\u578B3", 63],
+    ["\u304B\u3089\u3053\u305D", "N+\u304B\u3089\u3053\u305D", "\u5F37\u8ABF\u539F\u56E0\u578B", 75],
+    ["\u3060\u304B\u3089\u3053\u305D", "N+\u3060\u304B\u3089\u3053\u305D", "\u5F37\u8ABF\u53E3\u8A9E\u539F\u56E0\u578B", 75],
+    ["\u3053\u3068\u304B\u3089", "V+\u3053\u3068\u304B\u3089", "\u6839\u62E0\u578B", 70],
+    ["\u3053\u3068\u3067(\u539F\u56E0)", "V+\u3053\u3068\u3067(\u539F\u56E0)", "\u539F\u56E0\u624B\u6BB5\u578B2", 68],
+    ["\u304B\u3089\u751F\u3058\u305F", "N+\u304B\u3089\u751F\u3058\u305F", "\u767A\u751F\u539F\u56E0\u578B", 73]
+  ];
+  for (const [expr, pat, lbl, conf] of purposeCause) {
+    const esc = expr.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    specs.push(sp(
+      new RegExp(`(${CW})${esc}`),
+      pat,
+      lbl,
+      CAT_Q,
+      (m) => m[1],
+      () => expr,
+      _N,
+      _Expr,
+      conf
+    ));
+  }
+  return specs;
+}
+var EXTRACTION_PATTERNS = buildExtractionPatterns();
 var TextClassifier = class {
   classify(text) {
     const trimmed = text.trim();
@@ -11903,12 +13476,807 @@ var DictionaryView = class extends import_obsidian7.ItemView {
   }
 };
 
+// src/data/DiscourseStore.ts
+var DiscourseStore = class {
+  constructor(app, dataPath) {
+    this.chunks = /* @__PURE__ */ new Map();
+    this.index = {
+      byMarker: /* @__PURE__ */ new Map(),
+      byCategory: /* @__PURE__ */ new Map(),
+      byCollocation: /* @__PURE__ */ new Map()
+    };
+    this.counter = 0;
+    this.saveTimer = null;
+    this.app = app;
+    this.dataPath = dataPath;
+  }
+  async load() {
+    try {
+      const exists = await this.app.vault.adapter.exists(this.dataPath);
+      if (exists) {
+        const raw = await this.app.vault.adapter.read(this.dataPath);
+        const parsed = JSON.parse(raw);
+        for (const c of parsed) {
+          this.chunks.set(c.id, c);
+        }
+      }
+    } catch (e) {
+    }
+    this.rebuildIndex();
+  }
+  rebuildIndex() {
+    this.index = { byMarker: /* @__PURE__ */ new Map(), byCategory: /* @__PURE__ */ new Map(), byCollocation: /* @__PURE__ */ new Map() };
+    for (const chunk of this.chunks.values()) {
+      this.indexChunk(chunk);
+    }
+  }
+  indexChunk(chunk) {
+    this.addToIndex(this.index.byMarker, chunk.surface, chunk.id);
+    this.addToIndex(this.index.byCategory, chunk.category, chunk.id);
+    for (const col of chunk.collocations) {
+      this.addToIndex(this.index.byCollocation, col, chunk.id);
+    }
+  }
+  deindexChunk(chunk) {
+    this.removeFromIndex(this.index.byMarker, chunk.surface, chunk.id);
+    this.removeFromIndex(this.index.byCategory, chunk.category, chunk.id);
+    for (const col of chunk.collocations) {
+      this.removeFromIndex(this.index.byCollocation, col, chunk.id);
+    }
+  }
+  addToIndex(map, key, id) {
+    if (!map.has(key))
+      map.set(key, []);
+    const arr = map.get(key);
+    if (!arr.includes(id))
+      arr.push(id);
+  }
+  removeFromIndex(map, key, id) {
+    const arr = map.get(key);
+    if (!arr)
+      return;
+    const i = arr.indexOf(id);
+    if (i !== -1)
+      arr.splice(i, 1);
+  }
+  generateId() {
+    return `chunk_${++this.counter}_${Date.now()}`;
+  }
+  // ─── CRUD ───────────────────────────────────────────────────────────────────
+  add(chunk) {
+    this.chunks.set(chunk.id, chunk);
+    this.indexChunk(chunk);
+    this.scheduleSave();
+  }
+  update(chunk) {
+    const old = this.chunks.get(chunk.id);
+    if (old)
+      this.deindexChunk(old);
+    chunk.updatedAt = Date.now();
+    this.chunks.set(chunk.id, chunk);
+    this.indexChunk(chunk);
+    this.scheduleSave();
+  }
+  delete(id) {
+    const chunk = this.chunks.get(id);
+    if (chunk) {
+      this.deindexChunk(chunk);
+      this.chunks.delete(id);
+      this.scheduleSave();
+    }
+  }
+  getById(id) {
+    return this.chunks.get(id);
+  }
+  getAll() {
+    return Array.from(this.chunks.values());
+  }
+  // ─── Index lookups ──────────────────────────────────────────────────────────
+  getByMarker(surface) {
+    var _a;
+    const ids = (_a = this.index.byMarker.get(surface)) != null ? _a : [];
+    return ids.map((id) => this.chunks.get(id)).filter(Boolean);
+  }
+  getByCategory(category) {
+    var _a;
+    const ids = (_a = this.index.byCategory.get(category)) != null ? _a : [];
+    return ids.map((id) => this.chunks.get(id)).filter(Boolean);
+  }
+  getByCollocation(colId) {
+    var _a;
+    const ids = (_a = this.index.byCollocation.get(colId)) != null ? _a : [];
+    return ids.map((id) => this.chunks.get(id)).filter(Boolean);
+  }
+  // ─── Bridge API methods (8) for jp-sentence-surfer ─────────────────────────
+  queryChunks(opts) {
+    if (opts.category)
+      return this.getByCategory(opts.category);
+    if (opts.marker)
+      return this.getByMarker(opts.marker);
+    if (opts.colId)
+      return this.getByCollocation(opts.colId);
+    return this.getAll();
+  }
+  countByCategory() {
+    const out = {};
+    for (const [cat, ids] of this.index.byCategory.entries()) {
+      out[cat] = ids.length;
+    }
+    return out;
+  }
+  size() {
+    return this.chunks.size;
+  }
+  exportAll() {
+    return this.getAll();
+  }
+  bulkImport(chunks) {
+    let count = 0;
+    for (const c of chunks) {
+      this.chunks.set(c.id, c);
+      this.indexChunk(c);
+      count++;
+    }
+    this.scheduleSave();
+    return count;
+  }
+  scheduleSave() {
+    if (this.saveTimer)
+      clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.save().catch(console.error);
+    }, 1e3);
+  }
+  async save() {
+    const data = JSON.stringify(this.getAll(), null, 2);
+    await this.app.vault.adapter.write(this.dataPath, data);
+  }
+};
+
+// src/discourse/discourse-types.ts
+var TYPE_TO_CATEGORY = {
+  "hedge-stance-softening": "hedging",
+  "split-morpheme-co-construction": "referential",
+  "perspective-framing": "stance",
+  "interactional-pivot": "interactional",
+  "epistemic-continuation-blend": "epistemic",
+  "discontinuous-parallel": "enumerative",
+  "causal-concessive-cascade": "causal-logical",
+  "assertion-deflation": "hedging",
+  "connector-compounding": "structural",
+  "fuzzy-reference-chain": "referential",
+  "extended-reasoning-stance-cap": "stance",
+  "epistemic-speculation-cascade": "epistemic",
+  "discourse-fade-trail-off": "structural",
+  "sequential-adjacency": "structural",
+  "unknown": "structural"
+};
+function categoryForType(type) {
+  var _a;
+  return (_a = TYPE_TO_CATEGORY[type]) != null ? _a : "structural";
+}
+var SEED_RELATIONSHIP_TYPES = [
+  "hedge-stance-softening",
+  "split-morpheme-co-construction",
+  "perspective-framing",
+  "interactional-pivot",
+  "epistemic-continuation-blend",
+  "discontinuous-parallel",
+  "causal-concessive-cascade",
+  "assertion-deflation",
+  "connector-compounding",
+  "fuzzy-reference-chain",
+  "extended-reasoning-stance-cap",
+  "epistemic-speculation-cascade",
+  "discourse-fade-trail-off"
+];
+var _RelationshipRegistry = class _RelationshipRegistry {
+  static register(type) {
+    _RelationshipRegistry.registered.add(type);
+  }
+  static has(type) {
+    return _RelationshipRegistry.registered.has(type);
+  }
+  static all() {
+    return Array.from(_RelationshipRegistry.registered);
+  }
+  static seeds() {
+    return [...SEED_RELATIONSHIP_TYPES];
+  }
+};
+_RelationshipRegistry.registered = new Set(SEED_RELATIONSHIP_TYPES);
+var RelationshipRegistry = _RelationshipRegistry;
+
+// src/data/ContextStore.ts
+var ContextStore = class {
+  constructor() {
+    this.records = /* @__PURE__ */ new Map();
+    this.index = {
+      byCategory: /* @__PURE__ */ new Map(),
+      byFunction: /* @__PURE__ */ new Map(),
+      bySpeaker: /* @__PURE__ */ new Map(),
+      byConnectionGroup: /* @__PURE__ */ new Map()
+    };
+  }
+  /** Ingest a full graph, assigning categories and indexing all bits. */
+  ingestGraph(graph, source, speaker, connectionGroup) {
+    for (const bit of graph.bits) {
+      const category = categoryForType(bit.bitType);
+      const record = {
+        bit,
+        category,
+        functions: [],
+        speaker,
+        connectionGroup,
+        graphId: graph.id,
+        source
+      };
+      this.records.set(bit.id, record);
+      this.indexRecord(record);
+    }
+  }
+  indexRecord(rec) {
+    this.addToMap(this.index.byCategory, rec.category, rec);
+    for (const fn of rec.functions) {
+      this.addToMap(this.index.byFunction, fn, rec);
+    }
+    if (rec.speaker)
+      this.addToMap(this.index.bySpeaker, rec.speaker, rec);
+    if (rec.connectionGroup)
+      this.addToMap(this.index.byConnectionGroup, rec.connectionGroup, rec);
+  }
+  addToMap(map, key, rec) {
+    if (!map.has(key))
+      map.set(key, []);
+    map.get(key).push(rec);
+  }
+  getByCategory(cat) {
+    var _a;
+    return (_a = this.index.byCategory.get(cat)) != null ? _a : [];
+  }
+  getByFunction(fn) {
+    var _a;
+    return (_a = this.index.byFunction.get(fn)) != null ? _a : [];
+  }
+  getBySpeaker(speaker) {
+    var _a;
+    return (_a = this.index.bySpeaker.get(speaker)) != null ? _a : [];
+  }
+  getByConnectionGroup(group) {
+    var _a;
+    return (_a = this.index.byConnectionGroup.get(group)) != null ? _a : [];
+  }
+  size() {
+    return this.records.size;
+  }
+  clear() {
+    this.records.clear();
+    this.index.byCategory.clear();
+    this.index.byFunction.clear();
+    this.index.bySpeaker.clear();
+    this.index.byConnectionGroup.clear();
+  }
+};
+
+// src/discourse/DiscourseAnalyzer.ts
+var _bitCounter = 0;
+var _edgeCounter = 0;
+var _graphCounter = 0;
+var _chunkCounter = 0;
+function bitId() {
+  return `bit_${++_bitCounter}_${Date.now()}`;
+}
+function edgeId() {
+  return `edge_${++_edgeCounter}_${Date.now()}`;
+}
+function graphId() {
+  return `graph_${++_graphCounter}_${Date.now()}`;
+}
+function chunkId() {
+  return `chunk_${++_chunkCounter}_${Date.now()}`;
+}
+function splitBits(raw) {
+  const segments = [];
+  const parts = raw.split("||");
+  let offset = 0;
+  for (const part of parts) {
+    if (part.trim().length > 0) {
+      segments.push({ text: part, start: offset, end: offset + part.length });
+    }
+    offset += part.length + 2;
+  }
+  return segments;
+}
+function tokenize(text) {
+  return text.split(/(?<=[はがをにでもとのへからまでよりか。、！？…])|(?=[はがをにでもとのへからまでよりか。、！？…])/).map((t2) => t2.trim()).filter((t2) => t2.length > 0);
+}
+var DETECTORS = {
+  /** 1. Hedge/Stance Softening — "ような感じ", "みたいな", "っぽい", "ようだ" */
+  "hedge-stance-softening": (bit) => {
+    if (/ような感じ|みたいな|っぽい|ようだ|ように|らしい|くらい|ぐらい/.test(bit)) {
+      return { type: "hedge-stance-softening", confidence: 0.9, evidence: bit, features: { marker: "\u3088\u3046\u306A/\u307F\u305F\u3044\u306A/\u3089\u3057\u3044" } };
+    }
+    return null;
+  },
+  /** 2. Split-Morpheme Co-construction — verb stem split across bits */
+  "split-morpheme-co-construction": (bit, prev) => {
+    if (prev && /[んいきしちにびみり]$/.test(prev.trim()) && /^[でてでても]/.test(bit.trim())) {
+      return { type: "split-morpheme-co-construction", confidence: 0.8, evidence: `${prev}||${bit}`, features: { splitType: "verb-stem" } };
+    }
+    if (/[いきしちにびみり]$/.test(bit.trim())) {
+      return { type: "split-morpheme-co-construction", confidence: 0.6, evidence: bit, features: { splitType: "potential-stem" } };
+    }
+    return null;
+  },
+  /** 3. Perspective Framing — "X的には", "的には", "的に" */
+  "perspective-framing": (bit) => {
+    if (/的には|的に|から見ると|としては|にとって|にとっては/.test(bit)) {
+      return { type: "perspective-framing", confidence: 0.85, evidence: bit, features: { frameType: "perspective" } };
+    }
+    return null;
+  },
+  /** 4. Interactional Pivot — single short realisation marker あ, え, へえ, うん, そう */
+  "interactional-pivot": (bit) => {
+    const trimmed = bit.trim().replace(/[。、！？…]/g, "");
+    if (/^(あ|え|えー|へえ|うん|そう|なるほど|ふーん|ほう|おー)$/.test(trimmed)) {
+      return { type: "interactional-pivot", confidence: 0.95, evidence: bit, features: { marker: trimmed } };
+    }
+    return null;
+  },
+  /** 5. Epistemic-Continuation Blend — んでると, ているのに, ながら + certainty */
+  "epistemic-continuation-blend": (bit) => {
+    if (/んでると|てると確かに|ながら確かに|ているのに|てるのに確かに/.test(bit)) {
+      return { type: "epistemic-continuation-blend", confidence: 0.85, evidence: bit, features: { blendType: "progressive-certainty" } };
+    }
+    return null;
+  },
+  /** 6. Discontinuous Parallel — があったり ... たりしてて (たり...たり pattern) */
+  "discontinuous-parallel": (bit, _prev, _next, allBits) => {
+    if (/があったり|[でし]たり/.test(bit)) {
+      const hasPartner = allBits.some((b) => b !== bit && /[でし]たり/.test(b));
+      if (hasPartner) {
+        return { type: "discontinuous-parallel", confidence: 0.9, evidence: bit, features: { pattern: "\u305F\u308A-\u305F\u308A" } };
+      }
+    }
+    return null;
+  },
+  /** 7. Causal-Concessive Cascade — から...んだけど, から...が, ので...が */
+  "causal-concessive-cascade": (bit, _prev, next) => {
+    if (/から$|ので$/.test(bit.trim()) && next && /けど|が$|のに$/.test(next.trim())) {
+      return { type: "causal-concessive-cascade", confidence: 0.85, evidence: `${bit} \u2192 ${next}`, features: { causalMarker: "\u304B\u3089/\u306E\u3067", concedeMarker: "\u3051\u3069/\u304C" } };
+    }
+    if (/んだけど|なんだけど|けれど/.test(bit)) {
+      return { type: "causal-concessive-cascade", confidence: 0.75, evidence: bit, features: { causalMarker: "\u3051\u3069" } };
+    }
+    return null;
+  },
+  /** 8. Assertion-Deflation — sequential modifiers weakening: んじゃない → ? → みたいな */
+  "assertion-deflation": (bit, prev) => {
+    if (/んじゃない|んじゃないか|でしょ/.test(bit)) {
+      return { type: "assertion-deflation", confidence: 0.8, evidence: bit, features: { deflationStage: "initial" } };
+    }
+    if (prev && /んじゃない/.test(prev) && /\?|みたいな|ような/.test(bit)) {
+      return { type: "assertion-deflation", confidence: 0.9, evidence: `${prev}\u2192${bit}`, features: { deflationStage: "progressive" } };
+    }
+    return null;
+  },
+  /** 9. Connector Compounding — ま、だからそれで言うと, そういえば, ところで */
+  "connector-compounding": (bit) => {
+    if (/^(ま、?だから|まあ、?だから|まあそれで|だからそれで|ところで|そういえば|それで言うと|ていうか、?つまり)/.test(bit.trim())) {
+      return { type: "connector-compounding", confidence: 0.9, evidence: bit, features: { connectorType: "stacked-filler" } };
+    }
+    return null;
+  },
+  /** 10. Fuzzy Reference Chain — X + っぽいものとか, あたりの, その辺の */
+  "fuzzy-reference-chain": (bit) => {
+    if (/っぽいものとか|その辺の|あたりの|的なもの|みたいなもの|そういった/.test(bit)) {
+      return { type: "fuzzy-reference-chain", confidence: 0.85, evidence: bit, features: { fuzzyMarker: "\u3063\u307D\u3044/\u305D\u306E\u8FBA/\u3042\u305F\u308A" } };
+    }
+    return null;
+  },
+  /** 11. Extended Reasoning → Stance Cap — わけだ, わけだけど, わけで */
+  "extended-reasoning-stance-cap": (bit) => {
+    if (/わけだ|わけだけど|わけで|わけです|わけじゃない/.test(bit)) {
+      return { type: "extended-reasoning-stance-cap", confidence: 0.9, evidence: bit, features: { stanceCap: "\u308F\u3051" } };
+    }
+    return null;
+  },
+  /** 12. Epistemic Speculation Cascade — きっと...のかもしれない, たぶん...かも */
+  "epistemic-speculation-cascade": (bit, _prev, _next, allBits) => {
+    if (/^きっと|^たぶん|^もしかして/.test(bit.trim())) {
+      const hasClose = allBits.some((b) => /のかもしれない|かもしれない|かも/.test(b));
+      return {
+        type: "epistemic-speculation-cascade",
+        confidence: hasClose ? 0.9 : 0.65,
+        evidence: bit,
+        features: { speculationAnchor: bit.trim(), hasClosure: hasClose }
+      };
+    }
+    if (/のかもしれない|かもしれない$/.test(bit.trim())) {
+      return { type: "epistemic-speculation-cascade", confidence: 0.85, evidence: bit, features: { speculationClose: true } };
+    }
+    return null;
+  },
+  /** 13. Discourse Fade/Trail-off — == marker or sentence-ending …, trail particles */
+  "discourse-fade-trail-off": (bit) => {
+    if (/==|…$|…。$|ね。$|よね。$|かな。$|だけど。$/.test(bit.trim())) {
+      return { type: "discourse-fade-trail-off", confidence: 0.95, evidence: bit, features: { fadeMarker: "==/\u2026/\u306D" } };
+    }
+    return null;
+  }
+};
+var DiscourseAnalyzer = class {
+  /**
+   * Parse a raw annotated string (with || delimiters) into a DiscourseGraph.
+   * Optionally pass a timestamp string (e.g. "[08:15]").
+   */
+  analyze(raw, timestamp, source = "manual") {
+    const segments = splitBits(raw);
+    const texts = segments.map((s) => s.text);
+    const bits = segments.map((seg, i) => {
+      var _a, _b, _c, _d;
+      const detected = this.detectBitType(seg.text, (_a = texts[i - 1]) != null ? _a : null, (_b = texts[i + 1]) != null ? _b : null, texts);
+      return {
+        id: bitId(),
+        text: seg.text,
+        startOffset: seg.start,
+        endOffset: seg.end,
+        timestamp,
+        bitType: (_c = detected == null ? void 0 : detected.type) != null ? _c : "unknown",
+        morphemes: tokenize(seg.text),
+        features: (_d = detected == null ? void 0 : detected.features) != null ? _d : {}
+      };
+    });
+    const edges = this.buildEdges(bits, texts);
+    return {
+      id: graphId(),
+      bits,
+      edges,
+      source,
+      timestamp,
+      createdAt: Date.now()
+    };
+  }
+  /** Parse a full transcript into chunks, one per timestamped line. */
+  parseTranscript(transcript, source = "transcript") {
+    const chunks = [];
+    const lines = transcript.split("\n").map((l) => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      const tsMatch = line.match(/^\[(\d+:\d+)\]\s*/);
+      const timestamp = tsMatch ? `[${tsMatch[1]}]` : void 0;
+      const raw = tsMatch ? line.slice(tsMatch[0].length) : line;
+      if (!raw.includes("||") && raw.trim().length === 0)
+        continue;
+      const graph = this.analyze(raw, timestamp, source);
+      chunks.push({
+        id: chunkId(),
+        raw,
+        timestamp,
+        bits: graph.bits,
+        graph
+      });
+    }
+    return chunks;
+  }
+  detectBitType(text, prev, next, all) {
+    let best = null;
+    for (const detector of Object.values(DETECTORS)) {
+      const result = detector(text, prev, next, all);
+      if (result && (!best || result.confidence > best.confidence)) {
+        best = result;
+      }
+    }
+    return best;
+  }
+  buildEdges(bits, _texts) {
+    const edges = [];
+    for (let i = 0; i < bits.length; i++) {
+      const current = bits[i];
+      if (i + 1 < bits.length) {
+        const next = bits[i + 1];
+        edges.push(this.makeEdge(current, next, 1, "sequential-adjacency", 0.7, "adjacent bits"));
+      }
+      if (current.bitType === "discontinuous-parallel") {
+        for (let j = i + 2; j < bits.length; j++) {
+          if (bits[j].bitType === "discontinuous-parallel") {
+            edges.push(this.makeEdge(current, bits[j], j - i, "discontinuous-parallel", 0.85, "\u305F\u308A-\u305F\u308A span"));
+            break;
+          }
+        }
+      }
+      if (/^きっと|^たぶん/.test(current.text.trim())) {
+        for (let j = i + 1; j < bits.length; j++) {
+          if (/のかもしれない|かもしれない/.test(bits[j].text)) {
+            edges.push(this.makeEdge(current, bits[j], j - i, "epistemic-speculation-cascade", 0.9, "speculation span"));
+            break;
+          }
+        }
+      }
+      if (/から$|ので$/.test(current.text.trim())) {
+        if (i + 1 < bits.length && /けど|が$/.test(bits[i + 1].text.trim())) {
+          edges.push(this.makeEdge(current, bits[i + 1], 1, "causal-concessive-cascade", 0.88, "\u304B\u3089\u2192\u3051\u3069"));
+        }
+      }
+    }
+    return edges;
+  }
+  makeEdge(source, target, distance, type, confidence, evidence) {
+    return {
+      id: edgeId(),
+      sourceId: source.id,
+      targetId: target.id,
+      relationshipType: type,
+      confidence,
+      direction: "forward",
+      bitDistance: distance,
+      evidence,
+      metadata: {}
+    };
+  }
+  /** Register a new relationship type at runtime. */
+  registerType(type) {
+    RelationshipRegistry.register(type);
+  }
+};
+
+// src/ui/DiscourseCardView.ts
+var import_obsidian8 = require("obsidian");
+
+// src/discourse/DiscourseVisualizer.ts
+var DiscourseVisualizer = class {
+  /** Render a graph as a DOT language string for Graphviz. */
+  toDot(graph) {
+    var _a;
+    const lines = ["digraph discourse {", "  rankdir=LR;", "  node [shape=box, style=filled, fontname=Helvetica];"];
+    for (const bit of graph.bits) {
+      const cat = categoryForType(bit.bitType);
+      const colour = (_a = CATEGORY_COLOURS[cat]) != null ? _a : "#cccccc";
+      const label = bit.text.replace(/"/g, "'").slice(0, 30);
+      lines.push(`  "${bit.id}" [label="${label}", fillcolor="${colour}", fontcolor="#ffffff"];`);
+    }
+    for (const edge of graph.edges) {
+      const label = edge.relationshipType.slice(0, 20);
+      lines.push(`  "${edge.sourceId}" -> "${edge.targetId}" [label="${label}", penwidth=${(edge.confidence * 2).toFixed(1)}];`);
+    }
+    lines.push("}");
+    return lines.join("\n");
+  }
+  /** Render an adjacency list as plain text. */
+  toAdjacencyList(graph) {
+    const bitMap = new Map(graph.bits.map((b) => [b.id, b]));
+    const lines = [];
+    for (const bit of graph.bits) {
+      const cat = categoryForType(bit.bitType);
+      lines.push(`[${cat}] ${bit.text.trim()}`);
+      const outEdges = graph.edges.filter((e) => e.sourceId === bit.id);
+      for (const e of outEdges) {
+        const target = bitMap.get(e.targetId);
+        if (target) {
+          lines.push(`  --[${e.relationshipType} conf:${e.confidence.toFixed(2)}]--> ${target.text.trim().slice(0, 40)}`);
+        }
+      }
+    }
+    return lines.join("\n");
+  }
+  /** Render a summary table of bit types and counts. */
+  toSummaryTable(graph) {
+    var _a;
+    const counts = /* @__PURE__ */ new Map();
+    for (const bit of graph.bits) {
+      const t2 = bit.bitType;
+      counts.set(t2, ((_a = counts.get(t2)) != null ? _a : 0) + 1);
+    }
+    return Array.from(counts.entries()).map(([type, count]) => {
+      var _a2;
+      const cat = categoryForType(type);
+      return { type, count, category: cat, colour: (_a2 = CATEGORY_COLOURS[cat]) != null ? _a2 : "#cccccc" };
+    });
+  }
+  /** Return bits coloured by category as an array of {text, colour} tokens. */
+  toColouredTokens(graph) {
+    return graph.bits.map((bit) => {
+      var _a;
+      const cat = categoryForType(bit.bitType);
+      return { text: bit.text, colour: (_a = CATEGORY_COLOURS[cat]) != null ? _a : "#cccccc", type: bit.bitType };
+    });
+  }
+};
+
+// src/ui/DiscourseCardView.ts
+var DISCOURSE_CARD_VIEW_TYPE = "jp-discourse-card-view";
+var DiscourseCardView = class extends import_obsidian8.ItemView {
+  constructor(leaf) {
+    super(leaf);
+    this.analyzer = new DiscourseAnalyzer();
+    this.visualizer = new DiscourseVisualizer();
+    this.currentGraph = null;
+    this.textArea = null;
+    this.graphContainer = null;
+  }
+  getViewType() {
+    return DISCOURSE_CARD_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "Discourse Cards";
+  }
+  getIcon() {
+    return "git-fork";
+  }
+  async onOpen() {
+    this.buildUI();
+  }
+  async onClose() {
+  }
+  buildUI() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-discourse-card-view");
+    const header = container.createDiv("jp-discourse-header");
+    header.createEl("h4", { text: "Discourse Graph", cls: "jp-discourse-title" });
+    const inputRow = container.createDiv("jp-discourse-input-row");
+    this.textArea = inputRow.createEl("textarea", {
+      cls: "jp-discourse-textarea",
+      placeholder: "Paste annotated text with || boundaries\u2026"
+    });
+    const analyzeBtn = inputRow.createEl("button", { text: "Analyse", cls: "jp-discourse-btn" });
+    analyzeBtn.addEventListener("click", () => this.runAnalysis());
+    this.graphContainer = container.createDiv("jp-discourse-graph");
+    this.renderEmpty();
+  }
+  renderEmpty() {
+    if (!this.graphContainer)
+      return;
+    this.graphContainer.empty();
+    this.graphContainer.createDiv({ text: "Paste annotated text above and click Analyse.", cls: "jp-discourse-empty" });
+  }
+  runAnalysis() {
+    var _a, _b;
+    const text = (_b = (_a = this.textArea) == null ? void 0 : _a.value) != null ? _b : "";
+    if (!text.trim())
+      return;
+    this.currentGraph = this.analyzer.analyze(text);
+    this.renderGraph();
+  }
+  renderGraph() {
+    if (!this.graphContainer || !this.currentGraph)
+      return;
+    this.graphContainer.empty();
+    const tokens = this.visualizer.toColouredTokens(this.currentGraph);
+    const tokenRow = this.graphContainer.createDiv("jp-discourse-tokens");
+    for (const token of tokens) {
+      const span = tokenRow.createEl("span", { cls: "jp-discourse-token" });
+      span.setText(token.text);
+      span.style.borderLeft = `4px solid ${token.colour}`;
+      span.setAttribute("title", token.type);
+    }
+    const summary = this.visualizer.toSummaryTable(this.currentGraph);
+    const table3 = this.graphContainer.createEl("table", { cls: "jp-discourse-summary" });
+    const thead = table3.createEl("thead");
+    const headerRow = thead.createEl("tr");
+    ["Type", "Count", "Category"].forEach((h) => headerRow.createEl("th", { text: h }));
+    const tbody = table3.createEl("tbody");
+    for (const row of summary) {
+      const tr = tbody.createEl("tr");
+      tr.createEl("td", { text: row.type });
+      tr.createEl("td", { text: String(row.count) });
+      const catTd = tr.createEl("td", { text: row.category });
+      catTd.style.color = row.colour;
+    }
+    const adjPre = this.graphContainer.createEl("pre", { cls: "jp-discourse-adj" });
+    adjPre.setText(this.visualizer.toAdjacencyList(this.currentGraph));
+  }
+};
+
+// src/ui/ContextLexiconView.ts
+var import_obsidian9 = require("obsidian");
+var CONTEXT_LEXICON_VIEW_TYPE = "jp-context-lexicon-view";
+var CATEGORIES = [
+  "hedging",
+  "epistemic",
+  "interactional",
+  "causal-logical",
+  "enumerative",
+  "referential",
+  "stance",
+  "structural"
+];
+var ContextLexiconView = class extends import_obsidian9.ItemView {
+  constructor(leaf, contextStore) {
+    super(leaf);
+    this.analyzer = new DiscourseAnalyzer();
+    this.activeCategory = null;
+    this.bodyContainer = null;
+    this.contextStore = contextStore;
+  }
+  getViewType() {
+    return CONTEXT_LEXICON_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "Context Lexicon";
+  }
+  getIcon() {
+    return "library";
+  }
+  async onOpen() {
+    this.buildUI();
+  }
+  async onClose() {
+  }
+  buildUI() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-context-lexicon-view");
+    const header = container.createDiv("jp-ctx-header");
+    header.createEl("h4", { text: "Context Lexicon", cls: "jp-ctx-title" });
+    const chipRow = container.createDiv("jp-ctx-chips");
+    for (const cat of CATEGORIES) {
+      const chip = chipRow.createEl("span", { text: cat, cls: "jp-ctx-chip" });
+      chip.style.borderColor = CATEGORY_COLOURS[cat];
+      chip.addEventListener("click", () => {
+        if (this.activeCategory === cat) {
+          this.activeCategory = null;
+          chip.removeClass("jp-ctx-chip--active");
+        } else {
+          this.activeCategory = cat;
+          chipRow.querySelectorAll(".jp-ctx-chip--active").forEach((el) => el.removeClass("jp-ctx-chip--active"));
+          chip.addClass("jp-ctx-chip--active");
+        }
+        this.renderBody();
+      });
+    }
+    this.bodyContainer = container.createDiv("jp-ctx-body");
+    this.renderBody();
+  }
+  refresh() {
+    this.renderBody();
+  }
+  renderBody() {
+    if (!this.bodyContainer)
+      return;
+    this.bodyContainer.empty();
+    const records = this.activeCategory ? this.contextStore.getByCategory(this.activeCategory) : this.getAllRecords();
+    if (records.length === 0) {
+      this.bodyContainer.createDiv({ text: "No discourse bits loaded. Analyse text via the Discourse Cards view.", cls: "jp-ctx-empty" });
+      return;
+    }
+    for (const rec of records) {
+      this.renderCard(this.bodyContainer, rec);
+    }
+  }
+  getAllRecords() {
+    const all = [];
+    for (const cat of CATEGORIES) {
+      all.push(...this.contextStore.getByCategory(cat));
+    }
+    return all;
+  }
+  renderCard(parent, rec) {
+    var _a;
+    const card = parent.createDiv("jp-ctx-card");
+    const colour = (_a = CATEGORY_COLOURS[rec.category]) != null ? _a : "#cccccc";
+    card.style.borderLeft = `4px solid ${colour}`;
+    const topRow = card.createDiv("jp-ctx-card-top");
+    topRow.createEl("span", { text: rec.bit.text, cls: "jp-ctx-bit-text" });
+    topRow.createEl("span", { text: rec.category, cls: "jp-ctx-cat-badge" }).style.color = colour;
+    const meta = card.createDiv("jp-ctx-card-meta");
+    meta.createEl("span", { text: `type: ${rec.bit.bitType}`, cls: "jp-ctx-meta-item" });
+    if (rec.speaker)
+      meta.createEl("span", { text: `speaker: ${rec.speaker}`, cls: "jp-ctx-meta-item" });
+    if (rec.bit.timestamp)
+      meta.createEl("span", { text: rec.bit.timestamp, cls: "jp-ctx-meta-item" });
+    if (rec.bit.morphemes.length > 0) {
+      meta.createEl("span", { text: `morphemes: ${rec.bit.morphemes.join(" | ")}`, cls: "jp-ctx-meta-item" });
+    }
+  }
+};
+
 // src/main.ts
-var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
+var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULT_SETTINGS };
     this.scraper = null;
+    this.discourseAnalyzer = new DiscourseAnalyzer();
   }
   async onload() {
     await this.loadSettings();
@@ -11916,6 +14284,10 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
     this.store = new CollocationStore(this.app, dataPath);
     await this.store.load();
     this.engine = new SearchEngine(this.store);
+    const discoursePath = `${this.app.vault.configDir}/plugins/jp-collocations/discourse-index.json`;
+    this.discourseStore = new DiscourseStore(this.app, discoursePath);
+    await this.discourseStore.load();
+    this.contextStore = new ContextStore();
     this.registerView(
       JP_COLLOCATIONS_VIEW_TYPE,
       (leaf) => new CollocationView(leaf, this.store, this.engine, this.settings)
@@ -11923,6 +14295,14 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
     this.registerView(
       DICTIONARY_VIEW_TYPE,
       (leaf) => new DictionaryView(leaf, this.app)
+    );
+    this.registerView(
+      DISCOURSE_CARD_VIEW_TYPE,
+      (leaf) => new DiscourseCardView(leaf)
+    );
+    this.registerView(
+      CONTEXT_LEXICON_VIEW_TYPE,
+      (leaf) => new ContextLexiconView(leaf, this.contextStore)
     );
     this.addSettingTab(new SettingsTab(
       this.app,
@@ -11956,7 +14336,7 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
       editorCallback: (editor) => {
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian8.Notice("Select some Japanese text first!");
+          new import_obsidian10.Notice("Select some Japanese text first!");
           return;
         }
         const classifier = new TextClassifier();
@@ -11980,6 +14360,31 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
       callback: () => this.openDictionaryView()
     });
     this.addCommand({
+      id: "open-discourse-cards",
+      name: "Open Discourse Cards",
+      callback: () => this.openDiscourseCardView()
+    });
+    this.addCommand({
+      id: "open-context-lexicon",
+      name: "Open Context Lexicon",
+      callback: () => this.openContextLexiconView()
+    });
+    this.addCommand({
+      id: "analyse-selected-discourse",
+      name: "Analyse Selected Text (Discourse)",
+      editorCallback: (editor) => {
+        const selected = editor.getSelection();
+        if (!selected || !selected.trim()) {
+          new import_obsidian10.Notice("Select annotated text with || boundaries first!");
+          return;
+        }
+        const graph = this.discourseAnalyzer.analyze(selected.trim());
+        this.contextStore.ingestGraph(graph, "editor-selection");
+        new import_obsidian10.Notice(`Analysed ${graph.bits.length} discourse bits.`);
+        this.refreshContextViews();
+      }
+    });
+    this.addCommand({
       id: "import-yomitan-dictionary",
       name: "Import Yomitan Dictionary",
       callback: () => this.importYomitanDictionary()
@@ -11996,6 +14401,8 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
     (_a = this.scraper) == null ? void 0 : _a.abort();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(DICTIONARY_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(DISCOURSE_CARD_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(CONTEXT_LEXICON_VIEW_TYPE);
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -12055,10 +14462,10 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
       try {
         const parsed = JSON.parse(text);
         const count = this.store.bulkImport(parsed);
-        new import_obsidian8.Notice(`Imported ${count} entries.`);
+        new import_obsidian10.Notice(`Imported ${count} entries.`);
         this.refreshViews();
       } catch (e) {
-        new import_obsidian8.Notice("Failed to parse JSON file.");
+        new import_obsidian10.Notice("Failed to parse JSON file.");
       }
     };
     input.click();
@@ -12072,31 +14479,95 @@ var JPCollocationsPlugin = class extends import_obsidian8.Plugin {
     a.download = "jp-collocations-export.json";
     a.click();
     URL.revokeObjectURL(url);
-    new import_obsidian8.Notice("Exported collocations.");
+    new import_obsidian10.Notice("Exported collocations.");
   }
   async fetchFromHyogen() {
     var _a;
     if (!this.settings.hyogenEnabled) {
-      new import_obsidian8.Notice("Hyogen scraping is disabled. Enable it in settings first.");
+      new import_obsidian10.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
     }
     if (this.settings.hyogenWordList.length === 0) {
-      new import_obsidian8.Notice("No words configured. Add words to the scrape list in settings.");
+      new import_obsidian10.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
     if ((_a = this.scraper) == null ? void 0 : _a.isRunning()) {
-      new import_obsidian8.Notice("Scraper is already running.");
+      new import_obsidian10.Notice("Scraper is already running.");
       return;
     }
     this.scraper = new HyogenScraper(this.app, this.store, {
       rateLimit: this.settings.hyogenRateLimit,
-      onProgress: (msg) => new import_obsidian8.Notice(msg, 3e3),
+      onProgress: (msg) => new import_obsidian10.Notice(msg, 3e3),
       onEntry: () => this.refreshViews()
     });
     this.scraper.enqueue(this.settings.hyogenWordList);
-    new import_obsidian8.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
+    new import_obsidian10.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
     const count = await this.scraper.run();
-    new import_obsidian8.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    new import_obsidian10.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
+  }
+  async openDiscourseCardView() {
+    const existing = this.app.workspace.getLeavesOfType(DISCOURSE_CARD_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: DISCOURSE_CARD_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+  async openContextLexiconView() {
+    const existing = this.app.workspace.getLeavesOfType(CONTEXT_LEXICON_VIEW_TYPE);
+    if (existing.length > 0) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (leaf) {
+      await leaf.setViewState({ type: CONTEXT_LEXICON_VIEW_TYPE, active: true });
+      this.app.workspace.revealLeaf(leaf);
+    }
+  }
+  refreshContextViews() {
+    for (const leaf of this.app.workspace.getLeavesOfType(CONTEXT_LEXICON_VIEW_TYPE)) {
+      leaf.view.refresh();
+    }
+  }
+  // ─── Bridge API for jp-sentence-surfer ───────────────────────────────────
+  /** Query stored discourse chunks. */
+  queryDiscourseChunks(opts) {
+    return this.discourseStore.queryChunks(opts);
+  }
+  /** Count chunks by category. */
+  getDiscourseCategoryCounts() {
+    return this.discourseStore.countByCategory();
+  }
+  /** Get all stored chunks. */
+  getAllDiscourseChunks() {
+    return this.discourseStore.exportAll();
+  }
+  /** Analyse raw annotated text and ingest into context store. */
+  analyseDiscourseText(text, source) {
+    const graph = this.discourseAnalyzer.analyze(text, void 0, source);
+    this.contextStore.ingestGraph(graph, source != null ? source : "bridge");
+    return graph;
+  }
+  /** Get context bits by category. */
+  getContextBitsByCategory(category) {
+    return this.contextStore.getByCategory(category);
+  }
+  /** Get context bits by speaker. */
+  getContextBitsBySpeaker(speaker) {
+    return this.contextStore.getBySpeaker(speaker);
+  }
+  /** Get total discourse store size. */
+  getDiscourseStoreSize() {
+    return this.discourseStore.size();
+  }
+  /** Get total context store size. */
+  getContextStoreSize() {
+    return this.contextStore.size();
   }
 };
