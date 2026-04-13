@@ -19,6 +19,7 @@ export enum CollocationSource {
   Manual = "manual",
   Import = "import",
   Classified = "classified",
+  Contextual = "contextual",
 }
 
 export interface CollocationEntry {
