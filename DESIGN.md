@@ -5,7 +5,8 @@ design for the handwriting → transcript reconciliation feature. It is written
 *before* code so the reliability boundaries are fixed up front. Code that
 violates an invariant in §2 is a bug against this document, not a judgment call.
 
-The one open input is the **5 note types** (§7) — everything else is decided.
+The **5 note types are now defined** (§7, resolved from the user's design chats).
+What remains open is per-type payload detail, called out inline in §7.
 
 ---
 
@@ -243,24 +244,103 @@ works." Seed case `001` is the page we already reconciled by hand in
 
 ---
 
-## 7. Note types (the one open input)
+## 7. Note types — the "Big 5" (resolved)
 
-The 5 note types are a **pluggable config** in `src/notes/note-types.ts`:
+Defined across the user's design chats (see project memory `five-note-types`).
+A note type is **not** just a callout color — each is a distinct analytic object
+with its own payload and its own index key. Annotation is therefore a **router**
+into five typed stores, not a highlighter.
+
+| # | Class | Color (FINAL) | Identity / index key | Strip-test | Store |
+|---|---|---|---|---|---|
+| 1 | **serifu** セリフ | 🟡 yellow | surface form | citational | surface list |
+| 2 | **collocation** | 🟢 green | pattern id (N+に+V…) | → ungrammatical | `CollocationStore` (exists) |
+| 3 | **rhetorical collocation** | 🔵 **blue** | **lemma** | → gesture not performed | **gesture catalog (new)** |
+| 4 | **rhetorical construction** | 🩵 **aqua** | anchor-lattice id + function | → maneuver vanishes | anchor-lattice store (new) |
+| 5 | **discourse pattern** | 🔴 red | discourse role | → discourse function vanishes | discourse engine (port, §7.1) |
+
+> Colors were corrected by the user at the end of the chat: rhet-collocation is
+> **blue** (was purple), rhet-construction is **aqua** (was blue). Do not revert.
+
+The config still exists, but carries a typed `payload` per class and routes to a
+per-class store:
 
 ```ts
+type NoteClass = 'serifu' | 'collocation' | 'rhet_collocation'
+               | 'rhet_construction' | 'discourse';
+
 interface NoteType {
-  id: string;        // e.g. 'discourse'
-  label: string;     // shown in the library filter
-  color: string;     // Highlightr / CSS variable
-  callout: string;   // Obsidian callout keyword
-  formatting?: 'arrows' | 'underline' | 'plain';  // e.g. discourse uses red arrows
+  id: NoteClass;
+  label: string;
+  color: string;     // Highlightr / CSS variable (yellow/green/blue/aqua/red)
+  callout: string;
 }
-type NoteTypeConfig = NoteType[];   // exactly the 5 types, defined by the user
+
+// The Big-5 payloads — what each annotation actually carries:
+type Payload =
+  | { class: 'serifu';        spans: Span[] }
+  | { class: 'collocation';   spans: Span[]; patternId: string }
+  | { class: 'rhet_collocation';                       // 🔵 the subtle one
+      lemma: string;                                   // citation form = the index KEY
+      haloSpans: Span[];                               // bracketed residue (evidence)
+      gestureName: string;                             // 3–8 words: the move performed
+      gestureFamily?: string }                         // cross-lemma cluster, optional
+  | { class: 'rhet_construction';                      // 🩵
+      anchors: Span[]; slots: Span[]; latticeId: string; rhetoricalFunction: string }
+  | { class: 'discourse';                              // 🔴
+      role: string; operatorChainRef?: string };       // → §7.1 engine
 ```
 
-Annotation (`src/notes/annotate.ts`) and the library grouping read this config;
-neither hard-codes a type. **This is the only thing blocking the durable-core
-build** (§8 step 1, stages 6–7). Steps 1.1–1.4 do not depend on it.
+**🔵 rhetorical collocation is a *gesture catalog keyed by lemma*, not a "meaning
+of a word."** The lemma is the *hook a speaker reaches for*; the halo is the
+*structural residue* the move leaves. One lemma licenses several gestures (e.g.
+生々しい → impulse-trigger / authenticity-attribution / rejection-threshold), each
+a separate entry under the same key; gestures cluster across lemmas into
+**families** (漏れなく・例外なく・ことごとく = postures for "class-closure +
+saturating verdict"). The annotator supplies exactly three things: **lemma +
+bracketed halo span(s) + a short gesture name**. Core can be any POS,
+**re-rootable** (`[暴力]描写…[目をそらし]たくなる` — bracket every core; promote any to
+its own entry; key on the *citation form*, never the inflected surface). This is
+a **production** index ("what can I do with this word"), orthogonal to the
+Yomitan *comprehension* dictionary. The 🔵/🩵 cut is **soft** — the same span may
+carry both annotations (overlapping spans are allowed and expected).
+
+### 7.1 The 🔴 discourse type ports an existing engine
+
+A working discourse-grammar engine already exists at **`_tmp_pipeline/`** (repo
+root, untracked scratch — see project memory `discourse-engine-tmp-pipeline`).
+**Verified functional: 196/196 tests pass; CLI loads 126 operators / 575
+triggers; produces analysis for real YouTube transcripts.** It is *not* wired
+into the plugin. The 🔴 type is a **port** of this engine, not a fresh build. Its
+model (adopt verbatim):
+
+- **Two layers, context-gated.** Operators tagged `g` (grammar, surface) or `d`
+  (discourse, inferred). **Discourse labels never fire from a single morpheme** —
+  they require a constellation (grammar + stance + topic state + neighbours).
+  *This gating is the fix for the current subsystem's "over-fires" defect.*
+- **Relational machinery:** spans / bundles / pivots (ranked, ≤1/sentence) /
+  named moves; "the arrows ARE the discourse" (micro-jumps = operators) — which
+  is literally the user's Apple-Notes red arrows.
+- **5-stage parse:** morphemes → voicing channels → speech-act type →
+  `FLOW_STATE` (carried turn-to-turn) → cross-thought reference graph.
+- Bonus asset: `morphology.mjs` provides the **deinflection** the plugin's
+  dictionary currently lacks, and the lemma extraction 🔵 needs for its key.
+
+**Caveat:** `_tmp_pipeline/` is its own taxonomy (126 ops) built under heavy
+iteration; audit the operator inventory against the user's notes before adopting
+wholesale, and confirm none of it overlaps the dead-code set before porting.
+
+### 7.2 What's port vs build
+
+| Type | Status |
+|---|---|
+| 🔴 discourse | **port** `_tmp_pipeline` (mature, tested) |
+| 🟢 collocation | reuse `CollocationStore` |
+| 🟡 serifu | trivial surface store |
+| 🔵 rhet-collocation | **build** the lemma-keyed gesture catalog; `_tmp_pipeline/envelope.mjs` is an *early-form* starting point (pre-"gesture" framing) |
+| 🩵 rhet-construction | **build** the anchor-lattice store; `_tmp_pipeline/structure.mjs` anchors/bundles are partial scaffolding |
+
+Stages 1.4–1.5 are now **unblocked**.
 
 ---
 
@@ -272,8 +352,13 @@ build** (§8 step 1, stages 6–7). Steps 1.1–1.4 do not depend on it.
 1. transcript → daily-note assembly under per-video headings (idempotent)
 2. `LocalMatcher` (pure) + golden-set harness
 3. `OcrReconciler` (Claude client, schema, Haiku→Opus tier) + reconciliation flow
-4. write `ReconciledNote`s back as callouts with block IDs *(needs §7)*
-5. `LibraryView` sidebar: block-embeds, type filter, context modal *(needs §7)*
+4. write `ReconciledNote`s back as Big-5-typed callouts with block IDs +
+   route each into its per-class store (§7); colors yellow/green/blue/aqua/red
+5. `LibraryView` sidebar: block-embeds, **filter by Big-5 class**, context modal
+
+Note: the 🔴 discourse store is a separate, larger workstream — the
+`_tmp_pipeline` port (§7.1). Step 1 can land with 🔴 stubbed (role label only)
+and the engine ported in a follow-up phase; 🟡/🟢/🔵/🩵 do not depend on it.
 
 **Step 2 — bolt on the fragile adapters**, each behind its isolation boundary
 with the paste fallback:
@@ -298,11 +383,20 @@ src/notes/
   transcript.ts       # ⚠ YouTube captions adapter
   yt-history.ts       # ⚠ YouTube history adapter
   pipeline.ts         # orchestrator; graceful degradation per stage
-  note-types.ts       # §7 pluggable config
-  annotate.ts         # idempotent callout/Highlightr writer
-  LibraryView.ts      # sidebar view (block-embeds + modal)
+  note-types.ts       # §7 Big-5 config + payload types
+  annotate.ts         # idempotent callout writer + Big-5 router → stores
+  stores/             # §7 per-class stores:
+    serifu.ts         #   🟡 surface list
+    gesture-catalog.ts#   🔵 lemma-keyed gesture catalog (new; production index)
+    construction.ts   #   🩵 anchor-lattice store (new)
+    # 🟢 reuses data/CollocationStore; 🔴 = the _tmp_pipeline port (§7.1)
+  LibraryView.ts      # sidebar view (block-embeds + Big-5 filter + modal)
 golden/               # §6 regression fixtures + runner
 ```
+
+The 🔴 engine port lands under `src/discourse/` (replacing the current naive
+matcher) or a fresh `src/discourse2/`, sourced from `_tmp_pipeline/` — its own
+phase, gated by the §7.1 audit.
 
 The X dictionary's lessons that this design inherits: isolate the silo, surface
 errors verbatim, no silent caps, degrade gracefully, freeze what you've already
