@@ -6,7 +6,7 @@
 import { detectFormat } from './detect.mjs';
 import { parseVtt, parseSrt } from './parse_vtt.mjs';
 import { normalize } from './normalize.mjs';
-import { sentencizeCues, sentencizePlain, sentencizeTagged } from './sentencize.mjs';
+import { sentencizeCues, sentencizePlain, sentencizeTagged, sentencizeCaptions } from './sentencize.mjs';
 import { turnizeAuto } from './turnize.mjs';
 import { skeletonOf } from './skeleton.mjs';
 import { matchSentence, chainTree } from './match.mjs';
@@ -44,6 +44,10 @@ export function analyze(raw) {
     const { cues, stats } = parseSrt(raw);
     cueStats = stats;
     sentences = sentencizeCues(cues);
+  } else if (fmt.format === 'captions') {
+    // YouTube caption copy: no punctuation + inline [HH:MM:SS]. Skeletal split
+    // yields sentences carrying startMs, so turnizeAuto routes to the diarizer.
+    sentences = sentencizeCaptions(raw);
   } else if (fmt.format === 'tagged') {
     // 話者タグ付き (A:/B:/C: …) は話者を保持して文分割する。
     // sentencizePlain だと normalize がタグを潰し全体が 1 turn に融合していた。

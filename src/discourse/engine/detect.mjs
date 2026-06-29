@@ -36,5 +36,13 @@ export function detectFormat(raw) {
     return { format: 'tagged', confidence: 0.85, reason: `${taggedLines} speaker-tagged lines` };
   }
 
+  // Captions: YouTube "show transcript" / copied caption blocks — lines begin
+  // with an inline [MM:SS] or [HH:MM:SS] stamp (optionally a markdown link),
+  // body is punctuation-poor. Not SRT/VTT (no --> arrows).
+  const capLines = lines.filter(l => /^\[\d{1,2}:\d{2}(?::\d{2})?\]/.test(l)).length;
+  if (capLines >= 3) {
+    return { format: 'captions', confidence: 0.8, reason: `${capLines} inline-timestamp caption lines` };
+  }
+
   return { format: 'plain', confidence: 0.6, reason: 'no timing/tags detected → plain text' };
 }

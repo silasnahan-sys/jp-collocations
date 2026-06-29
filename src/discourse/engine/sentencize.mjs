@@ -219,6 +219,110 @@ export function sentencizePlain(text) {
   return repairBoundaries(raw.map(t => ({ text: t }))).map(s => s.text);
 }
 
+// ───────────────────────── caption mode (no punctuation) ─────────────────────
+// YouTube auto-caption copy has no 。 and inline [HH:MM:SS] stamps. We split
+// on sentence-final SKELETAL clusters only (topic-agnostic), guarding against
+// clusters that are actually mid-clause continuations.
+
+/** Sentence-final skeletal clusters, matched longest-first. */
+const CAPTION_FINAL = [
+  'じゃないですか','んですけれども','ますでしょうか','でしょうか',
+  'んですよね','んですけど','ですよね','ますよね','でしょうね','じゃないか',
+  'ましょうか','ましたっけ','ませんでした','んでした','と思います','と思う',
+  'でしょう','ましょう','ますか','ますね','ますよ','ました','ません',
+  'ですね','ですよ','ですか','でした','んです','のです','のだ','んだよね',
+  'んだよ','んだね','んだな','んだ','だよね','だよな','だわ','だよ','だね','だな',
+  'じゃん','じゃない','でしょ','だろう','だろ','かな','かなあ','よね','わよ',
+  'ますわ','ですわ','たわ','だわ',
+  'ます','です','すか','んすか','なよ','ってこと',
+];
+const CAPTION_FINAL_SORTED = [...new Set(CAPTION_FINAL)].sort((a, b) => b.length - a.length);
+
+/** If text AFTER a candidate boundary begins with one of these, the "final"
+ *  form is mid-clause → suppress. Front items (わ/よ/ね/さ/が/か) keep final
+ *  particle / です-が・です-か clusters intact; case particles は/を/に/も are
+ *  intentionally absent (after a final form they open a new dislocated clause). */
+const CAPTION_CONT = /^(?:わ|よ|ね|さ|が|か|から|けれども|けれど|けども|けど|ので|のに|んで|して|したら|し|くらい|ぐらい|ばかり|わけ|つつ|ながら|より|まで|など|なんか|たり|たら|れば|って|という|ような|ように|みたいな|時|とき|場合|ところ|の|と|で|て)/;
+
+/** Strong sentence-initial cues: force a split BEFORE these (not at offset 0). */
+const CAPTION_INIT = /(さて|ところで|というわけで|それでは|じゃあ|じゃ次)/g;
+
+/** Split a punctuation-less Japanese string into sentence-ish units using only
+ *  skeletal cues. Returns boundary offsets is internal; exposed as string[]. */
+export function segmentSkeletal(text) {
+  const s = String(text ?? '');
+  if (!s) return [];
+  const bounds = new Set();
+  for (let i = 1; i < s.length; i++) {
+    for (const f of CAPTION_FINAL_SORTED) {
+      if (i >= f.length && s.slice(i - f.length, i) === f) {
+        if (!CAPTION_CONT.test(s.slice(i))) bounds.add(i);
+        break; // longest cluster ending here wins
+      }
+    }
+  }
+  let m;
+  while ((m = CAPTION_INIT.exec(s)) !== null) if (m.index > 0) bounds.add(m.index);
+  const sorted = [...bounds].sort((a, b) => a - b);
+  const out = [];
+  let prev = 0;
+  for (const b of sorted) { const seg = s.slice(prev, b).trim(); if (seg) out.push({ text: seg, _start: prev, _end: b }); prev = b; }
+  const tail = s.slice(prev).trim(); if (tail) out.push({ text: tail, _start: prev, _end: s.length });
+  return out;
+}
+
+/** Parse [MM:SS]/[HH:MM:SS] (optional markdown link) → ms; else null. */
+function parseStamp(line) {
+  const m = /^\[(\d{1,2}):(\d{2})(?::(\d{2}))?\](?:\([^)]*\))?\s*/.exec(line);
+  if (!m) return null;
+  const a = +m[1], b = +m[2], c = m[3] != null ? +m[3] : null;
+  const ms = (c != null) ? ((a * 3600 + b * 60 + c) * 1000) : ((a * 60 + b) * 1000);
+  return { ms, rest: line.slice(m[0].length) };
+}
+
+/** Strip caption noise: [音楽]/[笑い] markers, html/markdown, wrap-spaces. */
+function cleanCaptionText(t) {
+  return String(t ?? '')
+    .replace(/\[[^\]]*\]/g, ' ')               // [音楽] [笑い] [拍手]
+    .replace(/<[^>]+>/g, ' ')                   // stray html (mark/span/svg)
+    .replace(/\*\*?|`+|^#+\s*|^-#\s*/gm, ' ')   // markdown emphasis/headers
+    .replace(/[ \t　]+/g, '');              // wrap-spaces are artifacts → drop
+}
+
+/**
+ * Caption sentencizer. Builds timestamped cues, joins their cleaned text into a
+ * single stream (tracking each char's cue time), splits skeletally, and assigns
+ * each sentence approximate startMs/endMs. The startMs lets turnizeAuto route to
+ * the lexical diarizer automatically.
+ * @returns {Array<{text:string, startMs:number, endMs:number}>}
+ */
+export function sentencizeCaptions(raw) {
+  const lines = String(raw ?? '').replace(/^﻿/, '').split(/\r?\n/);
+  let joined = '';
+  /** @type {number[]} */ const timeOf = []; // ms per char index in `joined`
+  let curMs = 0;
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t) continue;
+    const st = parseStamp(t);
+    let body;
+    if (st) { curMs = st.ms; body = st.rest; } else { body = t; }
+    const cleaned = cleanCaptionText(body);
+    for (const ch of cleaned) { joined += ch; timeOf.push(curMs); }
+  }
+  if (!joined) return [];
+  const segs = segmentSkeletal(joined);
+  /** @type {Array<{text:string, startMs:number, endMs:number}>} */
+  const out = [];
+  for (const sg of segs) {
+    const startMs = timeOf[sg._start] ?? curMs;
+    const endIdx = Math.min(sg._end, timeOf.length - 1);
+    const endMs = timeOf[endIdx] ?? startMs;
+    out.push({ text: sg.text, startMs, endMs: Math.max(endMs, startMs) });
+  }
+  return repairBoundaries(out);
+}
+
 /** Postprocess pass: merge ASR digit-counter splits + reattach micro-fragments.
  *  Pure on the sentence list, preserves cue/timing metadata when merging. */
 export function repairBoundaries(sents) {
