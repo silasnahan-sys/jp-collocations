@@ -80,6 +80,25 @@ export function turnizeBySpeaker(sentences) {
   return turns;
 }
 
+/** Pure-backchannel standalone utterance (うん。/ なるほど。/ へえ。 …). */
+const STANDALONE_REACTION_RE = /^(?:うん|うんうん|うんうんうん|はい|はいはい|ええ|なるほど|なるほどなるほど|おお|おー|そうそう|そうですね|そうなんですね|へえ|へー|ふーん|あ|ああ|わ|そっか|そうか|確かに|わかる|わかるわかる)[、。．！？\s]*$/;
+
+/** Turn-INITIAL reaction marker. In casual dialogue, reactions are usually
+ *  glued to a comment (あ、そうなんだ / ああ、聞くね / いや、そうだよね) rather than
+ *  bare — a lecture almost never opens sentences this way. */
+const TURN_INITIAL_REACTION_RE = /^(?:うん|はい|ええ|なるほど|おお|そうそう|へえ|へー|ふーん|あ[、。\s]|ああ|あー|わ[、。\s]|そっか|そうか|確かに|わかる|いやいや|いや[、。\s]|そうだね|そうなの|なるほどね)/;
+
+/** Does a label-less, timing-less transcript read as a 2-person dialogue?
+ *  Use turn-initial reaction density so monologues stay single-speaker. */
+export function looksDialogic(sentences) {
+  const texts = sentences.map(s => ((typeof s === 'string' ? s : s.text) || '').trim());
+  if (texts.length < 6) return false;
+  let reactions = 0;
+  for (const t of texts) if (STANDALONE_REACTION_RE.test(t) || TURN_INITIAL_REACTION_RE.test(t)) reactions++;
+  // ≥3 reaction turns AND ≥10% of turns — lectures sit far below this floor.
+  return reactions >= 3 && reactions / texts.length >= 0.10;
+}
+
 /** Auto: choose based on data shape. */
 export function turnizeAuto(sentences) {
   // Highest priority: explicit per-sentence speaker field (tagged transcripts).
@@ -93,5 +112,8 @@ export function turnizeAuto(sentences) {
     // VTT-derived: prefer lexical diarizer over pause-flip.
     return diarize(sentences);
   }
+  // Plain text (no tags, no timing): diarize only if it reads as a 2-person
+  // dialogue; otherwise treat as one speaker so monologues aren't shredded.
+  if (looksDialogic(sentences)) return diarize(sentences);
   return turnizeSingle(sentences);
 }

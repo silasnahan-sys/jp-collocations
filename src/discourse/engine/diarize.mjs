@@ -38,6 +38,10 @@ const HOST_LEX = [
   'なんでしょうか','じゃないですか','なんですけど','んですよ','んですよね',
   'ありました','ありますね','言いました','言いますと','言われています','と言われています',
   'みたいなんですよ','ようです','ようなんです','ようなんですよ',
+  // casual-register exposition (two-man show host who narrates in plain+んだ style)
+  'んだわ','んだよね','わけなんです','わけなんですよ','わけなんですけど','わけじゃない',
+  'らしくて','らしいんです','らしいんですよ','みたいなんです','んですけども',
+  'なんですけども','なんですよね','のことなんです','ってことなんです','たんですよ',
 ];
 
 /** Guest-signature surface forms (reactive / inquiry / receipt). */
@@ -46,8 +50,23 @@ const GUEST_LEX = [
   'そうですか','そうなんだ','あ、そうなんだ','すごいですね','面白いですね',
   '初めて聞きました','知らなかった','知らなかったです','知ってます','聞いたことある',
   '聞いたことあります','どういうことですか','どういう意味ですか','なんでですか',
-  'えっ','えっと','うん','うんうん','はいはい','はいはいはい','ですね',
+  'えっ','えっと','うん','うんうん','はいはい','はいはいはい',
+  // casual-register agreement / receipt (reactor in a two-man show)
+  'だよね','もんね','そうだね','そうなの','そうなの?','じゃないの','わかる','わかるわかる',
+  'そうそう','確かに','聞くね','聞いたことある','だもんね',
 ];
+
+/** `ですね` is host-exposition when it tails a long clause (〜してですね) but a
+ *  guest receipt when it stands alone (そうですね。). Disambiguated by length. */
+function desuneSignal(text, strippedLen) {
+  if (!/ですね/.test(text)) return 0;
+  if (strippedLen <= 7 && /^(そう)?ですね/.test(text.trim())) return -1.5; // standalone receipt → guest
+  return +1; // tail of a longer clause → host
+}
+
+/** Interruption / 2nd-person command — a near-certain turn flip when it lands
+ *  on top of the partner's expository turn (おい / やめろ / 待ってくれ / お前 …). */
+const INTERRUPT_RE = /(?:^おい|^ちょっと待|待ってくれ|やめろ|やめなよ|お前|なんだよ|^いやいや|うるせ|っつの|勘弁)/;
 
 /** Vocative pattern detection. */
 const VOCATIVE_RE = /^([\u4E00-\u9FFFぁ-んァ-ヴーA-Za-z]{1,8})(?:君|さん|先生|ちゃん)[、。．！]/;
@@ -66,7 +85,10 @@ export function scoreUtterance(text) {
   let hostHits = 0;
   for (const s of HOST_LEX) if (text.includes(s)) hostHits++;
   let guestHits = 0;
-  for (const s of GUEST_LEX) if (text.includes(s)) guestHits++;
+  // Only substring-match guest tokens ≥3 chars; short kana backchannels
+  // (うん/はい/ええ/おお) fire inside content words (してしま*うん*な) — those are
+  // handled whole-utterance by REACTION_TOKEN_RE instead.
+  for (const s of GUEST_LEX) if (s.length >= 3 && text.includes(s)) guestHits++;
 
   const isQuestion = /[？?]\s*$/.test(text) || /(?:ですか|ますか|の\?|の？|んですか)[、。．\s]*$/.test(text);
 
@@ -75,8 +97,8 @@ export function scoreUtterance(text) {
   // Question lifts guest-likelihood (within reason — host also asks rhetoricals).
   const questionScore = isQuestion ? -0.5 : 0;
 
-  const score = (hostHits * 1.5) - (guestHits * 1.5) + lengthScore + questionScore;
-  return { score, isReaction: false, isQuestion, hostHits, guestHits, length };
+  const score = (hostHits * 1.5) - (guestHits * 1.5) + lengthScore + questionScore + desuneSignal(text, length);
+  return { score, isReaction: false, isQuestion, hostHits, guestHits, length, interrupt: INTERRUPT_RE.test(text.trim()) };
 }
 
 /** Split a cue's text on a trailing reaction tail. Returns
@@ -128,7 +150,12 @@ export function diarize(sentences) {
       s.speaker = prev === 'HOST' ? 'GUEST' : 'HOST';
       continue;
     }
-    if (Math.abs(f.score) < 0.5) {
+    // Interruption flip: a 2nd-person command/break-in landing on top of the
+    // partner's expository turn is the OTHER speaker, regardless of weak score.
+    const prevFeat = i > 0 ? scored[i - 1]._feat : null;
+    if (f.interrupt && Math.abs(f.score) < 1.5 && prevFeat && prevFeat.length >= 15 && !prevFeat.isReaction) {
+      s.speaker = prev === 'HOST' ? 'GUEST' : 'HOST';
+    } else if (Math.abs(f.score) < 0.5) {
       s.speaker = prev;
     } else if (f.score > 0) {
       s.speaker = 'HOST';

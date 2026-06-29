@@ -183,7 +183,11 @@ export function analyze(raw) {
     const byIdx = new Map(analyzedSentences.map(s => [s.idx, s]));
     for (const t of turns) for (const ts of t.sentences) {
       const src = byIdx.get(ts.idx);
-      if (src && ts.interaction) src.interaction = ts.interaction;
+      if (!src) continue;
+      if (ts.interaction) src.interaction = ts.interaction;
+      // diarize/turnize work on shallow copies; carry the resolved speaker back
+      // to the flat sentence list (was always undefined for diarized input).
+      if (t.speaker != null) src.speaker = t.speaker;
     }
   }
   const sections = detectSections(turns);  // 転換C: マクロセクション (文書全体を連続被覆) を検出し、interaction 軸を
