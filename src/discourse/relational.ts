@@ -54,6 +54,7 @@ const LEX: ReadonlyArray<readonly [string, string]> = [
   ['っていう', 'QUOTATIVE'], ['という', 'QUOTATIVE'],
   // explanatory assertion
   ['んですよ', 'EXPLAIN-ASSERT'], ['んです', 'EXPLAIN-ASSERT'], ['のです', 'EXPLAIN-ASSERT'], ['のだ', 'EXPLAIN-ASSERT'],
+  ['んすよ', 'EXPLAIN-ASSERT'], ['んすね', 'EXPLAIN-ASSERT'],
   // tentative-negative hedge (the deflator's partner)
   ['んじゃないか', 'TENTATIVE-NEG'], ['じゃないか', 'TENTATIVE-NEG'], ['のではないか', 'TENTATIVE-NEG'],
   // doubt / interest state
@@ -79,6 +80,10 @@ const LEX: ReadonlyArray<readonly [string, string]> = [
   ['だけ', 'MINIMIZER'], ['しか', 'MINIMIZER'], ['ばかり', 'MINIMIZER'],
   // nominalize
   ['ってこと', 'NOMINALIZE'], ['ということ', 'NOMINALIZE'], ['こと', 'NOMINALIZE'],
+  // confirm / acknowledgement of shared knowledge (cross-turn)
+  ['ですよね', 'CONFIRM-ACK'], ['ますよね', 'CONFIRM-ACK'], ['だよね', 'CONFIRM-ACK'], ['よね', 'CONFIRM-ACK'],
+  // experiential question + additive reaffirm + of-course
+  ['たことある', 'EXPERIENTIAL-Q'], ['それも', 'ANAPHOR-ADD'], ['もちろん', 'OF-COURSE'],
   // anaphor
   ['そういう', 'ANAPHOR-CLASS'], ['それを', 'ANAPHOR'], ['それ', 'ANAPHOR'], ['その', 'ANAPHOR'], ['これ', 'ANAPHOR'],
   // hedge fillers
@@ -196,6 +201,131 @@ export function analyzeRelational(sentences: Array<{ text: string; speaker?: str
   }
   finish();
   return blocks;
+}
+
+// ═══════════════════════ B2: cross-turn adjacency (dialogue) ═══════════════════
+// In dialogue the unit is the TURN. This layer reads each turn's speech act from
+// skeletal cues and links turns with cross-turn edges (answers / restates-echo /
+// responds-expands / contrasts / receipts). Skeleton-only: "echo" is a literal
+// repeat of prior surface (a structural relation), never topic comprehension.
+
+export interface CrossEdge {
+  from: number;       // turn idx
+  to: number;         // earlier turn idx
+  kind: 'answers' | 'restates' | 'responds-expands' | 'contrasts' | 'receipts';
+  evidence: string;
+}
+
+export interface Turn {
+  idx: number;
+  speaker: string | null;
+  text: string;
+  comps: SkeletalComponent[];
+  beats: Beat[];
+  act: string;
+  edges: CrossEdge[];
+}
+
+/** Strip particles/punct to compare content for structural echo. */
+function contentOnly(t: string): string {
+  return t.replace(/[、。．,.\s「」『』！!？?ー~〜]/g, '').replace(/^(ま|まあ|あの|えっと|なんか|うん|はい|ええ|そう)+/, '');
+}
+/** Longest common substring length between two strings (structural echo metric). */
+function lcsLen(a: string, b: string): { len: number; sub: string } {
+  if (!a || !b) return { len: 0, sub: '' };
+  const dp = new Array<number>(b.length + 1).fill(0);
+  let best = 0, end = 0;
+  for (let i = 1; i <= a.length; i++) {
+    let prevDiag = 0;
+    for (let j = 1; j <= b.length; j++) {
+      const tmp = dp[j];
+      dp[j] = a[i - 1] === b[j - 1] ? prevDiag + 1 : 0;
+      if (dp[j] > best) { best = dp[j]; end = i; }
+      prevDiag = tmp;
+    }
+  }
+  return { len: best, sub: a.slice(end - best, end) };
+}
+
+const STANDALONE_REACTION = /^(?:うん|うんうん|はい|はいはい|ええ|なるほど|そうそう|へえ|ふーん|おお|そっか)[、。！？\s]*$/;
+const SURPRISE = /^(?:え|えっ|えー|へえ|まじ|ほんと|うそ|お)[、。！？\s]*$/;
+
+/** Classify one turn's speech act from skeletal cues + the prior turn. */
+function classifyAct(text: string, comps: SkeletalComponent[], prev: Turn | null): string {
+  const has = (fn: string) => comps.some((c) => c.fn === fn);
+  const t = text.trim();
+  const body = contentOnly(t);
+  const isQ = /[?？]/.test(t) || has('EXPERIENTIAL-Q') || /(んすか|んですか|ますか|ですか|の[?？]?)$/.test(t);
+  if (SURPRISE.test(t) || (body.length <= 2 && /^え/.test(t))) return 'NEWS-RECEIPT';
+  if (STANDALONE_REACTION.test(t)) return 'BACKCHANNEL';
+  // contrastive reveal before the question test: でも…たことあるんすよ is a
+  // declarative reveal, not a question, even though it contains たことある.
+  if (has('CONCESS') && has('EXPLAIN-ASSERT')) return 'CONTRASTIVE-REVEAL';
+  if (isQ) return 'PROBE-QUESTION';
+  if (has('CONFIRM-ACK')) return 'RESTATE-ACK';
+  if (has('ANAPHOR-ADD') || has('OF-COURSE')) return 'EXPAND-REAFFIRM';
+  if (prev && prev.act === 'PROBE-QUESTION' && (/ない|ません|はい|うん|そう|です/.test(body) || body.length <= 6)) return 'ANSWER';
+  return 'INFORM';
+}
+
+/**
+ * Cross-turn analysis. Each input element is one turn (text + speaker). Returns
+ * turns with intra-turn beats (from B), a speech act, and cross-turn edges.
+ */
+export function analyzeCrossTurn(sentences: Array<{ text: string; speaker?: string | null }>): Turn[] {
+  const turns: Turn[] = [];
+  for (let i = 0; i < sentences.length; i++) {
+    const s = sentences[i];
+    const comps = components(s.text);
+    const beats = splitBeats(comps).map((cs) => {
+      const { move, tone } = nameBeat(cs);
+      return { comps: cs, move, tone };
+    });
+    const prev = turns.length ? turns[turns.length - 1] : null;
+    const act = classifyAct(s.text, comps, prev);
+    turns.push({ idx: i, speaker: s.speaker ?? null, text: s.text, comps, beats, act, edges: [] });
+  }
+
+  // cross-turn edges
+  for (let i = 0; i < turns.length; i++) {
+    const cur = turns[i];
+    const prior = turns.slice(0, i);
+    const lastOther = [...prior].reverse().find((p) => p.speaker !== cur.speaker) ?? null;
+    const lastAny = prior.length ? prior[prior.length - 1] : null;
+
+    if (cur.act === 'ANSWER') {
+      const q = [...prior].reverse().find((p) => p.act === 'PROBE-QUESTION');
+      if (q) cur.edges.push({ from: i, to: q.idx, kind: 'answers', evidence: 'answer-after-question' });
+    }
+    if (cur.act === 'RESTATE-ACK' && lastOther) {
+      const e = lcsLen(contentOnly(cur.text), contentOnly(lastOther.text));
+      cur.edges.push({ from: i, to: lastOther.idx, kind: 'restates', evidence: e.len >= 2 ? `echo:${e.sub}+confirm` : 'confirm-of-prior' });
+    }
+    if (cur.act === 'EXPAND-REAFFIRM' && lastAny) {
+      cur.edges.push({ from: i, to: lastAny.idx, kind: 'responds-expands', evidence: 'additive-reaffirm(それも/もちろん)' });
+    }
+    if (cur.act === 'CONTRASTIVE-REVEAL') {
+      // contrasts the established common ground (the run of prior aligned turns)
+      const target = prior.length ? prior[0].idx : i;
+      cur.edges.push({ from: i, to: target, kind: 'contrasts', evidence: 'でも/けど vs established-ground → new info' });
+    }
+    if (cur.act === 'NEWS-RECEIPT') {
+      const src = [...prior].reverse().find((p) => p.act === 'CONTRASTIVE-REVEAL' || p.act === 'INFORM');
+      if (src) cur.edges.push({ from: i, to: src.idx, kind: 'receipts', evidence: 'surprise-after-reveal' });
+    }
+  }
+  return turns;
+}
+
+/** Render cross-turn analysis (debug/inspection). */
+export function renderTurns(turns: Turn[]): string {
+  const lines: string[] = [];
+  for (const t of turns) {
+    const chain = t.comps.map((c) => `${c.surface}〈${c.fn}〉`).join(' → ') || '(none)';
+    lines.push(`[${t.speaker ?? '?'}] «${t.act}»  ${chain}`);
+    for (const e of t.edges) lines.push(`        ⟶ ${e.kind} #${e.to}  (${e.evidence})`);
+  }
+  return lines.join('\n');
 }
 
 /** Render blocks in the user's →/↳/↧ Moving-parts notation (debug/inspection). */
