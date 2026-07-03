@@ -14,6 +14,8 @@
 
 import { analyze } from './engine/analyze.mjs';
 import type { RawDiscourseResult, RawDiscourseHit } from './engine/analyze.mjs';
+import { analyzeRelational, analyzeCrossTurn } from './relational.ts';
+import type { Block, Turn } from './relational.ts';
 
 /** A single discourse operator hit, boundary-aware (not substring noise). */
 export interface DiscourseHit {
@@ -38,10 +40,24 @@ export interface DiscourseSentence {
   raw: unknown;
 }
 
+/**
+ * The "B" relational reading over the surface analysis: skeletal components
+ * composed into a discourse-thought tree (monologue) or cross-turn adjacency
+ * (dialogue). See relational.ts / memory: discourse-skeleton-principle.
+ */
+export interface RelationalAnalysis {
+  /** dialogue → cross-turn turns; monologue → thought-tree blocks. */
+  mode: 'dialogue' | 'monologue';
+  blocks?: Block[];
+  turns?: Turn[];
+}
+
 export interface DiscourseAnalysis {
   sentences: DiscourseSentence[];
   operatorCount: number;
   triggerCount: number;
+  /** Skeletal relational reading (thought-tree / cross-turn moves). */
+  relational: RelationalAnalysis;
   /** The full untyped engine result, for callers that need everything. */
   raw: RawDiscourseResult;
 }
@@ -69,10 +85,23 @@ export function analyzeDiscourse(text: string): DiscourseAnalysis {
     hits: (s.hits ?? []).map(toHit),
     raw: s,
   }));
+
+  // Relational ("B") reading. Dialogue (≥2 distinct speakers) → cross-turn
+  // adjacency; otherwise the monologue thought-tree.
+  const relInput = (r.sentences ?? []).map(s => ({
+    text: s.text ?? '',
+    speaker: (s as { speaker?: string | null }).speaker ?? null,
+  }));
+  const speakers = new Set(relInput.map(s => s.speaker).filter((x): x is string => x != null));
+  const relational: RelationalAnalysis = speakers.size > 1
+    ? { mode: 'dialogue', turns: analyzeCrossTurn(relInput) }
+    : { mode: 'monologue', blocks: analyzeRelational(relInput) };
+
   return {
     sentences,
     operatorCount: r.stats?.lexicon?.operators ?? 0,
     triggerCount: r.stats?.lexicon?.triggers ?? 0,
+    relational,
     raw: r,
   };
 }
