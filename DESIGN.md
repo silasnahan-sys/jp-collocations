@@ -154,14 +154,28 @@ interface TranscriptAdapter {
 }
 
 // src/notes/local-matcher.ts — PURE. No network, no API. The durable backbone.
+// IMPLEMENTED (2026-07-03). Validated on the 6 samplenotes-reconciled cases:
+// 5/6 span-located correctly (one case the matcher beat the hand-annotated
+// approximate timestamp), the ASR error 述→術 flagged, and the one heavy
+// paraphrase correctly returned low-confidence → needs-review.
+//
+// Reading-space amendment (the Japanese-specific move): span LOCATION is fuzzy
+// on SURFACE (char-bigram Dice ⊔ edit-ratio, sliding window) — robust to a few
+// kanji swaps because most chars still match. Correction detection then aligns
+// the note against the winning span in READING space via an injected resolver,
+// so 効く / 利く / 聞く (all きく) are recognised as the same word and a kanji
+// error becomes a *confident homophone correction* instead of an unexplained
+// mismatch. YouTube's dominant error is homophone/kanji-choice, so this is what
+// makes reconciliation accurate rather than surface-brittle.
+type ReadingResolver = (surface: string) => string | null;  // DictionaryStore + deinflection in prod; word-level
 interface LocalMatcher {
-  /** NFKC-normalize both sides, slide the phrase over transcript lines, score by
-   *  token-overlap + edit-distance, return best span + alternatives + ±2 lines. */
-  match(phrase: string, transcript: Transcript): {
-    best: SpanCandidate | null;
-    alternatives: SpanCandidate[];   // top-K for disambiguation
+  match(phrase: string, lines: MatcherLine[], readingOf?: ReadingResolver): {
+    best: MatchSpan | null;          // {startLine,endLine,tStartSec,text,score}
+    alternatives: MatchSpan[];       // top-K for disambiguation
     contextBefore: string[];
     contextAfter: string[];
+    corrections: Correction[];       // homophone (0.9) | kanji-swap (0.5) | edit (0.4)
+    confidence: number;              // span score, penalised while corrections stay unresolved
   };
 }
 
@@ -401,3 +415,80 @@ phase, gated by the §7.1 audit.
 The X dictionary's lessons that this design inherits: isolate the silo, surface
 errors verbatim, no silent caps, degrade gracefully, freeze what you've already
 captured. See the project memory `x-search-dictionary` for the parallel.
+
+---
+
+## 10. Digital text notes (the easier ingestion path)
+
+The §1 flow assumes handwriting (Apple Pencil → image → **Vision OCR**). When the
+user's notes are already **digital text** (Apple Notes text, or any typed notes),
+the entire OCR stage is deleted:
+
+- `OcrReconciler.readPage()` (the ⚠ Claude Vision adapter) is **skipped** — the
+  note text goes straight into `LocalMatcher.match()`.
+- The only remaining LLM use is `disambiguate()` on the residue the matcher flags
+  `needs-review` (heavy paraphrase, ambiguous homophone) — a tiny call over
+  readings/candidates, never the transcript.
+- Everything downstream (typed callouts, block IDs, library, stores) is identical.
+
+So the text path is a **strict subset** of the locked flow, with the most
+fragile/expensive stage removed. Ingestion convention: one note per line/paragraph
+in an `inbox/` markdown file (or pasted into a command); the pipeline reconciles
+each against the frozen transcript exactly as in §5, entering at the
+`LocalMatcher` step.
+
+## 11. Cards & timestamp anchoring (extends the existing SRS generator)
+
+`src/srs/card-generator.ts` already ships the target card shape: the
+**graduated fade-in cloze** (each bit in a `%%spoiler%%`, revealed one at a time),
+the phrase-in-context card, and an `includeTimestamps` option with a per-bit
+`timestamp`. A card is authored **from a `ReconciledNote`**, so it inherits the
+note's `videoId`, `lineIndex`, `timestampSec`, and `blockId` for free.
+
+The one addition: make the timestamp a **live anchor**, not a label. Each card bit
+carries `{ videoId, tStartSec, blockId }` and renders it as:
+
+- a link **into the transcript block** — `[[<daily>#^<blockId>]]` — so the card is
+  traceable to the exact source span (invariant #1; no copied content), and
+- a **YouTube deep-link** — `https://youtu.be/<videoId>?t=<tStartSec>` — that opens
+  the moment.
+
+A card is therefore a *view over an anchored transcript span*, not a new content
+note — same anti-explosion rule as the library (invariant #1, #5). Cards render as
+Markdown and route through the same idempotent writer.
+
+## 12. Audio provider (decoupled; the timestamp is the durable primitive)
+
+Audio is resolved through one adapter so the card never depends on audio existing
+(invariant #2 isolation, #3 degrade-soft):
+
+```ts
+// src/notes/audio-provider.ts
+interface AudioClip { kind: 'deeplink' | 'local'; href: string; }  // href = URL or vault path
+interface AudioProvider {
+  /** Resolve a clip for a span. Local mp3 if present, else the deep-link. Never throws. */
+  resolve(videoId: string, startSec: number, endSec: number): AudioClip;
+}
+```
+
+- **Tier 0 — deep-link (always; mobile + desktop; no ToS issue).** `youtu.be/ID?t=sec`.
+  ~90% of Anki-audio's value (hear it in context) with zero fragility. Ships first.
+- **Tier 1 — local MP3 clip (desktop opt-in).** `yt-dlp --download-sections
+  "*start-end" -x --audio-format mp3` fetches **only the clip range** as audio
+  (~1–2 MB, selective — the "impossible" clipping is a supported yt-dlp flag). The
+  plugin cannot run this on mobile (no `child_process`) and must not bundle a
+  binary, so it either (a) **emits the exact yt-dlp commands / a batch script** for
+  the reconciled timestamps, or (b) on desktop with yt-dlp present, invokes it
+  behind a `Platform.isDesktopApp` guard, writing `clip_<id>_<startSec>.mp3` into
+  the vault. The card then embeds `![[clip_….mp3]]` (native Obsidian playback).
+  **Caveats, stated not hidden:** desktop-only; requires yt-dlp + ffmpeg installed;
+  downloading YouTube audio is against YouTube ToS (personal-use gray area — the
+  plugin provides the path, gated behind an explicit opt-in setting, and does not
+  ship or auto-install any downloader).
+- **Tier 2 — in-plugin mobile download / yt2mp3 sites: not feasible** (no
+  `child_process` on mobile; third-party sites are CORS-blocked, unstable, worse on
+  ToS). Explicitly out of scope.
+
+`resolve()` returns local-if-present else deep-link, so the whole feature is
+complete with zero audio and gets richer if the desktop extractor is run — no
+redesign either way.
