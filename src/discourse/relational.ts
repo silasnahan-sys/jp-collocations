@@ -148,8 +148,20 @@ function nameBeat(comps: SkeletalComponent[]): { move: string; tone: string } {
   if (f.has('ANAPHOR') && f.has('EXPLAIN-ASSERT')) return { move: 'posit-as-shared-ground', tone: 'expository' };
   if (f.has('SUSPEND-NARR')) return { move: 'hand-proposition-as-fact', tone: 'matter-of-fact' };
   if (f.has('CONCESS')) return { move: 'contrastive-turn', tone: 'corrective' };
-  return { move: 'assert', tone: 'neutral' };
+  // Compositional fallback (corpus-driven). No named formation matched. Rather than
+  // dump to a generic 'assert', describe the beat as the composition of its CONTENT
+  // atoms (interpersonal filler stripped). A single content atom under-determines the
+  // move — abstain instead of guessing. See memory: discourse-skeleton-principle;
+  // the 2030-transcript battery showed lone-atom "signatures" (FLOOR, ANAPHOR…) are
+  // the top false-fires, and real moves are compositions of ≥2 content atoms.
+  const core = [...f].filter((x) => !BEAT_FILLER.has(x)).sort();
+  if (core.length >= 2) return { move: `compose:${core.join('+')}`, tone: 'neutral' };
+  if (core.length === 1) return { move: `under-determined:${core[0]}`, tone: '' };
+  return { move: 'under-determined', tone: '' };
 }
+
+/** Interpersonal filler stripped when forming a beat's content core (see nameBeat). */
+const BEAT_FILLER = new Set(['FLOOR', 'HEDGE']);
 
 /** Emergent block move = composition of its beat formations, in order. */
 function nameBlock(headBeats: Beat[], children: Beat[]): { emergentMove: string; tone: string } {
@@ -305,9 +317,12 @@ export function analyzeCrossTurn(sentences: Array<{ text: string; speaker?: stri
       cur.edges.push({ from: i, to: lastAny.idx, kind: 'responds-expands', evidence: 'additive-reaffirm(それも/もちろん)' });
     }
     if (cur.act === 'CONTRASTIVE-REVEAL') {
-      // contrasts the established common ground (the run of prior aligned turns)
-      const target = prior.length ? prior[0].idx : i;
-      cur.edges.push({ from: i, to: target, kind: 'contrasts', evidence: 'でも/けど vs established-ground → new info' });
+      // A reveal contrasts what was just established locally — the most recent
+      // other-speaker turn, else the immediate prior. NEVER prior[0] (that made
+      // every contrast edge collapse onto turn 0 — see relation-audit). Abstain
+      // when there is no local prior to contrast against.
+      const tgt = lastOther ?? lastAny;
+      if (tgt) cur.edges.push({ from: i, to: tgt.idx, kind: 'contrasts', evidence: 'でも/けど contrasts the local prior turn' });
     }
     if (cur.act === 'NEWS-RECEIPT') {
       const src = [...prior].reverse().find((p) => p.act === 'CONTRASTIVE-REVEAL' || p.act === 'INFORM');
