@@ -39,8 +39,12 @@ import { SurferBridge } from "./surfer-bridge";
 import { makeRelationsResolver, type RelationsResolver } from "./discourse/relations-resolver";
 import { setGrammarSetResolver } from "./srs/grammar-set-engine";
 import { ContextEngine } from "./context/ContextEngine";
-import { reconcile, renderReport, parseTranscriptLines, frontmatterSource, extractNotePhrases } from "./notes/pipeline";
+import { reconcile, parseTranscriptLines, frontmatterSource, extractNotePhrases } from "./notes/pipeline";
 import { makeDictionaryReadingResolver } from "./notes/reading-resolver";
+import { LibraryView, JP_RECON_LIBRARY_VIEW_TYPE } from "./ui/LibraryView";
+import { ReconLibrary } from "./notes/recon-library";
+import { renderAnchoredFile, buildEntries, retypeInMarkdown, type LibraryEntry } from "./notes/annotate";
+import type { NoteClass } from "./notes/note-types";
 import type {
   SurferCollocationEntry,
   DiscourseContext,
@@ -64,6 +68,7 @@ export default class JPCollocationsPlugin extends Plugin {
 
   /** Dictionary store for imported Yomitan dictionaries */
   dictStore!: DictionaryStore;
+  reconLibrary!: ReconLibrary;
 
   /** Growing, offline-searchable corpus of scraped tweets (the X dictionary). */
   xCorpus!: XCorpusStore;
@@ -131,6 +136,13 @@ export default class JPCollocationsPlugin extends Plugin {
       this.dictStore.loadFromData(stored._dictStore);
     }
 
+    // ── Reconciliation library (anchored callout index) ──────
+    this.reconLibrary = new ReconLibrary(async () => {
+      const existing = await this.loadData();
+      await this.saveData({ ...existing, _reconLibrary: this.reconLibrary.toData() });
+    });
+    if (stored?._reconLibrary) this.reconLibrary.loadFromData(stored._reconLibrary);
+
     // ── X Search corpus + client ─────────────────────────────
     this.xCorpus = new XCorpusStore(async (data) => {
       const existing = await this.loadData();
@@ -162,6 +174,11 @@ export default class JPCollocationsPlugin extends Plugin {
       }, this.contextEngine)
     );
     this.registerView(JP_X_VIEW_TYPE, leaf => new XSearchView(leaf, this.makeXDeps()));
+    this.registerView(JP_RECON_LIBRARY_VIEW_TYPE, leaf => new LibraryView(leaf, {
+      library: this.reconLibrary,
+      onRetype: (entry, cls) => this.retypeReconNote(entry, cls),
+      openBlock: (entry) => this.app.workspace.openLinkText(`${entry.file}#^${entry.blockId}`, "", false).then(() => undefined),
+    }));
 
     // Settings tab
     this.addSettingTab(new SettingsTab(
@@ -353,16 +370,26 @@ export default class JPCollocationsPlugin extends Plugin {
 
         const readingOf = makeDictionaryReadingResolver(this.dictStore);
         const results = reconcile(notes, lines, readingOf);
-        const report = renderReport(results, { sourceLabel: tFile.basename, transcriptRef: `[[${tFile.basename}]]` });
 
         const outPath = file.path.replace(/\.md$/, "") + "-reconciled.md";
+        const priorClass = this.reconLibrary.classMapForFile(outPath);
+        const anchored = renderAnchoredFile(results, {
+          sourceLabel: tFile.basename,
+          transcriptRef: `[[${tFile.basename}]]`,
+          priorClass,
+        });
+
         const existing = this.app.vault.getAbstractFileByPath(outPath);
         const outFile = existing instanceof TFile
-          ? (await this.app.vault.modify(existing, report), existing)
-          : await this.app.vault.create(outPath, report);
+          ? (await this.app.vault.modify(existing, anchored), existing)
+          : await this.app.vault.create(outPath, anchored);
+
+        this.reconLibrary.removeForFile(outPath);
+        this.reconLibrary.upsertMany(buildEntries(results, outPath, priorClass));
+        this.refreshReconLibrary();
 
         const auto = results.filter((r) => r.status === "auto").length;
-        new Notice(`照合完了: ${results.length}件（auto ${auto} / 要確認 ${results.length - auto}）`);
+        new Notice(`照合完了: ${results.length}件（auto ${auto} / 要確認 ${results.length - auto}）— 照合ライブラリに追加`);
         await this.app.workspace.getLeaf(false).openFile(outFile);
       },
     });
@@ -391,6 +418,7 @@ export default class JPCollocationsPlugin extends Plugin {
     this.addRibbonIcon("languages", "JP Collocations", () => this.openLexiconView());
     this.addRibbonIcon("book-open", "JP Dictionary", () => this.openDictionaryView());
     this.addRibbonIcon("search", "X Search", () => this.openXView());
+    this.addRibbonIcon("library", "照合ライブラリ", () => this.openReconLibrary());
 
     // ── X (Twitter) search dictionary ────────────────────────
     this.addCommand({
@@ -849,6 +877,7 @@ export default class JPCollocationsPlugin extends Plugin {
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(JP_DICTIONARY_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(JP_X_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(JP_RECON_LIBRARY_VIEW_TYPE);
   }
 
   // ── X Search wiring ──────────────────────────────────────────
@@ -1048,6 +1077,32 @@ export default class JPCollocationsPlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE)) {
       (leaf.view as DictionaryView).refresh();
     }
+  }
+
+  async openReconLibrary(): Promise<void> {
+    const existing = this.app.workspace.getLeavesOfType(JP_RECON_LIBRARY_VIEW_TYPE);
+    if (existing.length) { this.app.workspace.revealLeaf(existing[0]); return; }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (!leaf) return;
+    await leaf.setViewState({ type: JP_RECON_LIBRARY_VIEW_TYPE, active: true });
+    this.app.workspace.revealLeaf(leaf);
+  }
+
+  private refreshReconLibrary(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(JP_RECON_LIBRARY_VIEW_TYPE)) {
+      (leaf.view as LibraryView).refresh();
+    }
+  }
+
+  /** Retype a note (Big-5 router): rewrite the callout class in the source file + persist. */
+  private async retypeReconNote(entry: LibraryEntry, cls: NoteClass): Promise<void> {
+    const f = this.app.vault.getAbstractFileByPath(entry.file);
+    if (f instanceof TFile) {
+      const md = await this.app.vault.read(f);
+      const next = retypeInMarkdown(md, entry.blockId, cls);
+      if (next !== md) await this.app.vault.modify(f, next);
+    }
+    this.reconLibrary.setClass(entry.blockId, cls);
   }
 
   async openDictionaryView(query?: string): Promise<void> {
