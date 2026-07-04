@@ -1,0 +1,6 @@
+{
+  "_note": "Frozen reading source for the golden set (word → hiragana). Stands in for DictionaryStore + deinflection so homophone detection is testable offline. Production uses makeDictionaryReadingResolver(store).",
+  "効く": "きく",
+  "利く": "きく",
+  "聞く": "きく"
+}

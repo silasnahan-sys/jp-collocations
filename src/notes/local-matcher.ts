@@ -196,24 +196,38 @@ export function match(
 export function diffCorrections(note: string, span: string, readingOf?: ReadingResolver): Correction[] {
   const a = normalizeJapanese(note).replace(/\s+/g, '');
   const b = normalizeJapanese(span).replace(/\s+/g, '');
-  const ops = backtrace(a, b);
+  const ops = backtrace(a, b);   // merged ops INCLUDING matches, in order
   const corrections: Correction[] = [];
-  for (const op of ops) {
+  const leadingKana = (s: string) => { let k = ''; for (const ch of s) { if (isKanji(ch)) break; k += ch; } return k; };
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i];
     if (op.kind !== 'sub') continue;
     const nText = op.a, tText = op.b;
-    const nR = toReadingForm(nText, readingOf);
-    const tR = toReadingForm(tText, readingOf);
-    if (nR === tR && nR !== nText) {
-      corrections.push({ noteText: nText, transcriptText: tText, kind: 'homophone', confidence: 0.9,
+    // Extend each side with the trailing okurigana (leading kana of the next
+    // matched run) so the reading resolver sees a WORD (効+く), not a bare kanji.
+    const next = ops[i + 1];
+    const oku = next && next.kind === 'match' ? leadingKana(next.a) : '';
+    const nWord = nText + oku, tWord = tText + oku;
+    const nR = readingWord(nWord, readingOf);
+    const tR = readingWord(tWord, readingOf);
+    if (nR && tR && nR === tR) {
+      corrections.push({ noteText: nWord, transcriptText: tWord, kind: 'homophone', confidence: 0.9,
         reason: `same reading 「${nR}」 — homophone/kanji-choice error` });
     } else if ([...nText].some(isKanji) && [...tText].some(isKanji)) {
       corrections.push({ noteText: nText, transcriptText: tText, kind: 'kanji-swap', confidence: 0.5,
-        reason: readingOf ? `readings 「${nR}」≠「${tR}」 — needs review` : 'kanji differ; no reading source — needs review' });
+        reason: readingOf ? `readings 「${nR ?? '?'}」≠「${tR ?? '?'}」 — needs review` : 'kanji differ; no reading source — needs review' });
     } else {
       corrections.push({ noteText: nText, transcriptText: tText, kind: 'edit', confidence: 0.4, reason: 'surface differs' });
     }
   }
   return corrections;
+}
+
+/** Reading of a whole word-unit: resolver first (word-level), else kana passthrough. */
+function readingWord(word: string, readingOf?: ReadingResolver): string | null {
+  if (readingOf) { const r = readingOf(word); if (r != null) return katakanaToHiragana(normalizeJapanese(r)); }
+  const kanaOnly = katakanaToHiragana(normalizeJapanese(word));
+  return [...kanaOnly].some(isKanji) ? null : kanaOnly;  // unknown kanji → null (can't judge)
 }
 
 // Levenshtein backtrace grouping adjacent substitutions/indels into runs.
@@ -237,12 +251,13 @@ function backtrace(a: string, b: string): DiffOp[] {
     else { raw.push({ kind: 'ins', a: '', b: b[j - 1] }); j--; }
   }
   raw.reverse();
-  // merge adjacent same-kind non-match ops into runs
+  // merge adjacent same-kind ops into runs (matches too, so diffCorrections can
+  // read okurigana off the following matched run).
   const merged: DiffOp[] = [];
   for (const op of raw) {
     const last = merged[merged.length - 1];
-    if (last && last.kind === op.kind && op.kind !== 'match') { last.a += op.a; last.b += op.b; }
+    if (last && last.kind === op.kind) { last.a += op.a; last.b += op.b; }
     else merged.push({ ...op });
   }
-  return merged.filter((o) => o.kind !== 'match');
+  return merged;
 }

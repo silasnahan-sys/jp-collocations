@@ -256,6 +256,17 @@ scoring, or a silo endpoint. A green golden set is the definition of "still
 works." Seed case `001` is the page we already reconciled by hand in
 `samplenotes-reconciled.md`.
 
+**Text-note path — IMPLEMENTED (2026-07-03).** For digital notes (§10) the golden
+case is `NNN.cases.json` (note text + expected span/status/corrections) over a
+frozen `NNN.transcript.md`, plus a `readings.fixture.json` standing in for
+`DictionaryStore` so homophone detection is testable offline. `golden/run.mjs`
+(`node --experimental-strip-types golden/run.mjs`) reconciles each case and diffs
+— tolerant on timestamp (±tol) and confidence, strict on located line, `auto` vs
+`needs-review`, and each expected correction. **Seed `001` = the 6 real
+samplenotes cases + one synthetic homophone probe (`レバレッジが効く`→`聞く`); 7/7
+green.** Reading source in production is `makeDictionaryReadingResolver(store)`
+(`src/notes/reading-resolver.ts`).
+
 ---
 
 ## 7. Note types — the "Big 5" (resolved)

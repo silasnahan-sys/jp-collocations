@@ -1,0 +1,15 @@
+{
+  "transcript": "001.transcript.md",
+  "source": "ゆる言語学ラジオ「言語学者と言語学オリンピック 早解きバトル」 / samplenotes-reconciled.md",
+  "note": "Digital-text reconciliation cases. tSec = expected caption start (±tol). Cases 1-6 are the real samplenotes; case 3's expected time is the TRUE line 556 (24:34), not the sample's approximate ~25:34. Case 6 is a heavy paraphrase and must abstain (needs-review). H1 is a synthetic homophone-mechanism probe.",
+  "threshold": 0.7,
+  "cases": [
+    { "id": "1", "note": "頭にある形で", "expect": { "tSec": 679, "tol": 40, "status": "auto" } },
+    { "id": "2", "note": "記述言語学者に勝てました", "expect": { "tSec": 1280, "tol": 40, "status": "needs-review", "corrections": [ { "kind": "kanji-swap", "note": "述", "transcript": "術" } ] } },
+    { "id": "3", "note": "キーワードまでいければかっこよ", "expect": { "tSec": 1472, "tol": 40, "status": "auto" } },
+    { "id": "4", "note": "両方対応なきゃいけない", "expect": { "tSec": 1443, "tol": 40, "status": "auto" } },
+    { "id": "5", "note": "味わずに", "expect": { "tSec": 1401, "tol": 40, "status": "auto" } },
+    { "id": "6", "note": "応用が効く", "expect": { "tSec": null, "status": "needs-review" } },
+    { "id": "H1", "note": "レバレッジが効く", "synthetic": true, "expect": { "tSec": 1063, "tol": 40, "status": "auto", "corrections": [ { "kind": "homophone", "note": "効く", "transcript": "聞く" } ] } }
+  ]
+}
