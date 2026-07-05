@@ -40,9 +40,29 @@ const context = await esbuild.context({
   outfile: "main.js",
 });
 
+// Best-effort deploy of the build artifacts into the local Obsidian vault's
+// plugin dir, so a `build` is immediately loadable (still needs a plugin reload
+// in Obsidian). Path overridable via JP_VAULT_PLUGIN_DIR; skipped if absent.
+async function deployToVault() {
+  const dest = process.env.JP_VAULT_PLUGIN_DIR
+    ?? "C:/Users/silas/Documents/Obsidian Vault/.obsidian/plugins/jp-collocations";
+  try {
+    const fs = await import("node:fs");
+    if (!fs.existsSync(dest)) { console.log(`deploy skipped (no ${dest})`); return; }
+    for (const f of ["main.js", "manifest.json", "styles.css"]) {
+      if (fs.existsSync(f)) fs.copyFileSync(f, `${dest}/${f}`);
+    }
+    console.log(`deployed build → ${dest} (reload the plugin in Obsidian)`);
+  } catch (e) {
+    console.warn("deploy skipped:", e.message);
+  }
+}
+
 if (prod) {
   await context.rebuild();
+  await deployToVault();
   process.exit(0);
 } else {
   await context.watch();
+  await deployToVault();
 }
