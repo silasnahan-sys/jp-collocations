@@ -184,11 +184,35 @@ function commandLine(bin, args) {
   const q = (s) => /\s/.test(s) ? `"${s}"` : s;
   return [q(bin || "yt-dlp"), ...args.map(q)].join(" ");
 }
-function nodeReq(mod) {
-  const r = globalThis.require;
-  if (!r)
+function getRequire() {
+  let r;
+  try {
+    r = eval("require");
+  } catch (e) {
+  }
+  if (typeof r !== "function") {
+    try {
+      r = (0, eval)("require");
+    } catch (e) {
+    }
+  }
+  if (typeof r !== "function")
+    r = globalThis.require;
+  if (typeof r !== "function" && typeof window !== "undefined")
+    r = window.require;
+  if (typeof r !== "function")
     throw new Error("Node require unavailable (mobile / no nodeIntegration)");
-  return r(mod);
+  return r;
+}
+function nodeReq(mod) {
+  return getRequire()(mod);
+}
+function nodeRuntimeAvailable() {
+  try {
+    return typeof getRequire() === "function";
+  } catch (e) {
+    return false;
+  }
 }
 function run(bin, args) {
   const cp = nodeReq("child_process");
@@ -1014,7 +1038,7 @@ function romajiToHiragana(input) {
     let matched = false;
     for (let len = Math.min(4, remaining.length); len >= 1; len--) {
       const slice = remaining.slice(0, len);
-      const found = ROMAJI_MAP.find(([r]) => r === slice);
+      const found = ROMAJI_MAP.find(([r2]) => r2 === slice);
       if (found) {
         result += found[1];
         remaining = remaining.slice(len);
@@ -4653,9 +4677,9 @@ function extractCollocations(text) {
   results.sort((a, b) => b.confidence - a.confidence);
   const kept = [];
   const occupied = /* @__PURE__ */ new Set();
-  for (const r of results) {
+  for (const r2 of results) {
     let overlap = false;
-    for (let i = r.start; i < r.end; i++) {
+    for (let i = r2.start; i < r2.end; i++) {
       if (occupied.has(i)) {
         overlap = true;
         break;
@@ -4663,8 +4687,8 @@ function extractCollocations(text) {
     }
     if (overlap)
       continue;
-    kept.push(r);
-    for (let i = r.start; i < r.end; i++)
+    kept.push(r2);
+    for (let i = r2.start; i < r2.end; i++)
       occupied.add(i);
   }
   kept.sort((a, b) => a.start - b.start);
@@ -6533,7 +6557,7 @@ function analyzeRelations(text) {
       }
     }
   }
-  const filtered = relations.filter((r) => r.confidence >= CONFIDENCE_FLOOR);
+  const filtered = relations.filter((r2) => r2.confidence >= CONFIDENCE_FLOOR);
   const chunks = buildContextChunks(sentences, filtered);
   return { sentences, relations: filtered, chunks };
 }
@@ -6549,12 +6573,12 @@ function buildContextChunks(sentences, relations) {
       (p) => p.pattern.pragmaticFunction === "topic-shift"
     );
     const hasRelation = relations.some(
-      (r) => r.source.sentenceIdx === i - 1 && r.target.sentenceIdx === i || r.source.sentenceIdx === i && r.target.sentenceIdx === i - 1
+      (r2) => r2.source.sentenceIdx === i - 1 && r2.target.sentenceIdx === i || r2.source.sentenceIdx === i && r2.target.sentenceIdx === i - 1
     );
     if (hasTopicShift && !hasRelation) {
       const chunkSents2 = sentences.slice(chunkStart, i);
       const chunkRels = relations.filter(
-        (r) => r.source.sentenceIdx >= chunkStart && r.target.sentenceIdx < i
+        (r2) => r2.source.sentenceIdx >= chunkStart && r2.target.sentenceIdx < i
       );
       chunks.push({
         text: chunkSents2.map((s) => s.text).join(""),
@@ -6570,7 +6594,7 @@ function buildContextChunks(sentences, relations) {
   const chunkSents = sentences.slice(chunkStart);
   if (chunkSents.length > 0) {
     const chunkRels = relations.filter(
-      (r) => r.source.sentenceIdx >= chunkStart
+      (r2) => r2.source.sentenceIdx >= chunkStart
     );
     chunks.push({
       text: chunkSents.map((s) => s.text).join(""),
@@ -6586,20 +6610,20 @@ function buildContextChunks(sentences, relations) {
 function summarizeRelations(relations) {
   var _a, _b, _c;
   const byType = /* @__PURE__ */ new Map();
-  for (const r of relations) {
-    byType.set(r.type, ((_a = byType.get(r.type)) != null ? _a : 0) + 1);
+  for (const r2 of relations) {
+    byType.set(r2.type, ((_a = byType.get(r2.type)) != null ? _a : 0) + 1);
   }
   const parts = [];
   for (const [type, count] of byType) {
-    const label = (_c = (_b = relations.find((r) => r.type === type)) == null ? void 0 : _b.label) != null ? _c : type;
+    const label = (_c = (_b = relations.find((r2) => r2.type === type)) == null ? void 0 : _b.label) != null ? _c : type;
     parts.push(`${label}\xD7${count}`);
   }
   return parts.join("\u3001") || "\u95A2\u4FC2\u306A\u3057";
 }
 
 // src/discourse/relations-resolver.ts
-function reconciliationToType(r) {
-  switch (r) {
+function reconciliationToType(r2) {
+  switch (r2) {
     case "locked":
       return "bit-relation-locked";
     case "top_down_only":
@@ -6807,8 +6831,8 @@ var FUNCTION_LABELS = {
   "turn-taking": { jp: "\u767A\u8A71\u6A29\u53D6\u308A", en: "Turn-Taking" }
 };
 var gseResolver = heuristicResolver;
-function setGrammarSetResolver(r) {
-  gseResolver = r;
+function setGrammarSetResolver(r2) {
+  gseResolver = r2;
 }
 function analyzeChunkForSets(text, ctx = {}) {
   var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q;
@@ -6995,8 +7019,8 @@ function analyzeChunkForSets(text, ctx = {}) {
   }
   const regScores = {};
   for (const p of patterns) {
-    const r = p.pattern.register;
-    regScores[r] = ((_o = regScores[r]) != null ? _o : 0) + 1;
+    const r2 = p.pattern.register;
+    regScores[r2] = ((_o = regScores[r2]) != null ? _o : 0) + 1;
   }
   const register = (_q = (_p = Object.entries(regScores).sort((a, b) => b[1] - a[1])[0]) == null ? void 0 : _p[0]) != null ? _q : "\u666E\u901A\u4F53";
   return {
@@ -7189,8 +7213,8 @@ function buildRenderSegments(analysis) {
 
 // src/srs/card-generator.ts
 var cardGenResolver = heuristicResolver;
-function setCardGenResolver(r) {
-  cardGenResolver = r;
+function setCardGenResolver(r2) {
+  cardGenResolver = r2;
 }
 var DEFAULT_CARD_OPTIONS = {
   tagPrefix: "flashcards/jp",
@@ -8218,7 +8242,7 @@ var CardPreviewModal = class extends import_obsidian4.Modal {
               bitSpan.title = bit.patternLabel;
           }
         }
-        const outRels = data.relations.filter((r) => r.fromSection === si);
+        const outRels = data.relations.filter((r2) => r2.fromSection === si);
         if (outRels.length > 0) {
           const arrowsEl = secEl.createDiv("jp-rel-arrows");
           for (const rel of outRels) {
@@ -8494,8 +8518,8 @@ function getRegisterProgression(tree) {
 
 // src/ui/CollocationView.ts
 var collocationViewResolver = heuristicResolver;
-function setCollocationViewResolver(r) {
-  collocationViewResolver = r;
+function setCollocationViewResolver(r2) {
+  collocationViewResolver = r2;
 }
 var JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
 var CollocationView = class extends import_obsidian5.ItemView {
@@ -8663,13 +8687,13 @@ var CollocationView = class extends import_obsidian5.ItemView {
     if (card.dictResults.length > 0) {
       const sec = parent.createDiv("jp-ctx-section");
       sec.createEl("h5", { text: "\u{1F4D6} \u8F9E\u66F8", cls: "jp-ctx-section-title" });
-      for (const r of card.dictResults.slice(0, 3)) {
+      for (const r2 of card.dictResults.slice(0, 3)) {
         const row = sec.createDiv("jp-ctx-dict-row");
-        row.createSpan({ text: r.term.expression, cls: "jp-ctx-dict-expr" });
-        if (r.term.reading !== r.term.expression) {
-          row.createSpan({ text: `\u3010${r.term.reading}\u3011`, cls: "jp-ctx-dict-reading" });
+        row.createSpan({ text: r2.term.expression, cls: "jp-ctx-dict-expr" });
+        if (r2.term.reading !== r2.term.expression) {
+          row.createSpan({ text: `\u3010${r2.term.reading}\u3011`, cls: "jp-ctx-dict-reading" });
         }
-        const defText = r.term.definitions.slice(0, 2).map((d) => {
+        const defText = r2.term.definitions.slice(0, 2).map((d) => {
           if (typeof d === "string")
             return d;
           if ("type" in d && d.type === "text" && "text" in d)
@@ -8948,25 +8972,25 @@ var CollocationView = class extends import_obsidian5.ItemView {
     }
     ranges.sort((a, b) => a.start - b.start || a.end - b.end);
     let cursor = 0;
-    for (const r of ranges) {
-      if (r.start < cursor)
+    for (const r2 of ranges) {
+      if (r2.start < cursor)
         continue;
-      if (r.start > cursor) {
-        parent.appendText(text.slice(cursor, r.start));
+      if (r2.start > cursor) {
+        parent.appendText(text.slice(cursor, r2.start));
       }
       const span = parent.createSpan({
-        text: text.slice(r.start, r.end),
-        cls: r.cls
+        text: text.slice(r2.start, r2.end),
+        cls: r2.cls
       });
-      if (r.title)
-        span.title = r.title;
-      if (r.patternId) {
+      if (r2.title)
+        span.title = r2.title;
+      if (r2.patternId) {
         span.addEventListener("click", (e) => {
           e.stopPropagation();
-          this.openPatternCard(r.patternId);
+          this.openPatternCard(r2.patternId);
         });
       }
-      cursor = r.end;
+      cursor = r2.end;
     }
     if (cursor < text.length) {
       parent.appendText(text.slice(cursor));
@@ -9445,9 +9469,9 @@ var SearchModal = class extends import_obsidian6.SuggestModal {
   }
   getSuggestions(query) {
     if (!query.trim()) {
-      return this.engine.quickSearch("", 20).map((r) => r.entry);
+      return this.engine.quickSearch("", 20).map((r2) => r2.entry);
     }
-    return this.engine.quickSearch(query, 20).map((r) => r.entry);
+    return this.engine.quickSearch(query, 20).map((r2) => r2.entry);
   }
   renderSuggestion(entry2, el) {
     const row = el.createDiv("jp-col-suggest-row");
@@ -11267,12 +11291,12 @@ var DictionaryStore = class _DictionaryStore {
       return exact.slice(0, limit);
     const prefix = this.prefixSearch(query, limit);
     const results = [...exact];
-    const seen = new Set(exact.map((r) => `${r.term.expression}|${r.term.reading}|${r.dictionary}`));
-    for (const r of prefix) {
-      const key = `${r.term.expression}|${r.term.reading}|${r.dictionary}`;
+    const seen = new Set(exact.map((r2) => `${r2.term.expression}|${r2.term.reading}|${r2.dictionary}`));
+    for (const r2 of prefix) {
+      const key = `${r2.term.expression}|${r2.term.reading}|${r2.dictionary}`;
       if (!seen.has(key)) {
         seen.add(key);
-        results.push(r);
+        results.push(r2);
         if (results.length >= limit)
           return results;
       }
@@ -11653,11 +11677,11 @@ var ContextEngine = class {
       return null;
     const vaultOccurrences = await this.searchVault(pattern.surface);
     const kwicResult = this.surferBridge.searchKWIC(patternId);
-    const kwicLines = kwicResult.records.map((r) => ({
-      left: r.left,
-      match: r.keyword,
-      right: r.right,
-      file: r.filePath
+    const kwicLines = kwicResult.records.map((r2) => ({
+      left: r2.left,
+      match: r2.keyword,
+      right: r2.right,
+      file: r2.filePath
     }));
     const coPatterns = this.getCoPatterns(pattern.surface);
     const examples = [];
@@ -11805,7 +11829,7 @@ var ContextEngine = class {
     for (const fp of indexedFiles) {
       const filePatterns = this.surferBridge.getFilePatterns(fp);
       const kwic = this.surferBridge.searchKWICContext(query);
-      if (kwic.records.some((r) => r.filePath === fp)) {
+      if (kwic.records.some((r2) => r2.filePath === fp)) {
         for (const pid of filePatterns) {
           patternCounts.set(pid, ((_a = patternCounts.get(pid)) != null ? _a : 0) + 1);
         }
@@ -12132,12 +12156,12 @@ var DictionaryView = class extends import_obsidian9.ItemView {
     const results = this.dictStore.substringSearch(query, 20);
     const exactResults = this.dictStore.lookup(query);
     const merged = [...exactResults];
-    const seen = new Set(exactResults.map((r) => `${r.term.expression}|${r.term.reading}|${r.dictionary}`));
-    for (const r of results) {
-      const key = `${r.term.expression}|${r.term.reading}|${r.dictionary}`;
+    const seen = new Set(exactResults.map((r2) => `${r2.term.expression}|${r2.term.reading}|${r2.dictionary}`));
+    for (const r2 of results) {
+      const key = `${r2.term.expression}|${r2.term.reading}|${r2.dictionary}`;
       if (!seen.has(key)) {
         seen.add(key);
-        merged.push(r);
+        merged.push(r2);
       }
     }
     this.statsEl.empty();
@@ -12230,14 +12254,14 @@ var DictionaryView = class extends import_obsidian9.ItemView {
   groupResults(results) {
     const groups = [];
     const groupMap = /* @__PURE__ */ new Map();
-    for (const r of results) {
-      const key = `${r.term.expression}|${r.term.reading}|${r.term.sequence}|${r.dictionary}`;
+    for (const r2 of results) {
+      const key = `${r2.term.expression}|${r2.term.reading}|${r2.term.sequence}|${r2.dictionary}`;
       if (!groupMap.has(key)) {
         const group = [];
         groupMap.set(key, group);
         groups.push(group);
       }
-      groupMap.get(key).push(r);
+      groupMap.get(key).push(r2);
     }
     return groups;
   }
@@ -13351,8 +13375,8 @@ var XClient = class {
     ];
     for (const url of candidates) {
       try {
-        const r = await (0, import_obsidian10.requestUrl)({ url, method: "GET", headers: browserHeaders, throw: false });
-        const js = (_c = r.text) != null ? _c : "";
+        const r2 = await (0, import_obsidian10.requestUrl)({ url, method: "GET", headers: browserHeaders, throw: false });
+        const js = (_c = r2.text) != null ? _c : "";
         if (!/SearchTimeline"/.test(js))
           continue;
         for (const re of patterns) {
@@ -13440,8 +13464,8 @@ var XClient = class {
       }
       if (Array.isArray(content.items)) {
         for (const it of content.items) {
-          const r = (_e2 = (_d2 = (_c2 = it == null ? void 0 : it.item) == null ? void 0 : _c2.itemContent) == null ? void 0 : _d2.tweet_results) == null ? void 0 : _e2.result;
-          const t = this.parseTweetResult(r, rawQuery, now);
+          const r2 = (_e2 = (_d2 = (_c2 = it == null ? void 0 : it.item) == null ? void 0 : _c2.itemContent) == null ? void 0 : _d2.tweet_results) == null ? void 0 : _e2.result;
+          const t = this.parseTweetResult(r2, rawQuery, now);
           if (t)
             tweets.push(t);
         }
@@ -14139,8 +14163,8 @@ var XSearchView = class extends import_obsidian12.ItemView {
     });
     this.actionBtn(actions, "\u2192\u30CE\u30FC\u30C8", "Vault \u306B\u30CE\u30FC\u30C8\u3068\u3057\u3066\u4FDD\u5B58", async () => {
       const folder = this.deps.getSettings().exportFolder;
-      const r = await exportTweetsToVault(this.app, [t], folder);
-      new import_obsidian12.Notice(r.written ? `\u30CE\u30FC\u30C8\u4F5C\u6210: ${r.folder}` : "\u3059\u3067\u306B\u5B58\u5728\u3057\u307E\u3059");
+      const r2 = await exportTweetsToVault(this.app, [t], folder);
+      new import_obsidian12.Notice(r2.written ? `\u30CE\u30FC\u30C8\u4F5C\u6210: ${r2.folder}` : "\u3059\u3067\u306B\u5B58\u5728\u3057\u307E\u3059");
     });
     this.actionBtn(actions, "\u2197 X", "X \u3067\u958B\u304F", () => window.open(t.url, "_blank"));
   }
@@ -14196,12 +14220,12 @@ function highlightInto(el, text, terms) {
   }
   ranges.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
   const merged = [];
-  for (const r of ranges) {
+  for (const r2 of ranges) {
     const last = merged[merged.length - 1];
-    if (last && r[0] <= last[1])
-      last[1] = Math.max(last[1], r[1]);
+    if (last && r2[0] <= last[1])
+      last[1] = Math.max(last[1], r2[1]);
     else
-      merged.push([r[0], r[1]]);
+      merged.push([r2[0], r2[1]]);
   }
   let pos = 0;
   for (const [s, e] of merged) {
@@ -14301,9 +14325,9 @@ var XAuthModal = class extends import_obsidian12.Modal {
         { ...emptyQuery(s.defaultLang, "Latest"), allTerms: ["\u65E5\u672C\u8A9E"] }
       );
       try {
-        let r;
+        let r2;
         try {
-          r = await probe();
+          r2 = await probe();
         } catch (e) {
           if (e instanceof XScrapeError && e.status === 404) {
             testBtn.textContent = "queryId \u53D6\u5F97\u4E2D\u2026";
@@ -14312,7 +14336,7 @@ var XAuthModal = class extends import_obsidian12.Modal {
               s.searchQueryId = id;
               queryIdText == null ? void 0 : queryIdText.setValue(id);
               await this.deps.saveSettings();
-              r = await probe();
+              r2 = await probe();
               new import_obsidian12.Notice(`\u2713 queryId \u3092\u66F4\u65B0\u3057\u3066\u63A5\u7D9A\u6210\u529F\uFF08${id}\uFF09`);
             } else {
               throw e;
@@ -14321,8 +14345,8 @@ var XAuthModal = class extends import_obsidian12.Modal {
             throw e;
           }
         }
-        if (r)
-          new import_obsidian12.Notice(`\u2713 \u63A5\u7D9A\u6210\u529F\uFF08${r.tweets.length}\u4EF6\u53D6\u5F97\uFF09`);
+        if (r2)
+          new import_obsidian12.Notice(`\u2713 \u63A5\u7D9A\u6210\u529F\uFF08${r2.tweets.length}\u4EF6\u53D6\u5F97\uFF09`);
       } catch (e) {
         const msg = e instanceof XScrapeError ? e.message : e.message;
         new import_obsidian12.Notice(`\u2717 ${msg}`, 8e3);
@@ -14393,8 +14417,8 @@ var XCorpusModal = class extends import_obsidian12.Modal {
         new import_obsidian12.Notice("\u30B3\u30FC\u30D1\u30B9\u304C\u7A7A\u3067\u3059");
         return;
       }
-      const r = await exportTweetsToVault(this.app, all, this.deps.getSettings().exportFolder);
-      new import_obsidian12.Notice(`\u30CE\u30FC\u30C8 ${r.written}\u4EF6\u4F5C\u6210\uFF08${r.skipped}\u4EF6\u306F\u65E2\u5B58\uFF09\u2192 ${r.folder}`);
+      const r2 = await exportTweetsToVault(this.app, all, this.deps.getSettings().exportFolder);
+      new import_obsidian12.Notice(`\u30CE\u30FC\u30C8 ${r2.written}\u4EF6\u4F5C\u6210\uFF08${r2.skipped}\u4EF6\u306F\u65E2\u5B58\uFF09\u2192 ${r2.folder}`);
     }));
     new import_obsidian12.Setting(contentEl).setName("\u30B3\u30FC\u30D1\u30B9\u3092\u6D88\u53BB").setDesc("\u4FDD\u5B58\u6E08\u307F\u30C4\u30A4\u30FC\u30C8\u3092\u3059\u3079\u3066\u524A\u9664\u3057\u307E\u3059").addButton((b) => b.setButtonText("\u6D88\u53BB").setWarning().onClick(async () => {
       this.deps.corpus.clear();
@@ -14465,13 +14489,13 @@ var XSavedQueriesModal = class extends import_obsidian12.Modal {
     this.running = true;
     new import_obsidian12.Notice(`\u300C${sq.label}\u300D\u3092\u53D6\u5F97\u4E2D\u2026`);
     const s = this.deps.getSettings();
-    const r = await runSavedQuery(this.deps.client, this.deps.corpus, sq, {
+    const r2 = await runSavedQuery(this.deps.client, this.deps.corpus, sq, {
       lang: s.defaultLang,
       product: s.defaultProduct
     });
     await this.deps.corpus.save();
     this.running = false;
-    new import_obsidian12.Notice(`\u300C${sq.label}\u300D: ${r.fetched}\u4EF6\u53D6\u5F97\uFF08\u65B0\u898F ${r.added}\uFF09` + (r.errors.length ? `\u30FB${r.errors.length}\u4EF6\u30A8\u30E9\u30FC` : ""));
+    new import_obsidian12.Notice(`\u300C${sq.label}\u300D: ${r2.fetched}\u4EF6\u53D6\u5F97\uFF08\u65B0\u898F ${r2.added}\uFF09` + (r2.errors.length ? `\u30FB${r2.errors.length}\u4EF6\u30A8\u30E9\u30FC` : ""));
     this.onDone(false);
     this.onOpen();
   }
@@ -14492,7 +14516,7 @@ var XSavedQueriesModal = class extends import_obsidian12.Modal {
     );
     await this.deps.corpus.save();
     this.running = false;
-    const added = results.reduce((a, r) => a + r.added, 0);
+    const added = results.reduce((a, r2) => a + r2.added, 0);
     new import_obsidian12.Notice(`\u5168\u5B9F\u884C\u5B8C\u4E86: \u65B0\u898F ${added}\u4EF6`);
     this.onDone(false);
     this.onOpen();
@@ -14774,8 +14798,8 @@ function toggleDiscourseVisualization(view) {
 
 // src/ui/ReadingModeHighlighter.ts
 var readingResolver = heuristicResolver;
-function setReadingResolver(r) {
-  readingResolver = r;
+function setReadingResolver(r2) {
+  readingResolver = r2;
 }
 function getReadingModePostProcessor() {
   return (el, ctx) => {
@@ -15265,7 +15289,7 @@ var KWICIndex = class _KWICIndex {
   removeFile(filePath) {
     for (const patternId of Object.keys(this.data.records)) {
       const before = this.data.records[patternId].length;
-      this.data.records[patternId] = this.data.records[patternId].filter((r) => r.filePath !== filePath);
+      this.data.records[patternId] = this.data.records[patternId].filter((r2) => r2.filePath !== filePath);
       const removed = before - this.data.records[patternId].length;
       this.data.totalRecords -= removed;
       if (this.data.records[patternId].length === 0) {
@@ -15278,28 +15302,28 @@ var KWICIndex = class _KWICIndex {
   getByPattern(patternId) {
     var _a;
     const records = (_a = this.data.records[patternId]) != null ? _a : [];
-    const files = new Set(records.map((r) => r.filePath));
+    const files = new Set(records.map((r2) => r2.filePath));
     return { records, totalCount: records.length, fileCount: files.size };
   }
   /** Get all KWIC records for a surface form (may span multiple pattern IDs) */
   getBySurface(surface) {
     const allRecords = [];
     for (const records of Object.values(this.data.records)) {
-      for (const r of records) {
-        if (r.surface === surface)
-          allRecords.push(r);
+      for (const r2 of records) {
+        if (r2.surface === surface)
+          allRecords.push(r2);
       }
     }
-    const files = new Set(allRecords.map((r) => r.filePath));
+    const files = new Set(allRecords.map((r2) => r2.filePath));
     return { records: allRecords, totalCount: allRecords.length, fileCount: files.size };
   }
   /** Get all records from a specific file */
   getByFile(filePath) {
     const result = [];
     for (const records of Object.values(this.data.records)) {
-      for (const r of records) {
-        if (r.filePath === filePath)
-          result.push(r);
+      for (const r2 of records) {
+        if (r2.filePath === filePath)
+          result.push(r2);
       }
     }
     return result.sort((a, b) => a.offset - b.offset);
@@ -15309,9 +15333,9 @@ var KWICIndex = class _KWICIndex {
     const results = [];
     const lowerQuery = query.toLowerCase();
     for (const records of Object.values(this.data.records)) {
-      for (const r of records) {
-        if (r.left.toLowerCase().includes(lowerQuery) || r.right.toLowerCase().includes(lowerQuery)) {
-          results.push(r);
+      for (const r2 of records) {
+        if (r2.left.toLowerCase().includes(lowerQuery) || r2.right.toLowerCase().includes(lowerQuery)) {
+          results.push(r2);
         }
       }
     }
@@ -15338,8 +15362,8 @@ var KWICIndex = class _KWICIndex {
   getFileCount() {
     const files = /* @__PURE__ */ new Set();
     for (const records of Object.values(this.data.records)) {
-      for (const r of records)
-        files.add(r.filePath);
+      for (const r2 of records)
+        files.add(r2.filePath);
     }
     return files.size;
   }
@@ -15991,8 +16015,8 @@ var SurferBridge = class {
       if (outcome.applied)
         applied++;
       else {
-        const r = (_a = outcome.reason) != null ? _a : "unknown";
-        byReason[r] = ((_b = byReason[r]) != null ? _b : 0) + 1;
+        const r2 = (_a = outcome.reason) != null ? _a : "unknown";
+        byReason[r2] = ((_b = byReason[r2]) != null ? _b : 0) + 1;
       }
     }
     const attemptedCount = this.lastSidecarOutcome.size;
@@ -16066,7 +16090,7 @@ var SurferBridge = class {
   }
   searchKWICContext(query) {
     const records = this.kwicIndex.searchContext(query);
-    const files = new Set(records.map((r) => r.filePath));
+    const files = new Set(records.map((r2) => r2.filePath));
     return { records, totalCount: records.length, fileCount: files.size };
   }
   // ── Variation tree queries ───────────────────────────────
@@ -16307,8 +16331,8 @@ function toReadingForm(s, readingOf) {
   const flush = () => {
     if (!run2)
       return;
-    const r = readingOf(run2);
-    out += r != null ? katakanaToHiragana(r) : run2;
+    const r2 = readingOf(run2);
+    out += r2 != null ? katakanaToHiragana(r2) : run2;
     run2 = "";
   };
   for (const ch of norm) {
@@ -16461,9 +16485,9 @@ function diffCorrections(note, span, readingOf) {
 }
 function readingWord(word, readingOf) {
   if (readingOf) {
-    const r = readingOf(word);
-    if (r != null)
-      return katakanaToHiragana(normalizeJapanese(r));
+    const r2 = readingOf(word);
+    if (r2 != null)
+      return katakanaToHiragana(normalizeJapanese(r2));
   }
   const kanaOnly = katakanaToHiragana(normalizeJapanese(word));
   return [...kanaOnly].some(isKanji) ? null : kanaOnly;
@@ -16580,19 +16604,19 @@ function extractNotePhrases(md) {
 function reconcile(notes, lines, readingOf) {
   return notes.map((note) => {
     var _a, _b, _c, _d;
-    const r = match(note, lines, readingOf);
-    const status = r.best && r.confidence >= RECONCILE_THRESHOLD ? "auto" : "needs-review";
+    const r2 = match(note, lines, readingOf);
+    const status = r2.best && r2.confidence >= RECONCILE_THRESHOLD ? "auto" : "needs-review";
     return {
       note,
-      best: r.best,
-      tStartSec: (_b = (_a = r.best) == null ? void 0 : _a.tStartSec) != null ? _b : null,
-      reconciled: (_d = (_c = r.best) == null ? void 0 : _c.text) != null ? _d : "",
-      confidence: r.confidence,
+      best: r2.best,
+      tStartSec: (_b = (_a = r2.best) == null ? void 0 : _a.tStartSec) != null ? _b : null,
+      reconciled: (_d = (_c = r2.best) == null ? void 0 : _c.text) != null ? _d : "",
+      confidence: r2.confidence,
       status,
-      corrections: r.corrections,
-      contextBefore: r.contextBefore,
-      contextAfter: r.contextAfter,
-      alternatives: r.alternatives
+      corrections: r2.corrections,
+      contextBefore: r2.contextBefore,
+      contextAfter: r2.contextAfter,
+      alternatives: r2.alternatives
     };
   });
 }
@@ -16610,7 +16634,7 @@ function makeDictionaryReadingResolver(store) {
     try {
       const results = store.lookup(key);
       if (results.length) {
-        const exact = results.find((r) => normalizeJapanese(r.term.expression) === key);
+        const exact = results.find((r2) => normalizeJapanese(r2.term.expression) === key);
         const pick = exact != null ? exact : results[0];
         const raw = ((_a = pick.term.reading) == null ? void 0 : _a.trim()) || pick.term.expression;
         reading = toHiragana(normalizeJapanese(raw));
@@ -16809,25 +16833,25 @@ function hashId(s) {
   }
   return (h >>> 0).toString(36);
 }
-function blockIdFor(r) {
+function blockIdFor(r2) {
   var _a;
-  return "recon-" + hashId(`${r.note}|${r.reconciled}|${(_a = r.tStartSec) != null ? _a : ""}`);
+  return "recon-" + hashId(`${r2.note}|${r2.reconciled}|${(_a = r2.tStartSec) != null ? _a : ""}`);
 }
 var fmtTime = (s) => s == null ? "??:??" : `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
-function renderCallout(r, cls, index) {
+function renderCallout(r2, cls, index) {
   const def = NOTE_TYPES[cls];
-  const id = blockIdFor(r);
-  const fold = r.status === "needs-review" ? "+" : "-";
-  const flag = r.status === "needs-review" ? " \u{1F536}\u8981\u78BA\u8A8D" : "";
-  const head = `${def.emoji} ${index + 1}. ${r.reconciled || r.note} \xB7 ~${fmtTime(r.tStartSec)} \xB7 ${(r.confidence * 100).toFixed(0)}% \xB7 ${r.status}${flag}`;
+  const id = blockIdFor(r2);
+  const fold = r2.status === "needs-review" ? "+" : "-";
+  const flag = r2.status === "needs-review" ? " \u{1F536}\u8981\u78BA\u8A8D" : "";
+  const head = `${def.emoji} ${index + 1}. ${r2.reconciled || r2.note} \xB7 ~${fmtTime(r2.tStartSec)} \xB7 ${(r2.confidence * 100).toFixed(0)}% \xB7 ${r2.status}${flag}`;
   const lines = [`> [!${def.callout}]${fold} ${head}`];
-  lines.push(`> **\u30E1\u30E2:** ${r.note}`);
-  if (r.best) {
-    if (r.contextBefore.length || r.contextAfter.length) {
-      const ctx = [...r.contextBefore.map((c) => `\u2026${c}`), `**${r.reconciled}**`, ...r.contextAfter.map((c) => `${c}\u2026`)].join(" / ");
+  lines.push(`> **\u30E1\u30E2:** ${r2.note}`);
+  if (r2.best) {
+    if (r2.contextBefore.length || r2.contextAfter.length) {
+      const ctx = [...r2.contextBefore.map((c) => `\u2026${c}`), `**${r2.reconciled}**`, ...r2.contextAfter.map((c) => `${c}\u2026`)].join(" / ");
       lines.push(`> **\u6587\u8108:** ${ctx}`);
     }
-    for (const c of r.corrections) {
+    for (const c of r2.corrections) {
       const mark = c.kind === "homophone" ? "\u26A0\uFE0F \u540C\u97F3\u6821\u6B63" : c.kind === "kanji-swap" ? "\u26A0\uFE0F \u6F22\u5B57\u9055\u3044" : "\u26A0\uFE0F \u76F8\u9055";
       lines.push(`> ${mark}: \u300C${c.noteText}\u300D\u2192\u300C${c.transcriptText}\u300D`);
     }
@@ -16840,7 +16864,7 @@ function renderCallout(r, cls, index) {
 function renderAnchoredFile(results, opts = {}) {
   var _a;
   const prior = (_a = opts.priorClass) != null ? _a : /* @__PURE__ */ new Map();
-  const auto = results.filter((r) => r.status === "auto").length;
+  const auto = results.filter((r2) => r2.status === "auto").length;
   const out = ["---"];
   if (opts.transcriptRef)
     out.push(`source: ${opts.transcriptRef}`);
@@ -16851,28 +16875,28 @@ function renderAnchoredFile(results, opts = {}) {
   out.push("---", "");
   out.push("# \u7167\u5408\u30CE\u30FC\u30C8\uFF08\u81EA\u52D5\u751F\u6210\u30FB\u578B\u4ED8\u304D\uFF09", "");
   out.push("> \u5404\u30AB\u30E9\u30FC = \u30CE\u30FC\u30C8\u7A2E\u5225\uFF08\u{1F7E1}\u30BB\u30EA\u30D5 \u{1F7E2}\u9023\u8A9E \u{1F535}\u4FEE\u8F9E\u9023\u8A9E \u{1FA75}\u4FEE\u8F9E\u69CB\u6587 \u{1F534}\u8AC7\u8A71\uFF09\u3002\u30E9\u30A4\u30D6\u30E9\u30EA\u3067\u7A2E\u5225\u3092\u5909\u66F4\u3067\u304D\u307E\u3059\u3002", "");
-  results.forEach((r, i) => {
+  results.forEach((r2, i) => {
     var _a2;
-    const cls = (_a2 = prior.get(blockIdFor(r))) != null ? _a2 : DEFAULT_NOTE_CLASS;
-    out.push(renderCallout(r, cls, i), "");
+    const cls = (_a2 = prior.get(blockIdFor(r2))) != null ? _a2 : DEFAULT_NOTE_CLASS;
+    out.push(renderCallout(r2, cls, i), "");
   });
   return out.join("\n");
 }
 function buildEntries(results, file, priorClass) {
   const prior = priorClass != null ? priorClass : /* @__PURE__ */ new Map();
-  return results.map((r) => {
+  return results.map((r2) => {
     var _a;
-    const blockId = blockIdFor(r);
+    const blockId = blockIdFor(r2);
     return {
       blockId,
       noteClass: (_a = prior.get(blockId)) != null ? _a : DEFAULT_NOTE_CLASS,
       file,
-      note: r.note,
-      reconciled: r.reconciled,
-      tStartSec: r.tStartSec,
-      status: r.status,
-      confidence: r.confidence,
-      corrections: r.corrections.length
+      note: r2.note,
+      reconciled: r2.reconciled,
+      tStartSec: r2.tStartSec,
+      status: r2.status,
+      confidence: r2.confidence,
+      corrections: r2.corrections.length
     };
   });
 }
@@ -16898,43 +16922,43 @@ function renderAnchor(anchor, clip) {
     lines.push(`\u{1F4C4} ${anchor.transcriptRef}`);
   return lines;
 }
-function buildReconCard(r, blockId, opts = {}) {
+function buildReconCard(r2, blockId, opts = {}) {
   var _a, _b, _c, _d, _e, _f, _g;
   const tagPrefix = (_a = opts.tagPrefix) != null ? _a : "flashcards/jp-recon";
   const audio = (_b = opts.audio) != null ? _b : deepLinkProvider();
   const noteClass = (_d = (_c = opts.classOf) == null ? void 0 : _c.call(opts, blockId)) != null ? _d : DEFAULT_NOTE_CLASS;
   const def = NOTE_TYPES[noteClass];
-  const answer = r.reconciled || r.note;
+  const answer = r2.reconciled || r2.note;
   const anchor = {
     file: (_e = opts.anchoredFile) != null ? _e : "",
     blockId,
     videoId: (_f = opts.videoId) != null ? _f : null,
-    tStartSec: r.tStartSec,
+    tStartSec: r2.tStartSec,
     transcriptRef: (_g = opts.transcriptRef) != null ? _g : null
   };
-  const before = r.contextBefore.map((c) => `\u2026${c}`).join(" ");
-  const after = r.contextAfter.map((c) => `${c}\u2026`).join(" ");
+  const before = r2.contextBefore.map((c) => `\u2026${c}`).join(" ");
+  const after = r2.contextAfter.map((c) => `${c}\u2026`).join(" ");
   const clozeLine = [before, BLANK, after].filter(Boolean).join(" ");
   const frontLines = [
-    `${def.emoji} **${def.label}** \xB7 ~${fmtClock(r.tStartSec)}`,
+    `${def.emoji} **${def.label}** \xB7 ~${fmtClock(r2.tStartSec)}`,
     "",
     clozeLine || BLANK,
     "",
-    `> \u30D2\u30F3\u30C8: \u3042\u306A\u305F\u306E\u30E1\u30E2\u300C${r.note}\u300D`
+    `> \u30D2\u30F3\u30C8: \u3042\u306A\u305F\u306E\u30E1\u30E2\u300C${r2.note}\u300D`
   ];
   const front = frontLines.join("\n");
-  const clip = audio.resolve(anchor.videoId, r.tStartSec);
+  const clip = audio.resolve(anchor.videoId, r2.tStartSec);
   const backLines = [`**${answer}**`, ""];
-  if (r.note && r.note !== answer)
-    backLines.push(`\u30E1\u30E2(raw): ~~${r.note}~~ \u2192 **${answer}**`);
-  for (const c of r.corrections) {
+  if (r2.note && r2.note !== answer)
+    backLines.push(`\u30E1\u30E2(raw): ~~${r2.note}~~ \u2192 **${answer}**`);
+  for (const c of r2.corrections) {
     const mark = c.kind === "homophone" ? "\u26A0\uFE0F \u540C\u97F3\u6821\u6B63" : c.kind === "kanji-swap" ? "\u26A0\uFE0F \u6F22\u5B57\u9055\u3044" : "\u26A0\uFE0F \u76F8\u9055";
     backLines.push(`${mark}: \u300C${c.noteText}\u300D\u2192\u300C${c.transcriptText}\u300D`);
   }
   backLines.push(...renderAnchor(anchor, clip));
   const back = backLines.join("\n");
   const tags = [tagPrefix, `${tagPrefix}/${def.callout}`];
-  if (r.status === "needs-review")
+  if (r2.status === "needs-review")
     tags.push(`${tagPrefix}/needs-review`);
   const tagLine = tags.map((t) => `#${t}`).join(" ");
   const markdown = `${tagLine}
@@ -16947,12 +16971,12 @@ ${back}
 function buildReconCards(results, anchoredFile, blockIdFor2, opts = {}) {
   const withFile = { ...opts, anchoredFile };
   const out = [];
-  for (const r of results) {
-    if (r.status === "needs-review" && !opts.includeNeedsReview)
+  for (const r2 of results) {
+    if (r2.status === "needs-review" && !opts.includeNeedsReview)
       continue;
-    if (!r.best)
+    if (!r2.best)
       continue;
-    out.push(buildReconCard(r, blockIdFor2(r), withFile));
+    out.push(buildReconCard(r2, blockIdFor2(r2), withFile));
   }
   return out;
 }
@@ -17262,7 +17286,7 @@ var JPCollocationsPlugin = class extends import_obsidian16.Plugin {
         this.reconLibrary.removeForFile(outPath);
         this.reconLibrary.upsertMany(buildEntries(results, outPath, priorClass));
         this.refreshReconLibrary();
-        const auto = results.filter((r) => r.status === "auto").length;
+        const auto = results.filter((r2) => r2.status === "auto").length;
         new import_obsidian16.Notice(`\u7167\u5408\u5B8C\u4E86: ${results.length}\u4EF6\uFF08auto ${auto} / \u8981\u78BA\u8A8D ${results.length - auto}\uFF09\u2014 \u7167\u5408\u30E9\u30A4\u30D6\u30E9\u30EA\u306B\u8FFD\u52A0`);
         await this.app.workspace.getLeaf(false).openFile(outFile);
       }
@@ -18005,6 +18029,10 @@ ${summary}
       new import_obsidian16.Notice("\u30ED\u30FC\u30AB\u30EB\u30D5\u30A1\u30A4\u30EB\u30B7\u30B9\u30C6\u30E0\u304C\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002");
       return;
     }
+    if (!nodeRuntimeAvailable()) {
+      new import_obsidian16.Notice("Node \u30E9\u30F3\u30BF\u30A4\u30E0\u306B\u63A5\u7D9A\u3067\u304D\u307E\u305B\u3093\uFF08\u3053\u306E\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u3067\u306F child_process \u3092\u5229\u7528\u3067\u304D\u307E\u305B\u3093\uFF09\u3002");
+      return;
+    }
     const prep = await this.prepareReconcile();
     if (!prep)
       return;
@@ -18013,7 +18041,7 @@ ${summary}
       new import_obsidian16.Notice("YouTube \u52D5\u753B ID \u304C\u5FC5\u8981\u3067\u3059\u3002\u6587\u5B57\u8D77\u3053\u3057\u306E frontmatter \u306B `video: <URL>` \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
       return;
     }
-    const timed = prep.results.filter((r) => r.status === "auto" && r.best && r.tStartSec != null);
+    const timed = prep.results.filter((r2) => r2.status === "auto" && r2.best && r2.tStartSec != null);
     if (!timed.length) {
       new import_obsidian16.Notice("\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5BFE\u8C61\uFF08auto \u304B\u3064\u6642\u523B\u4ED8\u304D\uFF09\u306E\u7167\u5408\u30B9\u30D1\u30F3\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
       return;
@@ -18035,36 +18063,59 @@ ${summary}
     const base = adapter.getBasePath();
     new import_obsidian16.Notice(`\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u4E2D\u2026 ${timed.length}\u4EF6\uFF08yt-dlp\uFF09`);
     const present = /* @__PURE__ */ new Set();
+    const log = [
+      `# \u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97\u30ED\u30B0`,
+      ``,
+      `- video: \`${videoId}\``,
+      `- yt-dlp: \`${active.ytdlpPath || "(PATH) yt-dlp"}\``,
+      `- ffmpeg: \`${active.ffmpegPath || "(PATH)"}\``,
+      `- jsRuntime: \`${active.jsRuntime || "(deno auto)"}\``,
+      `- detect: ${det.notes.join(" / ")}`,
+      ``
+    ];
     let done = 0, skipped = 0, failed = 0;
-    const errors = [];
-    for (const r of timed) {
-      const req = { videoId, startSec: r.tStartSec };
+    for (const r2 of timed) {
+      const req = { videoId, startSec: r2.tStartSec };
       const name = clipNameFor(req, active);
       if (this.app.metadataCache.getFirstLinkpathDest(name, "")) {
         present.add(name);
         skipped++;
+        log.push(`- \u23ED ${name} (\u65E2\u5B58)`);
         continue;
       }
       const res = await extractClip(req, active, `${base}/${folder}/${name}`);
       if (res.ok) {
         present.add(name);
         done++;
+        log.push(`- \u2705 ${name} (${res.bytes}B, ${res.durationSec.toFixed(1)}s)`);
       } else {
         failed++;
-        if (errors.length < 3)
-          errors.push(`${name}: ${(_a = res.error) != null ? _a : ""}`);
+        log.push(`- \u274C ${name}: ${(_a = res.error) != null ? _a : ""}`, `  - cmd: \`${res.command}\``, ...res.stderrTail ? [`  - stderr: \`\`\`
+${res.stderrTail}
+\`\`\``] : []);
         console.error("[jp-collocations] clip failed:", res.command, "\n", res.error, "\n", res.stderrTail);
       }
     }
     const written = await this.writeReconCards(file, tFile, videoId, prep.results, present);
     if (written)
       await this.app.workspace.getLeaf(false).openFile(written.outFile);
-    const tail2 = errors.length ? `
-${errors.join("\n")}` : "";
+    let logNote = "";
+    if (failed) {
+      const logPath = `${folder}/_download-log.md`;
+      const existingLog = this.app.vault.getAbstractFileByPath(logPath);
+      const body = log.join("\n");
+      if (existingLog instanceof import_obsidian16.TFile)
+        await this.app.vault.modify(existingLog, body);
+      else
+        await this.app.vault.create(logPath, body).catch(() => {
+        });
+      logNote = `
+\u8A73\u7D30\u30ED\u30B0: ${logPath}`;
+    }
     new import_obsidian16.Notice(
       `\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97: \u2713${done} / \u30B9\u30AD\u30C3\u30D7${skipped} / \u5931\u6557${failed}` + (written ? `
-\u30AB\u30FC\u30C9\u66F4\u65B0: ${written.count}\u4EF6\uFF08\u97F3\u58F0\u57CB\u3081\u8FBC\u307F\u6E08\u307F\uFF09` : "") + tail2,
-      failed ? 12e3 : 6e3
+\u30AB\u30FC\u30C9\u66F4\u65B0: ${written.count}\u4EF6` : "") + logNote,
+      failed ? 15e3 : 6e3
     );
   }
   async openDictionaryView(query) {

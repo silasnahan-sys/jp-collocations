@@ -46,7 +46,7 @@ import { ReconLibrary } from "./notes/recon-library";
 import { renderAnchoredFile, buildEntries, retypeInMarkdown, blockIdFor, type LibraryEntry } from "./notes/annotate";
 import { buildReconCards, renderCardsFile } from "./notes/cards";
 import { parseYouTubeId, deepLinkProvider } from "./notes/audio-provider";
-import { extractClip, detectTools, clipNameFor, type ExtractRequest } from "./notes/audio-extractor";
+import { extractClip, detectTools, clipNameFor, nodeRuntimeAvailable, type ExtractRequest } from "./notes/audio-extractor";
 import type { NoteClass } from "./notes/note-types";
 import type {
   SurferCollocationEntry,
@@ -1206,6 +1206,7 @@ export default class JPCollocationsPlugin extends Plugin {
 
     const adapter = this.app.vault.adapter;
     if (!(adapter instanceof FileSystemAdapter)) { new Notice("ローカルファイルシステムが利用できません。"); return; }
+    if (!nodeRuntimeAvailable()) { new Notice("Node ランタイムに接続できません（このデスクトップ版では child_process を利用できません）。"); return; }
 
     const prep = await this.prepareReconcile();
     if (!prep) return;
@@ -1230,19 +1231,29 @@ export default class JPCollocationsPlugin extends Plugin {
 
     new Notice(`音声クリップを取得中… ${timed.length}件（yt-dlp）`);
     const present = new Set<string>();          // clip basenames now on disk (fresh or pre-existing)
+    const log: string[] = [
+      `# 音声クリップ取得ログ`,
+      ``,
+      `- video: \`${videoId}\``,
+      `- yt-dlp: \`${active.ytdlpPath || "(PATH) yt-dlp"}\``,
+      `- ffmpeg: \`${active.ffmpegPath || "(PATH)"}\``,
+      `- jsRuntime: \`${active.jsRuntime || "(deno auto)"}\``,
+      `- detect: ${det.notes.join(" / ")}`,
+      ``,
+    ];
     let done = 0, skipped = 0, failed = 0;
-    const errors: string[] = [];
     for (const r of timed) {
       const req: ExtractRequest = { videoId, startSec: r.tStartSec as number };
       const name = clipNameFor(req, active);
-      if (this.app.metadataCache.getFirstLinkpathDest(name, "")) { present.add(name); skipped++; continue; }
+      if (this.app.metadataCache.getFirstLinkpathDest(name, "")) { present.add(name); skipped++; log.push(`- ⏭ ${name} (既存)`); continue; }
       const res = await extractClip(req, active, `${base}/${folder}/${name}`);
       if (res.ok) {
         present.add(name);
         done++;
+        log.push(`- ✅ ${name} (${res.bytes}B, ${res.durationSec.toFixed(1)}s)`);
       } else {
         failed++;
-        if (errors.length < 3) errors.push(`${name}: ${res.error ?? ""}`);
+        log.push(`- ❌ ${name}: ${res.error ?? ""}`, `  - cmd: \`${res.command}\``, ...(res.stderrTail ? [`  - stderr: \`\`\`\n${res.stderrTail}\n\`\`\``] : []));
         console.error("[jp-collocations] clip failed:", res.command, "\n", res.error, "\n", res.stderrTail);
       }
     }
@@ -1252,11 +1263,21 @@ export default class JPCollocationsPlugin extends Plugin {
     const written = await this.writeReconCards(file, tFile, videoId, prep.results, present);
     if (written) await this.app.workspace.getLeaf(false).openFile(written.outFile);
 
-    const tail = errors.length ? `\n${errors.join("\n")}` : "";
+    // Persist a diagnostic log so failures are visible without the dev console.
+    let logNote = "";
+    if (failed) {
+      const logPath = `${folder}/_download-log.md`;
+      const existingLog = this.app.vault.getAbstractFileByPath(logPath);
+      const body = log.join("\n");
+      if (existingLog instanceof TFile) await this.app.vault.modify(existingLog, body);
+      else await this.app.vault.create(logPath, body).catch(() => {});
+      logNote = `\n詳細ログ: ${logPath}`;
+    }
+
     new Notice(
       `クリップ取得: ✓${done} / スキップ${skipped} / 失敗${failed}` +
-      (written ? `\nカード更新: ${written.count}件（音声埋め込み済み）` : "") + tail,
-      failed ? 12000 : 6000,
+      (written ? `\nカード更新: ${written.count}件` : "") + logNote,
+      failed ? 15000 : 6000,
     );
   }
 

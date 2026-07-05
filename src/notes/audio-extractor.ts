@@ -121,10 +121,27 @@ export function commandLine(bin: string, args: string[]): string {
 
 // ── desktop-only runtime bits (lazy; never touched on mobile) ──────────────────
 
+/** Get Node's `require` in the Obsidian desktop (Electron) runtime. Obsidian
+ *  exposes it lexically in the CJS module scope — NOT reliably on globalThis — so
+ *  `(0,eval)("require")` (opaque to esbuild) is the robust way to reach it; fall
+ *  back to window/globalThis. Throws on mobile (no nodeIntegration). */
+function getRequire(): (m: string) => unknown {
+  let r: unknown;
+  try { r = eval('require'); } catch { /* not in lexical scope */ }         // direct eval → module scope
+  if (typeof r !== 'function') { try { r = (0, eval)('require'); } catch { /* not global */ } } // indirect → global
+  if (typeof r !== 'function') r = (globalThis as { require?: unknown }).require;
+  if (typeof r !== 'function' && typeof window !== 'undefined') r = (window as { require?: unknown }).require;
+  if (typeof r !== 'function') throw new Error('Node require unavailable (mobile / no nodeIntegration)');
+  return r as (m: string) => unknown;
+}
+
 function nodeReq<T = unknown>(mod: string): T {
-  const r = (globalThis as { require?: (m: string) => unknown }).require;
-  if (!r) throw new Error('Node require unavailable (mobile / no nodeIntegration)');
-  return r(mod) as T;
+  return getRequire()(mod) as T;
+}
+
+/** True if this runtime can spawn processes (desktop Electron with Node). */
+export function nodeRuntimeAvailable(): boolean {
+  try { return typeof getRequire() === 'function'; } catch { return false; }
 }
 
 interface SpawnedProc {
