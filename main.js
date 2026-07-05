@@ -119,14 +119,14 @@ function youtubeDeepLink(videoId, startSec) {
   const t = startSec != null && startSec >= 0 ? `?t=${Math.floor(startSec)}` : "";
   return `https://youtu.be/${videoId}${t}`;
 }
-function clipFileName(videoId, startSec) {
-  return `clip_${videoId}_${Math.floor(startSec)}.mp3`;
+function clipFileName(videoId, startSec, ext = "mp3") {
+  return `clip_${videoId}_${Math.floor(startSec)}.${ext}`;
 }
-function deepLinkProvider(localExists) {
+function deepLinkProvider(localExists, ext = "mp3") {
   return {
     resolve(videoId, startSec) {
       if (videoId && localExists) {
-        const path = clipFileName(videoId, startSec != null ? startSec : 0);
+        const path = clipFileName(videoId, startSec != null ? startSec : 0, ext);
         if (localExists(path))
           return { kind: "local", href: path, label: "\u{1F50A} \u97F3\u58F0\u30AF\u30EA\u30C3\u30D7" };
       }
@@ -375,8 +375,7 @@ function detectTools() {
   return { ytdlp, ffmpeg, jsRuntime, notes };
 }
 function clipNameFor(req, cfg) {
-  const name = clipFileName(req.videoId, Math.floor(req.startSec));
-  return cfg.audioFormat === "mp3" ? name : name.replace(/\.mp3$/, `.${cfg.audioFormat}`);
+  return clipFileName(req.videoId, Math.floor(req.startSec), cfg.audioFormat);
 }
 
 // src/types.ts
@@ -18023,10 +18022,11 @@ ${summary}
       var _a;
       return ((_a = freshClips == null ? void 0 : freshClips.has(name)) != null ? _a : false) || !!this.app.metadataCache.getFirstLinkpathDest(name, "");
     };
+    const fmt = this.settings.audioExtraction.audioFormat || "mp3";
     const cards = buildReconCards(results, anchoredFile, blockIdFor, {
       videoId,
       transcriptRef: `[[${tFile.basename}]]`,
-      audio: deepLinkProvider(localExists),
+      audio: deepLinkProvider(localExists, fmt),
       classOf: (id) => classMap.get(id)
     });
     if (!cards.length)
@@ -18139,12 +18139,12 @@ ${body.slice(0, 300)}`, 15e3);
       }
     }
     const base = adapter.getBasePath();
-    new import_obsidian16.Notice(`\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u4E2D\u2026 ${timed.length}\u4EF6\uFF08yt-dlp\uFF09`);
+    const progress = new import_obsidian16.Notice(`\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u4E2D\u2026 0/${timed.length}`, 0);
     const present = /* @__PURE__ */ new Set();
     const log = [
       `# \u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97\u30ED\u30B0`,
       ``,
-      `- video: \`${videoId}\``,
+      `- video: \`${videoId}\` \xB7 format: \`${active.audioFormat}\` \xB7 targets: ${timed.length}`,
       `- yt-dlp: \`${active.ytdlpPath || "(PATH) yt-dlp"}\``,
       `- ffmpeg: \`${active.ffmpegPath || "(PATH)"}\``,
       `- jsRuntime: \`${active.jsRuntime || "(deno auto)"}\``,
@@ -18152,48 +18152,58 @@ ${body.slice(0, 300)}`, 15e3);
       ``
     ];
     let done = 0, skipped = 0, failed = 0;
-    for (const r2 of timed) {
-      const req = { videoId, startSec: r2.tStartSec };
-      const name = clipNameFor(req, active);
-      if (this.app.metadataCache.getFirstLinkpathDest(name, "")) {
-        present.add(name);
-        skipped++;
-        log.push(`- \u23ED ${name} (\u65E2\u5B58)`);
-        continue;
-      }
-      const res = await extractClip(req, active, `${base}/${folder}/${name}`);
-      if (res.ok) {
-        present.add(name);
-        done++;
-        log.push(`- \u2705 ${name} (${res.bytes}B, ${res.durationSec.toFixed(1)}s)`);
-      } else {
+    for (let i = 0; i < timed.length; i++) {
+      const r2 = timed[i];
+      const name = clipNameFor({ videoId, startSec: r2.tStartSec }, active);
+      try {
+        if (this.app.metadataCache.getFirstLinkpathDest(name, "")) {
+          present.add(name);
+          skipped++;
+          log.push(`- \u23ED ${name} (\u65E2\u5B58)`);
+        } else {
+          const res = await extractClip({ videoId, startSec: r2.tStartSec }, active, `${base}/${folder}/${name}`);
+          if (res.ok) {
+            present.add(name);
+            done++;
+            log.push(`- \u2705 ${name} (${res.bytes}B, ${res.durationSec.toFixed(1)}s)`);
+          } else {
+            failed++;
+            log.push(`- \u274C ${name}: ${(_a = res.error) != null ? _a : ""}`, `  - cmd: \`${res.command}\``, ...res.stderrTail ? ["  - stderr:", "  ~~~", ...res.stderrTail.split("\n").map((l) => "  " + l), "  ~~~"] : []);
+            console.error("[jp-collocations] clip failed:", res.command, "\n", res.error, "\n", res.stderrTail);
+          }
+        }
+      } catch (e) {
         failed++;
-        log.push(`- \u274C ${name}: ${(_a = res.error) != null ? _a : ""}`, `  - cmd: \`${res.command}\``, ...res.stderrTail ? [`  - stderr: \`\`\`
-${res.stderrTail}
-\`\`\``] : []);
-        console.error("[jp-collocations] clip failed:", res.command, "\n", res.error, "\n", res.stderrTail);
+        log.push(`- \u274C ${name}: \u4F8B\u5916 ${String(e)}`);
+        console.error("[jp-collocations] clip iteration threw:", e);
       }
+      progress.setMessage(`\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u4E2D\u2026 ${i + 1}/${timed.length}\uFF08\u2713${done} \u5931\u6557${failed}\uFF09`);
     }
-    const written = await this.writeReconCards(file, tFile, videoId, prep.results, present);
-    if (written)
-      await this.app.workspace.getLeaf(false).openFile(written.outFile);
-    let logNote = "";
-    if (failed) {
-      const logPath = `${folder}/_download-log.md`;
-      const existingLog = this.app.vault.getAbstractFileByPath(logPath);
+    progress.hide();
+    const logPath = `${folder}/_download-log.md`;
+    try {
       const body = log.join("\n");
+      const existingLog = this.app.vault.getAbstractFileByPath(logPath);
       if (existingLog instanceof import_obsidian16.TFile)
         await this.app.vault.modify(existingLog, body);
       else
-        await this.app.vault.create(logPath, body).catch(() => {
-        });
-      logNote = `
-\u8A73\u7D30\u30ED\u30B0: ${logPath}`;
+        await this.app.vault.create(logPath, body);
+    } catch (e) {
+      console.error("[jp-collocations] log write failed:", e);
+    }
+    let written = null;
+    try {
+      written = await this.writeReconCards(file, tFile, videoId, prep.results, present);
+      if (written)
+        await this.app.workspace.getLeaf(false).openFile(written.outFile);
+    } catch (e) {
+      console.error("[jp-collocations] card regen failed:", e);
     }
     new import_obsidian16.Notice(
       `\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97: \u2713${done} / \u30B9\u30AD\u30C3\u30D7${skipped} / \u5931\u6557${failed}` + (written ? `
-\u30AB\u30FC\u30C9\u66F4\u65B0: ${written.count}\u4EF6` : "") + logNote,
-      failed ? 15e3 : 6e3
+\u30AB\u30FC\u30C9\u66F4\u65B0: ${written.count}\u4EF6` : "") + `
+\u30ED\u30B0: ${logPath}`,
+      failed ? 15e3 : 8e3
     );
   }
   async openDictionaryView(query) {

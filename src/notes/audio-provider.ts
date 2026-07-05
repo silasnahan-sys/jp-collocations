@@ -51,21 +51,24 @@ export function ytDlpClipCommand(videoId: string, startSec: number, endSec: numb
   return `yt-dlp --download-sections "*${a}-${b}" -x --audio-format mp3 -o "${outName}" "https://youtu.be/${videoId}"`;
 }
 
-/** Deterministic clip file name for a span (mobile-safe, no timestamps of its own). */
-export function clipFileName(videoId: string, startSec: number): string {
-  return `clip_${videoId}_${Math.floor(startSec)}.mp3`;
+/** Deterministic clip file name for a span (mobile-safe, no timestamps of its own).
+ *  `ext` matches the extractor's audio format (mp3 default) so the embed name and
+ *  the file on disk agree. */
+export function clipFileName(videoId: string, startSec: number, ext = 'mp3'): string {
+  return `clip_${videoId}_${Math.floor(startSec)}.${ext}`;
 }
 
 /**
  * Tier 0 provider: always resolves to the YouTube deep-link (or `none` if the
  * span has no resolvable video id). This is the default; a desktop build can pass
  * a `localExists` probe to upgrade to `kind: 'local'` when a clip file is present.
+ * `ext` is the audio format the desktop extractor writes (so names match).
  */
-export function deepLinkProvider(localExists?: (path: string) => boolean): AudioProvider {
+export function deepLinkProvider(localExists?: (path: string) => boolean, ext = 'mp3'): AudioProvider {
   return {
     resolve(videoId, startSec) {
       if (videoId && localExists) {
-        const path = clipFileName(videoId, startSec ?? 0);
+        const path = clipFileName(videoId, startSec ?? 0, ext);
         if (localExists(path)) return { kind: 'local', href: path, label: '🔊 音声クリップ' };
       }
       const link = youtubeDeepLink(videoId, startSec);

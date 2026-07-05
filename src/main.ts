@@ -46,7 +46,7 @@ import { ReconLibrary } from "./notes/recon-library";
 import { renderAnchoredFile, buildEntries, retypeInMarkdown, blockIdFor, type LibraryEntry } from "./notes/annotate";
 import { buildReconCards, renderCardsFile } from "./notes/cards";
 import { parseYouTubeId, deepLinkProvider } from "./notes/audio-provider";
-import { extractClip, detectTools, clipNameFor, nodeRuntimeAvailable, requireStrategy, probeBinary, type ExtractRequest } from "./notes/audio-extractor";
+import { extractClip, detectTools, clipNameFor, nodeRuntimeAvailable, requireStrategy, probeBinary } from "./notes/audio-extractor";
 import type { NoteClass } from "./notes/note-types";
 import type {
   SurferCollocationEntry,
@@ -1184,10 +1184,11 @@ export default class JPCollocationsPlugin extends Plugin {
     // A clip counts as present if we just wrote it OR Obsidian already indexed it.
     const localExists = (name: string) =>
       (freshClips?.has(name) ?? false) || !!this.app.metadataCache.getFirstLinkpathDest(name, "");
+    const fmt = this.settings.audioExtraction.audioFormat || "mp3";
     const cards = buildReconCards(results, anchoredFile, blockIdFor, {
       videoId,
       transcriptRef: `[[${tFile.basename}]]`,
-      audio: deepLinkProvider(localExists),
+      audio: deepLinkProvider(localExists, fmt),
       classOf: (id) => classMap.get(id),
     });
     if (!cards.length) return null;
@@ -1284,12 +1285,12 @@ export default class JPCollocationsPlugin extends Plugin {
     if (!this.app.vault.getAbstractFileByPath(folder)) { try { await this.app.vault.createFolder(folder); } catch { /* exists */ } }
     const base = adapter.getBasePath();
 
-    new Notice(`音声クリップを取得中… ${timed.length}件（yt-dlp）`);
+    const progress = new Notice(`音声クリップを取得中… 0/${timed.length}`, 0);
     const present = new Set<string>();          // clip basenames now on disk (fresh or pre-existing)
     const log: string[] = [
       `# 音声クリップ取得ログ`,
       ``,
-      `- video: \`${videoId}\``,
+      `- video: \`${videoId}\` · format: \`${active.audioFormat}\` · targets: ${timed.length}`,
       `- yt-dlp: \`${active.ytdlpPath || "(PATH) yt-dlp"}\``,
       `- ffmpeg: \`${active.ffmpegPath || "(PATH)"}\``,
       `- jsRuntime: \`${active.jsRuntime || "(deno auto)"}\``,
@@ -1297,42 +1298,59 @@ export default class JPCollocationsPlugin extends Plugin {
       ``,
     ];
     let done = 0, skipped = 0, failed = 0;
-    for (const r of timed) {
-      const req: ExtractRequest = { videoId, startSec: r.tStartSec as number };
-      const name = clipNameFor(req, active);
-      if (this.app.metadataCache.getFirstLinkpathDest(name, "")) { present.add(name); skipped++; log.push(`- ⏭ ${name} (既存)`); continue; }
-      const res = await extractClip(req, active, `${base}/${folder}/${name}`);
-      if (res.ok) {
-        present.add(name);
-        done++;
-        log.push(`- ✅ ${name} (${res.bytes}B, ${res.durationSec.toFixed(1)}s)`);
-      } else {
+    // Each iteration is fully guarded so one bad clip can never abort the batch.
+    for (let i = 0; i < timed.length; i++) {
+      const r = timed[i];
+      const name = clipNameFor({ videoId, startSec: r.tStartSec as number }, active);
+      try {
+        if (this.app.metadataCache.getFirstLinkpathDest(name, "")) { present.add(name); skipped++; log.push(`- ⏭ ${name} (既存)`); }
+        else {
+          const res = await extractClip({ videoId, startSec: r.tStartSec as number }, active, `${base}/${folder}/${name}`);
+          if (res.ok) {
+            present.add(name); done++;
+            log.push(`- ✅ ${name} (${res.bytes}B, ${res.durationSec.toFixed(1)}s)`);
+          } else {
+            failed++;
+            log.push(`- ❌ ${name}: ${res.error ?? ""}`, `  - cmd: \`${res.command}\``, ...(res.stderrTail ? ["  - stderr:", "  ~~~", ...res.stderrTail.split("\n").map((l) => "  " + l), "  ~~~"] : []));
+            console.error("[jp-collocations] clip failed:", res.command, "\n", res.error, "\n", res.stderrTail);
+          }
+        }
+      } catch (e) {
         failed++;
-        log.push(`- ❌ ${name}: ${res.error ?? ""}`, `  - cmd: \`${res.command}\``, ...(res.stderrTail ? [`  - stderr: \`\`\`\n${res.stderrTail}\n\`\`\``] : []));
-        console.error("[jp-collocations] clip failed:", res.command, "\n", res.error, "\n", res.stderrTail);
+        log.push(`- ❌ ${name}: 例外 ${String(e)}`);
+        console.error("[jp-collocations] clip iteration threw:", e);
       }
+      progress.setMessage(`音声クリップを取得中… ${i + 1}/${timed.length}（✓${done} 失敗${failed}）`);
+    }
+    progress.hide();
+
+    // ALWAYS persist the log (success or failure) so there is always a record.
+    const logPath = `${folder}/_download-log.md`;
+    try {
+      const body = log.join("\n");
+      const existingLog = this.app.vault.getAbstractFileByPath(logPath);
+      if (existingLog instanceof TFile) await this.app.vault.modify(existingLog, body);
+      else await this.app.vault.create(logPath, body);
+    } catch (e) {
+      console.error("[jp-collocations] log write failed:", e);
     }
 
     // Auto-regenerate the cards so the just-downloaded clips embed immediately
-    // (passing `present` sidesteps Obsidian's async file-index lag).
-    const written = await this.writeReconCards(file, tFile, videoId, prep.results, present);
-    if (written) await this.app.workspace.getLeaf(false).openFile(written.outFile);
-
-    // Persist a diagnostic log so failures are visible without the dev console.
-    let logNote = "";
-    if (failed) {
-      const logPath = `${folder}/_download-log.md`;
-      const existingLog = this.app.vault.getAbstractFileByPath(logPath);
-      const body = log.join("\n");
-      if (existingLog instanceof TFile) await this.app.vault.modify(existingLog, body);
-      else await this.app.vault.create(logPath, body).catch(() => {});
-      logNote = `\n詳細ログ: ${logPath}`;
+    // (passing `present` sidesteps Obsidian's async file-index lag). Guarded so a
+    // card-write error can't hide the download result.
+    let written: { outFile: TFile; count: number } | null = null;
+    try {
+      written = await this.writeReconCards(file, tFile, videoId, prep.results, present);
+      if (written) await this.app.workspace.getLeaf(false).openFile(written.outFile);
+    } catch (e) {
+      console.error("[jp-collocations] card regen failed:", e);
     }
 
     new Notice(
       `クリップ取得: ✓${done} / スキップ${skipped} / 失敗${failed}` +
-      (written ? `\nカード更新: ${written.count}件` : "") + logNote,
-      failed ? 15000 : 6000,
+      (written ? `\nカード更新: ${written.count}件` : "") +
+      `\nログ: ${logPath}`,
+      failed ? 15000 : 8000,
     );
   }
 

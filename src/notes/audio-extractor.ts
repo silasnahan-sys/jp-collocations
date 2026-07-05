@@ -319,6 +319,5 @@ export function detectTools(): DetectedTools {
  *  shifted window) so it matches the card AudioProvider's `clip_<id>_<sec>.mp3`
  *  probe exactly — preroll only affects the clip's *content*, never its name. */
 export function clipNameFor(req: ExtractRequest, cfg: AudioExtractionConfig): string {
-  const name = clipFileName(req.videoId, Math.floor(req.startSec));   // clip_<id>_<startSec>.mp3
-  return cfg.audioFormat === 'mp3' ? name : name.replace(/\.mp3$/, `.${cfg.audioFormat}`);
+  return clipFileName(req.videoId, Math.floor(req.startSec), cfg.audioFormat);   // clip_<id>_<sec>.<fmt>
 }
