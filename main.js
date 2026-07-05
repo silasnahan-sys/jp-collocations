@@ -17253,57 +17253,17 @@ var JPCollocationsPlugin = class extends import_obsidian16.Plugin {
       id: "generate-recon-cards",
       name: "Generate Timestamp-Anchored Cards from Notes",
       callback: async () => {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
-        const file = this.app.workspace.getActiveFile();
-        if (!file) {
-          new import_obsidian16.Notice("\u30CE\u30FC\u30C8\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
+        const prep = await this.prepareReconcile();
+        if (!prep)
           return;
-        }
-        const content = await this.app.vault.cachedRead(file);
-        const src = frontmatterSource(content);
-        if (!src) {
-          new import_obsidian16.Notice("frontmatter \u306B `source: [[transcript]]` \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044");
-          return;
-        }
-        const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
-        if (!tFile) {
-          new import_obsidian16.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${src}`);
-          return;
-        }
-        const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
-        if (!lines.length) {
-          new import_obsidian16.Notice("\u6587\u5B57\u8D77\u3053\u3057\u306B\u884C\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\uFF08\u5B57\u5E55\u306A\u3057\uFF1F\uFF09");
-          return;
-        }
-        const notes = extractNotePhrases(content);
-        if (!notes.length) {
-          new import_obsidian16.Notice("\u7167\u5408\u3059\u308B\u30E1\u30E2\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
-          return;
-        }
-        const results = reconcile(notes, lines, makeDictionaryReadingResolver(this.dictStore));
-        const fm = (_b = (_a = this.app.metadataCache.getFileCache(tFile)) == null ? void 0 : _a.frontmatter) != null ? _b : {};
-        const nfm = (_d = (_c = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _c.frontmatter) != null ? _d : {};
-        const idField = (_l = (_k = (_j = (_i = (_h = (_g = (_f = (_e = fm.videoId) != null ? _e : fm.video) != null ? _f : fm.youtube) != null ? _g : fm.url) != null ? _h : fm.source_url) != null ? _i : nfm.videoId) != null ? _j : nfm.video) != null ? _k : nfm.youtube) != null ? _l : nfm.url;
-        const videoId = parseYouTubeId(typeof idField === "string" ? idField : null);
-        const anchoredFile = file.path.replace(/\.md$/, "") + "-reconciled.md";
-        const classMap = this.reconLibrary.classMapForFile(anchoredFile);
-        const cards = buildReconCards(results, anchoredFile, blockIdFor, {
-          videoId,
-          transcriptRef: `[[${tFile.basename}]]`,
-          // Resolve a clip by basename anywhere in the vault (clips live in a folder).
-          audio: deepLinkProvider((name) => !!this.app.metadataCache.getFirstLinkpathDest(name, "")),
-          classOf: (id) => classMap.get(id)
-        });
-        if (!cards.length) {
+        const { file, tFile, videoId, results } = prep;
+        const written = await this.writeReconCards(file, tFile, videoId, results);
+        if (!written) {
           new import_obsidian16.Notice("\u30A2\u30F3\u30AB\u30FC\u53EF\u80FD\u306A\u7167\u5408\u30B9\u30D1\u30F3\u304C\u3042\u308A\u307E\u305B\u3093\uFF08\u8981\u78BA\u8A8D\u306E\u307F\uFF1F\uFF09");
           return;
         }
-        const out = renderCardsFile(cards, { transcriptRef: `[[${tFile.basename}]]`, sourceLabel: tFile.basename });
-        const outPath = file.path.replace(/\.md$/, "") + "-cards.md";
-        const existing = this.app.vault.getAbstractFileByPath(outPath);
-        const outFile = existing instanceof import_obsidian16.TFile ? (await this.app.vault.modify(existing, out), existing) : await this.app.vault.create(outPath, out);
-        new import_obsidian16.Notice(`\u30AB\u30FC\u30C9\u751F\u6210: ${cards.length}\u4EF6${videoId ? "\uFF08YouTube \u30EA\u30F3\u30AF\u4ED8\u304D\uFF09" : "\uFF08\u539F\u6587\u30EA\u30F3\u30AF\u306E\u307F\uFF09"}`);
-        await this.app.workspace.getLeaf(false).openFile(outFile);
+        new import_obsidian16.Notice(`\u30AB\u30FC\u30C9\u751F\u6210: ${written.count}\u4EF6${videoId ? "\uFF08YouTube \u30EA\u30F3\u30AF\u4ED8\u304D\uFF09" : "\uFF08\u539F\u6587\u30EA\u30F3\u30AF\u306E\u307F\uFF09"}`);
+        await this.app.workspace.getLeaf(false).openFile(written.outFile);
       }
     });
     this.addCommand({
@@ -17933,15 +17893,78 @@ ${summary}
     }
     this.reconLibrary.setClass(entry2.blockId, cls);
   }
+  /** Shared reconcile prep for the cards + clip commands. Shows a Notice and
+   *  returns null on any failure so callers just `if (!prep) return`. */
+  async prepareReconcile() {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) {
+      new import_obsidian16.Notice("\u30CE\u30FC\u30C8\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
+      return null;
+    }
+    const content = await this.app.vault.cachedRead(file);
+    const src = frontmatterSource(content);
+    if (!src) {
+      new import_obsidian16.Notice("frontmatter \u306B `source: [[transcript]]` \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044");
+      return null;
+    }
+    const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
+    if (!tFile) {
+      new import_obsidian16.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${src}`);
+      return null;
+    }
+    const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
+    if (!lines.length) {
+      new import_obsidian16.Notice("\u6587\u5B57\u8D77\u3053\u3057\u306B\u884C\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\uFF08\u5B57\u5E55\u306A\u3057\uFF1F\uFF09");
+      return null;
+    }
+    const notes = extractNotePhrases(content);
+    if (!notes.length) {
+      new import_obsidian16.Notice("\u7167\u5408\u3059\u308B\u30E1\u30E2\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
+      return null;
+    }
+    const results = reconcile(notes, lines, makeDictionaryReadingResolver(this.dictStore));
+    return { file, tFile, videoId: this.resolveVideoId(file, tFile), results };
+  }
+  /** Resolve the source media's YouTube id from the transcript (or notes) frontmatter. */
+  resolveVideoId(file, tFile) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+    const fm = (_b = (_a = this.app.metadataCache.getFileCache(tFile)) == null ? void 0 : _a.frontmatter) != null ? _b : {};
+    const nfm = (_d = (_c = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _c.frontmatter) != null ? _d : {};
+    const idField = (_l = (_k = (_j = (_i = (_h = (_g = (_f = (_e = fm.videoId) != null ? _e : fm.video) != null ? _f : fm.youtube) != null ? _g : fm.url) != null ? _h : fm.source_url) != null ? _i : nfm.videoId) != null ? _j : nfm.video) != null ? _k : nfm.youtube) != null ? _l : nfm.url;
+    return parseYouTubeId(typeof idField === "string" ? idField : null);
+  }
+  /** Build + write the `-cards.md` file (DESIGN §11). `freshClips` are clip
+   *  basenames just written to disk that Obsidian may not have indexed yet, so
+   *  the embed resolves immediately after a download. Returns null if no cards. */
+  async writeReconCards(file, tFile, videoId, results, freshClips) {
+    const anchoredFile = file.path.replace(/\.md$/, "") + "-reconciled.md";
+    const classMap = this.reconLibrary.classMapForFile(anchoredFile);
+    const localExists = (name) => {
+      var _a;
+      return ((_a = freshClips == null ? void 0 : freshClips.has(name)) != null ? _a : false) || !!this.app.metadataCache.getFirstLinkpathDest(name, "");
+    };
+    const cards = buildReconCards(results, anchoredFile, blockIdFor, {
+      videoId,
+      transcriptRef: `[[${tFile.basename}]]`,
+      audio: deepLinkProvider(localExists),
+      classOf: (id) => classMap.get(id)
+    });
+    if (!cards.length)
+      return null;
+    const out = renderCardsFile(cards, { transcriptRef: `[[${tFile.basename}]]`, sourceLabel: tFile.basename });
+    const outPath = file.path.replace(/\.md$/, "") + "-cards.md";
+    const existing = this.app.vault.getAbstractFileByPath(outPath);
+    const outFile = existing instanceof import_obsidian16.TFile ? (await this.app.vault.modify(existing, out), existing) : await this.app.vault.create(outPath, out);
+    return { outFile, count: cards.length };
+  }
   /**
    * DESKTOP-ONLY: download an MP3 clip for each reconciled span via yt-dlp
-   * (DESIGN §12 Tier 1). Opt-in + ToS-gated. Auto-detects yt-dlp/ffmpeg/deno,
-   * writes `clip_<id>_<sec>.mp3` into the audio folder; the card AudioProvider
-   * then embeds them by basename on the next "Generate Cards" run. Never fakes
-   * success — an empty/failed clip is reported, with the command for manual run.
+   * (DESIGN §12 Tier 1), then AUTO-REGENERATE the cards so the clips embed in one
+   * step. Opt-in + ToS-gated. Auto-detects yt-dlp/ffmpeg/deno. Never fakes success
+   * — an empty/failed clip is reported, with the command for a manual run.
    */
   async downloadReconClips() {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
+    var _a;
     if (!import_obsidian16.Platform.isDesktopApp) {
       new import_obsidian16.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u306E\u53D6\u5F97\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u306E\u307F\u5BFE\u5FDC\u3067\u3059\u3002");
       return;
@@ -17956,34 +17979,16 @@ ${summary}
       new import_obsidian16.Notice("\u30ED\u30FC\u30AB\u30EB\u30D5\u30A1\u30A4\u30EB\u30B7\u30B9\u30C6\u30E0\u304C\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002");
       return;
     }
-    const file = this.app.workspace.getActiveFile();
-    if (!file) {
-      new import_obsidian16.Notice("\u30CE\u30FC\u30C8\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
+    const prep = await this.prepareReconcile();
+    if (!prep)
       return;
-    }
-    const content = await this.app.vault.cachedRead(file);
-    const src = frontmatterSource(content);
-    if (!src) {
-      new import_obsidian16.Notice("frontmatter \u306B `source: [[transcript]]` \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044");
-      return;
-    }
-    const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
-    if (!tFile) {
-      new import_obsidian16.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${src}`);
-      return;
-    }
-    const fm = (_b = (_a = this.app.metadataCache.getFileCache(tFile)) == null ? void 0 : _a.frontmatter) != null ? _b : {};
-    const nfm = (_d = (_c = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _c.frontmatter) != null ? _d : {};
-    const idField = (_l = (_k = (_j = (_i = (_h = (_g = (_f = (_e = fm.videoId) != null ? _e : fm.video) != null ? _f : fm.youtube) != null ? _g : fm.url) != null ? _h : fm.source_url) != null ? _i : nfm.videoId) != null ? _j : nfm.video) != null ? _k : nfm.youtube) != null ? _l : nfm.url;
-    const videoId = parseYouTubeId(typeof idField === "string" ? idField : null);
+    const { file, tFile, videoId } = prep;
     if (!videoId) {
       new import_obsidian16.Notice("YouTube \u52D5\u753B ID \u304C\u5FC5\u8981\u3067\u3059\u3002\u6587\u5B57\u8D77\u3053\u3057\u306E frontmatter \u306B `video: <URL>` \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
       return;
     }
-    const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
-    const notes = extractNotePhrases(content);
-    const results = reconcile(notes, lines, makeDictionaryReadingResolver(this.dictStore)).filter((r) => r.status === "auto" && r.best && r.tStartSec != null);
-    if (!results.length) {
+    const timed = prep.results.filter((r) => r.status === "auto" && r.best && r.tStartSec != null);
+    if (!timed.length) {
       new import_obsidian16.Notice("\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5BFE\u8C61\uFF08auto \u304B\u3064\u6642\u523B\u4ED8\u304D\uFF09\u306E\u7167\u5408\u30B9\u30D1\u30F3\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
       return;
     }
@@ -18002,32 +18007,37 @@ ${summary}
       }
     }
     const base = adapter.getBasePath();
-    new import_obsidian16.Notice(`\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u4E2D\u2026 ${results.length}\u4EF6\uFF08yt-dlp\uFF09`);
+    new import_obsidian16.Notice(`\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u4E2D\u2026 ${timed.length}\u4EF6\uFF08yt-dlp\uFF09`);
+    const present = /* @__PURE__ */ new Set();
     let done = 0, skipped = 0, failed = 0;
     const errors = [];
-    for (const r of results) {
+    for (const r of timed) {
       const req = { videoId, startSec: r.tStartSec };
       const name = clipNameFor(req, active);
       if (this.app.metadataCache.getFirstLinkpathDest(name, "")) {
+        present.add(name);
         skipped++;
         continue;
       }
-      const absPath = `${base}/${folder}/${name}`;
-      const res = await extractClip(req, active, absPath);
+      const res = await extractClip(req, active, `${base}/${folder}/${name}`);
       if (res.ok) {
+        present.add(name);
         done++;
       } else {
         failed++;
         if (errors.length < 3)
-          errors.push(`${name}: ${(_m = res.error) != null ? _m : ""}`);
+          errors.push(`${name}: ${(_a = res.error) != null ? _a : ""}`);
         console.error("[jp-collocations] clip failed:", res.command, "\n", res.error, "\n", res.stderrTail);
       }
     }
+    const written = await this.writeReconCards(file, tFile, videoId, prep.results, present);
+    if (written)
+      await this.app.workspace.getLeaf(false).openFile(written.outFile);
     const tail2 = errors.length ? `
 ${errors.join("\n")}` : "";
     new import_obsidian16.Notice(
-      `\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97: \u2713${done} / \u30B9\u30AD\u30C3\u30D7${skipped} / \u5931\u6557${failed}
-\u300CGenerate\u2026Cards\u300D\u3092\u518D\u5B9F\u884C\u3059\u308B\u3068\u97F3\u58F0\u304C\u57CB\u3081\u8FBC\u307E\u308C\u307E\u3059\u3002${tail2}`,
+      `\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97: \u2713${done} / \u30B9\u30AD\u30C3\u30D7${skipped} / \u5931\u6557${failed}` + (written ? `
+\u30AB\u30FC\u30C9\u66F4\u65B0: ${written.count}\u4EF6\uFF08\u97F3\u58F0\u57CB\u3081\u8FBC\u307F\u6E08\u307F\uFF09` : "") + tail2,
       failed ? 12e3 : 6e3
     );
   }

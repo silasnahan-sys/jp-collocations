@@ -39,7 +39,7 @@ import { SurferBridge } from "./surfer-bridge";
 import { makeRelationsResolver, type RelationsResolver } from "./discourse/relations-resolver";
 import { setGrammarSetResolver } from "./srs/grammar-set-engine";
 import { ContextEngine } from "./context/ContextEngine";
-import { reconcile, parseTranscriptLines, frontmatterSource, extractNotePhrases } from "./notes/pipeline";
+import { reconcile, parseTranscriptLines, frontmatterSource, extractNotePhrases, type ReconciledResult } from "./notes/pipeline";
 import { makeDictionaryReadingResolver } from "./notes/reading-resolver";
 import { LibraryView, JP_RECON_LIBRARY_VIEW_TYPE } from "./ui/LibraryView";
 import { ReconLibrary } from "./notes/recon-library";
@@ -403,52 +403,13 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "generate-recon-cards",
       name: "Generate Timestamp-Anchored Cards from Notes",
       callback: async () => {
-        const file = this.app.workspace.getActiveFile();
-        if (!file) { new Notice("ノートファイルを開いてください"); return; }
-        const content = await this.app.vault.cachedRead(file);
-
-        const src = frontmatterSource(content);
-        if (!src) { new Notice("frontmatter に `source: [[transcript]]` を追加してください"); return; }
-
-        const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
-        if (!tFile) { new Notice(`文字起こしが見つかりません: ${src}`); return; }
-
-        const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
-        if (!lines.length) { new Notice("文字起こしに行が見つかりません（字幕なし？）"); return; }
-
-        const notes = extractNotePhrases(content);
-        if (!notes.length) { new Notice("照合するメモが見つかりません"); return; }
-
-        const results = reconcile(notes, lines, makeDictionaryReadingResolver(this.dictStore));
-
-        // Resolve the source media's YouTube id from the transcript (or notes) frontmatter.
-        const fm = this.app.metadataCache.getFileCache(tFile)?.frontmatter ?? {};
-        const nfm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-        const idField = fm.videoId ?? fm.video ?? fm.youtube ?? fm.url ?? fm.source_url
-          ?? nfm.videoId ?? nfm.video ?? nfm.youtube ?? nfm.url;
-        const videoId = parseYouTubeId(typeof idField === "string" ? idField : null);
-
-        // Cards view the anchored `-reconciled.md` blocks (block-link target).
-        const anchoredFile = file.path.replace(/\.md$/, "") + "-reconciled.md";
-        const classMap = this.reconLibrary.classMapForFile(anchoredFile);
-        const cards = buildReconCards(results, anchoredFile, blockIdFor, {
-          videoId,
-          transcriptRef: `[[${tFile.basename}]]`,
-          // Resolve a clip by basename anywhere in the vault (clips live in a folder).
-          audio: deepLinkProvider((name) => !!this.app.metadataCache.getFirstLinkpathDest(name, "")),
-          classOf: (id) => classMap.get(id),
-        });
-        if (!cards.length) { new Notice("アンカー可能な照合スパンがありません（要確認のみ？）"); return; }
-
-        const out = renderCardsFile(cards, { transcriptRef: `[[${tFile.basename}]]`, sourceLabel: tFile.basename });
-        const outPath = file.path.replace(/\.md$/, "") + "-cards.md";
-        const existing = this.app.vault.getAbstractFileByPath(outPath);
-        const outFile = existing instanceof TFile
-          ? (await this.app.vault.modify(existing, out), existing)
-          : await this.app.vault.create(outPath, out);
-
-        new Notice(`カード生成: ${cards.length}件${videoId ? "（YouTube リンク付き）" : "（原文リンクのみ）"}`);
-        await this.app.workspace.getLeaf(false).openFile(outFile);
+        const prep = await this.prepareReconcile();
+        if (!prep) return;
+        const { file, tFile, videoId, results } = prep;
+        const written = await this.writeReconCards(file, tFile, videoId, results);
+        if (!written) { new Notice("アンカー可能な照合スパンがありません（要確認のみ？）"); return; }
+        new Notice(`カード生成: ${written.count}件${videoId ? "（YouTube リンク付き）" : "（原文リンクのみ）"}`);
+        await this.app.workspace.getLeaf(false).openFile(written.outFile);
       },
     });
 
@@ -1170,12 +1131,65 @@ export default class JPCollocationsPlugin extends Plugin {
     this.reconLibrary.setClass(entry.blockId, cls);
   }
 
+  /** Shared reconcile prep for the cards + clip commands. Shows a Notice and
+   *  returns null on any failure so callers just `if (!prep) return`. */
+  private async prepareReconcile(): Promise<{ file: TFile; tFile: TFile; videoId: string | null; results: ReconciledResult[] } | null> {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) { new Notice("ノートファイルを開いてください"); return null; }
+    const content = await this.app.vault.cachedRead(file);
+    const src = frontmatterSource(content);
+    if (!src) { new Notice("frontmatter に `source: [[transcript]]` を追加してください"); return null; }
+    const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
+    if (!tFile) { new Notice(`文字起こしが見つかりません: ${src}`); return null; }
+    const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
+    if (!lines.length) { new Notice("文字起こしに行が見つかりません（字幕なし？）"); return null; }
+    const notes = extractNotePhrases(content);
+    if (!notes.length) { new Notice("照合するメモが見つかりません"); return null; }
+    const results = reconcile(notes, lines, makeDictionaryReadingResolver(this.dictStore));
+    return { file, tFile, videoId: this.resolveVideoId(file, tFile), results };
+  }
+
+  /** Resolve the source media's YouTube id from the transcript (or notes) frontmatter. */
+  private resolveVideoId(file: TFile, tFile: TFile): string | null {
+    const fm = this.app.metadataCache.getFileCache(tFile)?.frontmatter ?? {};
+    const nfm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    const idField = fm.videoId ?? fm.video ?? fm.youtube ?? fm.url ?? fm.source_url
+      ?? nfm.videoId ?? nfm.video ?? nfm.youtube ?? nfm.url;
+    return parseYouTubeId(typeof idField === "string" ? idField : null);
+  }
+
+  /** Build + write the `-cards.md` file (DESIGN §11). `freshClips` are clip
+   *  basenames just written to disk that Obsidian may not have indexed yet, so
+   *  the embed resolves immediately after a download. Returns null if no cards. */
+  private async writeReconCards(
+    file: TFile, tFile: TFile, videoId: string | null, results: ReconciledResult[], freshClips?: Set<string>,
+  ): Promise<{ outFile: TFile; count: number } | null> {
+    const anchoredFile = file.path.replace(/\.md$/, "") + "-reconciled.md";
+    const classMap = this.reconLibrary.classMapForFile(anchoredFile);
+    // A clip counts as present if we just wrote it OR Obsidian already indexed it.
+    const localExists = (name: string) =>
+      (freshClips?.has(name) ?? false) || !!this.app.metadataCache.getFirstLinkpathDest(name, "");
+    const cards = buildReconCards(results, anchoredFile, blockIdFor, {
+      videoId,
+      transcriptRef: `[[${tFile.basename}]]`,
+      audio: deepLinkProvider(localExists),
+      classOf: (id) => classMap.get(id),
+    });
+    if (!cards.length) return null;
+    const out = renderCardsFile(cards, { transcriptRef: `[[${tFile.basename}]]`, sourceLabel: tFile.basename });
+    const outPath = file.path.replace(/\.md$/, "") + "-cards.md";
+    const existing = this.app.vault.getAbstractFileByPath(outPath);
+    const outFile = existing instanceof TFile
+      ? (await this.app.vault.modify(existing, out), existing)
+      : await this.app.vault.create(outPath, out);
+    return { outFile, count: cards.length };
+  }
+
   /**
    * DESKTOP-ONLY: download an MP3 clip for each reconciled span via yt-dlp
-   * (DESIGN §12 Tier 1). Opt-in + ToS-gated. Auto-detects yt-dlp/ffmpeg/deno,
-   * writes `clip_<id>_<sec>.mp3` into the audio folder; the card AudioProvider
-   * then embeds them by basename on the next "Generate Cards" run. Never fakes
-   * success — an empty/failed clip is reported, with the command for manual run.
+   * (DESIGN §12 Tier 1), then AUTO-REGENERATE the cards so the clips embed in one
+   * step. Opt-in + ToS-gated. Auto-detects yt-dlp/ffmpeg/deno. Never fakes success
+   * — an empty/failed clip is reported, with the command for a manual run.
    */
   private async downloadReconClips(): Promise<void> {
     if (!Platform.isDesktopApp) { new Notice("音声クリップの取得はデスクトップ版のみ対応です。"); return; }
@@ -1185,27 +1199,13 @@ export default class JPCollocationsPlugin extends Plugin {
     const adapter = this.app.vault.adapter;
     if (!(adapter instanceof FileSystemAdapter)) { new Notice("ローカルファイルシステムが利用できません。"); return; }
 
-    const file = this.app.workspace.getActiveFile();
-    if (!file) { new Notice("ノートファイルを開いてください"); return; }
-    const content = await this.app.vault.cachedRead(file);
-    const src = frontmatterSource(content);
-    if (!src) { new Notice("frontmatter に `source: [[transcript]]` を追加してください"); return; }
-    const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
-    if (!tFile) { new Notice(`文字起こしが見つかりません: ${src}`); return; }
-
-    // A YouTube video id is REQUIRED to download (deep-link-only otherwise).
-    const fm = this.app.metadataCache.getFileCache(tFile)?.frontmatter ?? {};
-    const nfm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
-    const idField = fm.videoId ?? fm.video ?? fm.youtube ?? fm.url ?? fm.source_url
-      ?? nfm.videoId ?? nfm.video ?? nfm.youtube ?? nfm.url;
-    const videoId = parseYouTubeId(typeof idField === "string" ? idField : null);
+    const prep = await this.prepareReconcile();
+    if (!prep) return;
+    const { file, tFile, videoId } = prep;
     if (!videoId) { new Notice("YouTube 動画 ID が必要です。文字起こしの frontmatter に `video: <URL>` を追加してください。"); return; }
 
-    const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
-    const notes = extractNotePhrases(content);
-    const results = reconcile(notes, lines, makeDictionaryReadingResolver(this.dictStore))
-      .filter((r) => r.status === "auto" && r.best && r.tStartSec != null);
-    if (!results.length) { new Notice("ダウンロード対象（auto かつ時刻付き）の照合スパンがありません。"); return; }
+    const timed = prep.results.filter((r) => r.status === "auto" && r.best && r.tStartSec != null);
+    if (!timed.length) { new Notice("ダウンロード対象（auto かつ時刻付き）の照合スパンがありません。"); return; }
 
     // Fill any blank tool paths from auto-detection.
     const det = detectTools();
@@ -1220,16 +1220,17 @@ export default class JPCollocationsPlugin extends Plugin {
     if (!this.app.vault.getAbstractFileByPath(folder)) { try { await this.app.vault.createFolder(folder); } catch { /* exists */ } }
     const base = adapter.getBasePath();
 
-    new Notice(`音声クリップを取得中… ${results.length}件（yt-dlp）`);
+    new Notice(`音声クリップを取得中… ${timed.length}件（yt-dlp）`);
+    const present = new Set<string>();          // clip basenames now on disk (fresh or pre-existing)
     let done = 0, skipped = 0, failed = 0;
     const errors: string[] = [];
-    for (const r of results) {
+    for (const r of timed) {
       const req: ExtractRequest = { videoId, startSec: r.tStartSec as number };
       const name = clipNameFor(req, active);
-      if (this.app.metadataCache.getFirstLinkpathDest(name, "")) { skipped++; continue; }   // already have it
-      const absPath = `${base}/${folder}/${name}`;
-      const res = await extractClip(req, active, absPath);
+      if (this.app.metadataCache.getFirstLinkpathDest(name, "")) { present.add(name); skipped++; continue; }
+      const res = await extractClip(req, active, `${base}/${folder}/${name}`);
       if (res.ok) {
+        present.add(name);
         done++;
       } else {
         failed++;
@@ -1238,9 +1239,15 @@ export default class JPCollocationsPlugin extends Plugin {
       }
     }
 
+    // Auto-regenerate the cards so the just-downloaded clips embed immediately
+    // (passing `present` sidesteps Obsidian's async file-index lag).
+    const written = await this.writeReconCards(file, tFile, videoId, prep.results, present);
+    if (written) await this.app.workspace.getLeaf(false).openFile(written.outFile);
+
     const tail = errors.length ? `\n${errors.join("\n")}` : "";
     new Notice(
-      `クリップ取得: ✓${done} / スキップ${skipped} / 失敗${failed}\n「Generate…Cards」を再実行すると音声が埋め込まれます。${tail}`,
+      `クリップ取得: ✓${done} / スキップ${skipped} / 失敗${failed}` +
+      (written ? `\nカード更新: ${written.count}件（音声埋め込み済み）` : "") + tail,
       failed ? 12000 : 6000,
     );
   }

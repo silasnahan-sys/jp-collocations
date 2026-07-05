@@ -74,6 +74,18 @@ const noVid = buildReconCards(results, ANCHORED, blockIdFor, { videoId: null });
 check(noVid.every((c) => c.back.includes(`![[${ANCHORED}`)), 'block-link present without videoId');
 check(noVid.every((c) => !c.back.includes('youtu.be')), 'no deep-link without videoId (degrade soft)');
 
+// local clip present (auto-regen path) → card embeds ![[clip_<id>_<sec>.mp3]]
+const { deepLinkProvider } = await load('audio-provider.ts');
+const firstAuto = auto[0];
+const clipName = `clip_${VIDEO}_${Math.floor(firstAuto.tStartSec)}.mp3`;
+const withClip = buildReconCards(results, ANCHORED, blockIdFor, {
+  videoId: VIDEO,
+  audio: deepLinkProvider((name) => name === clipName),   // only this one is "downloaded"
+});
+const clipCard = withClip.find((c) => c.back.includes(clipName));
+check(!!clipCard && clipCard.back.includes(`![[${clipName}]]`), `fresh clip embeds ![[${clipName}]]`);
+check(withClip.filter((c) => c.back.includes('.mp3]]')).length === 1, 'only the present clip embeds (others deep-link only)');
+
 console.log(`\n${fail ? '✗' : '✓'} ${n - fail}/${n} anchoring checks pass`);
 
 // show one real card
