@@ -107,6 +107,13 @@ export function buildYtdlpArgs(
     '-x', '--audio-format', cfg.audioFormat,
     '--no-playlist',
     '--no-part',
+    // Stall guards: abort a wedged network read, cap retries, quiet progress, and
+    // never read a user config that might add interactive/hanging behaviour.
+    '--socket-timeout', '30',
+    '--retries', '3',
+    '--fragment-retries', '3',
+    '--no-progress',
+    '--ignore-config',
     '-o', outPath,
     `https://youtu.be/${req.videoId}`,
   );
@@ -168,24 +175,37 @@ interface SpawnedProc {
   stdout: { on(ev: 'data', cb: (b: unknown) => void): void };
   on(ev: 'error', cb: (e: Error) => void): void;
   on(ev: 'close', cb: (code: number | null) => void): void;
+  kill(signal?: string): void;
 }
 
-/** Run a binary, resolving with {code, stderr}. Rejects only on spawn failure. */
-function run(bin: string, args: string[]): Promise<{ code: number | null; stderr: string; stdout: string }> {
+/** Hard wall-clock cap per child process. A stalled yt-dlp is killed and reported
+ *  as a failure so it can never freeze the whole batch. */
+const RUN_TIMEOUT_MS = 150_000;
+
+/** Run a binary, resolving with {code, stderr}. Rejects only on spawn failure.
+ *  Ignores stdin (so the child can't block waiting for input) and self-kills on
+ *  timeout (resolving with a synthetic failure code, never hanging). */
+function run(bin: string, args: string[], timeoutMs = RUN_TIMEOUT_MS): Promise<{ code: number | null; stderr: string; stdout: string }> {
   const cp = nodeReq<{ spawn(c: string, a: string[], o: unknown): SpawnedProc }>('child_process');
   return new Promise((resolve, reject) => {
-    let stderr = '', stdout = '';
+    let stderr = '', stdout = '', settled = false;
     let proc: SpawnedProc;
     try {
-      proc = cp.spawn(bin, args, { windowsHide: true });
+      proc = cp.spawn(bin, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
     } catch (e) {
       reject(e instanceof Error ? e : new Error(String(e)));
       return;
     }
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { proc.kill(); } catch { /* already gone */ }
+      resolve({ code: -1, stderr: stderr + `\n[jp-collocations: killed after ${Math.round(timeoutMs / 1000)}s timeout]`, stdout });
+    }, timeoutMs);
     proc.stderr.on('data', (b) => { stderr += String(b); });
     proc.stdout.on('data', (b) => { stdout += String(b); });
-    proc.on('error', (e) => reject(e));
-    proc.on('close', (code) => resolve({ code, stderr, stdout }));
+    proc.on('error', (e) => { if (settled) return; settled = true; clearTimeout(timer); reject(e); });
+    proc.on('close', (code) => { if (settled) return; settled = true; clearTimeout(timer); resolve({ code, stderr, stdout }); });
   });
 }
 

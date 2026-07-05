@@ -174,6 +174,16 @@ function buildYtdlpArgs(req, cfg, outPath) {
     cfg.audioFormat,
     "--no-playlist",
     "--no-part",
+    // Stall guards: abort a wedged network read, cap retries, quiet progress, and
+    // never read a user config that might add interactive/hanging behaviour.
+    "--socket-timeout",
+    "30",
+    "--retries",
+    "3",
+    "--fragment-retries",
+    "3",
+    "--no-progress",
+    "--ignore-config",
     "-o",
     outPath,
     `https://youtu.be/${req.videoId}`
@@ -239,25 +249,49 @@ async function probeBinary(bin, args) {
     return { ok: false, code: null, stdout: "", stderr: "", error: e instanceof Error ? e.message : String(e) };
   }
 }
-function run(bin, args) {
+var RUN_TIMEOUT_MS = 15e4;
+function run(bin, args, timeoutMs = RUN_TIMEOUT_MS) {
   const cp = nodeReq("child_process");
   return new Promise((resolve, reject) => {
-    let stderr = "", stdout = "";
+    let stderr = "", stdout = "", settled = false;
     let proc;
     try {
-      proc = cp.spawn(bin, args, { windowsHide: true });
+      proc = cp.spawn(bin, args, { windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     } catch (e) {
       reject(e instanceof Error ? e : new Error(String(e)));
       return;
     }
+    const timer = setTimeout(() => {
+      if (settled)
+        return;
+      settled = true;
+      try {
+        proc.kill();
+      } catch (e) {
+      }
+      resolve({ code: -1, stderr: stderr + `
+[jp-collocations: killed after ${Math.round(timeoutMs / 1e3)}s timeout]`, stdout });
+    }, timeoutMs);
     proc.stderr.on("data", (b) => {
       stderr += String(b);
     });
     proc.stdout.on("data", (b) => {
       stdout += String(b);
     });
-    proc.on("error", (e) => reject(e));
-    proc.on("close", (code) => resolve({ code, stderr, stdout }));
+    proc.on("error", (e) => {
+      if (settled)
+        return;
+      settled = true;
+      clearTimeout(timer);
+      reject(e);
+    });
+    proc.on("close", (code) => {
+      if (settled)
+        return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code, stderr, stdout });
+    });
   });
 }
 var tail = (s, n = 6) => s.trim().split(/\r?\n/).slice(-n).join("\n");
