@@ -1,7 +1,9 @@
-import { PluginSettingTab, Setting, Notice } from "obsidian";
+import { PluginSettingTab, Setting, Notice, Platform } from "obsidian";
 import type { App } from "obsidian";
+import { detectTools } from "../notes/audio-extractor.ts";
+import { USERSCRIPT_SOURCE } from "../x/mobile-capture.ts";
 import type { Plugin } from "obsidian";
-import type { PluginSettings } from "../types.ts";
+import type { PluginSettings, SpeakerFormat } from "../types.ts";
 import type { CollocationStore } from "../data/CollocationStore.ts";
 import type { HyogenScraper } from "../scraper/HyogenScraper.ts";
 
@@ -61,6 +63,270 @@ export class SettingsTab extends PluginSettingTab {
         });
         t.inputEl.rows = 3;
       });
+
+    // ── TWC Scraper ────────────────────────────────────────────────
+    containerEl.createEl("h3", { text: "筑波ウェブコーパス (TWC)" });
+
+    new Setting(containerEl)
+      .setName("Enable TWC lookup")
+      .setDesc("Fetch collocation profiles from Tsukuba Web Corpus (研究・教育目的のみ)")
+      .addToggle(t => t.setValue(this.settings.twcEnabled).onChange(async v => {
+        this.settings.twcEnabled = v;
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("TWC rate limit (ms)")
+      .setDesc("Minimum milliseconds between TWC requests (default: 3000)")
+      .addSlider(s => s.setLimits(2000, 15000, 500).setValue(this.settings.twcRateLimit)
+        .setDynamicTooltip().onChange(async v => {
+          this.settings.twcRateLimit = v;
+          await this.onSettingsChange();
+        }));
+
+    // ── X (Twitter) Search ─────────────────────────────────────────
+    containerEl.createEl("h3", { text: "X (Twitter) 検索辞書" });
+    containerEl.createEl("p", {
+      text: "ログイン中の x.com から auth_token と ct0 クッキーを貼り付けてください（端末内のみ保存）。" +
+        "詳細はサイドバーの 𝕏 ビューの 🔑 からも設定できます。非公式エンドポイントを使うため、ToS とレート制限にご注意ください。",
+      cls: "setting-item-description",
+    });
+
+    new Setting(containerEl)
+      .setName("ライブ取得を有効化")
+      .setDesc("オフにするとキャッシュ済みコーパスのみで検索します")
+      .addToggle(t => t.setValue(this.settings.x.enabled).onChange(async v => {
+        this.settings.x.enabled = v;
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("auth_token クッキー")
+      .addText(t => {
+        t.setValue(this.settings.x.authToken).onChange(async v => {
+          this.settings.x.authToken = v.trim();
+          await this.onSettingsChange();
+        });
+        t.inputEl.type = "password";
+      });
+
+    new Setting(containerEl)
+      .setName("ct0 (csrf) クッキー")
+      .addText(t => {
+        t.setValue(this.settings.x.csrfToken).onChange(async v => {
+          this.settings.x.csrfToken = v.trim();
+          await this.onSettingsChange();
+        });
+        t.inputEl.type = "password";
+      });
+
+    new Setting(containerEl)
+      .setName("既定の言語フィルタ")
+      .setDesc("新規検索の lang:（空欄で全言語）")
+      .addText(t => t.setValue(this.settings.x.defaultLang).onChange(async v => {
+        this.settings.x.defaultLang = v.trim();
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("既定のタブ")
+      .addDropdown(d => {
+        d.addOption("Latest", "最新");
+        d.addOption("Top", "話題");
+        d.addOption("Media", "メディア");
+        d.setValue(this.settings.x.defaultProduct).onChange(async v => {
+          this.settings.x.defaultProduct = v as PluginSettings["x"]["defaultProduct"];
+          await this.onSettingsChange();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("1ページの取得件数")
+      .addSlider(s => s.setLimits(10, 100, 10).setValue(this.settings.x.resultLimit)
+        .setDynamicTooltip().onChange(async v => {
+          this.settings.x.resultLimit = v;
+          await this.onSettingsChange();
+        }));
+
+    new Setting(containerEl)
+      .setName("ノート書き出しフォルダ")
+      .setDesc("ツイートをノート化する Vault フォルダ（プラグインが自動索引）")
+      .addText(t => t.setValue(this.settings.x.exportFolder).onChange(async v => {
+        this.settings.x.exportFolder = v.trim() || "X Tweets";
+        await this.onSettingsChange();
+      }));
+
+    // ── iOS co-occurrence lookup (Orion userscript) ────────────────
+    const xMobile = containerEl.createEl("details");
+    xMobile.createEl("summary", { text: "iOS 共起チェック（Orion ユーザースクリプト）" });
+    xMobile.createEl("p", {
+      text:
+        "iPhone/iPad で「この2語、一緒に使われてる?」を即チェックする経路。x.com の SPA は埋め込み" +
+        "WebView では動かないため、ログイン済みの実ブラウザ Orion で検索を開き、ユーザースクリプトが" +
+        "結果を自動取得して Obsidian に戻します。X の署名(anti-bot)を回避でき、確実に新着を取得できます。",
+      cls: "setting-item-description",
+    });
+    xMobile.createEl("p", {
+      text:
+        "セットアップ: ① Orion を既定ブラウザに設定（設定→アプリ→Orion→デフォルトのブラウザApp）→ " +
+        "② 下のボタンでユーザースクリプトをコピー → ③ Orion にユーザースクリプト管理（Violentmonkey 等、" +
+        "または Orion 内蔵のユーザースクリプト）で新規作成し貼り付け → ④ Orion で x.com に一度ログイン。" +
+        "以降は Obsidian のコマンド「X 共起チェック（モバイル）」で、2語をコピー(or 選択)して実行するだけ。",
+      cls: "setting-item-description",
+    });
+
+    new Setting(xMobile)
+      .setName("ユーザースクリプトを書き出す / コピー")
+      .setDesc("Vault 直下に JP-X-Cooc.user.js を作成し、内容をクリップボードにもコピーします")
+      .addButton(b => b.setButtonText("Vault に書き出す").onClick(async () => {
+        const name = "JP-X-Cooc.user.js";
+        try {
+          await this.app.vault.adapter.write(name, USERSCRIPT_SOURCE);
+          new Notice(`書き出しました: ${name}`);
+        } catch (e) {
+          new Notice(`書き出し失敗: ${(e as Error).message}`, 6000);
+        }
+      }))
+      .addButton(b => b.setButtonText("コピー").onClick(async () => {
+        try {
+          await navigator.clipboard.writeText(USERSCRIPT_SOURCE);
+          new Notice("ユーザースクリプトをコピーしました");
+        } catch {
+          new Notice("コピーできませんでした", 5000);
+        }
+      }));
+
+    const xAdv = containerEl.createEl("details");
+    xAdv.createEl("summary", { text: "詳細（X が仕様変更した時のみ）" });
+    new Setting(xAdv)
+      .setName("SearchTimeline queryId")
+      .setDesc("検索が 404/失敗する時はブラウザの devtools から最新値を取得")
+      .addText(t => t.setValue(this.settings.x.searchQueryId).onChange(async v => {
+        this.settings.x.searchQueryId = v.trim();
+        await this.onSettingsChange();
+      }));
+    new Setting(xAdv)
+      .setName("Bearer token")
+      .addText(t => t.setValue(this.settings.x.bearerToken).onChange(async v => {
+        this.settings.x.bearerToken = v.trim();
+        await this.onSettingsChange();
+      }));
+    new Setting(xAdv)
+      .setName("Features JSON")
+      .setDesc("GraphQL feature フラグ。X のエラーが要求するキーをここで調整")
+      .addTextArea(t => {
+        t.setValue(this.settings.x.featuresJson).onChange(async v => {
+          this.settings.x.featuresJson = v.trim();
+          await this.onSettingsChange();
+        });
+        t.inputEl.rows = 4;
+        t.inputEl.style.width = "100%";
+      });
+
+    // ── Audio clips (yt-dlp) — DESKTOP ONLY, DESIGN §12 Tier 1 ─────
+    containerEl.createEl("h3", { text: "音声クリップ (yt-dlp) — デスクトップ限定" });
+    const audio = this.settings.audioExtraction;
+    if (!Platform.isDesktopApp) {
+      containerEl.createEl("p", {
+        text: "この機能はデスクトップ版 Obsidian でのみ動作します（モバイルには child_process がありません）。",
+        cls: "setting-item-description",
+      });
+    }
+    const audioDesc = containerEl.createEl("p", { cls: "setting-item-description" });
+    audioDesc.innerHTML =
+      "照合スパンの時刻から、その一瞬だけの MP3 クリップを取得してカードに埋め込みます（Anki 方式）。<br>" +
+      "<b>要インストール:</b> yt-dlp・ffmpeg・JS ランタイム(deno か node)。" +
+      "<b>注意:</b> YouTube 音声のダウンロードは ToS のグレーゾーンです。本プラグインはダウンローダを同梱・自動インストールしません（個人利用の範囲で自己責任）。";
+
+    new Setting(containerEl)
+      .setName("音声クリップ取得を有効化")
+      .setDesc("オプトイン。オフの間はタイムスタンプの深リンク(youtu.be?t=)のみ。")
+      .addToggle(t => t.setValue(audio.enabled).onChange(async v => {
+        audio.enabled = v;
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("保存フォルダ")
+      .setDesc("クリップ (clip_<id>_<秒>.mp3) の出力先（vault 相対）。")
+      .addText(t => t.setValue(audio.outputFolder).setPlaceholder("JP Audio Clips").onChange(async v => {
+        audio.outputFolder = v.trim() || "JP Audio Clips";
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("クリップ長 (秒)")
+      .setDesc("終了時刻が無いスパンで使う長さ。")
+      .addSlider(s => s.setLimits(4, 40, 1).setValue(audio.clipLengthSec).setDynamicTooltip()
+        .onChange(async v => { audio.clipLengthSec = v; await this.onSettingsChange(); }));
+
+    new Setting(containerEl)
+      .setName("リード秒 (前)")
+      .setDesc("開始の少し前から録るための余白（内容のみ。ファイル名は開始秒基準）。")
+      .addSlider(s => s.setLimits(0, 10, 1).setValue(audio.preRollSec).setDynamicTooltip()
+        .onChange(async v => { audio.preRollSec = v; await this.onSettingsChange(); }));
+
+    new Setting(containerEl)
+      .setName("音声フォーマット")
+      .addDropdown(d => {
+        d.addOption("mp3", "mp3 (Obsidian 再生対応)");
+        d.addOption("m4a", "m4a");
+        d.addOption("opus", "opus");
+        d.setValue(audio.audioFormat).onChange(async v => {
+          audio.audioFormat = v as typeof audio.audioFormat;
+          await this.onSettingsChange();
+        });
+      });
+
+    // Tool paths (auto-detect fills these; blanks fall back to PATH / auto).
+    const status = containerEl.createEl("p", { cls: "setting-item-description" });
+    const renderStatus = (msg: string) => { status.setText(msg); };
+    renderStatus("パス未検出。「自動検出」を押すか、下の欄に手入力してください。");
+
+    let ytComp: { setValue(v: string): unknown } | null = null;
+    let ffComp: { setValue(v: string): unknown } | null = null;
+    let jsComp: { setValue(v: string): unknown } | null = null;
+    new Setting(containerEl)
+      .setName("yt-dlp パス")
+      .setDesc("空欄なら PATH の 'yt-dlp' を使用。")
+      .addText(t => { ytComp = t; t.setValue(audio.ytdlpPath).setPlaceholder("yt-dlp").onChange(async v => {
+        audio.ytdlpPath = v.trim(); await this.onSettingsChange();
+      }); });
+    new Setting(containerEl)
+      .setName("ffmpeg ディレクトリ/バイナリ")
+      .setDesc("空欄なら PATH。winget 版は自動検出できます。")
+      .addText(t => { ffComp = t; t.setValue(audio.ffmpegPath).setPlaceholder("(auto)").onChange(async v => {
+        audio.ffmpegPath = v.trim(); await this.onSettingsChange();
+      }); });
+    new Setting(containerEl)
+      .setName("JS ランタイム")
+      .setDesc("空欄なら deno を自動使用。node の場合 'node:C:\\\\Program Files\\\\nodejs\\\\node.exe' の形式。")
+      .addText(t => { jsComp = t; t.setValue(audio.jsRuntime).setPlaceholder("(deno auto)").onChange(async v => {
+        audio.jsRuntime = v.trim(); await this.onSettingsChange();
+      }); });
+
+    new Setting(containerEl)
+      .setName("ツールを自動検出")
+      .setDesc("yt-dlp・ffmpeg・JS ランタイムを探して上の欄を埋めます。")
+      .addButton(b => b.setButtonText("自動検出").setCta().onClick(async () => {
+        if (!Platform.isDesktopApp) { new Notice("デスクトップ版のみ"); return; }
+        try {
+          const d = detectTools();
+          if (d.ytdlp) audio.ytdlpPath = d.ytdlp;
+          if (d.ffmpeg) audio.ffmpegPath = d.ffmpeg;
+          if (d.jsRuntime) audio.jsRuntime = d.jsRuntime;
+          await this.onSettingsChange();
+          renderStatus(
+            `yt-dlp: ${d.ytdlp || "(PATH)"}\nffmpeg: ${d.ffmpeg || "(PATH)"}\nJS: ${d.jsRuntime || "(deno auto)"}\n— ${d.notes.join(" / ")}`,
+          );
+          ytComp?.setValue(audio.ytdlpPath);
+          ffComp?.setValue(audio.ffmpegPath);
+          jsComp?.setValue(audio.jsRuntime);
+          new Notice("検出しました");
+        } catch (e) {
+          renderStatus(`検出失敗: ${String(e)}`);
+        }
+      }));
 
     // ── Display ────────────────────────────────────────────────────
     containerEl.createEl("h3", { text: "Display" });
@@ -158,6 +424,75 @@ export class SettingsTab extends PluginSettingTab {
       .addButton(b => b.setButtonText("Clear All").setWarning().onClick(async () => {
         await this.store.clearAll();
         new Notice("All data cleared.");
+      }));
+
+    // ── SRS Card Generation ──────────────────────────────────────
+    containerEl.createEl("h3", { text: "SRS Card Generation" });
+
+    new Setting(containerEl)
+      .setName("Tag prefix")
+      .setDesc("Base tag for Spaced Repetition cards (e.g. flashcards/jp)")
+      .addText(t => t.setValue(this.settings.srs.tagPrefix).onChange(async v => {
+        this.settings.srs.tagPrefix = v.trim() || 'flashcards/jp';
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("Speaker format")
+      .setDesc("How to display speakers in discourse chunk cards")
+      .addDropdown(d => {
+        d.addOption("icon", "Icon (🔵🟠🟢🟣)");
+        d.addOption("letter", "Letter (A/B/C/D)");
+        d.addOption("number", "Number (1/2/3/4)");
+        d.setValue(this.settings.srs.speakerFormat).onChange(async v => {
+          this.settings.srs.speakerFormat = v as SpeakerFormat;
+          await this.onSettingsChange();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Include register labels")
+      .addToggle(t => t.setValue(this.settings.srs.includeRegister).onChange(async v => {
+        this.settings.srs.includeRegister = v;
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("Include relation arrows")
+      .addToggle(t => t.setValue(this.settings.srs.includeRelations).onChange(async v => {
+        this.settings.srs.includeRelations = v;
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("Include English glosses")
+      .addToggle(t => t.setValue(this.settings.srs.includeEnglish).onChange(async v => {
+        this.settings.srs.includeEnglish = v;
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("Include timestamps")
+      .addToggle(t => t.setValue(this.settings.srs.includeTimestamps).onChange(async v => {
+        this.settings.srs.includeTimestamps = v;
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("Max bits per card")
+      .setDesc("Maximum discourse chunks (spoiler blocks) per card")
+      .addSlider(s => s.setLimits(2, 12, 1).setValue(this.settings.srs.maxBitsPerCard)
+        .setDynamicTooltip().onChange(async v => {
+          this.settings.srs.maxBitsPerCard = v;
+          await this.onSettingsChange();
+        }));
+
+    new Setting(containerEl)
+      .setName("Output folder")
+      .setDesc("Folder for generated SRS card files")
+      .addText(t => t.setValue(this.settings.srs.outputFolder).onChange(async v => {
+        this.settings.srs.outputFolder = v.trim() || 'JP SRS Cards';
+        await this.onSettingsChange();
       }));
 
     // ── Stats ──────────────────────────────────────────────────────

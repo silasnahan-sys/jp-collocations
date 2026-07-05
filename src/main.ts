@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, Notice, TFile } from "obsidian";
+import { Plugin, WorkspaceLeaf, Notice, TFile, Platform, FileSystemAdapter, normalizePath } from "obsidian";
 import type { PluginSettings } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { CollocationStore } from "./data/CollocationStore";
@@ -46,6 +46,7 @@ import { ReconLibrary } from "./notes/recon-library";
 import { renderAnchoredFile, buildEntries, retypeInMarkdown, blockIdFor, type LibraryEntry } from "./notes/annotate";
 import { buildReconCards, renderCardsFile } from "./notes/cards";
 import { parseYouTubeId, deepLinkProvider } from "./notes/audio-provider";
+import { extractClip, detectTools, clipNameFor, type ExtractRequest } from "./notes/audio-extractor";
 import type { NoteClass } from "./notes/note-types";
 import type {
   SurferCollocationEntry,
@@ -433,7 +434,8 @@ export default class JPCollocationsPlugin extends Plugin {
         const cards = buildReconCards(results, anchoredFile, blockIdFor, {
           videoId,
           transcriptRef: `[[${tFile.basename}]]`,
-          audio: deepLinkProvider((p) => !!this.app.vault.getAbstractFileByPath(p)),
+          // Resolve a clip by basename anywhere in the vault (clips live in a folder).
+          audio: deepLinkProvider((name) => !!this.app.metadataCache.getFirstLinkpathDest(name, "")),
           classOf: (id) => classMap.get(id),
         });
         if (!cards.length) { new Notice("アンカー可能な照合スパンがありません（要確認のみ？）"); return; }
@@ -448,6 +450,13 @@ export default class JPCollocationsPlugin extends Plugin {
         new Notice(`カード生成: ${cards.length}件${videoId ? "（YouTube リンク付き）" : "（原文リンクのみ）"}`);
         await this.app.workspace.getLeaf(false).openFile(outFile);
       },
+    });
+
+    // Desktop-only: download MP3 clips for the reconciled spans (DESIGN §12 Tier 1).
+    this.addCommand({
+      id: "download-recon-audio-clips",
+      name: "Download Audio Clips for Reconciled Notes (desktop, yt-dlp)",
+      callback: () => this.downloadReconClips(),
     });
 
     // Dictionary commands
@@ -1159,6 +1168,81 @@ export default class JPCollocationsPlugin extends Plugin {
       if (next !== md) await this.app.vault.modify(f, next);
     }
     this.reconLibrary.setClass(entry.blockId, cls);
+  }
+
+  /**
+   * DESKTOP-ONLY: download an MP3 clip for each reconciled span via yt-dlp
+   * (DESIGN §12 Tier 1). Opt-in + ToS-gated. Auto-detects yt-dlp/ffmpeg/deno,
+   * writes `clip_<id>_<sec>.mp3` into the audio folder; the card AudioProvider
+   * then embeds them by basename on the next "Generate Cards" run. Never fakes
+   * success — an empty/failed clip is reported, with the command for manual run.
+   */
+  private async downloadReconClips(): Promise<void> {
+    if (!Platform.isDesktopApp) { new Notice("音声クリップの取得はデスクトップ版のみ対応です。"); return; }
+    const cfg = this.settings.audioExtraction;
+    if (!cfg.enabled) { new Notice("設定 →「音声クリップ (yt-dlp)」を有効にしてください（yt-dlp/ffmpeg 必須・YouTube ToS 注意）。"); return; }
+
+    const adapter = this.app.vault.adapter;
+    if (!(adapter instanceof FileSystemAdapter)) { new Notice("ローカルファイルシステムが利用できません。"); return; }
+
+    const file = this.app.workspace.getActiveFile();
+    if (!file) { new Notice("ノートファイルを開いてください"); return; }
+    const content = await this.app.vault.cachedRead(file);
+    const src = frontmatterSource(content);
+    if (!src) { new Notice("frontmatter に `source: [[transcript]]` を追加してください"); return; }
+    const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
+    if (!tFile) { new Notice(`文字起こしが見つかりません: ${src}`); return; }
+
+    // A YouTube video id is REQUIRED to download (deep-link-only otherwise).
+    const fm = this.app.metadataCache.getFileCache(tFile)?.frontmatter ?? {};
+    const nfm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+    const idField = fm.videoId ?? fm.video ?? fm.youtube ?? fm.url ?? fm.source_url
+      ?? nfm.videoId ?? nfm.video ?? nfm.youtube ?? nfm.url;
+    const videoId = parseYouTubeId(typeof idField === "string" ? idField : null);
+    if (!videoId) { new Notice("YouTube 動画 ID が必要です。文字起こしの frontmatter に `video: <URL>` を追加してください。"); return; }
+
+    const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
+    const notes = extractNotePhrases(content);
+    const results = reconcile(notes, lines, makeDictionaryReadingResolver(this.dictStore))
+      .filter((r) => r.status === "auto" && r.best && r.tStartSec != null);
+    if (!results.length) { new Notice("ダウンロード対象（auto かつ時刻付き）の照合スパンがありません。"); return; }
+
+    // Fill any blank tool paths from auto-detection.
+    const det = detectTools();
+    const active = {
+      ...cfg,
+      ytdlpPath: cfg.ytdlpPath || det.ytdlp,
+      ffmpegPath: cfg.ffmpegPath || det.ffmpeg,
+      jsRuntime: cfg.jsRuntime || det.jsRuntime,
+    };
+
+    const folder = normalizePath(cfg.outputFolder || "JP Audio Clips");
+    if (!this.app.vault.getAbstractFileByPath(folder)) { try { await this.app.vault.createFolder(folder); } catch { /* exists */ } }
+    const base = adapter.getBasePath();
+
+    new Notice(`音声クリップを取得中… ${results.length}件（yt-dlp）`);
+    let done = 0, skipped = 0, failed = 0;
+    const errors: string[] = [];
+    for (const r of results) {
+      const req: ExtractRequest = { videoId, startSec: r.tStartSec as number };
+      const name = clipNameFor(req, active);
+      if (this.app.metadataCache.getFirstLinkpathDest(name, "")) { skipped++; continue; }   // already have it
+      const absPath = `${base}/${folder}/${name}`;
+      const res = await extractClip(req, active, absPath);
+      if (res.ok) {
+        done++;
+      } else {
+        failed++;
+        if (errors.length < 3) errors.push(`${name}: ${res.error ?? ""}`);
+        console.error("[jp-collocations] clip failed:", res.command, "\n", res.error, "\n", res.stderrTail);
+      }
+    }
+
+    const tail = errors.length ? `\n${errors.join("\n")}` : "";
+    new Notice(
+      `クリップ取得: ✓${done} / スキップ${skipped} / 失敗${failed}\n「Generate…Cards」を再実行すると音声が埋め込まれます。${tail}`,
+      failed ? 12000 : 6000,
+    );
   }
 
   async openDictionaryView(query?: string): Promise<void> {

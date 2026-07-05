@@ -1,3 +1,8 @@
+import { DEFAULT_X_SETTINGS, type XSettings } from "./x/x-types.ts";
+import { DEFAULT_AUDIO_EXTRACTION, type AudioExtractionConfig } from "./notes/audio-extractor.ts";
+export type { XSettings };
+export type { AudioExtractionConfig };
+
 export enum PartOfSpeech {
   Noun = "名詞",
   Verb = "動詞",
@@ -63,28 +68,67 @@ export interface SearchResult {
   score: number;
 }
 
+export type SpeakerFormat = 'icon' | 'letter' | 'number';
+
+export interface SRSSettings {
+  tagPrefix: string;
+  speakerFormat: SpeakerFormat;
+  includeTimestamps: boolean;
+  includeRegister: boolean;
+  includeRelations: boolean;
+  includeEnglish: boolean;
+  maxBitsPerCard: number;
+  outputFolder: string;
+}
+
 export interface PluginSettings {
   hyogenEnabled: boolean;
   hyogenRateLimit: number;
   hyogenWordList: string[];
+  twcEnabled: boolean;
+  twcRateLimit: number;
   defaultSortOrder: "headword" | "frequency" | "createdAt" | "updatedAt";
   entriesPerPage: number;
   showReadings: boolean;
   fuzzySearchSensitivity: number;
   maxResults: number;
   dataFilePath: string;
+  srs: SRSSettings;
+  readingModeHighlight: boolean;
+  autoIndexOnStartup: boolean;
+  x: XSettings;
+  /** Desktop-only yt-dlp/ffmpeg audio clip extraction (DESIGN §12 Tier 1). */
+  audioExtraction: AudioExtractionConfig;
 }
+
+export const DEFAULT_SRS_SETTINGS: SRSSettings = {
+  tagPrefix: 'flashcards/jp',
+  speakerFormat: 'icon',
+  includeTimestamps: false,
+  includeRegister: true,
+  includeRelations: true,
+  includeEnglish: false,
+  maxBitsPerCard: 6,
+  outputFolder: 'JP SRS Cards',
+};
 
 export const DEFAULT_SETTINGS: PluginSettings = {
   hyogenEnabled: false,
   hyogenRateLimit: 2000,
   hyogenWordList: [],
+  twcEnabled: false,
+  twcRateLimit: 3000,
   defaultSortOrder: "frequency",
   entriesPerPage: 50,
   showReadings: true,
   fuzzySearchSensitivity: 0.6,
   maxResults: 100,
   dataFilePath: "jp-collocations-data.json",
+  srs: { ...DEFAULT_SRS_SETTINGS },
+  readingModeHighlight: true,
+  autoIndexOnStartup: true,
+  x: { ...DEFAULT_X_SETTINGS },
+  audioExtraction: { ...DEFAULT_AUDIO_EXTRACTION },
 };
 
 export interface StoreStats {

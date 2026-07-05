@@ -101,6 +101,235 @@ var DEFAULT_X_SETTINGS = {
   ]
 };
 
+// src/notes/audio-provider.ts
+function parseYouTubeId(s) {
+  if (!s)
+    return null;
+  const str = s.trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(str))
+    return str;
+  const m = str.match(
+    /(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/|\/live\/|\/v\/)([A-Za-z0-9_-]{11})/
+  );
+  return m ? m[1] : null;
+}
+function youtubeDeepLink(videoId, startSec) {
+  if (!videoId)
+    return null;
+  const t = startSec != null && startSec >= 0 ? `?t=${Math.floor(startSec)}` : "";
+  return `https://youtu.be/${videoId}${t}`;
+}
+function clipFileName(videoId, startSec) {
+  return `clip_${videoId}_${Math.floor(startSec)}.mp3`;
+}
+function deepLinkProvider(localExists) {
+  return {
+    resolve(videoId, startSec) {
+      if (videoId && localExists) {
+        const path = clipFileName(videoId, startSec != null ? startSec : 0);
+        if (localExists(path))
+          return { kind: "local", href: path, label: "\u{1F50A} \u97F3\u58F0\u30AF\u30EA\u30C3\u30D7" };
+      }
+      const link = youtubeDeepLink(videoId, startSec);
+      if (link)
+        return { kind: "deeplink", href: link, label: "\u25B6 YouTube" };
+      return { kind: "none", href: "", label: "" };
+    }
+  };
+}
+
+// src/notes/audio-extractor.ts
+var DEFAULT_AUDIO_EXTRACTION = {
+  enabled: false,
+  // opt-in (ToS)
+  ytdlpPath: "",
+  ffmpegPath: "",
+  jsRuntime: "",
+  audioFormat: "mp3",
+  clipLengthSec: 12,
+  preRollSec: 0,
+  outputFolder: "JP Audio Clips"
+};
+function clipWindow(req, cfg) {
+  const start = Math.max(0, Math.floor(req.startSec - Math.max(0, cfg.preRollSec)));
+  const rawEnd = req.endSec != null ? Math.floor(req.endSec) : Math.floor(req.startSec + cfg.clipLengthSec);
+  const end = Math.max(start + 1, rawEnd);
+  return [start, end];
+}
+function buildYtdlpArgs(req, cfg, outPath) {
+  const [start, end] = clipWindow(req, cfg);
+  const args = [];
+  if (cfg.ffmpegPath)
+    args.push("--ffmpeg-location", cfg.ffmpegPath);
+  if (cfg.jsRuntime)
+    args.push("--js-runtimes", cfg.jsRuntime);
+  args.push(
+    "-f",
+    "140/bestaudio[ext=m4a]/bestaudio",
+    // m4a first → clean, precise cuts
+    "--download-sections",
+    `*${start}-${end}`,
+    "-x",
+    "--audio-format",
+    cfg.audioFormat,
+    "--no-playlist",
+    "--no-part",
+    "-o",
+    outPath,
+    `https://youtu.be/${req.videoId}`
+  );
+  return args;
+}
+function commandLine(bin, args) {
+  const q = (s) => /\s/.test(s) ? `"${s}"` : s;
+  return [q(bin || "yt-dlp"), ...args.map(q)].join(" ");
+}
+function nodeReq(mod) {
+  const r = globalThis.require;
+  if (!r)
+    throw new Error("Node require unavailable (mobile / no nodeIntegration)");
+  return r(mod);
+}
+function run(bin, args) {
+  const cp = nodeReq("child_process");
+  return new Promise((resolve, reject) => {
+    let stderr = "", stdout = "";
+    let proc;
+    try {
+      proc = cp.spawn(bin, args, { windowsHide: true });
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)));
+      return;
+    }
+    proc.stderr.on("data", (b) => {
+      stderr += String(b);
+    });
+    proc.stdout.on("data", (b) => {
+      stdout += String(b);
+    });
+    proc.on("error", (e) => reject(e));
+    proc.on("close", (code) => resolve({ code, stderr, stdout }));
+  });
+}
+var tail = (s, n = 6) => s.trim().split(/\r?\n/).slice(-n).join("\n");
+async function probeDuration(ffprobeBin, file) {
+  try {
+    const { stdout } = await run(ffprobeBin, [
+      "-v",
+      "error",
+      "-show_entries",
+      "format=duration",
+      "-of",
+      "default=noprint_wrappers=1:nokey=1",
+      file
+    ]);
+    const d = parseFloat(stdout.trim());
+    return Number.isFinite(d) ? d : 0;
+  } catch (e) {
+    return 0;
+  }
+}
+function ffprobeFrom(ffmpegPath) {
+  if (!ffmpegPath)
+    return "ffprobe";
+  const isBin = /ffmpeg(\.exe)?$/i.test(ffmpegPath);
+  if (isBin)
+    return ffmpegPath.replace(/ffmpeg(\.exe)?$/i, (m) => m.replace("ffmpeg", "ffprobe"));
+  const sep = ffmpegPath.includes("\\") ? "\\" : "/";
+  const exe = ffmpegPath.includes("\\") ? "ffprobe.exe" : "ffprobe";
+  return ffmpegPath.replace(/[\\/]$/, "") + sep + exe;
+}
+async function extractClip(req, cfg, outPath) {
+  const bin = cfg.ytdlpPath || "yt-dlp";
+  const args = buildYtdlpArgs(req, cfg, outPath);
+  const command = commandLine(bin, args);
+  const base = { ok: false, outPath: "", bytes: 0, durationSec: 0, command };
+  let res;
+  try {
+    res = await run(bin, args);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const hint = /ENOENT/.test(msg) ? `yt-dlp \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\uFF08${bin}\uFF09\u3002\u8A2D\u5B9A\u3067\u30D1\u30B9\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002` : msg;
+    return { ...base, error: hint };
+  }
+  const fs = nodeReq("fs");
+  const exists = fs.existsSync(outPath);
+  const bytes = exists ? fs.statSync(outPath).size : 0;
+  if (res.code !== 0 || !exists || bytes < 1024) {
+    const jsHint = /No supported JavaScript runtime/i.test(res.stderr) ? "\nJavaScript \u30E9\u30F3\u30BF\u30A4\u30E0\uFF08deno \u304B node\uFF09\u304C\u5FC5\u8981\u3067\u3059\u3002\u8A2D\u5B9A\u3067 jsRuntime \u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002" : "";
+    return {
+      ...base,
+      error: `yt-dlp \u5931\u6557 (exit ${res.code}, ${bytes}B)${jsHint}`,
+      stderrTail: tail(res.stderr)
+    };
+  }
+  const durationSec = await probeDuration(ffprobeFrom(cfg.ffmpegPath), outPath);
+  return { ok: true, outPath, bytes, durationSec, command };
+}
+function detectTools() {
+  const notes = [];
+  let ytdlp = "", ffmpeg = "", jsRuntime = "";
+  let fs;
+  let path;
+  let os;
+  try {
+    fs = nodeReq("fs");
+    path = nodeReq("path");
+    os = nodeReq("os");
+  } catch (e) {
+    return { ytdlp, ffmpeg, jsRuntime, notes: ["desktop tools unavailable"] };
+  }
+  const home = os.homedir();
+  const exists = (p) => {
+    try {
+      return fs.existsSync(p);
+    } catch (e) {
+      return false;
+    }
+  };
+  const wingetLinks = path.join(home, "AppData", "Local", "Microsoft", "WinGet", "Links");
+  const ytCand = path.join(wingetLinks, "yt-dlp.exe");
+  ytdlp = exists(ytCand) ? ytCand : "";
+  if (!ytdlp)
+    notes.push("yt-dlp: bare PATH lookup (install: winget install yt-dlp.yt-dlp)");
+  const pkgRoot = path.join(home, "AppData", "Local", "Microsoft", "WinGet", "Packages");
+  try {
+    for (const d of fs.readdirSync(pkgRoot)) {
+      if (!/FFmpeg/i.test(d))
+        continue;
+      const inner = path.join(pkgRoot, d);
+      for (const sub of fs.readdirSync(inner)) {
+        const binDir = path.join(inner, sub, "bin");
+        if (exists(path.join(binDir, "ffmpeg.exe"))) {
+          ffmpeg = binDir;
+          break;
+        }
+      }
+      if (ffmpeg)
+        break;
+    }
+  } catch (e) {
+  }
+  if (!ffmpeg)
+    notes.push("ffmpeg: not found in winget dir; relying on PATH");
+  const denoCand = path.join(wingetLinks, "deno.exe");
+  if (exists(denoCand)) {
+    notes.push("deno present \u2192 yt-dlp auto-detects it (no jsRuntime needed)");
+  } else {
+    const nodeCand = "C:\\Program Files\\nodejs\\node.exe";
+    if (exists(nodeCand)) {
+      jsRuntime = `node:${nodeCand}`;
+      notes.push("using node as JS runtime");
+    } else
+      notes.push("no JS runtime found \u2014 install deno (winget install DenoLand.Deno)");
+  }
+  return { ytdlp, ffmpeg, jsRuntime, notes };
+}
+function clipNameFor(req, cfg) {
+  const name = clipFileName(req.videoId, Math.floor(req.startSec));
+  return cfg.audioFormat === "mp3" ? name : name.replace(/\.mp3$/, `.${cfg.audioFormat}`);
+}
+
 // src/types.ts
 var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
   PartOfSpeech2["Noun"] = "\u540D\u8A5E";
@@ -143,7 +372,8 @@ var DEFAULT_SETTINGS = {
   srs: { ...DEFAULT_SRS_SETTINGS },
   readingModeHighlight: true,
   autoIndexOnStartup: true,
-  x: { ...DEFAULT_X_SETTINGS }
+  x: { ...DEFAULT_X_SETTINGS },
+  audioExtraction: { ...DEFAULT_AUDIO_EXTRACTION }
 };
 
 // src/data/seed-data.ts
@@ -9629,6 +9859,98 @@ var SettingsTab = class extends import_obsidian7.PluginSettingTab {
       t.inputEl.rows = 4;
       t.inputEl.style.width = "100%";
     });
+    containerEl.createEl("h3", { text: "\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7 (yt-dlp) \u2014 \u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u9650\u5B9A" });
+    const audio = this.settings.audioExtraction;
+    if (!import_obsidian7.Platform.isDesktopApp) {
+      containerEl.createEl("p", {
+        text: "\u3053\u306E\u6A5F\u80FD\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248 Obsidian \u3067\u306E\u307F\u52D5\u4F5C\u3057\u307E\u3059\uFF08\u30E2\u30D0\u30A4\u30EB\u306B\u306F child_process \u304C\u3042\u308A\u307E\u305B\u3093\uFF09\u3002",
+        cls: "setting-item-description"
+      });
+    }
+    const audioDesc = containerEl.createEl("p", { cls: "setting-item-description" });
+    audioDesc.innerHTML = "\u7167\u5408\u30B9\u30D1\u30F3\u306E\u6642\u523B\u304B\u3089\u3001\u305D\u306E\u4E00\u77AC\u3060\u3051\u306E MP3 \u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u3057\u3066\u30AB\u30FC\u30C9\u306B\u57CB\u3081\u8FBC\u307F\u307E\u3059\uFF08Anki \u65B9\u5F0F\uFF09\u3002<br><b>\u8981\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB:</b> yt-dlp\u30FBffmpeg\u30FBJS \u30E9\u30F3\u30BF\u30A4\u30E0(deno \u304B node)\u3002<b>\u6CE8\u610F:</b> YouTube \u97F3\u58F0\u306E\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u306F ToS \u306E\u30B0\u30EC\u30FC\u30BE\u30FC\u30F3\u3067\u3059\u3002\u672C\u30D7\u30E9\u30B0\u30A4\u30F3\u306F\u30C0\u30A6\u30F3\u30ED\u30FC\u30C0\u3092\u540C\u68B1\u30FB\u81EA\u52D5\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB\u3057\u307E\u305B\u3093\uFF08\u500B\u4EBA\u5229\u7528\u306E\u7BC4\u56F2\u3067\u81EA\u5DF1\u8CAC\u4EFB\uFF09\u3002";
+    new import_obsidian7.Setting(containerEl).setName("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97\u3092\u6709\u52B9\u5316").setDesc("\u30AA\u30D7\u30C8\u30A4\u30F3\u3002\u30AA\u30D5\u306E\u9593\u306F\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7\u306E\u6DF1\u30EA\u30F3\u30AF(youtu.be?t=)\u306E\u307F\u3002").addToggle((t) => t.setValue(audio.enabled).onChange(async (v) => {
+      audio.enabled = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("\u4FDD\u5B58\u30D5\u30A9\u30EB\u30C0").setDesc("\u30AF\u30EA\u30C3\u30D7 (clip_<id>_<\u79D2>.mp3) \u306E\u51FA\u529B\u5148\uFF08vault \u76F8\u5BFE\uFF09\u3002").addText((t) => t.setValue(audio.outputFolder).setPlaceholder("JP Audio Clips").onChange(async (v) => {
+      audio.outputFolder = v.trim() || "JP Audio Clips";
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("\u30AF\u30EA\u30C3\u30D7\u9577 (\u79D2)").setDesc("\u7D42\u4E86\u6642\u523B\u304C\u7121\u3044\u30B9\u30D1\u30F3\u3067\u4F7F\u3046\u9577\u3055\u3002").addSlider((s) => s.setLimits(4, 40, 1).setValue(audio.clipLengthSec).setDynamicTooltip().onChange(async (v) => {
+      audio.clipLengthSec = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("\u30EA\u30FC\u30C9\u79D2 (\u524D)").setDesc("\u958B\u59CB\u306E\u5C11\u3057\u524D\u304B\u3089\u9332\u308B\u305F\u3081\u306E\u4F59\u767D\uFF08\u5185\u5BB9\u306E\u307F\u3002\u30D5\u30A1\u30A4\u30EB\u540D\u306F\u958B\u59CB\u79D2\u57FA\u6E96\uFF09\u3002").addSlider((s) => s.setLimits(0, 10, 1).setValue(audio.preRollSec).setDynamicTooltip().onChange(async (v) => {
+      audio.preRollSec = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("\u97F3\u58F0\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8").addDropdown((d) => {
+      d.addOption("mp3", "mp3 (Obsidian \u518D\u751F\u5BFE\u5FDC)");
+      d.addOption("m4a", "m4a");
+      d.addOption("opus", "opus");
+      d.setValue(audio.audioFormat).onChange(async (v) => {
+        audio.audioFormat = v;
+        await this.onSettingsChange();
+      });
+    });
+    const status = containerEl.createEl("p", { cls: "setting-item-description" });
+    const renderStatus = (msg) => {
+      status.setText(msg);
+    };
+    renderStatus("\u30D1\u30B9\u672A\u691C\u51FA\u3002\u300C\u81EA\u52D5\u691C\u51FA\u300D\u3092\u62BC\u3059\u304B\u3001\u4E0B\u306E\u6B04\u306B\u624B\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+    let ytComp = null;
+    let ffComp = null;
+    let jsComp = null;
+    new import_obsidian7.Setting(containerEl).setName("yt-dlp \u30D1\u30B9").setDesc("\u7A7A\u6B04\u306A\u3089 PATH \u306E 'yt-dlp' \u3092\u4F7F\u7528\u3002").addText((t) => {
+      ytComp = t;
+      t.setValue(audio.ytdlpPath).setPlaceholder("yt-dlp").onChange(async (v) => {
+        audio.ytdlpPath = v.trim();
+        await this.onSettingsChange();
+      });
+    });
+    new import_obsidian7.Setting(containerEl).setName("ffmpeg \u30C7\u30A3\u30EC\u30AF\u30C8\u30EA/\u30D0\u30A4\u30CA\u30EA").setDesc("\u7A7A\u6B04\u306A\u3089 PATH\u3002winget \u7248\u306F\u81EA\u52D5\u691C\u51FA\u3067\u304D\u307E\u3059\u3002").addText((t) => {
+      ffComp = t;
+      t.setValue(audio.ffmpegPath).setPlaceholder("(auto)").onChange(async (v) => {
+        audio.ffmpegPath = v.trim();
+        await this.onSettingsChange();
+      });
+    });
+    new import_obsidian7.Setting(containerEl).setName("JS \u30E9\u30F3\u30BF\u30A4\u30E0").setDesc("\u7A7A\u6B04\u306A\u3089 deno \u3092\u81EA\u52D5\u4F7F\u7528\u3002node \u306E\u5834\u5408 'node:C:\\\\Program Files\\\\nodejs\\\\node.exe' \u306E\u5F62\u5F0F\u3002").addText((t) => {
+      jsComp = t;
+      t.setValue(audio.jsRuntime).setPlaceholder("(deno auto)").onChange(async (v) => {
+        audio.jsRuntime = v.trim();
+        await this.onSettingsChange();
+      });
+    });
+    new import_obsidian7.Setting(containerEl).setName("\u30C4\u30FC\u30EB\u3092\u81EA\u52D5\u691C\u51FA").setDesc("yt-dlp\u30FBffmpeg\u30FBJS \u30E9\u30F3\u30BF\u30A4\u30E0\u3092\u63A2\u3057\u3066\u4E0A\u306E\u6B04\u3092\u57CB\u3081\u307E\u3059\u3002").addButton((b) => b.setButtonText("\u81EA\u52D5\u691C\u51FA").setCta().onClick(async () => {
+      if (!import_obsidian7.Platform.isDesktopApp) {
+        new import_obsidian7.Notice("\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u306E\u307F");
+        return;
+      }
+      try {
+        const d = detectTools();
+        if (d.ytdlp)
+          audio.ytdlpPath = d.ytdlp;
+        if (d.ffmpeg)
+          audio.ffmpegPath = d.ffmpeg;
+        if (d.jsRuntime)
+          audio.jsRuntime = d.jsRuntime;
+        await this.onSettingsChange();
+        renderStatus(
+          `yt-dlp: ${d.ytdlp || "(PATH)"}
+ffmpeg: ${d.ffmpeg || "(PATH)"}
+JS: ${d.jsRuntime || "(deno auto)"}
+\u2014 ${d.notes.join(" / ")}`
+        );
+        ytComp == null ? void 0 : ytComp.setValue(audio.ytdlpPath);
+        ffComp == null ? void 0 : ffComp.setValue(audio.ffmpegPath);
+        jsComp == null ? void 0 : jsComp.setValue(audio.jsRuntime);
+        new import_obsidian7.Notice("\u691C\u51FA\u3057\u307E\u3057\u305F");
+      } catch (e) {
+        renderStatus(`\u691C\u51FA\u5931\u6557: ${String(e)}`);
+      }
+    }));
     containerEl.createEl("h3", { text: "Display" });
     new import_obsidian7.Setting(containerEl).setName("Default sort order").addDropdown((d) => {
       d.addOption("frequency", "Frequency");
@@ -10360,10 +10682,10 @@ var TextClassifier = class {
     const teVMatch = text.match(/^([\s\S]+?)(て(?:い)?(?:[るみあおい]|ある|いる|みる|おく|しまう|くる))/);
     if (teVMatch && teVMatch[1].length > 0) {
       const head = teVMatch[1];
-      const tail = teVMatch[2];
+      const tail2 = teVMatch[2];
       return {
         headword: head,
-        collocate: tail,
+        collocate: tail2,
         pattern: "V+\u3066+V",
         headwordPOS: "\u52D5\u8A5E" /* Verb */,
         collocatePOS: "\u52D5\u8A5E" /* Verb */,
@@ -15981,17 +16303,17 @@ function toReadingForm(s, readingOf) {
   if (!readingOf)
     return norm;
   let out = "";
-  let run = "";
+  let run2 = "";
   const flush = () => {
-    if (!run)
+    if (!run2)
       return;
-    const r = readingOf(run);
-    out += r != null ? katakanaToHiragana(r) : run;
-    run = "";
+    const r = readingOf(run2);
+    out += r != null ? katakanaToHiragana(r) : run2;
+    run2 = "";
   };
   for (const ch of norm) {
     if (isKanji(ch)) {
-      run += ch;
+      run2 += ch;
     } else {
       flush();
       out += ch;
@@ -16543,43 +16865,6 @@ function retypeInMarkdown(md, blockId, newClass) {
   return md.replace(re, `$1${kw}$3${emoji} $4`);
 }
 
-// src/notes/audio-provider.ts
-function parseYouTubeId(s) {
-  if (!s)
-    return null;
-  const str = s.trim();
-  if (/^[A-Za-z0-9_-]{11}$/.test(str))
-    return str;
-  const m = str.match(
-    /(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/|\/live\/|\/v\/)([A-Za-z0-9_-]{11})/
-  );
-  return m ? m[1] : null;
-}
-function youtubeDeepLink(videoId, startSec) {
-  if (!videoId)
-    return null;
-  const t = startSec != null && startSec >= 0 ? `?t=${Math.floor(startSec)}` : "";
-  return `https://youtu.be/${videoId}${t}`;
-}
-function clipFileName(videoId, startSec) {
-  return `clip_${videoId}_${Math.floor(startSec)}.mp3`;
-}
-function deepLinkProvider(localExists) {
-  return {
-    resolve(videoId, startSec) {
-      if (videoId && localExists) {
-        const path = clipFileName(videoId, startSec != null ? startSec : 0);
-        if (localExists(path))
-          return { kind: "local", href: path, label: "\u{1F50A} \u97F3\u58F0\u30AF\u30EA\u30C3\u30D7" };
-      }
-      const link = youtubeDeepLink(videoId, startSec);
-      if (link)
-        return { kind: "deeplink", href: link, label: "\u25B6 YouTube" };
-      return { kind: "none", href: "", label: "" };
-    }
-  };
-}
-
 // src/notes/cards.ts
 var fmtClock = (s) => s == null ? "??:??" : `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 var BLANK = "\u3010\uFF3F\uFF3F\uFF3F\uFF3F\uFF3F\u3011";
@@ -17005,7 +17290,8 @@ var JPCollocationsPlugin = class extends import_obsidian16.Plugin {
         const cards = buildReconCards(results, anchoredFile, blockIdFor, {
           videoId,
           transcriptRef: `[[${tFile.basename}]]`,
-          audio: deepLinkProvider((p) => !!this.app.vault.getAbstractFileByPath(p)),
+          // Resolve a clip by basename anywhere in the vault (clips live in a folder).
+          audio: deepLinkProvider((name) => !!this.app.metadataCache.getFirstLinkpathDest(name, "")),
           classOf: (id) => classMap.get(id)
         });
         if (!cards.length) {
@@ -17019,6 +17305,11 @@ var JPCollocationsPlugin = class extends import_obsidian16.Plugin {
         new import_obsidian16.Notice(`\u30AB\u30FC\u30C9\u751F\u6210: ${cards.length}\u4EF6${videoId ? "\uFF08YouTube \u30EA\u30F3\u30AF\u4ED8\u304D\uFF09" : "\uFF08\u539F\u6587\u30EA\u30F3\u30AF\u306E\u307F\uFF09"}`);
         await this.app.workspace.getLeaf(false).openFile(outFile);
       }
+    });
+    this.addCommand({
+      id: "download-recon-audio-clips",
+      name: "Download Audio Clips for Reconciled Notes (desktop, yt-dlp)",
+      callback: () => this.downloadReconClips()
     });
     this.addCommand({
       id: "open-dictionary",
@@ -17575,7 +17866,7 @@ ${summary}
     const scheduleNext = () => {
       if (stopped || i >= unindexed.length)
         return;
-      const run = async () => {
+      const run2 = async () => {
         if (stopped)
           return;
         const end = Math.min(i + batchSize, unindexed.length);
@@ -17597,9 +17888,9 @@ ${summary}
         scheduleNext();
       };
       if (typeof window.requestIdleCallback === "function") {
-        window.requestIdleCallback(run, { timeout: 200 });
+        window.requestIdleCallback(run2, { timeout: 200 });
       } else {
-        setTimeout(run, 80);
+        setTimeout(run2, 80);
       }
     };
     scheduleNext();
@@ -17641,6 +17932,104 @@ ${summary}
         await this.app.vault.modify(f, next);
     }
     this.reconLibrary.setClass(entry2.blockId, cls);
+  }
+  /**
+   * DESKTOP-ONLY: download an MP3 clip for each reconciled span via yt-dlp
+   * (DESIGN §12 Tier 1). Opt-in + ToS-gated. Auto-detects yt-dlp/ffmpeg/deno,
+   * writes `clip_<id>_<sec>.mp3` into the audio folder; the card AudioProvider
+   * then embeds them by basename on the next "Generate Cards" run. Never fakes
+   * success — an empty/failed clip is reported, with the command for manual run.
+   */
+  async downloadReconClips() {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
+    if (!import_obsidian16.Platform.isDesktopApp) {
+      new import_obsidian16.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u306E\u53D6\u5F97\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u306E\u307F\u5BFE\u5FDC\u3067\u3059\u3002");
+      return;
+    }
+    const cfg = this.settings.audioExtraction;
+    if (!cfg.enabled) {
+      new import_obsidian16.Notice("\u8A2D\u5B9A \u2192\u300C\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7 (yt-dlp)\u300D\u3092\u6709\u52B9\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08yt-dlp/ffmpeg \u5FC5\u9808\u30FBYouTube ToS \u6CE8\u610F\uFF09\u3002");
+      return;
+    }
+    const adapter = this.app.vault.adapter;
+    if (!(adapter instanceof import_obsidian16.FileSystemAdapter)) {
+      new import_obsidian16.Notice("\u30ED\u30FC\u30AB\u30EB\u30D5\u30A1\u30A4\u30EB\u30B7\u30B9\u30C6\u30E0\u304C\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002");
+      return;
+    }
+    const file = this.app.workspace.getActiveFile();
+    if (!file) {
+      new import_obsidian16.Notice("\u30CE\u30FC\u30C8\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
+      return;
+    }
+    const content = await this.app.vault.cachedRead(file);
+    const src = frontmatterSource(content);
+    if (!src) {
+      new import_obsidian16.Notice("frontmatter \u306B `source: [[transcript]]` \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044");
+      return;
+    }
+    const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
+    if (!tFile) {
+      new import_obsidian16.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${src}`);
+      return;
+    }
+    const fm = (_b = (_a = this.app.metadataCache.getFileCache(tFile)) == null ? void 0 : _a.frontmatter) != null ? _b : {};
+    const nfm = (_d = (_c = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _c.frontmatter) != null ? _d : {};
+    const idField = (_l = (_k = (_j = (_i = (_h = (_g = (_f = (_e = fm.videoId) != null ? _e : fm.video) != null ? _f : fm.youtube) != null ? _g : fm.url) != null ? _h : fm.source_url) != null ? _i : nfm.videoId) != null ? _j : nfm.video) != null ? _k : nfm.youtube) != null ? _l : nfm.url;
+    const videoId = parseYouTubeId(typeof idField === "string" ? idField : null);
+    if (!videoId) {
+      new import_obsidian16.Notice("YouTube \u52D5\u753B ID \u304C\u5FC5\u8981\u3067\u3059\u3002\u6587\u5B57\u8D77\u3053\u3057\u306E frontmatter \u306B `video: <URL>` \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+      return;
+    }
+    const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
+    const notes = extractNotePhrases(content);
+    const results = reconcile(notes, lines, makeDictionaryReadingResolver(this.dictStore)).filter((r) => r.status === "auto" && r.best && r.tStartSec != null);
+    if (!results.length) {
+      new import_obsidian16.Notice("\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5BFE\u8C61\uFF08auto \u304B\u3064\u6642\u523B\u4ED8\u304D\uFF09\u306E\u7167\u5408\u30B9\u30D1\u30F3\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
+      return;
+    }
+    const det = detectTools();
+    const active = {
+      ...cfg,
+      ytdlpPath: cfg.ytdlpPath || det.ytdlp,
+      ffmpegPath: cfg.ffmpegPath || det.ffmpeg,
+      jsRuntime: cfg.jsRuntime || det.jsRuntime
+    };
+    const folder = (0, import_obsidian16.normalizePath)(cfg.outputFolder || "JP Audio Clips");
+    if (!this.app.vault.getAbstractFileByPath(folder)) {
+      try {
+        await this.app.vault.createFolder(folder);
+      } catch (e) {
+      }
+    }
+    const base = adapter.getBasePath();
+    new import_obsidian16.Notice(`\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u4E2D\u2026 ${results.length}\u4EF6\uFF08yt-dlp\uFF09`);
+    let done = 0, skipped = 0, failed = 0;
+    const errors = [];
+    for (const r of results) {
+      const req = { videoId, startSec: r.tStartSec };
+      const name = clipNameFor(req, active);
+      if (this.app.metadataCache.getFirstLinkpathDest(name, "")) {
+        skipped++;
+        continue;
+      }
+      const absPath = `${base}/${folder}/${name}`;
+      const res = await extractClip(req, active, absPath);
+      if (res.ok) {
+        done++;
+      } else {
+        failed++;
+        if (errors.length < 3)
+          errors.push(`${name}: ${(_m = res.error) != null ? _m : ""}`);
+        console.error("[jp-collocations] clip failed:", res.command, "\n", res.error, "\n", res.stderrTail);
+      }
+    }
+    const tail2 = errors.length ? `
+${errors.join("\n")}` : "";
+    new import_obsidian16.Notice(
+      `\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97: \u2713${done} / \u30B9\u30AD\u30C3\u30D7${skipped} / \u5931\u6557${failed}
+\u300CGenerate\u2026Cards\u300D\u3092\u518D\u5B9F\u884C\u3059\u308B\u3068\u97F3\u58F0\u304C\u57CB\u3081\u8FBC\u307E\u308C\u307E\u3059\u3002${tail2}`,
+      failed ? 12e3 : 6e3
+    );
   }
   async openDictionaryView(query) {
     var _a;
