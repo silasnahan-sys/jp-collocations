@@ -46,7 +46,7 @@ import { ReconLibrary } from "./notes/recon-library";
 import { renderAnchoredFile, buildEntries, retypeInMarkdown, blockIdFor, type LibraryEntry } from "./notes/annotate";
 import { buildReconCards, renderCardsFile } from "./notes/cards";
 import { parseYouTubeId, deepLinkProvider } from "./notes/audio-provider";
-import { extractClip, detectTools, clipNameFor, nodeRuntimeAvailable, type ExtractRequest } from "./notes/audio-extractor";
+import { extractClip, detectTools, clipNameFor, nodeRuntimeAvailable, requireStrategy, probeBinary, type ExtractRequest } from "./notes/audio-extractor";
 import type { NoteClass } from "./notes/note-types";
 import type {
   SurferCollocationEntry,
@@ -418,6 +418,13 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "download-recon-audio-clips",
       name: "Download Audio Clips for Reconciled Notes (desktop, yt-dlp)",
       callback: () => this.downloadReconClips(),
+    });
+
+    // Diagnostics: write an environment/tools report so failures are visible.
+    this.addCommand({
+      id: "diagnose-audio-tools",
+      name: "Diagnose Audio Tools (writes a report)",
+      callback: () => this.diagnoseAudioTools(),
     });
 
     // Dictionary commands
@@ -1191,6 +1198,54 @@ export default class JPCollocationsPlugin extends Plugin {
       ? (await this.app.vault.modify(existing, out), existing)
       : await this.app.vault.create(outPath, out);
     return { outFile, count: cards.length };
+  }
+
+  /** Write an environment + tools report to the vault. Independent of the
+   *  reconcile pipeline, so it always produces a pasteable artifact telling us
+   *  exactly why the download command bails (runtime, enable, paths, or yt-dlp). */
+  private async diagnoseAudioTools(): Promise<void> {
+    const cfg = this.settings.audioExtraction;
+    const L: string[] = ["# 音声ツール診断 (audio tools diagnostic)", ""];
+    L.push(`- Platform.isDesktopApp: **${Platform.isDesktopApp}**`);
+    L.push(`- nodeRuntimeAvailable: **${nodeRuntimeAvailable()}** (require strategy: \`${requireStrategy()}\`)`);
+    const adapter = this.app.vault.adapter;
+    L.push(`- FileSystemAdapter: **${adapter instanceof FileSystemAdapter}**`);
+    L.push(`- setting enabled: **${cfg.enabled}**`);
+    L.push(`- output folder: \`${cfg.outputFolder}\``);
+    L.push(`- configured paths: ytdlp=\`${cfg.ytdlpPath || "(blank)"}\` ffmpeg=\`${cfg.ffmpegPath || "(blank)"}\` js=\`${cfg.jsRuntime || "(blank)"}\``);
+
+    let det: ReturnType<typeof detectTools> | null = null;
+    try {
+      det = detectTools();
+      L.push(`- detectTools: ytdlp=\`${det.ytdlp || "(none)"}\` ffmpeg=\`${det.ffmpeg || "(none)"}\` js=\`${det.jsRuntime || "(deno auto)"}\``);
+      L.push(`  - notes: ${det.notes.join(" / ")}`);
+    } catch (e) {
+      L.push(`- detectTools THREW: \`${String(e)}\``);
+    }
+
+    // Actually try to run the tools.
+    const ytBin = cfg.ytdlpPath || det?.ytdlp || "yt-dlp";
+    const yv = await probeBinary(ytBin, ["--version"]);
+    L.push("", `## yt-dlp probe (\`${ytBin} --version\`)`, `- ok: **${yv.ok}** code: ${yv.code}`, `- stdout: \`${yv.stdout}\``, `- stderr/err: \`${yv.stderr || yv.error || ""}\``);
+
+    const ffBin = cfg.ffmpegPath ? (cfg.ffmpegPath.replace(/[\\/]$/, "") + "/ffmpeg") : (det?.ffmpeg ? det.ffmpeg + "/ffmpeg" : "ffmpeg");
+    const fv = await probeBinary(ffBin, ["-version"]);
+    L.push("", `## ffmpeg probe (\`${ffBin} -version\`)`, `- ok: **${fv.ok}** code: ${fv.code}`, `- stdout: \`${fv.stdout.split("\n")[0] || ""}\``, `- stderr/err: \`${fv.stderr || fv.error || ""}\``);
+
+    const folder = normalizePath(cfg.outputFolder || "JP Audio Clips");
+    if (!this.app.vault.getAbstractFileByPath(folder)) { try { await this.app.vault.createFolder(folder); } catch { /* exists */ } }
+    const path = `${folder}/_diagnostics.md`;
+    const body = L.join("\n");
+    const ex = this.app.vault.getAbstractFileByPath(path);
+    let outFile: TFile;
+    try {
+      outFile = ex instanceof TFile ? (await this.app.vault.modify(ex, body), ex) : await this.app.vault.create(path, body);
+      await this.app.workspace.getLeaf(false).openFile(outFile);
+    } catch (e) {
+      new Notice(`診断ファイルの書き込みに失敗: ${String(e)}\n${body.slice(0, 300)}`, 15000);
+      return;
+    }
+    new Notice(`診断レポートを書き出しました: ${path}`, 6000);
   }
 
   /**

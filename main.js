@@ -214,6 +214,31 @@ function nodeRuntimeAvailable() {
     return false;
   }
 }
+function requireStrategy() {
+  try {
+    if (typeof eval("require") === "function")
+      return "direct-eval";
+  } catch (e) {
+  }
+  try {
+    if (typeof (0, eval)("require") === "function")
+      return "indirect-eval";
+  } catch (e) {
+  }
+  if (typeof globalThis.require === "function")
+    return "globalThis";
+  if (typeof window !== "undefined" && typeof window.require === "function")
+    return "window";
+  return "none";
+}
+async function probeBinary(bin, args) {
+  try {
+    const { code, stdout, stderr } = await run(bin, args);
+    return { ok: code === 0, code, stdout: stdout.trim(), stderr: stderr.trim() };
+  } catch (e) {
+    return { ok: false, code: null, stdout: "", stderr: "", error: e instanceof Error ? e.message : String(e) };
+  }
+}
 function run(bin, args) {
   const cp = nodeReq("child_process");
   return new Promise((resolve, reject) => {
@@ -17314,6 +17339,11 @@ var JPCollocationsPlugin = class extends import_obsidian16.Plugin {
       callback: () => this.downloadReconClips()
     });
     this.addCommand({
+      id: "diagnose-audio-tools",
+      name: "Diagnose Audio Tools (writes a report)",
+      callback: () => this.diagnoseAudioTools()
+    });
+    this.addCommand({
       id: "open-dictionary",
       name: "Open Dictionary",
       callback: () => this.openDictionaryView()
@@ -18006,6 +18036,54 @@ ${summary}
     const existing = this.app.vault.getAbstractFileByPath(outPath);
     const outFile = existing instanceof import_obsidian16.TFile ? (await this.app.vault.modify(existing, out), existing) : await this.app.vault.create(outPath, out);
     return { outFile, count: cards.length };
+  }
+  /** Write an environment + tools report to the vault. Independent of the
+   *  reconcile pipeline, so it always produces a pasteable artifact telling us
+   *  exactly why the download command bails (runtime, enable, paths, or yt-dlp). */
+  async diagnoseAudioTools() {
+    const cfg = this.settings.audioExtraction;
+    const L = ["# \u97F3\u58F0\u30C4\u30FC\u30EB\u8A3A\u65AD (audio tools diagnostic)", ""];
+    L.push(`- Platform.isDesktopApp: **${import_obsidian16.Platform.isDesktopApp}**`);
+    L.push(`- nodeRuntimeAvailable: **${nodeRuntimeAvailable()}** (require strategy: \`${requireStrategy()}\`)`);
+    const adapter = this.app.vault.adapter;
+    L.push(`- FileSystemAdapter: **${adapter instanceof import_obsidian16.FileSystemAdapter}**`);
+    L.push(`- setting enabled: **${cfg.enabled}**`);
+    L.push(`- output folder: \`${cfg.outputFolder}\``);
+    L.push(`- configured paths: ytdlp=\`${cfg.ytdlpPath || "(blank)"}\` ffmpeg=\`${cfg.ffmpegPath || "(blank)"}\` js=\`${cfg.jsRuntime || "(blank)"}\``);
+    let det = null;
+    try {
+      det = detectTools();
+      L.push(`- detectTools: ytdlp=\`${det.ytdlp || "(none)"}\` ffmpeg=\`${det.ffmpeg || "(none)"}\` js=\`${det.jsRuntime || "(deno auto)"}\``);
+      L.push(`  - notes: ${det.notes.join(" / ")}`);
+    } catch (e) {
+      L.push(`- detectTools THREW: \`${String(e)}\``);
+    }
+    const ytBin = cfg.ytdlpPath || (det == null ? void 0 : det.ytdlp) || "yt-dlp";
+    const yv = await probeBinary(ytBin, ["--version"]);
+    L.push("", `## yt-dlp probe (\`${ytBin} --version\`)`, `- ok: **${yv.ok}** code: ${yv.code}`, `- stdout: \`${yv.stdout}\``, `- stderr/err: \`${yv.stderr || yv.error || ""}\``);
+    const ffBin = cfg.ffmpegPath ? cfg.ffmpegPath.replace(/[\\/]$/, "") + "/ffmpeg" : (det == null ? void 0 : det.ffmpeg) ? det.ffmpeg + "/ffmpeg" : "ffmpeg";
+    const fv = await probeBinary(ffBin, ["-version"]);
+    L.push("", `## ffmpeg probe (\`${ffBin} -version\`)`, `- ok: **${fv.ok}** code: ${fv.code}`, `- stdout: \`${fv.stdout.split("\n")[0] || ""}\``, `- stderr/err: \`${fv.stderr || fv.error || ""}\``);
+    const folder = (0, import_obsidian16.normalizePath)(cfg.outputFolder || "JP Audio Clips");
+    if (!this.app.vault.getAbstractFileByPath(folder)) {
+      try {
+        await this.app.vault.createFolder(folder);
+      } catch (e) {
+      }
+    }
+    const path = `${folder}/_diagnostics.md`;
+    const body = L.join("\n");
+    const ex = this.app.vault.getAbstractFileByPath(path);
+    let outFile;
+    try {
+      outFile = ex instanceof import_obsidian16.TFile ? (await this.app.vault.modify(ex, body), ex) : await this.app.vault.create(path, body);
+      await this.app.workspace.getLeaf(false).openFile(outFile);
+    } catch (e) {
+      new import_obsidian16.Notice(`\u8A3A\u65AD\u30D5\u30A1\u30A4\u30EB\u306E\u66F8\u304D\u8FBC\u307F\u306B\u5931\u6557: ${String(e)}
+${body.slice(0, 300)}`, 15e3);
+      return;
+    }
+    new import_obsidian16.Notice(`\u8A3A\u65AD\u30EC\u30DD\u30FC\u30C8\u3092\u66F8\u304D\u51FA\u3057\u307E\u3057\u305F: ${path}`, 6e3);
   }
   /**
    * DESKTOP-ONLY: download an MP3 clip for each reconciled span via yt-dlp

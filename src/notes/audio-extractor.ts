@@ -144,6 +144,25 @@ export function nodeRuntimeAvailable(): boolean {
   try { return typeof getRequire() === 'function'; } catch { return false; }
 }
 
+/** Which of the require strategies (if any) resolves — for diagnostics. */
+export function requireStrategy(): string {
+  try { if (typeof eval('require') === 'function') return 'direct-eval'; } catch { /* */ }
+  try { if (typeof (0, eval)('require') === 'function') return 'indirect-eval'; } catch { /* */ }
+  if (typeof (globalThis as { require?: unknown }).require === 'function') return 'globalThis';
+  if (typeof window !== 'undefined' && typeof (window as { require?: unknown }).require === 'function') return 'window';
+  return 'none';
+}
+
+/** Spawn `bin args` and capture the result — for a `--version`-style probe. Never throws. */
+export async function probeBinary(bin: string, args: string[]): Promise<{ ok: boolean; code: number | null; stdout: string; stderr: string; error?: string }> {
+  try {
+    const { code, stdout, stderr } = await run(bin, args);
+    return { ok: code === 0, code, stdout: stdout.trim(), stderr: stderr.trim() };
+  } catch (e) {
+    return { ok: false, code: null, stdout: '', stderr: '', error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 interface SpawnedProc {
   stderr: { on(ev: 'data', cb: (b: unknown) => void): void };
   stdout: { on(ev: 'data', cb: (b: unknown) => void): void };
