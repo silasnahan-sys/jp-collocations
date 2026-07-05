@@ -27,7 +27,79 @@ __export(main_exports, {
   default: () => JPCollocationsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian7 = require("obsidian");
+var import_obsidian16 = require("obsidian");
+
+// src/x/x-types.ts
+function emptyQuery(lang = "ja", product = "Latest") {
+  return {
+    allTerms: [],
+    anyTerms: [],
+    noneTerms: [],
+    lang,
+    fromUser: "",
+    toUser: "",
+    minFaves: 0,
+    minRetweets: 0,
+    minReplies: 0,
+    since: "",
+    until: "",
+    product
+  };
+}
+var DEFAULT_X_BEARER = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA";
+var DEFAULT_X_SEARCH_QUERY_ID = "MJpyQGqgklrVl_0X9gNy3A";
+var DEFAULT_X_FEATURES = {
+  rweb_video_screen_enabled: false,
+  profile_label_improvements_pcf_label_in_post_enabled: true,
+  rweb_tipjar_consumption_enabled: true,
+  verified_phone_label_enabled: false,
+  creator_subscriptions_tweet_preview_api_enabled: true,
+  responsive_web_graphql_timeline_navigation_enabled: true,
+  responsive_web_graphql_skip_user_profile_image_extensions_enabled: false,
+  premium_content_api_read_enabled: false,
+  communities_web_enable_tweet_community_results_fetch: true,
+  c9s_tweet_anatomy_moderator_badge_enabled: true,
+  responsive_web_grok_analyze_button_fetch_trends_enabled: false,
+  responsive_web_grok_analyze_post_followups_enabled: true,
+  responsive_web_jetfuel_frame: false,
+  responsive_web_grok_share_attachment_enabled: true,
+  articles_preview_enabled: true,
+  responsive_web_edit_tweet_api_enabled: true,
+  graphql_is_translatable_rweb_tweet_is_translatable_enabled: true,
+  view_counts_everywhere_api_enabled: true,
+  longform_notetweets_consumption_enabled: true,
+  responsive_web_twitter_article_tweet_consumption_enabled: true,
+  tweet_awards_web_tipping_enabled: false,
+  responsive_web_grok_show_grok_translated_post: false,
+  responsive_web_grok_analysis_button_from_backend: true,
+  creator_subscriptions_quote_tweet_preview_enabled: false,
+  freedom_of_speech_not_reach_fetch_enabled: true,
+  standardized_nudges_misinfo: true,
+  tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled: true,
+  longform_notetweets_rich_text_read_enabled: true,
+  longform_notetweets_inline_media_enabled: true,
+  responsive_web_grok_image_annotation_enabled: true,
+  responsive_web_enhance_cards_enabled: false
+};
+var DEFAULT_X_SETTINGS = {
+  enabled: false,
+  authToken: "",
+  csrfToken: "",
+  bearerToken: DEFAULT_X_BEARER,
+  searchQueryId: DEFAULT_X_SEARCH_QUERY_ID,
+  featuresJson: JSON.stringify(DEFAULT_X_FEATURES),
+  defaultLang: "ja",
+  defaultProduct: "Latest",
+  resultLimit: 40,
+  exportFolder: "X Tweets",
+  scriptableScriptName: "JP-X-Cooc",
+  mobileCaptureMax: 40,
+  // Seeded from the CLI's phrases.yaml so the named-query feature is discoverable.
+  savedQueries: [
+    { id: "mou-yahari", label: "\u3082\u3046\u3084\u306F\u308A\uFF08\u8074\u304D\u624B\u4E88\u671F\u306E\u53EC\u559A\uFF09", surfaceOr: ["\u3082\u3046\u3084\u306F\u308A", "\u3082\u3046\u3001\u3084\u306F\u308A"] },
+    { id: "tte-iuno-wa", label: "\u3063\u3066\u3044\u3046\u306E\u306F\uFF08\u8996\u70B9\u30B9\u30C6\u30FC\u30B8\u5C0E\u5165\uFF09", surfaceOr: ["\u3063\u3066\u3044\u3046\u306E\u306F", "\u3066\u3044\u3046\u306E\u306F", "\u3068\u3044\u3046\u306E\u306F"] }
+  ]
+};
 
 // src/types.ts
 var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
@@ -46,16 +118,32 @@ var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
   PartOfSpeech2["Other"] = "\u305D\u306E\u4ED6";
   return PartOfSpeech2;
 })(PartOfSpeech || {});
+var DEFAULT_SRS_SETTINGS = {
+  tagPrefix: "flashcards/jp",
+  speakerFormat: "icon",
+  includeTimestamps: false,
+  includeRegister: true,
+  includeRelations: true,
+  includeEnglish: false,
+  maxBitsPerCard: 6,
+  outputFolder: "JP SRS Cards"
+};
 var DEFAULT_SETTINGS = {
   hyogenEnabled: false,
   hyogenRateLimit: 2e3,
   hyogenWordList: [],
+  twcEnabled: false,
+  twcRateLimit: 3e3,
   defaultSortOrder: "frequency",
   entriesPerPage: 50,
   showReadings: true,
   fuzzySearchSensitivity: 0.6,
   maxResults: 100,
-  dataFilePath: "jp-collocations-data.json"
+  dataFilePath: "jp-collocations-data.json",
+  srs: { ...DEFAULT_SRS_SETTINGS },
+  readingModeHighlight: true,
+  autoIndexOnStartup: true,
+  x: { ...DEFAULT_X_SETTINGS }
 };
 
 // src/data/seed-data.ts
@@ -539,6 +627,10 @@ function toHiragana(str) {
     return String.fromCharCode(ch.charCodeAt(0) - (KATAKANA_START - HIRAGANA_START));
   });
 }
+function isKanji(ch) {
+  const code = ch.charCodeAt(0);
+  return code >= 19968 && code <= 40879 || code >= 13312 && code <= 19903;
+}
 function isJapanese(str) {
   return /[\u3000-\u9fff\uff00-\uffef]/.test(str);
 }
@@ -707,6 +799,9 @@ function romajiToHiragana(input) {
   }
   return result;
 }
+function katakanaToHiragana(str) {
+  return toHiragana(str);
+}
 function levenshtein(a, b) {
   const m = a.length;
   const n = b.length;
@@ -726,6 +821,59 @@ function similarity(a, b) {
   if (maxLen === 0)
     return 1;
   return 1 - levenshtein(a, b) / maxLen;
+}
+function buildNfcOffsetMap(rawText) {
+  const nfcText = rawText.normalize("NFC");
+  const rawFromNfc = new Int32Array(nfcText.length + 1);
+  const nfcFromRaw = new Int32Array(rawText.length + 1);
+  if (rawText === nfcText) {
+    for (let i = 0; i <= nfcText.length; i++) {
+      rawFromNfc[i] = i;
+      nfcFromRaw[i] = i;
+    }
+    return { nfcText, rawFromNfc, nfcFromRaw };
+  }
+  let rawIdx = 0;
+  let nfcIdx = 0;
+  while (rawIdx < rawText.length && nfcIdx < nfcText.length) {
+    let rawChunkLen = 1;
+    let normChunk = rawText.slice(rawIdx, rawIdx + rawChunkLen).normalize("NFC");
+    while (rawIdx + rawChunkLen < rawText.length) {
+      const extendedRaw = rawText.slice(rawIdx, rawIdx + rawChunkLen + 1);
+      const extendedNorm = extendedRaw.normalize("NFC");
+      if (extendedNorm.slice(0, normChunk.length) !== normChunk) {
+        rawChunkLen++;
+        normChunk = extendedNorm;
+      } else {
+        break;
+      }
+    }
+    const nfcChunkLen = normChunk.length;
+    if (nfcText.slice(nfcIdx, nfcIdx + nfcChunkLen) !== normChunk) {
+      const remRaw = rawText.length - rawIdx;
+      const remNfc = nfcText.length - nfcIdx;
+      for (let i = 1; i <= remRaw; i++)
+        nfcFromRaw[rawIdx + i] = nfcIdx + remNfc;
+      for (let i = 1; i <= remNfc; i++)
+        rawFromNfc[nfcIdx + i] = rawIdx + remRaw;
+      rawIdx += remRaw;
+      nfcIdx += remNfc;
+      break;
+    }
+    for (let i = 1; i <= rawChunkLen; i++) {
+      nfcFromRaw[rawIdx + i] = nfcIdx + nfcChunkLen;
+    }
+    for (let i = 1; i <= nfcChunkLen; i++) {
+      rawFromNfc[nfcIdx + i] = rawIdx + rawChunkLen;
+    }
+    rawIdx += rawChunkLen;
+    nfcIdx += nfcChunkLen;
+  }
+  if (rawIdx < rawText.length)
+    nfcFromRaw[rawText.length] = nfcText.length;
+  if (nfcIdx < nfcText.length)
+    rawFromNfc[nfcText.length] = rawText.length;
+  return { nfcText, rawFromNfc, nfcFromRaw };
 }
 
 // src/utils/grammar.ts
@@ -921,9 +1069,9 @@ var SearchEngine = class {
         for (const term of [query, hiraganaQuery, romajiConverted]) {
           if (!term || term.length < 2)
             continue;
-          const sim = similarity(fieldNorm, term);
-          if (sim > 0.5)
-            best = Math.max(best, Math.round(sim * 60));
+          const sim2 = similarity(fieldNorm, term);
+          if (sim2 > 0.5)
+            best = Math.max(best, Math.round(sim2 * 60));
           if (fieldNorm.length >= term.length) {
             for (let i = 0; i <= fieldNorm.length - term.length; i++) {
               const sub = fieldNorm.slice(i, i + term.length);
@@ -1097,12 +1245,294 @@ var HyogenScraper = class {
   }
 };
 
+// src/scraper/TsukubaWebCorpusScraper.ts
+var import_obsidian2 = require("obsidian");
+var DEFAULT_TWC_OPTIONS = {
+  rateLimit: 3e3,
+  maxPerPattern: 20
+};
+var TsukubaWebCorpusScraper = class {
+  constructor(app, store, options) {
+    this.queue = [];
+    this.running = false;
+    this.aborted = false;
+    this.sessionCookie = "";
+    this.app = app;
+    this.store = store;
+    this.options = { ...DEFAULT_TWC_OPTIONS, ...options };
+  }
+  // ── Queue management ─────────────────────────────────────
+  enqueue(words) {
+    for (const w of words) {
+      const trimmed = w.trim();
+      if (trimmed && !this.queue.includes(trimmed)) {
+        this.queue.push(trimmed);
+      }
+    }
+  }
+  abort() {
+    this.aborted = true;
+    this.running = false;
+  }
+  isRunning() {
+    return this.running;
+  }
+  queueLength() {
+    return this.queue.length;
+  }
+  // ── Main run loop ────────────────────────────────────────
+  async run() {
+    var _a, _b, _c, _d, _e, _f, _g, _h;
+    if (this.running)
+      return 0;
+    this.running = true;
+    this.aborted = false;
+    let count = 0;
+    await this.acceptTerms();
+    while (this.queue.length > 0 && !this.aborted) {
+      const word = this.queue.shift();
+      (_b = (_a = this.options).onProgress) == null ? void 0 : _b.call(_a, `TWC: fetching profile for\u300C${word}\u300D...`);
+      try {
+        const profile = await this.fetchWordProfile(word);
+        if (profile) {
+          const entries = this.profileToEntries(profile);
+          for (const entry2 of entries) {
+            this.store.add(entry2);
+            (_d = (_c = this.options).onEntry) == null ? void 0 : _d.call(_c, entry2);
+            count++;
+          }
+          (_f = (_e = this.options).onProgress) == null ? void 0 : _f.call(
+            _e,
+            `TWC: ${word} \u2192 ${entries.length} collocations extracted`
+          );
+        }
+      } catch (err) {
+        (_h = (_g = this.options).onProgress) == null ? void 0 : _h.call(_g, `TWC error for\u300C${word}\u300D: ${err}`);
+      }
+      if (this.queue.length > 0 && !this.aborted) {
+        await this.delay(this.options.rateLimit);
+      }
+    }
+    this.running = false;
+    return count;
+  }
+  // ── Terms acceptance ─────────────────────────────────────
+  async acceptTerms() {
+    var _a;
+    try {
+      const resp = await (0, import_obsidian2.requestUrl)({
+        url: "https://tsukubawebcorpus.jp/search/",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: "accept=true"
+      });
+      const setCookie = (_a = resp.headers) == null ? void 0 : _a["set-cookie"];
+      if (setCookie) {
+        this.sessionCookie = typeof setCookie === "string" ? setCookie.split(";")[0] : "";
+      }
+    } catch (e) {
+    }
+  }
+  // ── Fetch word profile ───────────────────────────────────
+  async fetchWordProfile(word) {
+    const encoded = encodeURIComponent(word);
+    const url = `https://tsukubawebcorpus.jp/search/?q=${encoded}&options=exact`;
+    const headers = {
+      "Accept": "text/html",
+      "Accept-Language": "ja"
+    };
+    if (this.sessionCookie) {
+      headers["Cookie"] = this.sessionCookie;
+    }
+    const response = await (0, import_obsidian2.requestUrl)({ url, method: "GET", headers });
+    if (response.status !== 200) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+    return this.parseProfilePage(response.text, word);
+  }
+  // ── HTML parsing ─────────────────────────────────────────
+  parseProfilePage(html, headword) {
+    var _a, _b;
+    const collocations = [];
+    const readingMatch = html.match(/reading['"]*\s*[:=]\s*['"]?([ぁ-んァ-ヶー]+)/);
+    const reading = (_a = readingMatch == null ? void 0 : readingMatch[1]) != null ? _a : "";
+    const posMatch = html.match(/品詞\s*[:：]\s*([^\s<]+)/);
+    const headwordPOS = (_b = posMatch == null ? void 0 : posMatch[1]) != null ? _b : "\u540D\u8A5E";
+    const freqMatch = html.match(/(?:頻度|freq(?:uency)?)\s*[:：=]\s*([\d,]+)/i);
+    const totalFrequency = freqMatch ? parseInt(freqMatch[1].replace(/,/g, ""), 10) : 0;
+    const sectionPatterns = [
+      { label: /(?:格パターン|particle\s*pattern)/i, patternType: "N+\u683C\u52A9\u8A5E", pos: "\u52D5\u8A5E" },
+      { label: /(?:共起動詞|co-occurring\s*verb)/i, patternType: "N+V", pos: "\u52D5\u8A5E" },
+      { label: /(?:共起名詞|co-occurring\s*noun)/i, patternType: "N+N", pos: "\u540D\u8A5E" },
+      { label: /(?:共起形容詞|co-occurring\s*adj)/i, patternType: "N+Adj", pos: "\u5F62\u5BB9\u8A5E" },
+      { label: /(?:共起副詞|co-occurring\s*adv)/i, patternType: "N+Adv", pos: "\u526F\u8A5E" },
+      { label: /(?:を〜する|をVする)/i, patternType: "N\u3092\u301C", pos: "\u52D5\u8A5E" },
+      { label: /(?:が〜する|がVする)/i, patternType: "N\u304C\u301C", pos: "\u52D5\u8A5E" },
+      { label: /(?:に〜する|にVする)/i, patternType: "N\u306B\u301C", pos: "\u52D5\u8A5E" },
+      { label: /(?:サ変動詞|サ変)/i, patternType: "N+\u3059\u308B", pos: "\u52D5\u8A5E" }
+    ];
+    const tablePattern = /<table[^>]*class="[^"]*(?:result|colloc|profile)[^"]*"[^>]*>([\s\S]*?)<\/table>/gi;
+    let tableMatch;
+    while ((tableMatch = tablePattern.exec(html)) !== null) {
+      const tableContent = tableMatch[1];
+      const contextStart = Math.max(0, tableMatch.index - 200);
+      const context = html.slice(contextStart, tableMatch.index);
+      let patternType = "N+X";
+      let collocatePOS = "\u540D\u8A5E";
+      for (const sp of sectionPatterns) {
+        if (sp.label.test(context) || sp.label.test(tableContent)) {
+          patternType = sp.patternType;
+          collocatePOS = sp.pos;
+          break;
+        }
+      }
+      const rowPattern = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+      let rowMatch;
+      let rowCount = 0;
+      while ((rowMatch = rowPattern.exec(tableContent)) !== null) {
+        if (rowCount >= this.options.maxPerPattern)
+          break;
+        const cells = this.extractCells(rowMatch[1]);
+        if (cells.length < 2)
+          continue;
+        const collocate = cells[0];
+        if (!collocate || collocate.length < 1 || /^[\d,.]+$/.test(collocate))
+          continue;
+        const miScore = cells.length >= 3 ? this.parseNumber(cells[1]) : 0;
+        const frequency = cells.length >= 3 ? this.parseNumber(cells[2]) : this.parseNumber(cells[1]);
+        const examples = [];
+        const exPattern = /<(?:div|span|td)[^>]*class="[^"]*example[^"]*"[^>]*>([\s\S]*?)<\/(?:div|span|td)>/gi;
+        let exMatch;
+        while ((exMatch = exPattern.exec(rowMatch[1])) !== null && examples.length < 3) {
+          const cleaned = this.stripTags(exMatch[1]).trim();
+          if (cleaned.length > 5)
+            examples.push(cleaned);
+        }
+        collocations.push({
+          headword,
+          pattern: patternType,
+          collocate,
+          collocatePOS,
+          miScore,
+          frequency,
+          examples
+        });
+        rowCount++;
+      }
+    }
+    if (collocations.length === 0) {
+      const listPattern = /<li[^>]*>([\s\S]*?)<\/li>/gi;
+      let listMatch;
+      while ((listMatch = listPattern.exec(html)) !== null && collocations.length < 50) {
+        const text = this.stripTags(listMatch[1]).trim();
+        const parts = text.split(/\s{2,}|\t/);
+        if (parts.length >= 1 && parts[0].length > 0) {
+          const collocate = parts[0].replace(/[\d(),]+$/, "").trim();
+          if (collocate.length < 1)
+            continue;
+          collocations.push({
+            headword,
+            pattern: "N+X",
+            collocate,
+            collocatePOS: "\u540D\u8A5E",
+            miScore: parts.length >= 2 ? this.parseNumber(parts[1]) : 0,
+            frequency: parts.length >= 3 ? this.parseNumber(parts[2]) : 0,
+            examples: []
+          });
+        }
+      }
+    }
+    if (collocations.length === 0)
+      return null;
+    return {
+      headword,
+      reading,
+      headwordPOS,
+      totalFrequency,
+      collocations
+    };
+  }
+  // ── Convert profile to store entries ─────────────────────
+  profileToEntries(profile) {
+    const entries = [];
+    const now = Date.now();
+    for (const coll of profile.collocations) {
+      const id = this.store.generateId();
+      entries.push({
+        id,
+        headword: profile.headword,
+        headwordReading: profile.reading,
+        collocate: coll.collocate,
+        fullPhrase: `${profile.headword}${coll.collocate}`,
+        headwordPOS: this.mapPOS(profile.headwordPOS),
+        collocatePOS: this.mapPOS(coll.collocatePOS),
+        pattern: coll.pattern,
+        exampleSentences: coll.examples,
+        source: "import" /* Import */,
+        // TWC-sourced
+        tags: ["twc", `twc-pattern:${coll.pattern}`],
+        notes: coll.miScore > 0 ? `MI=${coll.miScore.toFixed(2)} freq=${coll.frequency}` : "",
+        frequency: Math.min(100, Math.max(1, Math.round(coll.miScore * 10))),
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+    return entries;
+  }
+  // ── Helpers ──────────────────────────────────────────────
+  extractCells(rowHtml) {
+    const cells = [];
+    const cellPattern = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+    let match2;
+    while ((match2 = cellPattern.exec(rowHtml)) !== null) {
+      cells.push(this.stripTags(match2[1]).trim());
+    }
+    return cells;
+  }
+  stripTags(html) {
+    let text = html;
+    let prev = "";
+    while (prev !== text) {
+      prev = text;
+      text = text.replace(/<[^>]*>/g, "");
+    }
+    return text.replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").replace(/&quot;/g, '"').trim();
+  }
+  parseNumber(str) {
+    const cleaned = str.replace(/[,\s]/g, "");
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+  }
+  mapPOS(pos) {
+    var _a;
+    const map = {
+      "\u540D\u8A5E": "\u540D\u8A5E" /* Noun */,
+      "\u52D5\u8A5E": "\u52D5\u8A5E" /* Verb */,
+      "\u3044\u5F62\u5BB9\u8A5E": "\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */,
+      "\u30A4\u5F62\u5BB9\u8A5E": "\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */,
+      "\u306A\u5F62\u5BB9\u8A5E": "\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */,
+      "\u30CA\u5F62\u5BB9\u8A5E": "\u306A\u5F62\u5BB9\u8A5E" /* Adjective_na */,
+      "\u5F62\u5BB9\u8A5E": "\u3044\u5F62\u5BB9\u8A5E" /* Adjective_i */,
+      "\u526F\u8A5E": "\u526F\u8A5E" /* Adverb */,
+      "\u52A9\u8A5E": "\u52A9\u8A5E" /* Particle */,
+      "\u63A5\u7D9A\u8A5E": "\u63A5\u7D9A\u8A5E" /* Conjunction */,
+      "\u611F\u52D5\u8A5E": "\u611F\u52D5\u8A5E" /* Interjection */
+    };
+    return (_a = map[pos]) != null ? _a : "\u305D\u306E\u4ED6" /* Other */;
+  }
+  delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+};
+
 // src/ui/CollocationView.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
 // src/ui/AddEntryModal.ts
-var import_obsidian2 = require("obsidian");
-var AddEntryModal = class extends import_obsidian2.Modal {
+var import_obsidian3 = require("obsidian");
+var AddEntryModal = class extends import_obsidian3.Modal {
   constructor(app, store, onSave, existing) {
     super(app);
     // Form state
@@ -1139,52 +1569,52 @@ var AddEntryModal = class extends import_obsidian2.Modal {
     contentEl.empty();
     contentEl.addClass("jp-col-modal");
     contentEl.createEl("h2", { text: this.existing ? "Edit Entry" : "Add Collocation Entry" });
-    new import_obsidian2.Setting(contentEl).setName("Headword *").setDesc("Main word (e.g. \u98A8)").addText((t) => t.setValue(this.headword).onChange((v) => {
+    new import_obsidian3.Setting(contentEl).setName("Headword *").setDesc("Main word (e.g. \u98A8)").addText((t) => t.setValue(this.headword).onChange((v) => {
       this.headword = v;
       this.headwordPOS = detectPOS(v);
     }));
-    new import_obsidian2.Setting(contentEl).setName("Reading").setDesc("Hiragana reading (e.g. \u304B\u305C)").addText((t) => t.setValue(this.headwordReading).onChange((v) => {
+    new import_obsidian3.Setting(contentEl).setName("Reading").setDesc("Hiragana reading (e.g. \u304B\u305C)").addText((t) => t.setValue(this.headwordReading).onChange((v) => {
       this.headwordReading = v;
     }));
-    new import_obsidian2.Setting(contentEl).setName("Collocate *").setDesc("Collocating word/phrase (e.g. \u304C\u5439\u304F)").addText((t) => t.setValue(this.collocate).onChange((v) => {
+    new import_obsidian3.Setting(contentEl).setName("Collocate *").setDesc("Collocating word/phrase (e.g. \u304C\u5439\u304F)").addText((t) => t.setValue(this.collocate).onChange((v) => {
       this.collocate = v;
     }));
-    new import_obsidian2.Setting(contentEl).setName("Full Phrase").setDesc("Complete phrase (auto-generated if empty)").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
+    new import_obsidian3.Setting(contentEl).setName("Full Phrase").setDesc("Complete phrase (auto-generated if empty)").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
       this.fullPhrase = v;
     }));
-    new import_obsidian2.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
+    new import_obsidian3.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
       for (const pos of Object.values(PartOfSpeech))
         d.addOption(pos, pos);
       d.setValue(this.headwordPOS).onChange((v) => {
         this.headwordPOS = v;
       });
     });
-    new import_obsidian2.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
+    new import_obsidian3.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
       for (const pos of Object.values(PartOfSpeech))
         d.addOption(pos, pos);
       d.setValue(this.collocatePOS).onChange((v) => {
         this.collocatePOS = v;
       });
     });
-    new import_obsidian2.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u304C+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
+    new import_obsidian3.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u304C+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
       this.pattern = v;
     }));
-    new import_obsidian2.Setting(contentEl).setName("Example Sentences").setDesc("One per line").addTextArea((t) => {
+    new import_obsidian3.Setting(contentEl).setName("Example Sentences").setDesc("One per line").addTextArea((t) => {
       t.setValue(this.exampleSentences).onChange((v) => {
         this.exampleSentences = v;
       });
       t.inputEl.rows = 3;
     });
-    new import_obsidian2.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags").addText((t) => t.setValue(this.tags).onChange((v) => {
+    new import_obsidian3.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags").addText((t) => t.setValue(this.tags).onChange((v) => {
       this.tags = v;
     }));
-    new import_obsidian2.Setting(contentEl).setName("Notes").addTextArea((t) => {
+    new import_obsidian3.Setting(contentEl).setName("Notes").addTextArea((t) => {
       t.setValue(this.notes).onChange((v) => {
         this.notes = v;
       });
       t.inputEl.rows = 2;
     });
-    new import_obsidian2.Setting(contentEl).setName("Frequency").setDesc("1-100 importance score").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
+    new import_obsidian3.Setting(contentEl).setName("Frequency").setDesc("1-100 importance score").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
       this.frequency = v;
     }));
     const btnRow = contentEl.createDiv("jp-col-modal-btns");
@@ -1196,7 +1626,7 @@ var AddEntryModal = class extends import_obsidian2.Modal {
   handleSave() {
     var _a, _b, _c, _d, _e, _f;
     if (!this.headword.trim() || !this.collocate.trim()) {
-      new import_obsidian2.Notice("Headword and Collocate are required.");
+      new import_obsidian3.Notice("Headword and Collocate are required.");
       return;
     }
     const now = Date.now();
@@ -1220,10 +1650,10 @@ var AddEntryModal = class extends import_obsidian2.Modal {
     };
     if (this.existing) {
       this.store.update(entry2);
-      new import_obsidian2.Notice(`Updated: ${phrase}`);
+      new import_obsidian3.Notice(`Updated: ${phrase}`);
     } else {
       this.store.add(entry2);
-      new import_obsidian2.Notice(`Added: ${phrase}`);
+      new import_obsidian3.Notice(`Added: ${phrase}`);
     }
     this.onSave();
     this.close();
@@ -1233,10 +1663,6613 @@ var AddEntryModal = class extends import_obsidian2.Modal {
   }
 };
 
+// src/ui/CardPreviewModal.ts
+var import_obsidian4 = require("obsidian");
+
+// src/discourse/discourse-patterns.ts
+var _counter = {};
+function P(cat, surface, tokens, pos, reg, fn, sub, gloss, glossEn, freq, coOcc = []) {
+  if (!_counter[cat])
+    _counter[cat] = 0;
+  _counter[cat]++;
+  const num = String(_counter[cat]).padStart(3, "0");
+  const catLabels = {
+    A: "\u767A\u8A71\u5192\u982D\u8868\u73FE",
+    B: "\u767A\u8A71\u672B\u8868\u73FE",
+    C: "\u8AD6\u7406\u5C55\u958B\u30D1\u30BF\u30FC\u30F3",
+    D: "\u8AC7\u8A71\u5883\u754C\u6A19\u8B58",
+    E: "\u76F8\u4E92\u884C\u70BA\u7684\u8868\u73FE",
+    F: "\u30E2\u30C0\u30EA\u30C6\u30A3",
+    G: "\u5F15\u7528\u30FB\u4F1D\u805E",
+    H: "\u30C6\u30F3\u30B9\u30FB\u30A2\u30B9\u30DA\u30AF\u30C8",
+    I: "\u5F85\u9047\u30FB\u30EC\u30B8\u30B9\u30BF\u30FC",
+    J: "\u30C4\u30C3\u30B3\u30DF\u30FB\u53CD\u5FDC",
+    K: "\u8A0E\u8AD6\u30D1\u30BF\u30FC\u30F3",
+    L: "\u89E3\u8AAC\u30D1\u30BF\u30FC\u30F3",
+    M: "\u96D1\u8AC7\u30D1\u30BF\u30FC\u30F3",
+    N: "\u8907\u6587\u69CB\u9020\u9023\u9396"
+  };
+  return {
+    id: `${cat}${num}`,
+    surface,
+    tokens,
+    category: cat,
+    position: pos,
+    register: reg,
+    pragmaticFunction: fn,
+    coOccurrence: coOcc,
+    categoryLabel: catLabels[cat],
+    subcategory: sub,
+    gloss,
+    glossEn,
+    frequencyTier: freq
+  };
+}
+var CAT_A = [
+  // ── A.1 話題管理 (Topic Management) ─────────────────────
+  P("A", "\u7D50\u5C40", ["\u7D50\u5C40"], "utterance-initial", "neutral", "summary", "\u8A71\u984C\u7BA1\u7406", "\u6700\u7D42\u7684\u306A\u7D50\u8AD6\u3092\u5C0E\u304F", "draws final conclusion", 1),
+  P("A", "\u8981\u3059\u308B\u306B", ["\u8981\u3059\u308B\u306B"], "utterance-initial", "neutral", "rephrasing", "\u8A71\u984C\u7BA1\u7406", "\u5185\u5BB9\u3092\u8981\u7D04\u3059\u308B", "summarizes content", 1),
+  P("A", "\u3064\u307E\u308A", ["\u3064\u307E\u308A"], "utterance-initial", "neutral", "rephrasing", "\u8A71\u984C\u7BA1\u7406", "\u8A00\u3044\u63DB\u3048\u30FB\u8981\u7D04", "rephrases/summarizes", 1),
+  P("A", "\u8981\u306F", ["\u8981", "\u306F"], "utterance-initial", "casual", "summary", "\u8A71\u984C\u7BA1\u7406", "\u30DD\u30A4\u30F3\u30C8\u3092\u793A\u3059", "indicates the point", 1),
+  P("A", "\u307E\u3068\u3081\u308B\u3068", ["\u307E\u3068\u3081", "\u308B", "\u3068"], "utterance-initial", "neutral", "summary", "\u8A71\u984C\u7BA1\u7406", "\u8B70\u8AD6\u3092\u307E\u3068\u3081\u308B", "wraps up discussion", 2),
+  P("A", "\u7C21\u5358\u306B\u8A00\u3046\u3068", ["\u7C21\u5358", "\u306B", "\u8A00\u3046", "\u3068"], "utterance-initial", "neutral", "rephrasing", "\u8A71\u984C\u7BA1\u7406", "\u5E73\u6613\u306B\u8A00\u3044\u63DB\u3048\u308B", "simplifies expression", 2),
+  P("A", "\u4E00\u8A00\u3067\u8A00\u3046\u3068", ["\u4E00\u8A00", "\u3067", "\u8A00\u3046", "\u3068"], "utterance-initial", "neutral", "rephrasing", "\u8A71\u984C\u7BA1\u7406", "\u4E00\u8A00\u3067\u8868\u3059", "says in one word", 3),
+  P("A", "\u7AEF\u7684\u306B\u8A00\u3046\u3068", ["\u7AEF\u7684", "\u306B", "\u8A00\u3046", "\u3068"], "utterance-initial", "formal", "rephrasing", "\u8A71\u984C\u7BA1\u7406", "\u7C21\u6F54\u306B\u8FF0\u3079\u308B", "states concisely", 3),
+  // ── A.2 順序・叙述 (Sequence/Narrative) ──────────────────
+  P("A", "\u307E\u305A", ["\u307E\u305A"], "utterance-initial", "neutral", "sequence", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u6700\u521D\u306E\u9805\u76EE\u3092\u793A\u3059", "marks first item", 1),
+  P("A", "\u6B21\u306B", ["\u6B21", "\u306B"], "utterance-initial", "neutral", "sequence", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u6B21\u306E\u9805\u76EE\u3092\u793A\u3059", "marks next item", 2),
+  P("A", "\u305D\u308C\u304B\u3089", ["\u305D\u308C\u304B\u3089"], "utterance-initial", "neutral", "sequence", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u9806\u5E8F\u7684\u306B\u7D9A\u3051\u308B", "continues sequentially", 1),
+  P("A", "\u305D\u3057\u305F\u3089", ["\u305D\u3057\u305F\u3089"], "utterance-initial", "casual", "sequence", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u7269\u8A9E\u306E\u5C55\u958B", "narrative development", 1),
+  P("A", "\u305D\u3057\u305F\u3089\u3055", ["\u305D\u3057\u305F\u3089", "\u3055"], "utterance-initial", "casual", "sequence", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u7269\u8A9E\u5C55\u958B\uFF0B\u6CE8\u610F\u559A\u8D77", "narrative + attention", 1),
+  P("A", "\u3067", ["\u3067"], "utterance-initial", "casual", "sequence", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u4F1A\u8A71\u3092\u7E4B\u3050", "casual connector", 1),
+  P("A", "\u305D\u308C\u3067", ["\u305D\u308C", "\u3067"], "utterance-initial", "neutral", "result", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u7D4C\u7DEF\u3092\u8AAC\u660E\u3059\u308B", "explains sequence", 1),
+  P("A", "\u3058\u3083\u3042", ["\u3058\u3083\u3042"], "utterance-initial", "casual", "result", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u524D\u4EF6\u3092\u53D7\u3051\u305F\u5E30\u7D50", "consequent response", 1),
+  P("A", "\u3058\u3083", ["\u3058\u3083"], "utterance-initial", "casual", "result", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u77ED\u7E2E\u5F62\u300C\u3058\u3083\u3042\u300D", "shortened \u3058\u3083\u3042", 1),
+  P("A", "\u305D\u3053\u3067", ["\u305D\u3053", "\u3067"], "utterance-initial", "neutral", "result", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u72B6\u6CC1\u3092\u53D7\u3051\u3066\u884C\u52D5\u3059\u308B", "acts upon situation", 2),
+  P("A", "\u3059\u308B\u3068", ["\u3059\u308B", "\u3068"], "utterance-initial", "neutral", "result", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u7D50\u679C\u3092\u5C0E\u5165\u3059\u308B", "introduces result", 2),
+  P("A", "\u305D\u3046\u3059\u308B\u3068", ["\u305D\u3046", "\u3059\u308B", "\u3068"], "utterance-initial", "neutral", "result", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u524D\u63D0\u304B\u3089\u306E\u5E30\u7D50", "deduction from premise", 2),
+  P("A", "1\u3064\u76EE\u306F", ["1", "\u3064", "\u76EE", "\u306F"], "utterance-initial", "neutral", "sequence", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u5217\u6319\u306E1\u756A\u76EE", "first in enumeration", 2),
+  P("A", "2\u3064\u76EE\u306F", ["2", "\u3064", "\u76EE", "\u306F"], "utterance-initial", "neutral", "sequence", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u5217\u6319\u306E2\u756A\u76EE", "second in enumeration", 2),
+  P("A", "1\u3064\u306F\u3055", ["1", "\u3064", "\u306F", "\u3055"], "utterance-initial", "casual", "sequence", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u8A3C\u62E0\u5217\u6319\u306E\u958B\u59CB", "starts evidence chain", 1, ["A028"]),
+  P("A", "\u3042\u3068\u3082\u30461\u500B", ["\u3042\u3068", "\u3082\u3046", "1", "\u500B"], "utterance-initial", "casual", "sequence", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u8FFD\u52A0\u8A3C\u62E0\u3092\u793A\u3059", "adds another piece", 1, ["A027"]),
+  P("A", "\u6700\u5F8C\u306B", ["\u6700\u5F8C", "\u306B"], "utterance-initial", "neutral", "sequence", "\u9806\u5E8F\u30FB\u53D9\u8FF0", "\u6700\u7D42\u9805\u76EE\u3092\u793A\u3059", "marks final item", 2),
+  // ── A.3 フィラー (Fillers/Hesitation) ────────────────────
+  P("A", "\u3048\u30FC\u3068", ["\u3048\u30FC\u3068"], "utterance-initial", "casual", "filler", "\u30D5\u30A3\u30E9\u30FC", "\u601D\u8003\u4E2D\u306E\u9593\u5408\u3044", "thinking pause", 1),
+  P("A", "\u3048\u3063\u3068", ["\u3048\u3063\u3068"], "utterance-initial", "casual", "filler", "\u30D5\u30A3\u30E9\u30FC", "\u601D\u8003\u4E2D\uFF08\u77ED\u3081\uFF09", "brief thinking pause", 1),
+  P("A", "\u3042\u306E\u30FC", ["\u3042\u306E\u30FC"], "utterance-initial", "casual", "filler", "\u30D5\u30A3\u30E9\u30FC", "\u8E8A\u8E87\u30FB\u8A00\u3044\u6DC0\u307F", "hesitation filler", 1),
+  P("A", "\u3042\u306E", ["\u3042\u306E"], "utterance-initial", "casual", "filler", "\u30D5\u30A3\u30E9\u30FC", "\u8E8A\u8E87\uFF08\u77ED\u3081\uFF09", "short hesitation", 1),
+  P("A", "\u306A\u3093\u304B", ["\u306A\u3093\u304B"], "utterance-initial", "casual", "filler", "\u30D5\u30A3\u30E9\u30FC", "\u66D6\u6627\u5316\u30FB\u30D8\u30C3\u30B8", "vague filler/hedge", 1),
+  P("A", "\u307E\u3042", ["\u307E\u3042"], "utterance-initial", "casual", "softening", "\u30D5\u30A3\u30E9\u30FC", "\u65AD\u8A00\u3092\u548C\u3089\u3052\u308B", "softens assertion", 1),
+  P("A", "\u3046\u30FC\u3093", ["\u3046\u30FC\u3093"], "utterance-initial", "casual", "filler", "\u30D5\u30A3\u30E9\u30FC", "\u8003\u3048\u4E2D\u306E\u5FDC\u7B54", "thinking response", 1),
+  P("A", "\u305D\u306E\u30FC", ["\u305D\u306E\u30FC"], "utterance-initial", "casual", "filler", "\u30D5\u30A3\u30E9\u30FC", "\u8A00\u3044\u6DC0\u307F", "hesitation", 2),
+  P("A", "\u306A\u3093\u3066\u3044\u3046\u306E", ["\u306A\u3093\u3066", "\u3044\u3046", "\u306E"], "utterance-initial", "casual", "filler", "\u30D5\u30A3\u30E9\u30FC", "\u8A00\u8449\u3092\u63A2\u3057\u3066\u3044\u308B", "searching for words", 1),
+  P("A", "\u306A\u3093\u3066\u3044\u3046\u304B", ["\u306A\u3093\u3066", "\u3044\u3046", "\u304B"], "utterance-initial", "casual", "filler", "\u30D5\u30A3\u30E9\u30FC", "\u8868\u73FE\u3092\u6A21\u7D22\u4E2D", "groping for expression", 1),
+  P("A", "\u306A\u3093\u3066\u3044\u3046\u3093\u3060\u308D\u3046", ["\u306A\u3093\u3066", "\u3044\u3046", "\u3093", "\u3060\u308D\u3046"], "utterance-initial", "casual", "filler", "\u30D5\u30A3\u30E9\u30FC", "\u9069\u5207\u306A\u8A00\u3044\u65B9\u3092\u63A2\u3059", "searching for right words", 2),
+  P("A", "\u3069\u3046\u8A00\u3048\u3070\u3044\u3044\u304B\u306A", ["\u3069\u3046", "\u8A00\u3048", "\u3070", "\u3044\u3044", "\u304B\u306A"], "utterance-initial", "casual", "filler", "\u30D5\u30A3\u30E9\u30FC", "\u8868\u73FE\u65B9\u6CD5\u3092\u8003\u3048\u308B", "considering how to say it", 2),
+  // ── A.4 注意喚起 (Attention-Getting) ─────────────────────
+  P("A", "\u3042\u306E\u306D", ["\u3042\u306E", "\u306D"], "utterance-initial", "casual", "attention", "\u6CE8\u610F\u559A\u8D77", "\u76F8\u624B\u306E\u6CE8\u610F\u3092\u5F15\u304F", "draws listener attention", 1),
+  P("A", "\u3067\u306D", ["\u3067", "\u306D"], "utterance-initial", "casual", "attention", "\u6CE8\u610F\u559A\u8D77", "\u8A71\u3092\u5C55\u958B\u3057\u3064\u3064\u6CE8\u610F\u3092\u5F15\u304F", "develops story + draws attention", 1),
+  P("A", "\u306D\u3048", ["\u306D\u3048"], "utterance-initial", "casual", "attention", "\u6CE8\u610F\u559A\u8D77", "\u547C\u3073\u304B\u3051", "calling out", 1),
+  P("A", "\u307B\u3089", ["\u307B\u3089"], "utterance-initial", "casual", "attention", "\u6CE8\u610F\u559A\u8D77", "\u5171\u6709\u77E5\u8B58\u306B\u8A00\u53CA\u3059\u308B", "references shared knowledge", 1),
+  P("A", "\u306D\u3048\u306D\u3048", ["\u306D\u3048", "\u306D\u3048"], "utterance-initial", "casual", "attention", "\u6CE8\u610F\u559A\u8D77", "\u5F37\u3044\u547C\u3073\u304B\u3051", "insistent calling", 1),
+  P("A", "\u3061\u3087\u3063\u3068\u805E\u3044\u3066", ["\u3061\u3087\u3063\u3068", "\u805E\u3044", "\u3066"], "utterance-initial", "casual", "attention", "\u6CE8\u610F\u559A\u8D77", "\u805E\u3044\u3066\u307B\u3057\u3044\u3053\u3068\u304C\u3042\u308B", "has something to share", 2),
+  // ── A.5 譲歩開始 (Concession Starters) ──────────────────
+  P("A", "\u78BA\u304B\u306B", ["\u78BA\u304B", "\u306B"], "utterance-initial", "neutral", "concession", "\u8B72\u6B69\u958B\u59CB", "\u76F8\u624B\u306E\u610F\u898B\u3092\u8A8D\u3081\u308B", "concedes opponent point", 1, ["C010", "C011"]),
+  P("A", "\u3082\u3061\u308D\u3093", ["\u3082\u3061\u308D\u3093"], "utterance-initial", "neutral", "concession", "\u8B72\u6B69\u958B\u59CB", "\u5F53\u7136\u306E\u3053\u3068\u3092\u8A8D\u3081\u308B", "acknowledges the obvious", 2),
+  P("A", "\u305D\u308A\u3083", ["\u305D\u308A\u3083"], "utterance-initial", "casual", "concession", "\u8B72\u6B69\u958B\u59CB", "\u304F\u3060\u3051\u305F\u8B72\u6B69", "casual concession", 1),
+  P("A", "\u305D\u308A\u3083\u305D\u3046\u3060\u3051\u3069", ["\u305D\u308A\u3083", "\u305D\u3046", "\u3060", "\u3051\u3069"], "utterance-initial", "casual", "concession", "\u8B72\u6B69\u958B\u59CB", "\u8A8D\u3081\u3064\u3064\u53CD\u8AD6\u6E96\u5099", "concedes but prepares counter", 1),
+  P("A", "\u8A00\u3044\u305F\u3044\u3053\u3068\u306F\u308F\u304B\u308B\u3051\u3069", ["\u8A00\u3044", "\u305F\u3044", "\u3053\u3068", "\u306F", "\u308F\u304B\u308B", "\u3051\u3069"], "utterance-initial", "casual", "concession", "\u8B72\u6B69\u958B\u59CB", "\u7406\u89E3\u3092\u793A\u3057\u3066\u53CD\u8AD6", "shows understanding then counters", 2),
+  // ── A.6 対比・転換 (Contrast/Transition) ─────────────────
+  P("A", "\u3067\u3082", ["\u3067\u3082"], "utterance-initial", "casual", "contrast", "\u5BFE\u6BD4\u30FB\u8EE2\u63DB", "\u9006\u63A5", "adversative connector", 1),
+  P("A", "\u305F\u3060", ["\u305F\u3060"], "utterance-initial", "neutral", "contrast", "\u5BFE\u6BD4\u30FB\u8EE2\u63DB", "\u90E8\u5206\u7684\u306A\u53CD\u8AD6", "partial counterpoint", 1),
+  P("A", "\u3068\u3053\u308D\u304C", ["\u3068\u3053\u308D\u304C"], "utterance-initial", "neutral", "contrast", "\u5BFE\u6BD4\u30FB\u8EE2\u63DB", "\u4E88\u60F3\u5916\u306E\u7D50\u679C", "unexpected result", 2),
+  P("A", "\u9006\u306B", ["\u9006", "\u306B"], "utterance-initial", "neutral", "contrast", "\u5BFE\u6BD4\u30FB\u8EE2\u63DB", "\u53CD\u5BFE\u306E\u7ACB\u5834\u3092\u793A\u3059", "shows opposite stance", 1),
+  P("A", "\u3080\u3057\u308D", ["\u3080\u3057\u308D"], "utterance-initial", "neutral", "contrast", "\u5BFE\u6BD4\u30FB\u8EE2\u63DB", "\u3088\u308A\u9069\u5207\u306A\u898B\u65B9\u3092\u63D0\u793A", "presents more apt view", 2),
+  P("A", "\u4E00\u65B9\u3067", ["\u4E00\u65B9", "\u3067"], "utterance-initial", "neutral", "contrast", "\u5BFE\u6BD4\u30FB\u8EE2\u63DB", "\u5225\u306E\u5074\u9762\u3092\u793A\u3059", "shows another aspect", 2),
+  P("A", "\u53CD\u5BFE\u306B", ["\u53CD\u5BFE", "\u306B"], "utterance-initial", "neutral", "contrast", "\u5BFE\u6BD4\u30FB\u8EE2\u63DB", "\u6B63\u53CD\u5BFE\u3092\u63D0\u793A", "presents the opposite", 3),
+  P("A", "\u305D\u308C\u306B\u5BFE\u3057\u3066", ["\u305D\u308C", "\u306B\u5BFE\u3057\u3066"], "utterance-initial", "neutral", "contrast", "\u5BFE\u6BD4\u30FB\u8EE2\u63DB", "\u524D\u4EF6\u3068\u5BFE\u6BD4\u3059\u308B", "contrasts with preceding", 3),
+  P("A", "\u3066\u3044\u3046\u304B", ["\u3066\u3044\u3046\u304B"], "utterance-initial", "casual", "self-repair", "\u5BFE\u6BD4\u30FB\u8EE2\u63DB", "\u524D\u8A00\u3092\u4FEE\u6B63\u3059\u308B", "corrects previous statement", 1),
+  P("A", "\u3063\u3066\u3044\u3046\u304B", ["\u3063\u3066\u3044\u3046\u304B"], "utterance-initial", "casual", "self-repair", "\u5BFE\u6BD4\u30FB\u8EE2\u63DB", "\u524D\u8A00\u4FEE\u6B63\uFF08\u5F37\u3081\uFF09", "corrects more emphatically", 1),
+  P("A", "\u3044\u3084\u3044\u3084", ["\u3044\u3084", "\u3044\u3084"], "utterance-initial", "casual", "disagreement", "\u5BFE\u6BD4\u30FB\u8EE2\u63DB", "\u5F37\u3044\u5426\u5B9A", "strong disagreement", 1),
+  P("A", "\u3044\u3084", ["\u3044\u3084"], "utterance-initial", "casual", "disagreement", "\u5BFE\u6BD4\u30FB\u8EE2\u63DB", "\u5426\u5B9A\u30FB\u4FEE\u6B63", "denial/correction", 1),
+  // ── A.7 情報源表示 (Information Source) ──────────────────
+  P("A", "\u5B9F\u306F", ["\u5B9F", "\u306F"], "utterance-initial", "neutral", "information-source", "\u60C5\u5831\u6E90\u8868\u793A", "\u610F\u5916\u306A\u4E8B\u5B9F\u3092\u5C0E\u5165", "introduces unexpected fact", 1),
+  P("A", "\u6B63\u76F4", ["\u6B63\u76F4"], "utterance-initial", "neutral", "information-source", "\u60C5\u5831\u6E90\u8868\u793A", "\u7387\u76F4\u306A\u610F\u898B\u3092\u8FF0\u3079\u308B", "states frank opinion", 1),
+  P("A", "\u6B63\u76F4\u8A00\u3046\u3068", ["\u6B63\u76F4", "\u8A00\u3046", "\u3068"], "utterance-initial", "neutral", "information-source", "\u60C5\u5831\u6E90\u8868\u793A", "\u7387\u76F4\u306B\u8A00\u3048\u3070", "to be honest", 2),
+  P("A", "\u3076\u3063\u3061\u3083\u3051", ["\u3076\u3063\u3061\u3083\u3051"], "utterance-initial", "slang", "information-source", "\u60C5\u5831\u6E90\u8868\u793A", "\u7387\u76F4\u306B\u8A00\u3048\u3070\uFF08\u4FD7\uFF09", "frankly (slang)", 1),
+  P("A", "\u672C\u97F3\u3092\u8A00\u3046\u3068", ["\u672C\u97F3", "\u3092", "\u8A00\u3046", "\u3068"], "utterance-initial", "neutral", "information-source", "\u60C5\u5831\u6E90\u8868\u793A", "\u672C\u5FC3\u3092\u4F1D\u3048\u308B", "reveals true feelings", 3),
+  P("A", "\u500B\u4EBA\u7684\u306B\u306F", ["\u500B\u4EBA\u7684", "\u306B", "\u306F"], "utterance-initial", "neutral", "hedge", "\u60C5\u5831\u6E90\u8868\u793A", "\u500B\u4EBA\u7684\u898B\u89E3\u3092\u793A\u3059", "marks personal opinion", 2),
+  // ── A.8 前提提示 (Premise) ──────────────────────────────
+  P("A", "\u305D\u3082\u305D\u3082", ["\u305D\u3082\u305D\u3082"], "utterance-initial", "neutral", "topic-initiation", "\u524D\u63D0\u63D0\u793A", "\u6839\u672C\u7684\u306A\u524D\u63D0\u306B\u623B\u308B", "returns to fundamental premise", 1),
+  P("A", "\u57FA\u672C\u7684\u306B", ["\u57FA\u672C\u7684", "\u306B"], "utterance-initial", "neutral", "topic-initiation", "\u524D\u63D0\u63D0\u793A", "\u57FA\u672C\u539F\u5247\u3092\u63D0\u793A", "presents basic principle", 2),
+  P("A", "\u4E00\u5FDC", ["\u4E00\u5FDC"], "utterance-initial", "casual", "hedge", "\u524D\u63D0\u63D0\u793A", "\u66AB\u5B9A\u7684\u30FB\u6761\u4EF6\u4ED8\u304D", "tentative/conditional", 1),
+  P("A", "\u3061\u306A\u307F\u306B", ["\u3061\u306A\u307F\u306B"], "utterance-initial", "neutral", "addition", "\u524D\u63D0\u63D0\u793A", "\u88DC\u8DB3\u60C5\u5831\u3092\u8FFD\u52A0", "adds supplementary info", 1),
+  P("A", "\u524D\u63D0\u3068\u3057\u3066", ["\u524D\u63D0", "\u3068\u3057\u3066"], "utterance-initial", "neutral", "topic-initiation", "\u524D\u63D0\u63D0\u793A", "\u524D\u63D0\u6761\u4EF6\u3092\u660E\u793A", "states prerequisite", 3),
+  P("A", "\u3084\u3063\u3071\u308A", ["\u3084\u3063\u3071\u308A"], "utterance-initial", "neutral", "confirmation-seeking", "\u524D\u63D0\u63D0\u793A", "\u4E88\u60F3\u901A\u308A\u3060\u3068\u78BA\u8A8D", "confirms as expected", 1),
+  P("A", "\u3084\u3063\u3071", ["\u3084\u3063\u3071"], "utterance-initial", "casual", "confirmation-seeking", "\u524D\u63D0\u63D0\u793A", "\u300C\u3084\u3063\u3071\u308A\u300D\u77ED\u7E2E", "shortened \u3084\u3063\u3071\u308A", 1),
+  // ── A.9 だから系 (Causal starters) ──────────────────────
+  P("A", "\u3060\u304B\u3089", ["\u3060\u304B\u3089"], "utterance-initial", "casual", "cause", "\u56E0\u679C", "\u7406\u7531\u30FB\u7D50\u8AD6\u3092\u8FF0\u3079\u308B", "states reason/conclusion", 1),
+  P("A", "\u3060\u304B\u3089\u3055", ["\u3060\u304B\u3089", "\u3055"], "utterance-initial", "casual", "cause", "\u56E0\u679C", "\u5F37\u8ABF\u7684\u56E0\u679C", "emphatic causal", 1),
+  P("A", "\u3060\u304B\u3089\u3053\u305D", ["\u3060\u304B\u3089", "\u3053\u305D"], "utterance-initial", "neutral", "emphasis", "\u56E0\u679C", "\u307E\u3055\u306B\u305D\u306E\u7406\u7531\u3067", "for that very reason", 2),
+  P("A", "\u306A\u306E\u3067", ["\u306A\u306E\u3067"], "utterance-initial", "neutral", "cause", "\u56E0\u679C", "\u3088\u308A\u4E01\u5BE7\u306A\u56E0\u679C", "politer causal", 1),
+  P("A", "\u3067\u3059\u306E\u3067", ["\u3067\u3059", "\u306E\u3067"], "utterance-initial", "polite", "cause", "\u56E0\u679C", "\u4E01\u5BE7\u306A\u56E0\u679C", "polite causal", 2),
+  P("A", "\u3068\u3044\u3046\u306E\u306F", ["\u3068\u3044\u3046", "\u306E", "\u306F"], "utterance-initial", "neutral", "cause", "\u7406\u7531\u30FB\u8AAC\u660E", "\u7406\u7531\u3092\u8AAC\u660E\u3059\u308B", "explains the reason", 1),
+  P("A", "\u306A\u305C\u306A\u3089", ["\u306A\u305C", "\u306A\u3089"], "utterance-initial", "formal", "cause", "\u7406\u7531\u30FB\u8AAC\u660E", "\u8AD6\u7406\u7684\u306A\u7406\u7531\u63D0\u793A", "logical reason presentation", 3),
+  P("A", "\u306A\u305C\u304B\u3068\u3044\u3046\u3068", ["\u306A\u305C", "\u304B", "\u3068\u3044\u3046", "\u3068"], "utterance-initial", "neutral", "cause", "\u7406\u7531\u30FB\u8AAC\u660E", "\u7406\u7531\u3092\u8FF0\u3079\u308B\u30DE\u30FC\u30AB\u30FC", "reason-stating marker", 2),
+  // ── A.10 結論提示 (Conclusion starters from PR8 YT patterns)
+  P("A", "\u7D50\u8AD6\u304B\u3089\u8A00\u3046\u3068", ["\u7D50\u8AD6", "\u304B\u3089", "\u8A00\u3046", "\u3068"], "utterance-initial", "neutral", "summary", "\u7D50\u8AD6\u63D0\u793A", "\u5148\u306B\u7D50\u8AD6\u3092\u8FF0\u3079\u308B", "states conclusion first", 2),
+  P("A", "\u7D50\u8AD6\u304B\u3089\u8A00\u3046\u3068\u305D\u3093\u306A\u3053\u3068\u306A\u304F\u3066", ["\u7D50\u8AD6", "\u304B\u3089", "\u8A00\u3046", "\u3068", "\u305D\u3093\u306A", "\u3053\u3068", "\u306A\u304F", "\u3066"], "utterance-initial", "casual", "disagreement", "\u7D50\u8AD6\u63D0\u793A", "\u4E88\u60F3\u3092\u5426\u5B9A\u3059\u308B\u7D50\u8AD6", "conclusion that negates expectation", 2)
+];
+var CAT_B = [
+  // ── B.1 のだ/んだ System (Explanatory) ──────────────────
+  P("B", "\u3093\u3067\u3059\u3088", ["\u3093", "\u3067\u3059", "\u3088"], "utterance-final", "polite", "assertion", "\u306E\u3060\u7CFB", "\u8AAC\u660E\u7684\u4E3B\u5F35", "explanatory assertion", 1),
+  P("B", "\u306E\u3067\u3059\u3088", ["\u306E", "\u3067\u3059", "\u3088"], "utterance-final", "polite", "assertion", "\u306E\u3060\u7CFB", "\u8AAC\u660E\u7684\u4E3B\u5F35\uFF08\u5F62\u5F0F\u7684\uFF09", "formal explanatory assertion", 2),
+  P("B", "\u3093\u3067\u3059\u3051\u3069", ["\u3093", "\u3067\u3059", "\u3051\u3069"], "utterance-final", "polite", "hedge", "\u306E\u3060\u7CFB", "\u8AAC\u660E\uFF0B\u30D8\u30C3\u30B8", "explanation + hedge", 1),
+  P("B", "\u3093\u3067\u3059\u3051\u308C\u3069\u3082", ["\u3093", "\u3067\u3059", "\u3051\u308C\u3069\u3082"], "utterance-final", "formal", "hedge", "\u306E\u3060\u7CFB", "\u8AAC\u660E\uFF0B\u4E01\u5BE7\u306A\u30D8\u30C3\u30B8", "explanation + formal hedge", 2),
+  P("B", "\u3093\u3060\u3051\u3069", ["\u3093", "\u3060", "\u3051\u3069"], "utterance-final", "casual", "hedge", "\u306E\u3060\u7CFB", "\u8AAC\u660E\uFF0B\u30AB\u30B8\u30E5\u30A2\u30EB\u306A\u30D8\u30C3\u30B8", "explanation + casual hedge", 1),
+  P("B", "\u3093\u3060\u3088\u306D", ["\u3093", "\u3060", "\u3088", "\u306D"], "utterance-final", "casual", "confirmation-seeking", "\u306E\u3060\u7CFB", "\u540C\u610F\u3092\u6C42\u3081\u308B\u8AAC\u660E", "explanation seeking agreement", 1),
+  P("B", "\u3093\u3067\u3059\u3088\u306D", ["\u3093", "\u3067\u3059", "\u3088", "\u306D"], "utterance-final", "polite", "confirmation-seeking", "\u306E\u3060\u7CFB", "\u4E01\u5BE7\u306B\u540C\u610F\u3092\u6C42\u3081\u308B", "politely seeks agreement", 1),
+  P("B", "\u306A\u3093\u3067\u3059\u3088", ["\u306A", "\u3093", "\u3067\u3059", "\u3088"], "utterance-final", "polite", "assertion", "\u306E\u3060\u7CFB", "\u5F37\u3044\u8AAC\u660E\u7684\u4E3B\u5F35", "strong explanatory assertion", 1),
+  P("B", "\u306A\u3093\u3060\u3088\u306D", ["\u306A", "\u3093", "\u3060", "\u3088", "\u306D"], "utterance-final", "casual", "confirmation-seeking", "\u306E\u3060\u7CFB", "\u540C\u610F\u6C42\u3081\uFF0B\u30AB\u30B8\u30E5\u30A2\u30EB", "casual agreement-seeking", 1),
+  P("B", "\u3093\u3060\u3088", ["\u3093", "\u3060", "\u3088"], "utterance-final", "casual", "assertion", "\u306E\u3060\u7CFB", "\u30AB\u30B8\u30E5\u30A2\u30EB\u306A\u4E3B\u5F35", "casual assertion", 1),
+  // ── B.2 わけ System (Reasoning) ─────────────────────────
+  P("B", "\u308F\u3051\u3060\u304B\u3089", ["\u308F\u3051", "\u3060\u304B\u3089"], "utterance-final", "neutral", "cause", "\u308F\u3051\u7CFB", "\u7406\u7531\u3092\u793A\u3059", "shows reason", 1),
+  P("B", "\u308F\u3051\u3067\u3059\u3088", ["\u308F\u3051", "\u3067\u3059", "\u3088"], "utterance-final", "polite", "assertion", "\u308F\u3051\u7CFB", "\u7406\u7531\u3092\u4E3B\u5F35\u3059\u308B", "asserts reasoning", 1),
+  P("B", "\u308F\u3051\u306A\u3093\u3067\u3059\u3088", ["\u308F\u3051", "\u306A", "\u3093", "\u3067\u3059", "\u3088"], "utterance-final", "polite", "emphasis", "\u308F\u3051\u7CFB", "\u5F37\u8ABF\u7684\u306A\u7406\u7531\u8AAC\u660E", "emphatic reason explanation", 1),
+  P("B", "\u308F\u3051\u3067", ["\u308F\u3051", "\u3067"], "utterance-final", "neutral", "result", "\u308F\u3051\u7CFB", "\u5E30\u7D50\u3092\u5C0E\u304F", "derives consequence", 1),
+  P("B", "\u308F\u3051\u3067\u3059\u3051\u3069", ["\u308F\u3051", "\u3067\u3059", "\u3051\u3069"], "utterance-final", "polite", "hedge", "\u308F\u3051\u7CFB", "\u7406\u7531\uFF0B\u30D8\u30C3\u30B8", "reasoning + hedge", 2),
+  P("B", "\u308F\u3051\u3058\u3083\u3093", ["\u308F\u3051", "\u3058\u3083\u3093"], "utterance-final", "casual", "confirmation-seeking", "\u308F\u3051\u7CFB", "\u5F53\u7136\u306E\u7406\u7531\u3092\u78BA\u8A8D", "confirms obvious reason", 1),
+  P("B", "\u308F\u3051\u306A\u306E\u3088", ["\u308F\u3051", "\u306A", "\u306E", "\u3088"], "utterance-final", "casual", "assertion", "\u308F\u3051\u7CFB", "\u7406\u7531\u306E\u65AD\u5B9A\uFF08\u5973\u6027\u7684\uFF09", "feminine reasoning assertion", 2),
+  P("B", "\u308F\u3051\u3067\u3059\u3051\u308C\u3069\u3082", ["\u308F\u3051", "\u3067\u3059", "\u3051\u308C\u3069\u3082"], "utterance-final", "formal", "hedge", "\u308F\u3051\u7CFB", "\u5F62\u5F0F\u7684\u306A\u7406\u7531\uFF0B\u30D8\u30C3\u30B8", "formal reasoning + hedge", 3),
+  P("B", "\u3053\u3046\u3044\u3046\u3053\u3068\u3082\u3042\u308B\u308F\u3051\u3067\u3059", ["\u3053\u3046\u3044\u3046", "\u3053\u3068", "\u3082", "\u3042\u308B", "\u308F\u3051", "\u3067\u3059"], "utterance-final", "polite", "assertion", "\u308F\u3051\u7CFB", "\u4F8B\u793A\u7684\u306A\u7406\u7531\u3065\u3051", "exemplifying reasoning", 2),
+  // ── B.3 はず System (Expectation) ───────────────────────
+  P("B", "\u306F\u305A\u306A\u3093\u3067\u3059\u3088\u306D", ["\u306F\u305A", "\u306A", "\u3093", "\u3067\u3059", "\u3088", "\u306D"], "utterance-final", "polite", "confirmation-seeking", "\u306F\u305A\u7CFB", "\u671F\u5F85\u306E\u78BA\u8A8D\u3092\u6C42\u3081\u308B", "seeks confirmation of expectation", 1),
+  P("B", "\u306F\u305A\u306A\u3093\u3067\u3059\u3088", ["\u306F\u305A", "\u306A", "\u3093", "\u3067\u3059", "\u3088"], "utterance-final", "polite", "assertion", "\u306F\u305A\u7CFB", "\u671F\u5F85\u3092\u4E3B\u5F35\u3059\u308B", "asserts expectation", 1),
+  P("B", "\u306F\u305A\u3060\u304B\u3089", ["\u306F\u305A", "\u3060\u304B\u3089"], "utterance-final", "neutral", "cause", "\u306F\u305A\u7CFB", "\u671F\u5F85\u3092\u6839\u62E0\u306B\u3059\u308B", "uses expectation as basis", 2),
+  P("B", "\u306F\u305A\u3067\u3059\u3051\u3069", ["\u306F\u305A", "\u3067\u3059", "\u3051\u3069"], "utterance-final", "polite", "hedge", "\u306F\u305A\u7CFB", "\u671F\u5F85\uFF0B\u4E0D\u78BA\u5B9F\u6027", "expectation + uncertainty", 2),
+  P("B", "\u306F\u305A\u306A\u306E\u306B", ["\u306F\u305A", "\u306A", "\u306E", "\u306B"], "utterance-final", "neutral", "contrast", "\u306F\u305A\u7CFB", "\u671F\u5F85\u3068\u73FE\u5B9F\u306E\u4E56\u96E2", "gap between expectation and reality", 2),
+  // ── B.4 もの System (Justification) ─────────────────────
+  P("B", "\u3082\u306E\u3067\u3059\u304B\u3089", ["\u3082\u306E", "\u3067\u3059", "\u304B\u3089"], "utterance-final", "polite", "cause", "\u3082\u306E\u7CFB", "\u7406\u7531\u306E\u5F01\u660E", "justifying reason", 2),
+  P("B", "\u3082\u3093\u3060\u304B\u3089", ["\u3082\u3093", "\u3060\u304B\u3089"], "utterance-final", "casual", "cause", "\u3082\u306E\u7CFB", "\u30AB\u30B8\u30E5\u30A2\u30EB\u306A\u5F01\u660E", "casual justification", 1),
+  P("B", "\u3082\u306E\u3060", ["\u3082\u306E", "\u3060"], "utterance-final", "neutral", "assertion", "\u3082\u306E\u7CFB", "\u4E00\u822C\u7684\u771F\u7406\u3092\u8FF0\u3079\u308B", "states general truth", 2),
+  P("B", "\u3082\u3093\u306D", ["\u3082\u3093", "\u306D"], "utterance-final", "casual", "agreement", "\u3082\u306E\u7CFB", "\u7406\u7531\u306E\u5171\u6709\u78BA\u8A8D", "shared reason confirmation", 1),
+  // ── B.5 伝聞・証拠性 (Hearsay/Evidentiality) ────────────
+  P("B", "\u305D\u3046\u3067\u3059", ["\u305D\u3046", "\u3067\u3059"], "utterance-final", "polite", "hearsay", "\u4F1D\u805E\u30FB\u8A3C\u62E0\u6027", "\u4F1D\u805E\u60C5\u5831\u3092\u4F1D\u3048\u308B", "conveys hearsay", 2),
+  P("B", "\u3068\u3044\u3046\u3053\u3068\u3067\u3059", ["\u3068\u3044\u3046", "\u3053\u3068", "\u3067\u3059"], "utterance-final", "polite", "hearsay", "\u4F1D\u805E\u30FB\u8A3C\u62E0\u6027", "\u60C5\u5831\u306E\u8981\u7D04\u30FB\u4F1D\u9054", "summarizes/relays info", 2),
+  P("B", "\u3089\u3057\u3044\u3067\u3059", ["\u3089\u3057\u3044", "\u3067\u3059"], "utterance-final", "polite", "evidential", "\u4F1D\u805E\u30FB\u8A3C\u62E0\u6027", "\u6839\u62E0\u306E\u3042\u308B\u63A8\u6E2C", "evidence-based conjecture", 1),
+  P("B", "\u307F\u305F\u3044\u3067\u3059", ["\u307F\u305F\u3044", "\u3067\u3059"], "utterance-final", "polite", "evidential", "\u4F1D\u805E\u30FB\u8A3C\u62E0\u6027", "\u5916\u89B3\u304B\u3089\u306E\u63A8\u6E2C", "appearance-based conjecture", 1),
+  P("B", "\u3063\u3066\u8A00\u3063\u3066\u305F", ["\u3063\u3066", "\u8A00\u3063", "\u3066", "\u305F"], "utterance-final", "casual", "quotation", "\u4F1D\u805E\u30FB\u8A3C\u62E0\u6027", "\u4ED6\u8005\u306E\u767A\u8A00\u3092\u4F1D\u3048\u308B", "reports someone else's words", 1),
+  P("B", "\u3060\u305D\u3046\u3067\u3059", ["\u3060", "\u305D\u3046", "\u3067\u3059"], "utterance-final", "polite", "hearsay", "\u4F1D\u805E\u30FB\u8A3C\u62E0\u6027", "\u4E01\u5BE7\u306A\u4F1D\u805E", "polite hearsay", 2),
+  P("B", "\u3089\u3057\u3044\u3093\u3059\u3088", ["\u3089\u3057\u3044", "\u3093", "\u3059", "\u3088"], "utterance-final", "casual", "evidential", "\u4F1D\u805E\u30FB\u8A3C\u62E0\u6027", "\u30AB\u30B8\u30E5\u30A2\u30EB\u306A\u63A8\u6E2C\u5831\u544A", "casual conjecture report", 1),
+  P("B", "\u307F\u305F\u3044\u306A\u611F\u3058\u3067", ["\u307F\u305F\u3044", "\u306A", "\u611F\u3058", "\u3067"], "utterance-final", "casual", "hedge", "\u4F1D\u805E\u30FB\u8A3C\u62E0\u6027", "\u66D6\u6627\u306A\u4F8B\u793A", "vague exemplification", 1),
+  P("B", "\u3063\u3066\u805E\u3044\u305F", ["\u3063\u3066", "\u805E\u3044", "\u305F"], "utterance-final", "casual", "hearsay", "\u4F1D\u805E\u30FB\u8A3C\u62E0\u6027", "\u805E\u3044\u305F\u60C5\u5831", "heard information", 1),
+  P("B", "\u3093\u3060\u3063\u3066", ["\u3093", "\u3060", "\u3063\u3066"], "utterance-final", "casual", "hearsay", "\u4F1D\u805E\u30FB\u8A3C\u62E0\u6027", "\u30AB\u30B8\u30E5\u30A2\u30EB\u306A\u4F1D\u805E", "casual hearsay", 1),
+  // ── B.6 確認要求 (Confirmation-Seeking) ─────────────────
+  P("B", "\u3058\u3083\u306A\u3044\u3067\u3059\u304B", ["\u3058\u3083\u306A\u3044\u3067\u3059\u304B"], "utterance-final", "polite", "confirmation-seeking", "\u78BA\u8A8D\u8981\u6C42", "\u5171\u6709\u77E5\u8B58\u306E\u78BA\u8A8D", "confirms shared knowledge", 1),
+  P("B", "\u3067\u3057\u3087\u3046", ["\u3067\u3057\u3087\u3046"], "utterance-final", "polite", "confirmation-seeking", "\u78BA\u8A8D\u8981\u6C42", "\u540C\u610F\u3092\u6C42\u3081\u308B", "seeks agreement", 1),
+  P("B", "\u3060\u308D\u3046", ["\u3060\u308D\u3046"], "utterance-final", "neutral", "confirmation-seeking", "\u78BA\u8A8D\u8981\u6C42", "\u63A8\u91CF\u30FB\u78BA\u8A8D", "conjecture/confirmation", 2),
+  P("B", "\u3088\u306D", ["\u3088", "\u306D"], "utterance-final", "casual", "confirmation-seeking", "\u78BA\u8A8D\u8981\u6C42", "\u540C\u610F\u78BA\u8A8D", "seeks confirmation", 1),
+  P("B", "\u3067\u3059\u3088\u306D", ["\u3067\u3059", "\u3088", "\u306D"], "utterance-final", "polite", "confirmation-seeking", "\u78BA\u8A8D\u8981\u6C42", "\u4E01\u5BE7\u306A\u540C\u610F\u78BA\u8A8D", "polite confirmation", 1),
+  P("B", "\u3058\u3083\u3093", ["\u3058\u3083\u3093"], "utterance-final", "casual", "confirmation-seeking", "\u78BA\u8A8D\u8981\u6C42", "\u5F53\u7136\u306E\u78BA\u8A8D", "obvious confirmation", 1),
+  P("B", "\u3067\u3057\u3087", ["\u3067\u3057\u3087"], "utterance-final", "casual", "confirmation-seeking", "\u78BA\u8A8D\u8981\u6C42", "\u30AB\u30B8\u30E5\u30A2\u30EB\u306A\u78BA\u8A8D", "casual confirmation", 1),
+  P("B", "\u3058\u3083\u306A\u3044\u306E", ["\u3058\u3083\u306A\u3044", "\u306E"], "utterance-final", "casual", "confirmation-seeking", "\u78BA\u8A8D\u8981\u6C42", "\u53CD\u8A9E\u7684\u78BA\u8A8D", "rhetorical confirmation", 2),
+  P("B", "\u3093\u3058\u3083\u306A\u3044", ["\u3093", "\u3058\u3083\u306A\u3044"], "utterance-final", "casual", "confirmation-seeking", "\u78BA\u8A8D\u8981\u6C42", "\u63A8\u6E2C\u7684\u78BA\u8A8D", "speculative confirmation", 1),
+  P("B", "\u3068\u601D\u308F\u306A\u3044", ["\u3068", "\u601D\u308F", "\u306A\u3044"], "utterance-final", "neutral", "confirmation-seeking", "\u78BA\u8A8D\u8981\u6C42", "\u540C\u610F\u3092\u5F37\u304F\u6C42\u3081\u308B", "strongly seeks agreement", 2),
+  // ── B.7 願望・義務 (Desire/Obligation) ──────────────────
+  P("B", "\u305F\u3044\u3093\u3067\u3059\u3051\u3069", ["\u305F\u3044", "\u3093", "\u3067\u3059", "\u3051\u3069"], "utterance-final", "polite", "desire", "\u9858\u671B\u30FB\u7FA9\u52D9", "\u9858\u671B\uFF0B\u30D8\u30C3\u30B8", "desire + hedge", 2),
+  P("B", "\u306A\u304D\u3083\u3044\u3051\u306A\u3044", ["\u306A\u304D\u3083", "\u3044\u3051\u306A\u3044"], "utterance-final", "casual", "obligation", "\u9858\u671B\u30FB\u7FA9\u52D9", "\u7FA9\u52D9\u3092\u8FF0\u3079\u308B", "states obligation", 1),
+  P("B", "\u306A\u3051\u308C\u3070\u306A\u3089\u306A\u3044", ["\u306A\u3051\u308C\u3070", "\u306A\u3089", "\u306A\u3044"], "utterance-final", "formal", "obligation", "\u9858\u671B\u30FB\u7FA9\u52D9", "\u5F62\u5F0F\u7684\u306A\u7FA9\u52D9", "formal obligation", 3),
+  P("B", "\u3079\u304D\u3060", ["\u3079\u304D", "\u3060"], "utterance-final", "neutral", "obligation", "\u9858\u671B\u30FB\u7FA9\u52D9", "\u5F53\u70BA\u3092\u8FF0\u3079\u308B", "states what ought to be", 2),
+  P("B", "\u307B\u3046\u304C\u3044\u3044", ["\u307B\u3046", "\u304C", "\u3044\u3044"], "utterance-final", "neutral", "obligation", "\u9858\u671B\u30FB\u7FA9\u52D9", "\u52E7\u544A\u30FB\u52A9\u8A00", "recommendation/advice", 1),
+  P("B", "\u3066\u307B\u3057\u3044", ["\u3066", "\u307B\u3057\u3044"], "utterance-final", "neutral", "desire", "\u9858\u671B\u30FB\u7FA9\u52D9", "\u4ED6\u8005\u3078\u306E\u8981\u671B", "desire directed at others", 2),
+  P("B", "\u3068\u3044\u3044\u306A", ["\u3068", "\u3044\u3044", "\u306A"], "utterance-final", "casual", "desire", "\u9858\u671B\u30FB\u7FA9\u52D9", "\u5E0C\u671B\u30FB\u9858\u3044", "hope/wish", 2),
+  // ── B.8 YT-specific endings (PR8) ──────────────────────
+  P("B", "\u3066\u601D\u3063\u3066\u307E\u3057\u305F", ["\u3066", "\u601D\u3063", "\u3066", "\u307E\u3057\u305F"], "utterance-final", "polite", "information-source", "YT\u8A71\u6CD5", "\u611F\u60F3\u3092\u8FF0\u3079\u308B", "shares personal impression", 1),
+  P("B", "\u3063\u3066\u611F\u3058\u3067\u3059\u306D", ["\u3063\u3066", "\u611F\u3058", "\u3067\u3059", "\u306D"], "utterance-final", "polite", "summary", "YT\u8A71\u6CD5", "\u5370\u8C61\u3067\u307E\u3068\u3081\u308B", "wraps up with impression", 1),
+  P("B", "\u3068\u3044\u3046\u611F\u3058\u3067\u3059\u306D", ["\u3068\u3044\u3046", "\u611F\u3058", "\u3067\u3059", "\u306D"], "utterance-final", "polite", "summary", "YT\u8A71\u6CD5", "\u5185\u5BB9\u3092\u307E\u3068\u3081\u308B", "summarizes content", 1),
+  P("B", "\u3068\u3044\u3063\u305F\u611F\u3058\u3067\u3059", ["\u3068\u3044\u3063\u305F", "\u611F\u3058", "\u3067\u3059"], "utterance-final", "polite", "summary", "YT\u8A71\u6CD5", "\u5217\u6319\u306E\u307E\u3068\u3081", "closes enumeration", 2),
+  P("B", "\u3063\u3066\u8A71\u306A\u3093\u3067\u3059\u3051\u3069", ["\u3063\u3066", "\u8A71", "\u306A", "\u3093", "\u3067\u3059", "\u3051\u3069"], "utterance-final", "polite", "topic-initiation", "YT\u8A71\u6CD5", "\u8A71\u984C\u5C0E\u5165", "introduces topic", 1),
+  P("B", "\u306A\u3093\u3067\u3059\u3051\u3069\u306D", ["\u306A", "\u3093", "\u3067\u3059", "\u3051\u3069", "\u306D"], "utterance-final", "polite", "hedge", "YT\u8A71\u6CD5", "\u67D4\u3089\u304B\u3044\u65AD\u308A\u30FB\u30D8\u30C3\u30B8", "soft hedge", 1)
+];
+var CAT_C = [
+  // ── C.1 因果 (Cause-Effect) ─────────────────────────────
+  P("C", "\u304B\u3089", ["\u304B\u3089"], "mid-utterance", "neutral", "cause", "\u56E0\u679C", "\u539F\u56E0\u3092\u793A\u3059", "indicates cause", 1),
+  P("C", "\u306E\u3067", ["\u306E\u3067"], "mid-utterance", "neutral", "cause", "\u56E0\u679C", "\u7406\u7531\uFF08\u3084\u3084\u5BA2\u89B3\u7684\uFF09", "reason (somewhat objective)", 1),
+  P("C", "\u305D\u306E\u305F\u3081", ["\u305D\u306E", "\u305F\u3081"], "utterance-initial", "formal", "result", "\u56E0\u679C", "\u7D50\u679C\u3092\u793A\u3059\uFF08\u5F62\u5F0F\u7684\uFF09", "shows result (formal)", 3),
+  P("C", "\u305D\u306E\u7D50\u679C", ["\u305D\u306E", "\u7D50\u679C"], "utterance-initial", "formal", "result", "\u56E0\u679C", "\u7D50\u679C\u3092\u5C0E\u5165\u3059\u308B", "introduces result", 3),
+  P("C", "\u5F93\u3063\u3066", ["\u5F93\u3063\u3066"], "utterance-initial", "formal", "result", "\u56E0\u679C", "\u8AD6\u7406\u7684\u5E30\u7D50", "logical consequence", 4),
+  P("C", "\u304A\u304B\u3052\u3067", ["\u304A\u304B\u3052", "\u3067"], "mid-utterance", "neutral", "cause", "\u56E0\u679C", "\u6069\u6075\u7684\u539F\u56E0", "beneficial cause", 2),
+  P("C", "\u305B\u3044\u3067", ["\u305B\u3044", "\u3067"], "mid-utterance", "neutral", "cause", "\u56E0\u679C", "\u4E0D\u5229\u306A\u539F\u56E0", "unfavorable cause", 2),
+  P("C", "\u3060\u3063\u3066", ["\u3060\u3063\u3066"], "utterance-initial", "casual", "cause", "\u56E0\u679C", "\u7406\u7531\u3092\u8FF0\u3079\u308B\uFF08\u5F01\u660E\uFF09", "justifying reason", 1),
+  // ── C.2 逆接 (Adversative) ──────────────────────────────
+  P("C", "\u3051\u3069", ["\u3051\u3069"], "mid-utterance", "casual", "contrast", "\u9006\u63A5", "\u9006\u63A5\u30FB\u30D8\u30C3\u30B8", "adversative/hedge", 1),
+  P("C", "\u3051\u308C\u3069\u3082", ["\u3051\u308C\u3069\u3082"], "mid-utterance", "formal", "contrast", "\u9006\u63A5", "\u5F62\u5F0F\u7684\u9006\u63A5", "formal adversative", 2),
+  P("C", "\u3057\u304B\u3057", ["\u3057\u304B\u3057"], "utterance-initial", "formal", "contrast", "\u9006\u63A5", "\u6587\u8A9E\u7684\u9006\u63A5", "literary adversative", 3),
+  P("C", "\u306B\u3082\u304B\u304B\u308F\u3089\u305A", ["\u306B\u3082\u304B\u304B\u308F\u3089\u305A"], "mid-utterance", "formal", "contrast", "\u9006\u63A5", "\u5F37\u3044\u9006\u63A5", "strong adversative", 4),
+  P("C", "\u305D\u308C\u306A\u306E\u306B", ["\u305D\u308C", "\u306A", "\u306E", "\u306B"], "utterance-initial", "neutral", "contrast", "\u9006\u63A5", "\u4E88\u60F3\u5916\u306E\u5C55\u958B", "unexpected development", 2),
+  P("C", "\u306A\u306E\u306B", ["\u306A", "\u306E", "\u306B"], "mid-utterance", "neutral", "contrast", "\u9006\u63A5", "\u671F\u5F85\u306F\u305A\u308C", "contrary to expectation", 1),
+  P("C", "\u306E\u306B", ["\u306E", "\u306B"], "mid-utterance", "neutral", "contrast", "\u9006\u63A5", "\u9006\u63A5\uFF08\u6B8B\u5FF5\uFF09", "adversative (regrettable)", 1),
+  P("C", "\u304C", ["\u304C"], "mid-utterance", "neutral", "contrast", "\u9006\u63A5", "\u9006\u63A5\u30FB\u63A5\u7D9A", "adversative connector", 1),
+  // ── C.3 添加 (Additive) ─────────────────────────────────
+  P("C", "\u3057\u304B\u3082", ["\u3057\u304B\u3082"], "utterance-initial", "neutral", "addition", "\u6DFB\u52A0", "\u3055\u3089\u306B\u52A0\u3048\u3066", "furthermore", 1),
+  P("C", "\u3055\u3089\u306B", ["\u3055\u3089\u306B"], "utterance-initial", "neutral", "addition", "\u6DFB\u52A0", "\u8FFD\u52A0\u3059\u308B", "adds more", 2),
+  P("C", "\u305D\u306E\u4E0A", ["\u305D\u306E", "\u4E0A"], "utterance-initial", "neutral", "addition", "\u6DFB\u52A0", "\u4E0A\u4E57\u305B", "on top of that", 2),
+  P("C", "\u305D\u308C\u306B", ["\u305D\u308C", "\u306B"], "utterance-initial", "neutral", "addition", "\u6DFB\u52A0", "\u8FFD\u52A0\u60C5\u5831", "additional info", 1),
+  P("C", "\u52A0\u3048\u3066", ["\u52A0\u3048", "\u3066"], "utterance-initial", "formal", "addition", "\u6DFB\u52A0", "\u5F62\u5F0F\u7684\u306A\u8FFD\u52A0", "formal addition", 3),
+  P("C", "\u304A\u307E\u3051\u306B", ["\u304A\u307E\u3051", "\u306B"], "utterance-initial", "casual", "addition", "\u6DFB\u52A0", "\u3055\u3089\u306B\u60AA\u3044\u3053\u3068\u306B", "to make matters worse", 2),
+  P("C", "\u305D\u308C\u3060\u3051\u3058\u3083\u306A\u304F\u3066", ["\u305D\u308C", "\u3060\u3051", "\u3058\u3083\u306A\u304F", "\u3066"], "utterance-initial", "casual", "addition", "\u6DFB\u52A0", "\u305D\u308C\u3060\u3051\u3067\u306A\u3044", "not just that", 1),
+  // ── C.4 例示 (Exemplification) ──────────────────────────
+  P("C", "\u4F8B\u3048\u3070", ["\u4F8B\u3048\u3070"], "utterance-initial", "neutral", "elaboration", "\u4F8B\u793A", "\u5177\u4F53\u4F8B\u3092\u793A\u3059", "gives concrete example", 1),
+  P("C", "\u305F\u3068\u3048\u3070\u3055", ["\u305F\u3068\u3048", "\u3070", "\u3055"], "utterance-initial", "casual", "elaboration", "\u4F8B\u793A", "\u30AB\u30B8\u30E5\u30A2\u30EB\u306A\u4F8B\u793A", "casual exemplification", 1),
+  P("C", "\u3044\u308F\u3070", ["\u3044\u308F\u3070"], "utterance-initial", "neutral", "elaboration", "\u4F8B\u793A", "\u6BD4\u55A9\u7684\u306B\u8A00\u3048\u3070", "so to speak", 3),
+  P("C", "\u3063\u3066\u8A00\u3063\u305F\u3089", ["\u3063\u3066", "\u8A00\u3063", "\u305F\u3089"], "mid-utterance", "casual", "elaboration", "\u4F8B\u793A\u30FB\u5F15\u7528", "\u5F15\u7528\u304B\u3089\u30AA\u30C1\u3078", "quote leading to punchline", 1),
+  // ── C.5 言い換え (Rephrasing) ───────────────────────────
+  P("C", "\u8A00\u3044\u63DB\u3048\u308B\u3068", ["\u8A00\u3044\u63DB\u3048\u308B", "\u3068"], "utterance-initial", "neutral", "rephrasing", "\u8A00\u3044\u63DB\u3048", "\u5225\u306E\u8868\u73FE\u3067\u8FF0\u3079\u308B", "restates differently", 3),
+  P("C", "\u3068\u3044\u3046\u304B", ["\u3068\u3044\u3046", "\u304B"], "mid-utterance", "casual", "rephrasing", "\u8A00\u3044\u63DB\u3048", "\u8A00\u3044\u63DB\u3048\u30FB\u4FEE\u6B63", "rephrase/correction", 1),
+  P("C", "\u3082\u3063\u3068\u8A00\u3046\u3068", ["\u3082\u3063\u3068", "\u8A00\u3046", "\u3068"], "utterance-initial", "neutral", "elaboration", "\u8A00\u3044\u63DB\u3048", "\u3055\u3089\u306B\u8E0F\u307F\u8FBC\u3080", "goes further", 2),
+  P("C", "\u306E\u8A71\u5FC5\u8981\u306A\u3044", ["\u306E", "\u8A71", "\u5FC5\u8981", "\u306A\u3044"], "mid-utterance", "casual", "self-repair", "\u30E1\u30BF\u767A\u8A00", "\u81EA\u5206\u306E\u8131\u7DDA\u3092\u4FEE\u6B63", "self-corrects digression", 1),
+  P("C", "\u3084\u3084\u3053\u3057\u304F\u306A\u3063\u305F", ["\u3084\u3084\u3053\u3057\u304F", "\u306A\u3063", "\u305F"], "mid-utterance", "casual", "self-repair", "\u30E1\u30BF\u767A\u8A00", "\u8907\u96D1\u306B\u306A\u3063\u305F\u3068\u8A8D\u3081\u308B", "admits it got complicated", 1)
+];
+var CAT_D = [
+  P("D", "\u3068\u3053\u308D\u3067", ["\u3068\u3053\u308D\u3067"], "utterance-initial", "neutral", "topic-shift", "\u8A71\u984C\u8EE2\u63DB", "\u8A71\u984C\u3092\u5909\u3048\u308B", "changes topic", 1),
+  P("D", "\u8A71\u5909\u308F\u308B\u3051\u3069", ["\u8A71", "\u5909\u308F\u308B", "\u3051\u3069"], "utterance-initial", "casual", "topic-shift", "\u8A71\u984C\u8EE2\u63DB", "\u660E\u793A\u7684\u306A\u8A71\u984C\u8EE2\u63DB", "explicit topic change", 1),
+  P("D", "\u305D\u3046\u3044\u3048\u3070", ["\u305D\u3046\u3044\u3048\u3070"], "utterance-initial", "casual", "topic-shift", "\u8A71\u984C\u8EE2\u63DB", "\u9023\u60F3\u7684\u8A71\u984C\u8EE2\u63DB", "associative topic shift", 1),
+  P("D", "\u3067\u3001\u3055\u3063\u304D\u306E", ["\u3067", "\u3055\u3063\u304D", "\u306E"], "utterance-initial", "casual", "topic-return", "\u8A71\u984C\u5FA9\u5E30", "\u524D\u306E\u8A71\u984C\u306B\u623B\u308B", "returns to earlier topic", 1),
+  P("D", "\u8A71\u623B\u3059\u3068", ["\u8A71", "\u623B\u3059", "\u3068"], "utterance-initial", "casual", "topic-return", "\u8A71\u984C\u5FA9\u5E30", "\u8A71\u3092\u623B\u3059", "gets back on track", 1),
+  P("D", "\u5143\u306B\u623B\u308B\u3068", ["\u5143", "\u306B", "\u623B\u308B", "\u3068"], "utterance-initial", "neutral", "topic-return", "\u8A71\u984C\u5FA9\u5E30", "\u5143\u306E\u8A71\u306B\u623B\u308B", "returns to original topic", 2),
+  P("D", "\u3061\u3087\u3063\u3068\u8A71\u623B\u3057\u3061\u3083\u3044\u307E\u3059\u3051\u3069\u3082", ["\u3061\u3087\u3063\u3068", "\u8A71", "\u623B\u3057", "\u3061\u3083", "\u3044\u307E\u3059", "\u3051\u3069\u3082"], "utterance-initial", "polite", "topic-return", "\u8A71\u984C\u5FA9\u5E30", "\u4E01\u5BE7\u306A\u8A71\u984C\u5FA9\u5E30\uFF08YT\uFF09", "polite topic return (YT)", 1),
+  P("D", "\u7D9A\u3044\u3066", ["\u7D9A\u3044", "\u3066"], "utterance-initial", "neutral", "sequence", "\u63A5\u7D9A", "\u6B21\u306E\u30BB\u30AF\u30B7\u30E7\u30F3\u3078", "moves to next section", 2),
+  P("D", "\u306F\u3044", ["\u306F\u3044"], "boundary", "polite", "turn-taking", "\u533A\u5207\u308A", "\u533A\u5207\u308A\u30FB\u627F\u8A8D", "segment marker/acknowledgment", 1),
+  P("D", "\u3055\u3042", ["\u3055\u3042"], "boundary", "casual", "attention", "\u533A\u5207\u308A", "\u6CE8\u610F\u559A\u8D77\u30FB\u958B\u59CB", "attention/start marker", 1),
+  P("D", "\u3053\u3063\u304B\u3089\u3061\u3087\u3063\u3068", ["\u3053\u3063\u304B\u3089", "\u3061\u3087\u3063\u3068"], "utterance-initial", "casual", "topic-initiation", "\u533A\u5207\u308A", "\u65B0\u30BB\u30AF\u30B7\u30E7\u30F3\u958B\u59CB", "starts new section", 1),
+  P("D", "\u3068\u3044\u3046\u611F\u3058\u3067\u3059\u306D", ["\u3068\u3044\u3046", "\u611F\u3058", "\u3067\u3059", "\u306D"], "utterance-final", "polite", "topic-close", "\u533A\u5207\u308A", "\u30BB\u30AF\u30B7\u30E7\u30F3\u7D42\u4E86", "closes section", 1),
+  P("D", "\u305D\u308C\u3067\u306F", ["\u305D\u308C\u3067\u306F"], "utterance-initial", "polite", "topic-shift", "\u533A\u5207\u308A", "\u5834\u9762\u8EE2\u63DB", "scene change", 2),
+  P("D", "\u3055\u3066", ["\u3055\u3066"], "utterance-initial", "neutral", "topic-shift", "\u533A\u5207\u308A", "\u6B21\u306E\u8A71\u984C\u3078\u79FB\u308B", "moves to next topic", 2),
+  P("D", "\u3068\u3044\u3046\u308F\u3051\u3067", ["\u3068\u3044\u3046", "\u308F\u3051", "\u3067"], "utterance-initial", "neutral", "summary", "\u533A\u5207\u308A", "\u524D\u6BB5\u306E\u307E\u3068\u3081", "summarizes preceding", 1),
+  P("D", "\u3068\u3044\u3046\u3053\u3068\u3067", ["\u3068\u3044\u3046\u3053\u3068", "\u3067"], "utterance-initial", "neutral", "summary", "\u533A\u5207\u308A", "\u7D50\u8AD6\u7684\u307E\u3068\u3081", "conclusive summary", 1),
+  P("D", "\u3058\u3083\u3042\u6B21", ["\u3058\u3083\u3042", "\u6B21"], "utterance-initial", "casual", "sequence", "\u533A\u5207\u308A", "\u6B21\u306E\u8A71\u984C\u30FB\u9805\u76EE\u3078", "onto next topic/item", 1),
+  P("D", "\u305D\u308C\u3058\u3083\u3042", ["\u305D\u308C\u3058\u3083\u3042"], "utterance-initial", "casual", "topic-shift", "\u533A\u5207\u308A", "\u5834\u9762\u8EE2\u63DB\uFF08\u30AB\u30B8\u30E5\u30A2\u30EB\uFF09", "casual scene change", 1),
+  // ── D.3 Section markers (expanded) ──────────────────────
+  P("D", "\u3058\u3083\u3042\u65E9\u901F", ["\u3058\u3083\u3042", "\u65E9\u901F"], "utterance-initial", "casual", "topic-initiation", "\u533A\u5207\u308A", "\u65E9\u901F\u672C\u984C\u3078", "gets right to it", 1),
+  P("D", "\u3053\u3053\u304B\u3089\u304C\u672C\u984C", ["\u3053\u3053", "\u304B\u3089", "\u304C", "\u672C\u984C"], "utterance-initial", "neutral", "topic-initiation", "\u8A71\u984C\u8EE2\u63DB", "\u672C\u984C\u3092\u660E\u793A\u3059\u308B", "explicitly marks main topic", 2),
+  P("D", "\u672C\u984C\u306B\u5165\u308B\u3068", ["\u672C\u984C", "\u306B", "\u5165\u308B", "\u3068"], "utterance-initial", "neutral", "topic-initiation", "\u8A71\u984C\u8EE2\u63DB", "\u672C\u984C\u306B\u79FB\u884C", "transitions to main topic", 2),
+  P("D", "\u3061\u306A\u307F\u306B", ["\u3061\u306A\u307F", "\u306B"], "utterance-initial", "neutral", "topic-shift", "\u88DC\u8DB3\u7684\u8EE2\u63DB", "\u88DC\u8DB3\u60C5\u5831\u3092\u52A0\u3048\u308B", "adds supplementary info", 1),
+  P("D", "\u4F59\u8AC7\u3067\u3059\u304C", ["\u4F59\u8AC7", "\u3067\u3059", "\u304C"], "utterance-initial", "polite", "topic-shift", "\u8131\u7DDA", "\u8131\u7DDA\u3092\u660E\u793A\u3059\u308B", "explicitly marks digression", 2),
+  P("D", "\u4F59\u8AC7\u3060\u3051\u3069", ["\u4F59\u8AC7", "\u3060", "\u3051\u3069"], "utterance-initial", "casual", "topic-shift", "\u8131\u7DDA", "\u8131\u7DDA\u3092\u660E\u793A\uFF08\u53E3\u8A9E\uFF09", "marks digression (casual)", 1),
+  P("D", "\u6700\u5F8C\u306B", ["\u6700\u5F8C", "\u306B"], "utterance-initial", "neutral", "sequence", "\u533A\u5207\u308A", "\u6700\u7D42\u9805\u76EE\u3092\u793A\u3059", "marks final item", 2),
+  P("D", "\u305D\u308C\u3068", ["\u305D\u308C", "\u3068"], "utterance-initial", "casual", "sequence", "\u63A5\u7D9A", "\u8FFD\u52A0\u9805\u76EE", "adds another item", 1),
+  P("D", "\u3042\u3068\u306F", ["\u3042\u3068", "\u306F"], "utterance-initial", "casual", "sequence", "\u63A5\u7D9A", "\u6B8B\u308A\u306E\u9805\u76EE", "remaining items", 1),
+  P("D", "\u307E\u3001\u3044\u3044\u3084", ["\u307E", "\u3044\u3044", "\u3084"], "utterance-initial", "casual", "topic-close", "\u533A\u5207\u308A", "\u8A71\u984C\u3092\u5207\u308A\u4E0A\u3052\u308B", "drops the topic", 1),
+  P("D", "\u4EE5\u4E0A\u3067\u3059", ["\u4EE5\u4E0A", "\u3067\u3059"], "utterance-final", "polite", "topic-close", "\u533A\u5207\u308A", "\u7D42\u4E86\u5BA3\u8A00", "declares end", 2),
+  P("D", "\u3053\u3093\u306A\u3068\u3053\u308D\u3067\u3059\u304B\u306D", ["\u3053\u3093\u306A", "\u3068\u3053\u308D", "\u3067\u3059", "\u304B\u306D"], "utterance-final", "polite", "topic-close", "\u533A\u5207\u308A", "\u7D42\u4E86\u306E\u78BA\u8A8D", "confirms ending", 1),
+  P("D", "\u3068\u3044\u3046\u3053\u3068\u3067\u306D", ["\u3068\u3044\u3046\u3053\u3068", "\u3067", "\u306D"], "utterance-initial", "casual", "summary", "\u533A\u5207\u308A", "\u7D50\u8AD6\u7684\u307E\u3068\u3081\uFF08\u8A9E\u308A\u304B\u3051\uFF09", "conclusive wrap-up (addressing)", 1),
+  P("D", "\u3042\u3068\u4F55\u3060\u3063\u3051", ["\u3042\u3068", "\u4F55", "\u3060\u3063\u3051"], "utterance-initial", "casual", "topic-shift", "\u533A\u5207\u308A", "\u601D\u3044\u51FA\u305D\u3046\u3068\u3059\u308B", "trying to recall", 1),
+  P("D", "\u305D\u3046\u3060", ["\u305D\u3046", "\u3060"], "utterance-initial", "casual", "topic-initiation", "\u533A\u5207\u308A", "\u601D\u3044\u51FA\u3057", "sudden recall", 1),
+  P("D", "\u3042\u3001\u305D\u3046\u3044\u3048\u3070", ["\u3042", "\u305D\u3046\u3044\u3048\u3070"], "utterance-initial", "casual", "topic-shift", "\u8A71\u984C\u8EE2\u63DB", "\u9023\u60F3\u7684\u60F3\u8D77", "associative recall", 1)
+];
+var CAT_E = [
+  // ── Final particles ─────────────────────────────────────
+  P("E", "\u306D", ["\u306D"], "utterance-final", "any", "agreement", "\u7D42\u52A9\u8A5E", "\u540C\u610F\u30FB\u78BA\u8A8D", "agreement/confirmation", 1),
+  P("E", "\u3088", ["\u3088"], "utterance-final", "any", "assertion", "\u7D42\u52A9\u8A5E", "\u4E3B\u5F35\u30FB\u4F1D\u9054", "assertion/informing", 1),
+  P("E", "\u3055", ["\u3055"], "any", "casual", "filler", "\u7D42\u52A9\u8A5E", "\u4F1A\u8A71\u6F64\u6ED1", "conversational lubricant", 1),
+  P("E", "\u306A", ["\u306A"], "utterance-final", "casual", "emotional", "\u7D42\u52A9\u8A5E", "\u72EC\u308A\u8A00\u30FB\u611F\u5606", "self-directed/exclamation", 1),
+  P("E", "\u304B\u306A", ["\u304B\u306A"], "utterance-final", "casual", "confirmation-seeking", "\u7D42\u52A9\u8A5E", "\u81EA\u554F\u30FB\u7591\u554F", "self-questioning", 1),
+  P("E", "\u308F", ["\u308F"], "utterance-final", "casual", "emotional", "\u7D42\u52A9\u8A5E", "\u611F\u60C5\u8868\u51FA", "emotional expression", 2),
+  P("E", "\u305E", ["\u305E"], "utterance-final", "casual", "emphasis", "\u7D42\u52A9\u8A5E", "\u5F37\u8ABF\u30FB\u6C7A\u610F", "emphasis/determination", 2),
+  P("E", "\u305C", ["\u305C"], "utterance-final", "casual", "emphasis", "\u7D42\u52A9\u8A5E", "\u7537\u6027\u7684\u5F37\u8ABF", "masculine emphasis", 3),
+  // ── Backchannel/Agreement signals (YT-specific from PR8) ─
+  P("E", "\u305D\u3046\u305D\u3046\u305D\u3046", ["\u305D\u3046", "\u305D\u3046", "\u305D\u3046"], "any", "casual", "backchannel", "\u76F8\u3065\u3061", "\u6025\u901F\u306A\u540C\u610F", "rapid agreement", 1),
+  P("E", "\u305D\u3046\u305D\u3046\u305D\u3046\u305D\u3046", ["\u305D\u3046", "\u305D\u3046", "\u305D\u3046", "\u305D\u3046"], "any", "casual", "backchannel", "\u76F8\u3065\u3061", "\u5F37\u3044\u540C\u610F", "emphatic rapid agreement", 1),
+  P("E", "\u306F\u3044\u306F\u3044\u306F\u3044", ["\u306F\u3044", "\u306F\u3044", "\u306F\u3044"], "any", "neutral", "backchannel", "\u76F8\u3065\u3061", "\u7D20\u65E9\u3044\u4E86\u627F", "quick acknowledgment", 1),
+  P("E", "\u3046\u3093\u3046\u3093\u3046\u3093", ["\u3046\u3093", "\u3046\u3093", "\u3046\u3093"], "any", "casual", "backchannel", "\u76F8\u3065\u3061", "\u30AB\u30B8\u30E5\u30A2\u30EB\u306A\u4E86\u627F", "casual acknowledgment", 1),
+  P("E", "\u3046\u3093", ["\u3046\u3093"], "any", "casual", "backchannel", "\u76F8\u3065\u3061", "\u540C\u610F\u30FB\u4E86\u627F", "agreement/acknowledgment", 1),
+  P("E", "\u3042\u3042", ["\u3042\u3042"], "utterance-initial", "casual", "backchannel", "\u76F8\u3065\u3061", "\u7406\u89E3\u30FB\u6C17\u3065\u304D", "understanding/realization", 1),
+  P("E", "\u3078\u3048", ["\u3078\u3048"], "utterance-initial", "casual", "surprise", "\u76F8\u3065\u3061", "\u9A5A\u304D\u30FB\u95A2\u5FC3", "surprise/interest", 1),
+  P("E", "\u306A\u308B\u307B\u3069", ["\u306A\u308B\u307B\u3069"], "utterance-initial", "neutral", "backchannel", "\u76F8\u3065\u3061", "\u7406\u89E3\u30FB\u7D0D\u5F97", "understanding/acceptance", 1),
+  P("E", "\u306A\u308B\u307B\u3069\u306D", ["\u306A\u308B\u307B\u3069", "\u306D"], "utterance-initial", "casual", "backchannel", "\u76F8\u3065\u3061", "\u7406\u89E3\uFF0B\u5171\u611F", "understanding + empathy", 1),
+  P("E", "\u305F\u3057\u304B\u306B", ["\u305F\u3057\u304B", "\u306B"], "utterance-initial", "casual", "agreement", "\u76F8\u3065\u3061", "\u540C\u610F\u3092\u793A\u3059", "shows agreement", 1),
+  P("E", "\u5206\u304B\u308B", ["\u5206\u304B\u308B"], "utterance-initial", "casual", "agreement", "\u76F8\u3065\u3061", "\u5171\u611F\u30FB\u7406\u89E3", "empathy/understanding", 1),
+  P("E", "\u308F\u304B\u308B\u308F\u304B\u308B", ["\u308F\u304B\u308B", "\u308F\u304B\u308B"], "utterance-initial", "casual", "agreement", "\u76F8\u3065\u3061", "\u5F37\u3044\u5171\u611F", "strong empathy", 1),
+  P("E", "\u307E\u3058\u3067", ["\u307E\u3058", "\u3067"], "any", "slang", "surprise", "\u76F8\u3065\u3061", "\u9A5A\u304D\uFF08\u4FD7\u8A9E\uFF09", "surprise (slang)", 1),
+  P("E", "\u30DE\u30B8", ["\u30DE\u30B8"], "any", "slang", "surprise", "\u76F8\u3065\u3061", "\u9A5A\u304D\uFF08\u30AB\u30BF\u30AB\u30CA\uFF09", "surprise (katakana)", 1),
+  P("E", "\u3048\u30FC", ["\u3048\u30FC"], "utterance-initial", "casual", "surprise", "\u76F8\u3065\u3061", "\u9A5A\u304D\u30FB\u56F0\u60D1", "surprise/bewilderment", 1),
+  P("E", "\u3046\u305D", ["\u3046\u305D"], "utterance-initial", "casual", "surprise", "\u76F8\u3065\u3061", "\u4FE1\u3058\u3089\u308C\u306A\u3044", "disbelief", 1),
+  P("E", "\u3084\u3070", ["\u3084\u3070"], "any", "slang", "surprise", "\u76F8\u3065\u3061", "\u9A5A\u304D\uFF08\u30B9\u30E9\u30F3\u30B0\uFF09", "amazement (slang)", 1),
+  P("E", "\u3084\u3070\u3044", ["\u3084\u3070\u3044"], "any", "slang", "emotional", "\u76F8\u3065\u3061", "\u611F\u60C5\u7684\u53CD\u5FDC", "emotional reaction", 1),
+  P("E", "\u3059\u3054\u3044", ["\u3059\u3054\u3044"], "any", "casual", "emotional", "\u76F8\u3065\u3061", "\u5F37\u3044\u53CD\u5FDC", "strong reaction", 1),
+  P("E", "\u3059\u3054\u3044\u306D", ["\u3059\u3054\u3044", "\u306D"], "any", "casual", "emotional", "\u76F8\u3065\u3061", "\u5171\u611F\u7684\u79F0\u8CDB", "empathetic praise", 1),
+  // ── Turn management ─────────────────────────────────────
+  P("E", "\u3061\u3087\u3063\u3068\u5F85\u3063\u3066", ["\u3061\u3087\u3063\u3068", "\u5F85\u3063", "\u3066"], "utterance-initial", "casual", "turn-taking", "\u30BF\u30FC\u30F3\u7BA1\u7406", "\u5272\u308A\u8FBC\u307F", "interruption", 1),
+  P("E", "\u8A00\u3044\u305F\u3044\u3093\u3060\u3051\u3069", ["\u8A00\u3044", "\u305F\u3044", "\u3093", "\u3060", "\u3051\u3069"], "utterance-initial", "casual", "turn-taking", "\u30BF\u30FC\u30F3\u7BA1\u7406", "\u767A\u8A00\u6A29\u3092\u6C42\u3081\u308B", "requests the floor", 2),
+  P("E", "\u3042\u3001\u305D\u3046\u3060", ["\u3042", "\u305D\u3046", "\u3060"], "utterance-initial", "casual", "topic-initiation", "\u30BF\u30FC\u30F3\u7BA1\u7406", "\u601D\u3044\u51FA\u3057", "sudden recall", 1)
+];
+var CAT_F = [
+  // ── Epistemic (知識・確信度) ─────────────────────────────
+  P("F", "\u3060\u308D\u3046", ["\u3060\u308D\u3046"], "utterance-final", "neutral", "epistemic", "\u8A8D\u8B58\u7684", "\u63A8\u91CF", "conjecture", 1),
+  P("F", "\u304B\u3082\u3057\u308C\u306A\u3044", ["\u304B\u3082\u3057\u308C\u306A\u3044"], "utterance-final", "neutral", "epistemic", "\u8A8D\u8B58\u7684", "\u53EF\u80FD\u6027", "possibility", 1),
+  P("F", "\u304B\u3082\u3057\u308C\u307E\u305B\u3093", ["\u304B\u3082\u3057\u308C\u307E\u305B\u3093"], "utterance-final", "polite", "epistemic", "\u8A8D\u8B58\u7684", "\u53EF\u80FD\u6027\uFF08\u4E01\u5BE7\uFF09", "possibility (polite)", 2),
+  P("F", "\u304B\u3082", ["\u304B\u3082"], "utterance-final", "casual", "epistemic", "\u8A8D\u8B58\u7684", "\u53EF\u80FD\u6027\uFF08\u7565\uFF09", "possibility (abbrev)", 1),
+  P("F", "\u306F\u305A\u3060", ["\u306F\u305A", "\u3060"], "utterance-final", "neutral", "epistemic", "\u8A8D\u8B58\u7684", "\u78BA\u4FE1", "conviction", 1),
+  P("F", "\u306B\u9055\u3044\u306A\u3044", ["\u306B", "\u9055\u3044", "\u306A\u3044"], "utterance-final", "neutral", "epistemic", "\u8A8D\u8B58\u7684", "\u78BA\u4FE1\uFF08\u5F37\u3044\uFF09", "strong conviction", 2),
+  P("F", "\u3088\u3046\u3060", ["\u3088\u3046", "\u3060"], "utterance-final", "neutral", "evidential", "\u8A8D\u8B58\u7684", "\u69D8\u614B\u63A8\u6E2C", "manner-based conjecture", 2),
+  P("F", "\u307F\u305F\u3044\u3060", ["\u307F\u305F\u3044", "\u3060"], "utterance-final", "casual", "evidential", "\u8A8D\u8B58\u7684", "\u5916\u89B3\u63A8\u6E2C", "appearance-based conjecture", 1),
+  P("F", "\u3089\u3057\u3044", ["\u3089\u3057\u3044"], "utterance-final", "neutral", "evidential", "\u8A8D\u8B58\u7684", "\u4F1D\u805E\u63A8\u6E2C", "hearsay conjecture", 1),
+  P("F", "\u6C17\u304C\u3059\u308B", ["\u6C17", "\u304C", "\u3059\u308B"], "utterance-final", "casual", "epistemic", "\u8A8D\u8B58\u7684", "\u76F4\u611F\u7684\u63A8\u6E2C", "intuitive feeling", 1),
+  P("F", "\u3063\u307D\u3044", ["\u3063\u307D\u3044"], "utterance-final", "casual", "epistemic", "\u8A8D\u8B58\u7684", "\u301C\u3089\u3057\u3044\uFF08\u304F\u3060\u3051\u305F\uFF09", "seems like (casual)", 1),
+  P("F", "\u591A\u5206", ["\u591A\u5206"], "any", "neutral", "epistemic", "\u8A8D\u8B58\u7684", "\u304A\u305D\u3089\u304F", "probably", 1),
+  P("F", "\u7D76\u5BFE", ["\u7D76\u5BFE"], "any", "neutral", "emphasis", "\u8A8D\u8B58\u7684", "\u78BA\u5B9F\u306B", "absolutely", 1),
+  P("F", "\u9593\u9055\u3044\u306A\u304F", ["\u9593\u9055\u3044", "\u306A\u304F"], "any", "neutral", "emphasis", "\u8A8D\u8B58\u7684", "\u7591\u3044\u306A\u304F", "without a doubt", 2),
+  // ── Deontic (義務・許可) ─────────────────────────────────
+  P("F", "\u3079\u304D\u3060", ["\u3079\u304D", "\u3060"], "utterance-final", "neutral", "deontic", "\u7FA9\u52D9\u7684", "\u7FA9\u52D9\u30FB\u5F53\u70BA", "obligation/ought", 2),
+  P("F", "\u3066\u3082\u3044\u3044", ["\u3066", "\u3082", "\u3044\u3044"], "utterance-final", "neutral", "deontic", "\u7FA9\u52D9\u7684", "\u8A31\u53EF", "permission", 1),
+  P("F", "\u3066\u306F\u3044\u3051\u306A\u3044", ["\u3066", "\u306F", "\u3044\u3051\u306A\u3044"], "utterance-final", "neutral", "deontic", "\u7FA9\u52D9\u7684", "\u7981\u6B62", "prohibition", 2),
+  P("F", "\u3053\u3068\u3060", ["\u3053\u3068", "\u3060"], "utterance-final", "neutral", "deontic", "\u7FA9\u52D9\u7684", "\u4E00\u822C\u7684\u52A9\u8A00", "general advice", 3),
+  P("F", "\u306A\u3044\u3068\u3044\u3051\u306A\u3044", ["\u306A\u3044", "\u3068", "\u3044\u3051\u306A\u3044"], "utterance-final", "neutral", "obligation", "\u7FA9\u52D9\u7684", "\u5FC5\u8981\u6027", "necessity", 1),
+  P("F", "\u306A\u304F\u3061\u3083", ["\u306A\u304F", "\u3061\u3083"], "utterance-final", "casual", "obligation", "\u7FA9\u52D9\u7684", "\u53E3\u8A9E\u7684\u7FA9\u52D9", "colloquial obligation", 1),
+  // ── Dynamic (能力・意志) ─────────────────────────────────
+  P("F", "\u3067\u304D\u308B", ["\u3067\u304D\u308B"], "utterance-final", "neutral", "dynamic", "\u52D5\u614B\u7684", "\u80FD\u529B\u30FB\u53EF\u80FD", "ability/possibility", 1),
+  P("F", "\u3089\u308C\u308B", ["\u3089\u308C\u308B"], "utterance-final", "neutral", "dynamic", "\u52D5\u614B\u7684", "\u53EF\u80FD\u614B", "potential form", 1),
+  P("F", "\u3088\u3046\u3068\u3059\u308B", ["\u3088\u3046", "\u3068", "\u3059\u308B"], "utterance-final", "neutral", "dynamic", "\u52D5\u614B\u7684", "\u8A66\u307F", "attempt", 2),
+  P("F", "\u3064\u3082\u308A\u3060", ["\u3064\u3082\u308A", "\u3060"], "utterance-final", "neutral", "dynamic", "\u52D5\u614B\u7684", "\u610F\u56F3", "intention", 1),
+  P("F", "\u3053\u3068\u306B\u3059\u308B", ["\u3053\u3068", "\u306B", "\u3059\u308B"], "utterance-final", "neutral", "dynamic", "\u52D5\u614B\u7684", "\u6C7A\u5B9A", "decision", 2)
+];
+var CAT_G = [
+  P("G", "\u3063\u3066", ["\u3063\u3066"], "mid-utterance", "casual", "quotation", "\u5F15\u7528", "\u30AB\u30B8\u30E5\u30A2\u30EB\u5F15\u7528", "casual quotation", 1),
+  P("G", "\u3068", ["\u3068"], "mid-utterance", "neutral", "quotation", "\u5F15\u7528", "\u5F15\u7528\u52A9\u8A5E", "quotation particle", 1),
+  P("G", "\u3063\u3066\u3044\u3046", ["\u3063\u3066", "\u3044\u3046"], "mid-utterance", "casual", "quotation", "\u5F15\u7528", "\u301C\u3068\u547C\u3070\u308C\u308B", "called/referred as", 1),
+  P("G", "\u3068\u3044\u3046", ["\u3068\u3044\u3046"], "mid-utterance", "neutral", "quotation", "\u5F15\u7528", "\u301C\u3068\u8A00\u308F\u308C\u308B", "called (neutral)", 1),
+  P("G", "\u3063\u3066\u8A00\u3046", ["\u3063\u3066", "\u8A00\u3046"], "mid-utterance", "casual", "quotation", "\u5F15\u7528", "\u660E\u793A\u7684\u5F15\u7528", "explicit quotation", 1),
+  P("G", "\u3068\u8A00\u3046", ["\u3068", "\u8A00\u3046"], "mid-utterance", "neutral", "quotation", "\u5F15\u7528", "\u660E\u793A\u7684\u5F15\u7528\uFF08\u4E2D\u7ACB\uFF09", "explicit quotation (neutral)", 2),
+  P("G", "\u3068\u601D\u3046", ["\u3068", "\u601D\u3046"], "utterance-final", "neutral", "epistemic", "\u5185\u7684\u5F15\u7528", "\u81EA\u5206\u306E\u8003\u3048", "own thought", 1),
+  P("G", "\u3068\u601D\u3063\u3066", ["\u3068", "\u601D\u3063", "\u3066"], "mid-utterance", "neutral", "epistemic", "\u5185\u7684\u5F15\u7528", "\u601D\u8003\u306E\u9023\u9396", "chain of thought", 1),
+  P("G", "\u3068\u601D\u3046\u3093\u3067\u3059\u3051\u3069", ["\u3068", "\u601D\u3046", "\u3093", "\u3067\u3059", "\u3051\u3069"], "utterance-final", "polite", "hedge", "\u5185\u7684\u5F15\u7528", "\u610F\u898B\uFF0B\u30D8\u30C3\u30B8", "opinion + hedge", 1),
+  P("G", "\u304B\u306A\u3068\u601D\u3063\u3066", ["\u304B\u306A", "\u3068", "\u601D\u3063", "\u3066"], "utterance-final", "casual", "hedge", "\u5185\u7684\u5F15\u7528", "\u66D6\u6627\u306A\u610F\u898B", "vague opinion", 1),
+  P("G", "\u3063\u3066\u8A71", ["\u3063\u3066", "\u8A71"], "mid-utterance", "casual", "quotation", "\u5F15\u7528", "\u305D\u306E\u8A71", "that story/topic", 1),
+  P("G", "\u307F\u305F\u3044\u306A\u3053\u3068\u3092\u8A00\u3063\u3066\u3066", ["\u307F\u305F\u3044", "\u306A", "\u3053\u3068", "\u3092", "\u8A00\u3063", "\u3066", "\u3066"], "mid-utterance", "casual", "quotation", "\u5F15\u7528", "\u4E0D\u6B63\u78BA\u306A\u5F15\u7528", "approximate quotation", 1),
+  P("G", "\u307F\u305F\u3044\u306A", ["\u307F\u305F\u3044", "\u306A"], "utterance-final", "casual", "quotation", "\u5F15\u7528", "\u301C\u7684\u306A\uFF08\u5F15\u7528\u7684\uFF09", "like/sort of (quotative)", 1),
+  P("G", "\u3068\u304B\u8A00\u3063\u3066", ["\u3068\u304B", "\u8A00\u3063", "\u3066"], "mid-utterance", "casual", "quotation", "\u5F15\u7528", "\u8EFD\u3044\u5F15\u7528", "light quotation", 1),
+  // ── G.2 Expanded quotation & hearsay ────────────────────
+  P("G", "\u3060\u3063\u3066", ["\u3060\u3063\u3066"], "utterance-initial", "casual", "quotation", "\u4F1D\u805E", "\u7406\u7531\u5F15\u7528\uFF08\u3060\u3063\u3066\u301C\u3060\u3082\u3093\uFF09", "reason quotation", 1),
+  P("G", "\u3089\u3057\u3044\u3088", ["\u3089\u3057\u3044", "\u3088"], "utterance-final", "casual", "evidential", "\u4F1D\u805E", "\u4F1D\u805E\uFF0B\u4F1D\u9054", "hearsay + informing", 1),
+  P("G", "\u3063\u3066\u805E\u3044\u305F", ["\u3063\u3066", "\u805E\u3044", "\u305F"], "utterance-final", "casual", "quotation", "\u4F1D\u805E", "\u805E\u3044\u305F\u60C5\u5831", "heard information", 1),
+  P("G", "\u3063\u3066\u805E\u3044\u305F\u3093\u3060\u3051\u3069", ["\u3063\u3066", "\u805E\u3044", "\u305F", "\u3093", "\u3060", "\u3051\u3069"], "utterance-final", "casual", "hedge", "\u4F1D\u805E", "\u805E\u3044\u305F\uFF0B\u30D8\u30C3\u30B8", "heard + hedge", 1),
+  P("G", "\u3060\u305D\u3046\u3067\u3059", ["\u3060", "\u305D\u3046", "\u3067\u3059"], "utterance-final", "polite", "evidential", "\u4F1D\u805E", "\u4F1D\u805E\uFF08\u4E01\u5BE7\uFF09", "hearsay (polite)", 2),
+  P("G", "\u3068\u306E\u3053\u3068\u3067\u3059", ["\u3068\u306E", "\u3053\u3068", "\u3067\u3059"], "utterance-final", "formal", "evidential", "\u4F1D\u805E", "\u4F1D\u805E\uFF08\u30D5\u30A9\u30FC\u30DE\u30EB\uFF09", "hearsay (formal)", 3),
+  P("G", "\u3063\u3066\u8A00\u308F\u308C\u3066", ["\u3063\u3066", "\u8A00\u308F", "\u308C\u3066"], "mid-utterance", "casual", "quotation", "\u53D7\u8EAB\u5F15\u7528", "\u8A00\u308F\u308C\u305F\u5F15\u7528", "was told quotation", 1),
+  P("G", "\u3068\u8A00\u308F\u308C\u3066\u3044\u308B", ["\u3068", "\u8A00\u308F", "\u308C", "\u3066", "\u3044\u308B"], "mid-utterance", "neutral", "evidential", "\u5B9A\u8AAC", "\u5B9A\u8AAC\u30FB\u4E00\u822C\u8AD6", "established opinion", 2),
+  P("G", "\u3063\u3066\u3044\u3046\u304B", ["\u3063\u3066", "\u3044\u3046", "\u304B"], "utterance-initial", "casual", "rephrasing", "\u5F15\u7528\u7684\u4FEE\u6B63", "\u8A00\u3044\u76F4\u3057", "self-correction via quotation", 1),
+  P("G", "\u3058\u3083\u306A\u3044\u3051\u3069", ["\u3058\u3083", "\u306A\u3044", "\u3051\u3069"], "mid-utterance", "casual", "quotation", "\u5F15\u7528\u7684\u4FEE\u6B63", "\u5426\u5B9A\u7684\u5F15\u7528", "negative citation (not exactly but)", 1),
+  P("G", "\u306A\u3093\u3066\u3044\u3046\u306E", ["\u306A\u3093\u3066", "\u3044\u3046", "\u306E"], "mid-utterance", "casual", "hedge", "\u5F15\u7528", "\u8A00\u3044\u65B9\u3092\u63A2\u3059", "searching for expression", 1),
+  P("G", "\u3044\u308F\u3086\u308B", ["\u3044\u308F\u3086\u308B"], "mid-utterance", "neutral", "quotation", "\u5F15\u7528", "\u3044\u308F\u3086\u308B\u301C", "so-called", 2),
+  P("G", "\u3063\u3066\u3084\u3064", ["\u3063\u3066", "\u3084\u3064"], "utterance-final", "casual", "quotation", "\u5F15\u7528", "\u301C\u3068\u3044\u3046\u3082\u306E", "the thing called", 1),
+  P("G", "\u3063\u3066\u611F\u3058", ["\u3063\u3066", "\u611F\u3058"], "utterance-final", "casual", "quotation", "\u5F15\u7528", "\u301C\u3068\u3044\u3046\u5370\u8C61", "the feeling of", 1),
+  P("G", "\u307F\u305F\u3044\u306A\u3053\u3068", ["\u307F\u305F\u3044", "\u306A", "\u3053\u3068"], "mid-utterance", "casual", "quotation", "\u5F15\u7528", "\u4E0D\u6B63\u78BA\u306A\u5F15\u7528", "approximate quotation", 1),
+  P("G", "\u3068\u304B\u4F55\u3068\u304B", ["\u3068\u304B", "\u4F55", "\u3068\u304B"], "utterance-final", "casual", "quotation", "\u5F15\u7528", "\u66D6\u6627\u306A\u5F15\u7528", "vague quotation", 1)
+];
+var CAT_H = [
+  P("H", "\u3066\u3044\u308B", ["\u3066\u3044\u308B"], "mid-utterance", "neutral", "progressive", "\u9032\u884C\u30FB\u7D50\u679C", "\u9032\u884C\u4E2D\u30FB\u7D50\u679C\u72B6\u614B", "progressive/resultative", 1),
+  P("H", "\u3066\u308B", ["\u3066\u308B"], "mid-utterance", "casual", "progressive", "\u9032\u884C\u30FB\u7D50\u679C", "\u9032\u884C\u4E2D\uFF08\u53E3\u8A9E\uFF09", "progressive (colloquial)", 1),
+  P("H", "\u3066\u3042\u308B", ["\u3066", "\u3042\u308B"], "mid-utterance", "neutral", "resultative", "\u7D50\u679C", "\u7D50\u679C\u72B6\u614B\uFF08\u610F\u56F3\u7684\uFF09", "resultative (intentional)", 2),
+  P("H", "\u3066\u3057\u307E\u3046", ["\u3066", "\u3057\u307E\u3046"], "mid-utterance", "neutral", "completion", "\u5B8C\u4E86", "\u5B8C\u4E86\u30FB\u6B8B\u5FF5", "completion/regret", 1),
+  P("H", "\u3061\u3083\u3046", ["\u3061\u3083\u3046"], "mid-utterance", "casual", "completion", "\u5B8C\u4E86", "\u5B8C\u4E86\uFF08\u53E3\u8A9E\uFF09", "completion (colloquial)", 1),
+  P("H", "\u3061\u3083\u3063\u305F", ["\u3061\u3083\u3063\u305F"], "utterance-final", "casual", "regret", "\u5B8C\u4E86", "\u4E0D\u672C\u610F\u306A\u5B8C\u4E86", "unintended completion", 1),
+  P("H", "\u3066\u304A\u304F", ["\u3066", "\u304A\u304F"], "mid-utterance", "neutral", "preparation", "\u6E96\u5099", "\u4E8B\u524D\u6E96\u5099", "preparation in advance", 2),
+  P("H", "\u3068\u304F", ["\u3068\u304F"], "mid-utterance", "casual", "preparation", "\u6E96\u5099", "\u6E96\u5099\uFF08\u53E3\u8A9E\uFF09", "preparation (colloquial)", 1),
+  P("H", "\u3066\u304F\u308B", ["\u3066", "\u304F\u308B"], "mid-utterance", "neutral", "progressive", "\u5909\u5316", "\u63A5\u8FD1\u30FB\u5909\u5316\u306E\u5230\u6765", "approach/change arrival", 1),
+  P("H", "\u3066\u3044\u304F", ["\u3066", "\u3044\u304F"], "mid-utterance", "neutral", "progressive", "\u5909\u5316", "\u9032\u884C\u30FB\u96E2\u53CD", "progression/departure", 1),
+  P("H", "\u305F\u3053\u3068\u304C\u3042\u308B", ["\u305F", "\u3053\u3068", "\u304C", "\u3042\u308B"], "utterance-final", "neutral", "experience", "\u7D4C\u9A13", "\u7D4C\u9A13\u3092\u8FF0\u3079\u308B", "states experience", 1),
+  P("H", "\u3068\u3053\u308D\u3060", ["\u3068\u3053\u308D", "\u3060"], "utterance-final", "neutral", "progressive", "\u5C40\u9762", "\u52D5\u4F5C\u306E\u5C40\u9762", "phase of action", 2),
+  P("H", "\u3068\u3053\u308D\u3060\u3063\u305F", ["\u3068\u3053\u308D", "\u3060\u3063", "\u305F"], "utterance-final", "neutral", "experience", "\u5C40\u9762", "\u5371\u6A5F\u4E00\u9AEA", "close call", 2),
+  P("H", "\u3070\u304B\u308A\u3060", ["\u3070\u304B\u308A", "\u3060"], "utterance-final", "neutral", "progressive", "\u76F4\u5F8C", "\u76F4\u5F8C", "just did", 2),
+  P("H", "\u305F\u3070\u304B\u308A", ["\u305F", "\u3070\u304B\u308A"], "mid-utterance", "neutral", "progressive", "\u76F4\u5F8C", "\u3057\u305F\u3070\u304B\u308A", "just completed", 1),
+  P("H", "\u3088\u3046\u3068\u3057\u3066\u3044\u308B", ["\u3088\u3046", "\u3068", "\u3057\u3066\u3044\u308B"], "mid-utterance", "neutral", "progressive", "\u5C40\u9762", "\u59CB\u307E\u308A\u304B\u3051", "about to begin", 2),
+  P("H", "\u3064\u3064\u3042\u308B", ["\u3064\u3064", "\u3042\u308B"], "mid-utterance", "formal", "progressive", "\u9032\u884C", "\u6F38\u9032\u7684\u5909\u5316", "gradual change", 3),
+  P("H", "\u3066\u307F\u308B", ["\u3066", "\u307F\u308B"], "mid-utterance", "neutral", "dynamic", "\u8A66\u884C", "\u8A66\u3057\u3066\u3044\u308B", "trying doing", 1),
+  P("H", "\u3066\u307F\u305F", ["\u3066", "\u307F", "\u305F"], "utterance-final", "neutral", "experience", "\u8A66\u884C", "\u8A66\u3057\u3066\u307F\u305F\u7D50\u679C", "result of trying", 1),
+  // ── H.2 Expanded aspect forms ───────────────────────────
+  P("H", "\u3088\u3046\u306B\u306A\u308B", ["\u3088\u3046", "\u306B", "\u306A\u308B"], "mid-utterance", "neutral", "progressive", "\u5909\u5316", "\u80FD\u529B\u30FB\u7FD2\u6163\u306E\u5909\u5316", "change in ability/habit", 1),
+  P("H", "\u3088\u3046\u306B\u306A\u3063\u305F", ["\u3088\u3046", "\u306B", "\u306A\u3063", "\u305F"], "utterance-final", "neutral", "progressive", "\u5909\u5316", "\u5909\u5316\u306E\u5B8C\u4E86", "completed change", 1),
+  P("H", "\u306A\u304F\u306A\u308B", ["\u306A\u304F", "\u306A\u308B"], "mid-utterance", "neutral", "progressive", "\u5909\u5316", "\u6D88\u5931\u306E\u5909\u5316", "change to non-existence", 1),
+  P("H", "\u306A\u304F\u306A\u3063\u305F", ["\u306A\u304F", "\u306A\u3063", "\u305F"], "utterance-final", "neutral", "completion", "\u5909\u5316", "\u6D88\u5931\u306E\u5B8C\u4E86", "completed disappearance", 1),
+  P("H", "\u3053\u3068\u306B\u306A\u308B", ["\u3053\u3068", "\u306B", "\u306A\u308B"], "mid-utterance", "neutral", "resultative", "\u7D50\u679C", "\u72B6\u6CC1\u7684\u5E30\u7D50", "situational consequence", 2),
+  P("H", "\u3053\u3068\u306B\u306A\u3063\u305F", ["\u3053\u3068", "\u306B", "\u306A\u3063", "\u305F"], "utterance-final", "neutral", "resultative", "\u7D50\u679C", "\u6C7A\u5B9A\u3055\u308C\u305F\u7D50\u679C", "decided outcome", 1),
+  P("H", "\u3066\u304B\u3089\u306F", ["\u3066", "\u304B\u3089", "\u306F"], "mid-utterance", "neutral", "progressive", "\u6642\u9593", "\u4EE5\u964D\u306E\u72B6\u614B", "state since then", 1),
+  P("H", "\u3066\u4EE5\u6765", ["\u3066", "\u4EE5\u6765"], "mid-utterance", "neutral", "progressive", "\u6642\u9593", "\u4EE5\u6765\u305A\u3063\u3068", "ever since", 2),
+  P("H", "\u305F\u307E\u307E", ["\u305F", "\u307E\u307E"], "mid-utterance", "neutral", "resultative", "\u7D50\u679C", "\u72B6\u614B\u306E\u7DAD\u6301", "maintained state", 1),
+  P("H", "\u3063\u3071\u306A\u3057", ["\u3063\u3071\u306A\u3057"], "utterance-final", "casual", "resultative", "\u653E\u7F6E", "\u653E\u7F6E\u72B6\u614B", "left as-is", 1),
+  P("H", "\u304B\u3051", ["\u304B\u3051"], "mid-utterance", "neutral", "progressive", "\u5C40\u9762", "\u9014\u4E2D\u30FB\u672A\u5B8C\u4E86", "midway/incomplete", 2),
+  P("H", "\u3060\u3057\u305F", ["\u3060\u3057", "\u305F"], "utterance-final", "neutral", "progressive", "\u958B\u59CB", "\u52D5\u4F5C\u306E\u958B\u59CB", "started doing", 1),
+  P("H", "\u306F\u3058\u3081\u308B", ["\u306F\u3058\u3081\u308B"], "mid-utterance", "neutral", "progressive", "\u958B\u59CB", "\u958B\u59CB\u3059\u308B", "begins doing", 2),
+  P("H", "\u304A\u308F\u308B", ["\u304A\u308F\u308B"], "mid-utterance", "neutral", "completion", "\u5B8C\u4E86", "\u5B8C\u4E86\u3059\u308B", "finishes doing", 2),
+  P("H", "\u7D9A\u3051\u308B", ["\u7D9A\u3051\u308B"], "mid-utterance", "neutral", "progressive", "\u7D99\u7D9A", "\u7D99\u7D9A\u3059\u308B", "continues doing", 2)
+];
+var CAT_I = [
+  // ── Polite forms ────────────────────────────────────────
+  P("I", "\u3067\u3059", ["\u3067\u3059"], "utterance-final", "polite", "politeness", "\u4E01\u5BE7\u8A9E", "\u4E01\u5BE7\u306A\u65AD\u5B9A", "polite assertion", 1),
+  P("I", "\u307E\u3059", ["\u307E\u3059"], "utterance-final", "polite", "politeness", "\u4E01\u5BE7\u8A9E", "\u4E01\u5BE7\u306A\u52D5\u8A5E\u5F62", "polite verb form", 1),
+  P("I", "\u3067\u3054\u3056\u3044\u307E\u3059", ["\u3067", "\u3054\u3056\u3044\u307E\u3059"], "utterance-final", "honorific", "politeness", "\u4E01\u91CD\u8A9E", "\u975E\u5E38\u306B\u4E01\u5BE7\u306A\u65AD\u5B9A", "very polite assertion", 4),
+  P("I", "\u3054\u3056\u3044\u307E\u3059", ["\u3054\u3056\u3044\u307E\u3059"], "utterance-final", "honorific", "respect", "\u4E01\u91CD\u8A9E", "\u4E01\u91CD\u8A9E\u52D5\u8A5E", "ultra-polite verb", 3),
+  // ── Honorific (尊敬語) ──────────────────────────────────
+  P("I", "\u304A\u3063\u3057\u3083\u308B", ["\u304A\u3063\u3057\u3083\u308B"], "mid-utterance", "honorific", "respect", "\u5C0A\u656C\u8A9E", "\u300C\u8A00\u3046\u300D\u306E\u5C0A\u656C\u8A9E", 'respectful "say"', 3),
+  P("I", "\u3044\u3089\u3063\u3057\u3083\u308B", ["\u3044\u3089\u3063\u3057\u3083\u308B"], "mid-utterance", "honorific", "respect", "\u5C0A\u656C\u8A9E", "\u300C\u3044\u308B/\u884C\u304F/\u6765\u308B\u300D\u306E\u5C0A\u656C\u8A9E", 'respectful "be/go/come"', 3),
+  P("I", "\u306A\u3055\u308B", ["\u306A\u3055\u308B"], "mid-utterance", "honorific", "respect", "\u5C0A\u656C\u8A9E", "\u300C\u3059\u308B\u300D\u306E\u5C0A\u656C\u8A9E", 'respectful "do"', 3),
+  P("I", "\u3054\u89A7\u306B\u306A\u308B", ["\u3054\u89A7", "\u306B", "\u306A\u308B"], "mid-utterance", "honorific", "respect", "\u5C0A\u656C\u8A9E", "\u300C\u898B\u308B\u300D\u306E\u5C0A\u656C\u8A9E", 'respectful "see"', 3),
+  P("I", "\u304A\u301C\u306B\u306A\u308B", ["\u304A", "\u306B", "\u306A\u308B"], "mid-utterance", "honorific", "respect", "\u5C0A\u656C\u8A9E", "\u5C0A\u656C\u8A9E\u30D1\u30BF\u30FC\u30F3", "respectful pattern", 3),
+  P("I", "\u301C\u308C\u308B", ["\u308C\u308B"], "mid-utterance", "polite", "respect", "\u5C0A\u656C\u8A9E", "\u53D7\u8EAB\u7684\u5C0A\u656C", "passive-form respect", 2),
+  P("I", "\u301C\u3089\u308C\u308B", ["\u3089\u308C\u308B"], "mid-utterance", "polite", "respect", "\u5C0A\u656C\u8A9E", "\u53EF\u80FD\u30FB\u5C0A\u656C", "potential/respect", 2),
+  // ── Humble (謙譲語) ─────────────────────────────────────
+  P("I", "\u3044\u305F\u3059", ["\u3044\u305F\u3059"], "mid-utterance", "humble", "humility", "\u8B19\u8B72\u8A9E", "\u300C\u3059\u308B\u300D\u306E\u8B19\u8B72\u8A9E", 'humble "do"', 3),
+  P("I", "\u7533\u3059", ["\u7533\u3059"], "mid-utterance", "humble", "humility", "\u8B19\u8B72\u8A9E", "\u300C\u8A00\u3046\u300D\u306E\u8B19\u8B72\u8A9E", 'humble "say"', 3),
+  P("I", "\u53C2\u308B", ["\u53C2\u308B"], "mid-utterance", "humble", "humility", "\u8B19\u8B72\u8A9E", "\u300C\u884C\u304F/\u6765\u308B\u300D\u306E\u8B19\u8B72\u8A9E", 'humble "go/come"', 3),
+  P("I", "\u3044\u305F\u3060\u304F", ["\u3044\u305F\u3060\u304F"], "mid-utterance", "humble", "humility", "\u8B19\u8B72\u8A9E", "\u300C\u3082\u3089\u3046\u300D\u306E\u8B19\u8B72\u8A9E", 'humble "receive"', 2),
+  P("I", "\u304F\u3060\u3055\u308B", ["\u304F\u3060\u3055\u308B"], "mid-utterance", "honorific", "respect", "\u5C0A\u656C\u8A9E", "\u300C\u304F\u308C\u308B\u300D\u306E\u5C0A\u656C\u8A9E", 'respectful "give"', 2),
+  P("I", "\u62DD\u898B\u3059\u308B", ["\u62DD\u898B", "\u3059\u308B"], "mid-utterance", "humble", "humility", "\u8B19\u8B72\u8A9E", "\u300C\u898B\u308B\u300D\u306E\u8B19\u8B72\u8A9E", 'humble "see"', 3),
+  // ── Casual/Slang register markers ──────────────────────
+  P("I", "\u3081\u3063\u3061\u3083", ["\u3081\u3063\u3061\u3083"], "any", "slang", "emphasis", "\u4FD7\u8A9E", "\u300C\u3068\u3066\u3082\u300D\u306E\u30B9\u30E9\u30F3\u30B0", '"very" slang', 1),
+  P("I", "\u8D85", ["\u8D85"], "any", "slang", "emphasis", "\u4FD7\u8A9E", "\u300C\u3068\u3066\u3082\u300D\u306E\u30B9\u30E9\u30F3\u30B0", '"very" prefix slang', 1),
+  P("I", "\u30DE\u30B8\u3067", ["\u30DE\u30B8", "\u3067"], "any", "slang", "emphasis", "\u4FD7\u8A9E", "\u672C\u6C17\u3067\u30FB\u672C\u5F53\u306B", "seriously/really", 1),
+  P("I", "\u30AC\u30C1\u3067", ["\u30AC\u30C1", "\u3067"], "any", "slang", "emphasis", "\u4FD7\u8A9E", "\u672C\u6C17\u3067\uFF08\u65B0\u3057\u3044\uFF09", "seriously (newer slang)", 1),
+  P("I", "\u3076\u3063\u3061\u3083\u3051", ["\u3076\u3063\u3061\u3083\u3051"], "utterance-initial", "slang", "information-source", "\u4FD7\u8A9E", "\u3076\u3063\u3061\u3083\u3051\u3066\u8A00\u3048\u3070", "frankly speaking", 1)
+];
+var LOGICAL_FLOWS = [
+  {
+    id: "LF001",
+    name: "\u56E0\u679C\u9023\u9396",
+    nameEn: "Cause \u2192 Result",
+    sequence: ["C001", "B011"],
+    // から → わけで
+    description: "\u539F\u56E0\u3092\u8FF0\u3079\u3066\u304B\u3089\u7D50\u679C\u30FB\u5E30\u7D50\u3092\u5C0E\u304F",
+    descriptionEn: "States cause then derives consequence",
+    example: "\u5FD9\u3057\u3044\u304B\u3089\u3001\u5168\u7136\u6642\u9593\u304C\u306A\u3044\u308F\u3051\u3067"
+  },
+  {
+    id: "LF002",
+    name: "\u9006\u63A5\u5C55\u958B",
+    nameEn: "Contrast Development",
+    sequence: ["C009", "B001"],
+    // けど → んですよ
+    description: "\u9006\u63A5\u3067\u7559\u4FDD\u3057\u3064\u3064\u4E3B\u5F35\u3092\u5C55\u958B\u3059\u308B",
+    descriptionEn: "Hedges with adversative then develops assertion",
+    example: "\u96E3\u3057\u3044\u3051\u3069\u3001\u3084\u3063\u3071\u308A\u5927\u4E8B\u306A\u3093\u3067\u3059\u3088"
+  },
+  {
+    id: "LF003",
+    name: "\u6BB5\u968E\u7684\u5C55\u958B",
+    nameEn: "Stepwise Elaboration",
+    sequence: ["A016", "B003"],
+    // で → んですけど
+    description: "\u8A71\u3092\u6BB5\u968E\u7684\u306B\u9032\u3081\u3066\u30D8\u30C3\u30B8\u3067\u7DE0\u3081\u308B",
+    descriptionEn: "Advances story stepwise, closes with hedge",
+    example: "\u3067\u306A\u3093\u304B\u8ABF\u3079\u3066\u305F\u3093\u3067\u3059\u3051\u3069"
+  },
+  {
+    id: "LF004",
+    name: "\u8B72\u6B69\u2192\u53CD\u8AD6",
+    nameEn: "Concession \u2192 Rebuttal",
+    sequence: ["A050", "A053", "B001"],
+    // 確かに → でも → んですよ
+    description: "\u76F8\u624B\u306E\u610F\u898B\u3092\u8A8D\u3081\u3066\u304B\u3089\u53CD\u8AD6\u3059\u308B",
+    descriptionEn: "Acknowledges opponent then rebuts",
+    example: "\u78BA\u304B\u306B\u305D\u306E\u901A\u308A\u306A\u3093\u3060\u3051\u3069\u3001\u3067\u3082\u3084\u3063\u3071\u308A\u9055\u3046\u3093\u3067\u3059\u3088"
+  },
+  {
+    id: "LF005",
+    name: "\u4E3B\u5F35\u2192\u6311\u6226\u2192\u53CD\u8AD6",
+    nameEn: "Thesis \u2192 Challenge \u2192 Refutation",
+    sequence: ["B046", "A078"],
+    // じゃないですか → 結論から言うとそんなことなくて
+    description: "\u901A\u8AAC\u3092\u78BA\u8A8D\u3057\u3066\u304B\u3089\u8986\u3059",
+    descriptionEn: "Confirms common view then overturns it",
+    example: "\u307F\u3093\u306A\u305D\u3046\u601D\u3046\u3058\u3083\u306A\u3044\u3067\u3059\u304B\u3002\u7D50\u8AD6\u304B\u3089\u8A00\u3046\u3068\u305D\u3093\u306A\u3053\u3068\u306A\u304F\u3066"
+  },
+  {
+    id: "LF006",
+    name: "\u8A2D\u5B9A\u2192\u30AA\u30C1",
+    nameEn: "Setup \u2192 Punchline",
+    sequence: ["C031", "E009"],
+    // って言ったら → そうそうそう
+    description: "\u5F15\u7528\u304B\u3089\u30AA\u30C1\u3078\u5C55\u958B\u3059\u308B",
+    descriptionEn: "Develops from quote to punchline",
+    example: "\u4F55\u306E\u8A71\u3063\u3066\u8A00\u3063\u305F\u3089\u3055\u3001\u305D\u3046\u305D\u3046\u305D\u3046"
+  },
+  {
+    id: "LF007",
+    name: "\u8A3C\u62E0\u9023\u9396",
+    nameEn: "Evidence Chain",
+    sequence: ["A027", "A028"],
+    // 1つはさ → あともう1個
+    description: "\u8907\u6570\u306E\u8A3C\u62E0\u3092\u5217\u6319\u3059\u308B",
+    descriptionEn: "Enumerates multiple pieces of evidence",
+    example: "1\u3064\u306F\u3055\u3001\u5024\u6BB5\u306E\u554F\u984C\u3002\u3042\u3068\u3082\u30461\u500B\u306F\u30AF\u30AA\u30EA\u30C6\u30A3"
+  },
+  {
+    id: "LF008",
+    name: "\u8AAC\u660E\u2192\u307E\u3068\u3081",
+    nameEn: "Explanation \u2192 Summary",
+    sequence: ["A071", "D015"],
+    // というのは → というわけで
+    description: "\u7406\u7531\u3092\u8AAC\u660E\u3057\u3066\u304B\u3089\u307E\u3068\u3081\u308B",
+    descriptionEn: "Explains reason then summarizes",
+    example: "\u3068\u3044\u3046\u306E\u306F\u6700\u8FD1\u5909\u308F\u3063\u305F\u3089\u3057\u304F\u3066\u3001\u3068\u3044\u3046\u308F\u3051\u3067"
+  },
+  {
+    id: "LF009",
+    name: "\u524D\u63D0\u2192\u5E30\u7D50",
+    nameEn: "Premise \u2192 Consequence",
+    sequence: ["A066", "A073"],
+    // そもそも → だから
+    description: "\u6839\u672C\u7684\u524D\u63D0\u3092\u793A\u3057\u3066\u304B\u3089\u7D50\u8AD6\u3092\u5C0E\u304F",
+    descriptionEn: "Establishes fundamental premise then derives conclusion",
+    example: "\u305D\u3082\u305D\u3082\u65E5\u672C\u8A9E\u3063\u3066\u96E3\u3057\u3044\u304B\u3089\u3001\u3060\u304B\u3089\u3053\u305D\u9762\u767D\u3044"
+  },
+  {
+    id: "LF010",
+    name: "\u5217\u6319\u2192\u8FFD\u52A0\u2192\u307E\u3068\u3081",
+    nameEn: "Enumerate \u2192 Add \u2192 Summarize",
+    sequence: ["A009", "C018", "A001"],
+    // まず → しかも → 結局
+    description: "\u9805\u76EE\u3092\u5217\u6319\u3057\u3001\u8FFD\u52A0\u3057\u3066\u7D50\u8AD6\u3059\u308B",
+    descriptionEn: "Lists items, adds more, then concludes",
+    example: "\u307E\u305A\u5024\u6BB5\u304C\u5B89\u3044\u3002\u3057\u304B\u3082\u54C1\u8CEA\u3082\u3044\u3044\u3002\u7D50\u5C40\u4E00\u756A\u304A\u5F97"
+  },
+  {
+    id: "LF011",
+    name: "\u8A71\u984C\u8EE2\u63DB\u2192\u65B0\u5C55\u958B",
+    nameEn: "Topic Shift \u2192 New Development",
+    sequence: ["D001", "A009"],
+    // ところで → まず
+    description: "\u8A71\u984C\u3092\u5909\u3048\u3066\u65B0\u3057\u3044\u5C55\u958B\u3092\u59CB\u3081\u308B",
+    descriptionEn: "Changes topic and starts new development",
+    example: "\u3068\u3053\u308D\u3067\u3001\u307E\u305A\u6700\u521D\u306B\u8A00\u3044\u305F\u3044\u306E\u306F"
+  },
+  {
+    id: "LF012",
+    name: "\u4F1D\u805E\u2192\u8A55\u4FA1",
+    nameEn: "Hearsay \u2192 Evaluation",
+    sequence: ["B035", "G007"],
+    // って言ってた → と思う
+    description: "\u4ED6\u8005\u306E\u767A\u8A00\u3092\u5F15\u7528\u3057\u3066\u304B\u3089\u81EA\u5206\u306E\u8A55\u4FA1\u3092\u8FF0\u3079\u308B",
+    descriptionEn: "Quotes others then gives own evaluation",
+    example: "\u307F\u3093\u306A\u305D\u3046\u8A00\u3063\u3066\u305F\u3051\u3069\u3001\u50D5\u306F\u305D\u3046\u306F\u601D\u308F\u306A\u3044"
+  },
+  {
+    id: "LF013",
+    name: "\u4FEE\u6B63\u2192\u518D\u63D0\u793A",
+    nameEn: "Repair \u2192 Restatement",
+    sequence: ["A060", "A002"],
+    // ていうか → 要するに
+    description: "\u524D\u8A00\u3092\u4FEE\u6B63\u3057\u3066\u8A00\u3044\u76F4\u3059",
+    descriptionEn: "Corrects previous statement and restates",
+    example: "\u3066\u3044\u3046\u304B\u3001\u8981\u3059\u308B\u306B\u305D\u3046\u3044\u3046\u3053\u3068\u306A\u3093\u3067\u3059\u3088"
+  },
+  {
+    id: "LF014",
+    name: "\u30D8\u30C3\u30B8\u2192\u4E3B\u5F35",
+    nameEn: "Hedge \u2192 Assertion",
+    sequence: ["A068", "F012"],
+    // 一応 → 絶対
+    description: "\u63A7\u3048\u3081\u306B\u59CB\u3081\u3066\u5F37\u3044\u4E3B\u5F35\u3067\u7DE0\u3081\u308B",
+    descriptionEn: "Starts tentatively, closes with strong assertion",
+    example: "\u4E00\u5FDC\u78BA\u8A8D\u3057\u305F\u3093\u3067\u3059\u3051\u3069\u3001\u3053\u308C\u306F\u7D76\u5BFE\u6B63\u3057\u3044"
+  },
+  {
+    id: "LF015",
+    name: "\u9A5A\u304D\u2192\u5171\u611F",
+    nameEn: "Surprise \u2192 Empathy",
+    sequence: ["E017", "E021"],
+    // へえ → なるほど
+    description: "\u9A5A\u304D\u304B\u3089\u7406\u89E3\u30FB\u5171\u611F\u306B\u79FB\u884C",
+    descriptionEn: "Transitions from surprise to understanding",
+    example: "\u3078\u3048\u3001\u306A\u308B\u307B\u3069\u306D\u3001\u305D\u3046\u3044\u3046\u3053\u3068\u304B"
+  },
+  {
+    id: "LF016",
+    name: "\u60C5\u5831\u63D0\u793A\u2192\u53CD\u5FDC\u8981\u6C42",
+    nameEn: "Info \u2192 Response Request",
+    sequence: ["A065", "B046"],
+    // 実は → じゃないですか
+    description: "\u610F\u5916\u306A\u60C5\u5831\u3092\u63D0\u793A\u3057\u3066\u53CD\u5FDC\u3092\u6C42\u3081\u308B",
+    descriptionEn: "Presents surprising info and seeks response",
+    example: "\u5B9F\u306F\u305D\u3046\u3058\u3083\u306A\u3044\u3067\u3059\u304B"
+  },
+  {
+    id: "LF017",
+    name: "\u985E\u63A8\u2192\u30E1\u30BF\u30B3\u30E1\u30F3\u30C8",
+    nameEn: "Analogy \u2192 Meta-comment",
+    sequence: ["C028", "C035"],
+    // 例えば → の話必要ない
+    description: "\u985E\u63A8\u3092\u5C55\u958B\u3057\u3066\u304B\u3089\u30E1\u30BF\u7684\u306B\u81EA\u5DF1\u4FEE\u6B63\u3059\u308B",
+    descriptionEn: "Develops analogy then meta-corrects",
+    example: "\u4F8B\u3048\u3070\u3055\u3001\u8ECA\u3067\u8A00\u3046\u3068... \u3042\u3001\u305D\u306E\u8A71\u5FC5\u8981\u306A\u3044"
+  },
+  // ── Expanded flows (LF018+) added by sentence-relations engine ──
+  {
+    id: "LF018",
+    name: "\u30C4\u30C3\u30B3\u30DF\u9023\u9396",
+    nameEn: "Tsukkomi Chain",
+    sequence: ["J004", "J009"],
+    description: "\u5426\u5B9A\u30C4\u30C3\u30B3\u30DF\u304B\u3089\u4FEE\u6B63\u3078\u5C55\u958B\u3059\u308B",
+    descriptionEn: "Denial tsukkomi develops into correction",
+    example: "\u3044\u3084\u3044\u3084\u3001\u305D\u3046\u3058\u3083\u306A\u304F\u3066\u3001\u3053\u3046\u3044\u3046\u3053\u3068\u3067\u3057\u3087"
+  },
+  {
+    id: "LF019",
+    name: "\u53CD\u5FDC\u2192\u6DF1\u5800\u308A",
+    nameEn: "Reaction \u2192 Dig Deeper",
+    sequence: ["J032", "K019"],
+    description: "\u7406\u89E3\u53CD\u5FDC\u304B\u3089\u7406\u7531\u306E\u6DF1\u5800\u308A\u3078",
+    descriptionEn: "Understanding reaction leads to deeper inquiry",
+    example: "\u306A\u308B\u307B\u3069\u306D\u3002\u306A\u305C\u304B\u3068\u3044\u3046\u3068\u3055\u2026"
+  },
+  {
+    id: "LF020",
+    name: "\u5171\u611F\u2192\u4F53\u9A13\u5171\u6709",
+    nameEn: "Empathy \u2192 Shared Experience",
+    sequence: ["M015", "M005"],
+    description: "\u5171\u611F\u306E\u8868\u660E\u304B\u3089\u81EA\u5206\u306E\u4F53\u9A13\u306E\u5171\u6709\u3078",
+    descriptionEn: "From empathy expression to sharing own experience",
+    example: "\u308F\u304B\u308B\u308F\u30FC\u3002\u81EA\u5206\u3082\u305D\u3046\u3060\u3063\u305F"
+  },
+  {
+    id: "LF021",
+    name: "\u5B9A\u7FA9\u2192\u5177\u4F53\u4F8B\u2192\u8981\u7D04",
+    nameEn: "Define \u2192 Example \u2192 Summarize",
+    sequence: ["L001", "K024", "A001"],
+    description: "\u5B9A\u7FA9\u2192\u4F8B\u793A\u2192\u307E\u3068\u3081\u306E\u8AAC\u660E\u4E09\u6BB5\u69CB\u6210",
+    descriptionEn: "Three-part explanation: define, exemplify, summarize",
+    example: "\u3068\u3044\u3046\u306E\u306F\u3007\u3007\u3067\u3001\u4F8B\u3048\u3070\u25B3\u25B3\u3002\u7D50\u5C40\u3053\u3046\u3044\u3046\u3053\u3068"
+  },
+  {
+    id: "LF022",
+    name: "\u7269\u8A9E\u2192\u30AA\u30C1\u2192\u53CD\u5FDC",
+    nameEn: "Story \u2192 Punchline \u2192 Reaction",
+    sequence: ["M001", "M002", "J030"],
+    description: "\u4F53\u9A13\u8AC7\u2192\u610F\u5916\u306A\u5C55\u958B\u2192\u5F37\u3044\u53CD\u5FDC",
+    descriptionEn: "Personal story \u2192 unexpected turn \u2192 strong reaction",
+    example: "\u3053\u306E\u524D\u3055\u3001\u30AB\u30D5\u30A7\u884C\u3063\u305F\u306E\u3088\u3002\u305D\u3057\u305F\u3089\u306A\u3093\u3068\u2026\u3084\u3070\u304F\u306A\u3044\uFF1F"
+  },
+  {
+    id: "LF023",
+    name: "\u4E3B\u5F35\u2192\u6311\u6226\u2192\u53CD\u8AD6\u2192\u518D\u4E3B\u5F35",
+    nameEn: "Claim \u2192 Challenge \u2192 Rebuttal \u2192 Reassert",
+    sequence: ["K006", "K016", "K010", "K003"],
+    description: "\u7D50\u8AD6\u2192\u7591\u554F\u2192\u53CD\u8AD6\u2192\u518D\u4E3B\u5F35\u306E\u8A0E\u8AD6\u30D5\u30EC\u30FC\u30E0",
+    descriptionEn: "Conclusion \u2192 question \u2192 rebuttal \u2192 reassertion debate frame",
+    example: "\u7D50\u8AD6\u304B\u3089\u8A00\u3046\u3068\u3007\u3007\u3002\u3067\u3082\u305D\u308C\u3063\u3066\u25B3\u25B3\uFF1F\u305D\u308C\u306F\u9055\u3046\u3068\u601D\u3046\u3002\u306F\u3063\u304D\u308A\u8A00\u3063\u3066\u25A1\u25A1"
+  },
+  {
+    id: "LF024",
+    name: "\u89E3\u8AAC\u6BB5\u968E\u5C55\u958B",
+    nameEn: "Stepwise Explanation",
+    sequence: ["L021", "L022", "L023", "L024"],
+    description: "\u6BB5\u968E\u7684\u306B\u89E3\u8AAC\u3057\u3066\u8981\u7D04\u3067\u7DE0\u3081\u308B",
+    descriptionEn: "Step-by-step explanation closing with summary",
+    example: "\u307E\u305A\u6700\u521D\u306B\u3007\u3007\u3002\u6B21\u306E\u30B9\u30C6\u30C3\u30D7\u3068\u3057\u3066\u25B3\u25B3\u3002\u6700\u7D42\u7684\u306B\u306F\u25A1\u25A1\u3002\u3064\u307E\u308A\u3069\u3046\u3044\u3046\u3053\u3068\u304B\u2026"
+  },
+  {
+    id: "LF025",
+    name: "\u8131\u7DDA\u2192\u5FA9\u5E30",
+    nameEn: "Digression \u2192 Return",
+    sequence: ["L025", "M025"],
+    description: "\u88DC\u8DB3\u7684\u8131\u7DDA\u304B\u3089\u306E\u5FA9\u5E30",
+    descriptionEn: "Return from supplementary digression",
+    example: "\u3061\u306A\u307F\u306B\u3053\u308C\u306F\u4F59\u8AC7\u3060\u3051\u3069\u2026\u5143\u306E\u8A71\u306B\u623B\u308B\u3068"
+  },
+  {
+    id: "LF026",
+    name: "\u9A5A\u304D\u2192\u78BA\u8A8D\u2192\u5171\u611F",
+    nameEn: "Surprise \u2192 Confirm \u2192 Empathy",
+    sequence: ["J024", "J027", "J034"],
+    description: "\u9A5A\u304D\u2192\u78BA\u8A8D\u2192\u7D0D\u5F97\u306E\u53CD\u5FDC\u9023\u9396",
+    descriptionEn: "Surprise \u2192 confirmation \u2192 convinced reaction chain",
+    example: "\u3048\u30FC\uFF01\u307E\u3058\u304B\u3002\u305F\u3057\u304B\u306B\u305D\u3046\u3060\u3088\u306D"
+  },
+  {
+    id: "LF027",
+    name: "\u7ACB\u5834\u8868\u660E\u2192\u6839\u62E0\u2192\u8B72\u6B69",
+    nameEn: "Stance \u2192 Evidence \u2192 Concession",
+    sequence: ["K031", "K019", "K014"],
+    description: "\u610F\u898B\u2192\u7406\u7531\u2192\u305F\u3060\u3057\u7684\u7559\u4FDD",
+    descriptionEn: "Opinion \u2192 reason \u2192 reservation",
+    example: "\u500B\u4EBA\u7684\u306B\u306F\u8CDB\u6210\u3002\u306A\u305C\u304B\u3068\u3044\u3046\u3068\u2026\u307E\u3042\u305D\u3046\u3068\u3082\u9650\u3089\u306A\u3044\u3051\u3069"
+  }
+];
+var CAT_J = [
+  // ── J.1 ツッコミ (Retorts/Corrections) ─────────────────
+  P("J", "\u306A\u3093\u3067\u3084\u306D\u3093", ["\u306A\u3093\u3067\u3084\u306D\u3093"], "utterance-initial", "slang", "tsukkomi", "\u30C4\u30C3\u30B3\u30DF", "\u95A2\u897F\u98A8\u30C4\u30C3\u30B3\u30DF\u306E\u5B9A\u756A", "classic Kansai tsukkomi", 1),
+  P("J", "\u3061\u3083\u3046\u308F", ["\u3061\u3083\u3046", "\u308F"], "utterance-initial", "slang", "tsukkomi", "\u30C4\u30C3\u30B3\u30DF", "\u95A2\u897F\u98A8\u5426\u5B9A\u30C4\u30C3\u30B3\u30DF", "Kansai denial tsukkomi", 2),
+  P("J", "\u304A\u3044\u304A\u3044", ["\u304A\u3044", "\u304A\u3044"], "utterance-initial", "casual", "tsukkomi", "\u30C4\u30C3\u30B3\u30DF", "\u5446\u308C\u305F\u30C4\u30C3\u30B3\u30DF", "exasperated retort", 1),
+  P("J", "\u3044\u3084\u3044\u3084\u3044\u3084", ["\u3044\u3084", "\u3044\u3084", "\u3044\u3084"], "utterance-initial", "casual", "tsukkomi", "\u30C4\u30C3\u30B3\u30DF", "\u5F37\u3044\u5426\u5B9A\u30C4\u30C3\u30B3\u30DF", "strong denial tsukkomi", 1),
+  P("J", "\u3044\u3084\u3044\u3084", ["\u3044\u3084", "\u3044\u3084"], "utterance-initial", "casual", "tsukkomi", "\u30C4\u30C3\u30B3\u30DF", "\u5426\u5B9A\u30C4\u30C3\u30B3\u30DF", "denial tsukkomi", 1),
+  P("J", "\u3061\u3087\u3063\u3068\u5F85\u3063\u3066", ["\u3061\u3087\u3063\u3068", "\u5F85\u3063\u3066"], "utterance-initial", "casual", "tsukkomi", "\u30C4\u30C3\u30B3\u30DF", "\u5272\u308A\u8FBC\u307F\u30C4\u30C3\u30B3\u30DF", "interruption tsukkomi", 1),
+  P("J", "\u5F85\u3063\u3066\u5F85\u3063\u3066", ["\u5F85\u3063\u3066", "\u5F85\u3063\u3066"], "utterance-initial", "casual", "tsukkomi", "\u30C4\u30C3\u30B3\u30DF", "\u7DCA\u6025\u5272\u308A\u8FBC\u307F", "urgent interruption", 1),
+  P("J", "\u3044\u3084\u5F85\u3066", ["\u3044\u3084", "\u5F85\u3066"], "utterance-initial", "casual", "tsukkomi", "\u30C4\u30C3\u30B3\u30DF", "\u5236\u6B62\u30C4\u30C3\u30B3\u30DF", "stopping tsukkomi", 2),
+  P("J", "\u305D\u3046\u3058\u3083\u306A\u304F\u3066", ["\u305D\u3046", "\u3058\u3083", "\u306A\u304F", "\u3066"], "utterance-initial", "casual", "tsukkomi", "\u4FEE\u6B63\u30C4\u30C3\u30B3\u30DF", "\u65B9\u5411\u4FEE\u6B63", "correction/redirecting", 1),
+  P("J", "\u9055\u3046\u9055\u3046", ["\u9055\u3046", "\u9055\u3046"], "utterance-initial", "casual", "tsukkomi", "\u4FEE\u6B63\u30C4\u30C3\u30B3\u30DF", "\u5F37\u3044\u5426\u5B9A\u30FB\u4FEE\u6B63", "strong denial/correction", 1),
+  P("J", "\u3044\u3084\u9055\u3046\u3063\u3066", ["\u3044\u3084", "\u9055\u3046", "\u3063\u3066"], "utterance-initial", "casual", "tsukkomi", "\u4FEE\u6B63\u30C4\u30C3\u30B3\u30DF", "\u53CD\u5FA9\u7684\u5426\u5B9A", "repeated denial", 1),
+  P("J", "\u306A\u3093\u3060\u305D\u308C", ["\u306A\u3093\u3060", "\u305D\u308C"], "utterance-initial", "casual", "tsukkomi", "\u30C4\u30C3\u30B3\u30DF", "\u5446\u308C\u305F\u53CD\u5FDC", "baffled reaction", 1),
+  P("J", "\u4F55\u8A00\u3063\u3066\u3093\u306E", ["\u4F55", "\u8A00\u3063\u3066", "\u3093", "\u306E"], "utterance-initial", "casual", "tsukkomi", "\u30C4\u30C3\u30B3\u30DF", "\u7406\u89E3\u4E0D\u80FD\u30C4\u30C3\u30B3\u30DF", "incomprehension tsukkomi", 1),
+  P("J", "\u305D\u308C\u306F\u306A\u3044", ["\u305D\u308C", "\u306F", "\u306A\u3044"], "utterance-initial", "casual", "tsukkomi", "\u5426\u5B9A\u30C4\u30C3\u30B3\u30DF", "\u3042\u308A\u3048\u306A\u3044\u5426\u5B9A", "outright denial", 1),
+  P("J", "\u3042\u308A\u3048\u306A\u3044", ["\u3042\u308A\u3048\u306A\u3044"], "any", "casual", "tsukkomi", "\u5426\u5B9A\u30C4\u30C3\u30B3\u30DF", "\u5F37\u3044\u5426\u5B9A\u53CD\u5FDC", "impossible/no way", 1),
+  P("J", "\u5618\u3067\u3057\u3087", ["\u5618", "\u3067\u3057\u3087"], "utterance-initial", "casual", "surprise", "\u30C4\u30C3\u30B3\u30DF", "\u4FE1\u3058\u3089\u308C\u306A\u3044\u53CD\u5FDC", "disbelief reaction", 1),
+  P("J", "\u3046\u305D\u3084\u3093", ["\u3046\u305D", "\u3084\u3093"], "utterance-initial", "slang", "surprise", "\u30C4\u30C3\u30B3\u30DF", "\u95A2\u897F\u98A8\u4FE1\u3058\u3089\u308C\u306A\u3044", "Kansai disbelief", 1),
+  P("J", "\u3048\u3047\u30FC", ["\u3048\u3047\u30FC"], "utterance-initial", "casual", "surprise", "\u30C4\u30C3\u30B3\u30DF", "\u9A5A\u304D\u53CD\u5FDC", "surprise reaction", 1),
+  P("J", "\u6012\u3089\u308C\u308B\u305E", ["\u6012\u3089", "\u308C\u308B", "\u305E"], "utterance-final", "casual", "tsukkomi", "\u8B66\u544A\u30C4\u30C3\u30B3\u30DF", "\u5197\u8AC7\u7684\u8B66\u544A", "playful warning", 2),
+  P("J", "\u3084\u3070\u304F\u306A\u3044", ["\u3084\u3070", "\u304F", "\u306A\u3044"], "any", "slang", "tsukkomi", "\u30C4\u30C3\u30B3\u30DF", "\u540C\u610F\u6C42\u3081\u30C4\u30C3\u30B3\u30DF", "seeking agreement tsukkomi", 1),
+  // ── J.2 反応 (Reactions/Backchannels) ──────────────────
+  P("J", "\u3078\u30FC", ["\u3078\u30FC"], "utterance-initial", "casual", "reaction", "\u53CD\u5FDC", "\u95A2\u5FC3\u3092\u793A\u3059", "shows interest", 1),
+  P("J", "\u3078\u3047\u30FC", ["\u3078\u3047\u30FC"], "utterance-initial", "casual", "reaction", "\u53CD\u5FDC", "\u5F37\u3044\u95A2\u5FC3", "strong interest", 1),
+  P("J", "\u307B\u30FC", ["\u307B\u30FC"], "utterance-initial", "casual", "reaction", "\u53CD\u5FDC", "\u611F\u5FC3\u53CD\u5FDC", "impressed reaction", 1),
+  P("J", "\u3048\u30FC", ["\u3048\u30FC"], "utterance-initial", "casual", "surprise", "\u53CD\u5FDC", "\u9A5A\u304D\u53CD\u5FDC", "surprise reaction", 1),
+  P("J", "\u3046\u305D\u30FC", ["\u3046\u305D\u30FC"], "utterance-initial", "casual", "surprise", "\u53CD\u5FDC", "\u4FE1\u3058\u304C\u305F\u3044\u53CD\u5FDC", "hard to believe", 1),
+  P("J", "\u307E\u3058\u3067", ["\u307E\u3058", "\u3067"], "utterance-initial", "slang", "surprise", "\u53CD\u5FDC", "\u9A5A\u304D\u78BA\u8A8D", "seriously?", 1),
+  P("J", "\u307E\u3058\u304B", ["\u307E\u3058", "\u304B"], "utterance-initial", "slang", "surprise", "\u53CD\u5FDC", "\u4FE1\u3058\u3089\u308C\u306A\u3044", "really?", 1),
+  P("J", "\u3084\u3070", ["\u3084\u3070"], "utterance-initial", "slang", "reaction", "\u53CD\u5FDC", "\u5F37\u3044\u611F\u60C5\u53CD\u5FDC", "intense emotional reaction", 1),
+  P("J", "\u3084\u3070\u3044", ["\u3084\u3070\u3044"], "any", "slang", "reaction", "\u53CD\u5FDC", "\u4E07\u80FD\u611F\u5606", "universal exclamation", 1),
+  P("J", "\u3059\u3054\u3044", ["\u3059\u3054\u3044"], "any", "casual", "reaction", "\u53CD\u5FDC", "\u611F\u5606\u53CD\u5FDC", "amazement reaction", 1),
+  P("J", "\u3059\u3052\u30FC", ["\u3059\u3052\u30FC"], "any", "slang", "reaction", "\u53CD\u5FDC", "\u611F\u5606\uFF08\u7C97\u3044\uFF09", "amazement (rough)", 1),
+  P("J", "\u306A\u308B\u307B\u3069", ["\u306A\u308B\u307B\u3069"], "utterance-initial", "neutral", "reaction", "\u53CD\u5FDC", "\u7406\u89E3\u3092\u793A\u3059", "shows understanding", 1),
+  P("J", "\u306A\u308B\u307B\u3069\u306D", ["\u306A\u308B\u307B\u3069", "\u306D"], "utterance-initial", "casual", "reaction", "\u53CD\u5FDC", "\u7406\u89E3\uFF0B\u5171\u611F", "understanding + empathy", 1),
+  P("J", "\u305F\u3057\u304B\u306B", ["\u305F\u3057\u304B", "\u306B"], "utterance-initial", "casual", "agreement", "\u53CD\u5FDC", "\u540C\u610F\u53CD\u5FDC", "agreement reaction", 1),
+  P("J", "\u308F\u304B\u308B", ["\u308F\u304B\u308B"], "utterance-initial", "casual", "empathy", "\u53CD\u5FDC", "\u5171\u611F\u53CD\u5FDC", "empathy reaction", 1),
+  P("J", "\u308F\u304B\u308B\u30FC", ["\u308F\u304B\u308B\u30FC"], "utterance-initial", "casual", "empathy", "\u53CD\u5FDC", "\u5F37\u3044\u5171\u611F", "strong empathy", 1),
+  P("J", "\u305D\u308C\u306A", ["\u305D\u308C", "\u306A"], "utterance-initial", "slang", "agreement", "\u53CD\u5FDC", "\u5F37\u3044\u540C\u610F\uFF08\u82E5\u8005\u8A9E\uFF09", "strong agreement (youth)", 1),
+  P("J", "\u307B\u3093\u3068\u305D\u308C", ["\u307B\u3093\u3068", "\u305D\u308C"], "utterance-initial", "casual", "agreement", "\u53CD\u5FDC", "\u5B8C\u5168\u540C\u610F", "total agreement", 1),
+  P("J", "\u3042\u30FC\u306D", ["\u3042\u30FC", "\u306D"], "utterance-initial", "casual", "reaction", "\u53CD\u5FDC", "\u7D0D\u5F97\u53CD\u5FDC", "convinced reaction", 1),
+  P("J", "\u306F\u3044\u306F\u3044\u306F\u3044", ["\u306F\u3044", "\u306F\u3044", "\u306F\u3044"], "utterance-initial", "casual", "backchannel", "\u53CD\u5FDC", "\u6025\u304E\u4E86\u89E3", "quick acknowledgement", 1),
+  P("J", "\u3046\u3093\u3046\u3093", ["\u3046\u3093", "\u3046\u3093"], "utterance-initial", "casual", "backchannel", "\u53CD\u5FDC", "\u9837\u304D", "nodding along", 1),
+  P("J", "\u305D\u3046\u305D\u3046\u305D\u3046", ["\u305D\u3046", "\u305D\u3046", "\u305D\u3046"], "utterance-initial", "casual", "agreement", "\u53CD\u5FDC", "\u5F37\u3044\u80AF\u5B9A", "emphatic affirmation", 1),
+  P("J", "\u30A6\u30B1\u308B", ["\u30A6\u30B1\u308B"], "any", "slang", "reaction", "\u53CD\u5FDC", "\u9762\u767D\u3044\u53CD\u5FDC", "funny reaction", 1),
+  P("J", "\u8349", ["\u8349"], "utterance-final", "slang", "reaction", "\u53CD\u5FDC", "\u7B11\u3044\uFF08\u30CD\u30C3\u30C8\u8A9E\uFF09", "laughter (internet)", 1),
+  P("J", "www", ["www"], "utterance-final", "slang", "reaction", "\u53CD\u5FDC", "\u7B11\u3044\uFF08\u30C6\u30AD\u30B9\u30C8\uFF09", "laughter (text)", 1)
+];
+var CAT_K = [
+  // ── K.1 主張提示 (Presenting Claims) ───────────────────
+  P("K", "\u79C1\u306E\u610F\u898B\u3068\u3057\u3066\u306F", ["\u79C1", "\u306E", "\u610F\u898B", "\u3068\u3057\u3066", "\u306F"], "utterance-initial", "polite", "stance-marking", "\u4E3B\u5F35\u63D0\u793A", "\u610F\u898B\u8868\u660E\u306E\u524D\u7F6E\u304D", "opinion presentation prefix", 2),
+  P("K", "\u50D5\u304C\u601D\u3046\u306B", ["\u50D5", "\u304C", "\u601D\u3046", "\u306B"], "utterance-initial", "casual", "stance-marking", "\u4E3B\u5F35\u63D0\u793A", "\u500B\u4EBA\u7684\u898B\u89E3", "personal view", 1),
+  P("K", "\u306F\u3063\u304D\u308A\u8A00\u3063\u3066", ["\u306F\u3063\u304D\u308A", "\u8A00\u3063", "\u3066"], "utterance-initial", "neutral", "assertion", "\u4E3B\u5F35\u63D0\u793A", "\u76F4\u63A5\u7684\u4E3B\u5F35", "direct assertion", 1),
+  P("K", "\u65AD\u8A00\u3057\u307E\u3059\u3051\u3069", ["\u65AD\u8A00", "\u3057\u307E\u3059", "\u3051\u3069"], "utterance-initial", "polite", "assertion", "\u4E3B\u5F35\u63D0\u793A", "\u5F37\u3044\u4E3B\u5F35\uFF0B\u30D8\u30C3\u30B8", "strong claim + hedge", 2),
+  P("K", "\u9593\u9055\u3044\u306A\u304F", ["\u9593\u9055\u3044", "\u306A\u304F"], "utterance-initial", "neutral", "assertion", "\u4E3B\u5F35\u63D0\u793A", "\u78BA\u4FE1\u7684\u4E3B\u5F35", "certain assertion", 1),
+  P("K", "\u7D50\u8AD6\u304B\u3089\u8A00\u3046\u3068", ["\u7D50\u8AD6", "\u304B\u3089", "\u8A00\u3046", "\u3068"], "utterance-initial", "neutral", "assertion", "\u4E3B\u5F35\u63D0\u793A", "\u7D50\u8AD6\u5148\u884C", "conclusion-first", 1),
+  P("K", "\u30DD\u30A4\u30F3\u30C8\u306F", ["\u30DD\u30A4\u30F3\u30C8", "\u306F"], "utterance-initial", "neutral", "topic-initiation", "\u4E3B\u5F35\u63D0\u793A", "\u8981\u70B9\u306E\u63D0\u793A", "presenting the point", 1),
+  P("K", "\u554F\u984C\u306F", ["\u554F\u984C", "\u306F"], "utterance-initial", "neutral", "topic-initiation", "\u4E3B\u5F35\u63D0\u793A", "\u554F\u984C\u63D0\u8D77", "raising the issue", 1),
+  P("K", "\u5927\u4E8B\u306A\u306E\u306F", ["\u5927\u4E8B", "\u306A", "\u306E", "\u306F"], "utterance-initial", "neutral", "emphasis", "\u4E3B\u5F35\u63D0\u793A", "\u91CD\u8981\u70B9\u306E\u5F37\u8ABF", "emphasizing key point", 1),
+  // ── K.2 反論・異議 (Rebuttal/Objection) ────────────────
+  P("K", "\u305D\u308C\u306F\u9055\u3046\u3068\u601D\u3046", ["\u305D\u308C", "\u306F", "\u9055\u3046", "\u3068", "\u601D\u3046"], "utterance-initial", "neutral", "rebuttal", "\u53CD\u8AD6", "\u4E01\u5BE7\u306A\u53CD\u8AD6", "polite rebuttal", 1),
+  P("K", "\u3044\u3084\u305D\u308C\u306F", ["\u3044\u3084", "\u305D\u308C", "\u306F"], "utterance-initial", "casual", "rebuttal", "\u53CD\u8AD6", "\u30AB\u30B8\u30E5\u30A2\u30EB\u53CD\u8AD6", "casual rebuttal", 1),
+  P("K", "\u305D\u308C\u306F\u8A00\u3044\u904E\u304E", ["\u305D\u308C", "\u306F", "\u8A00\u3044", "\u904E\u304E"], "utterance-initial", "casual", "rebuttal", "\u53CD\u8AD6", "\u8A87\u5F35\u306E\u6307\u6458", "pointing out exaggeration", 1),
+  P("K", "\u305D\u3046\u3068\u3082\u9650\u3089\u306A\u3044", ["\u305D\u3046", "\u3068\u3082", "\u9650\u3089", "\u306A\u3044"], "utterance-initial", "neutral", "rebuttal", "\u53CD\u8AD6", "\u90E8\u5206\u7684\u5426\u5B9A", "partial denial", 2),
+  P("K", "\u5FC5\u305A\u3057\u3082\u305D\u3046\u3067\u306F\u306A\u3044", ["\u5FC5\u305A\u3057\u3082", "\u305D\u3046", "\u3067", "\u306F", "\u306A\u3044"], "utterance-initial", "formal", "rebuttal", "\u53CD\u8AD6", "\u614E\u91CD\u306A\u53CD\u8AD6", "careful rebuttal", 2),
+  P("K", "\u3067\u3082\u305D\u308C\u3063\u3066", ["\u3067\u3082", "\u305D\u308C", "\u3063\u3066"], "utterance-initial", "casual", "challenge", "\u53CD\u8AD6", "\u7591\u554F\u578B\u53CD\u8AD6", "questioning rebuttal", 1),
+  P("K", "\u3061\u3087\u3063\u3068\u305D\u308C\u306F", ["\u3061\u3087\u3063\u3068", "\u305D\u308C", "\u306F"], "utterance-initial", "casual", "rebuttal", "\u53CD\u8AD6", "\u63A7\u3048\u3081\u53CD\u8AD6", "mild rebuttal", 1),
+  P("K", "\u305D\u308C\u3063\u3066\u3055", ["\u305D\u308C", "\u3063\u3066", "\u3055"], "utterance-initial", "casual", "challenge", "\u53CD\u8AD6", "\u6311\u6226\u7684\u8CEA\u554F", "challenging question", 1),
+  // ── K.3 根拠提示 (Presenting Evidence) ─────────────────
+  P("K", "\u306A\u305C\u304B\u3068\u3044\u3046\u3068", ["\u306A\u305C", "\u304B", "\u3068\u3044\u3046", "\u3068"], "utterance-initial", "neutral", "cause", "\u6839\u62E0\u63D0\u793A", "\u7406\u7531\u8AAC\u660E\u306E\u958B\u59CB", "reason explanation start", 1),
+  P("K", "\u306A\u305C\u306A\u3089", ["\u306A\u305C", "\u306A\u3089"], "utterance-initial", "formal", "cause", "\u6839\u62E0\u63D0\u793A", "\u7406\u7531\u63D0\u793A\uFF08\u66F8\u304D\u8A00\u8449\u7684\uFF09", "reason (literary)", 2),
+  P("K", "\u5B9F\u969B\u306B", ["\u5B9F\u969B", "\u306B"], "utterance-initial", "neutral", "evidential", "\u6839\u62E0\u63D0\u793A", "\u4E8B\u5B9F\u306B\u57FA\u3065\u304F\u4E3B\u5F35", "fact-based claim", 1),
+  P("K", "\u30C7\u30FC\u30BF\u3092\u898B\u308B\u3068", ["\u30C7\u30FC\u30BF", "\u3092", "\u898B\u308B", "\u3068"], "utterance-initial", "neutral", "evidential", "\u6839\u62E0\u63D0\u793A", "\u30C7\u30FC\u30BF\u53C2\u7167", "data reference", 2),
+  P("K", "\u4F8B\u3048\u3070", ["\u4F8B\u3048\u3070"], "utterance-initial", "neutral", "counter-example", "\u6839\u62E0\u63D0\u793A", "\u5177\u4F53\u4F8B\u306E\u63D0\u793A", "giving example", 1),
+  P("K", "\u5177\u4F53\u7684\u306B\u8A00\u3046\u3068", ["\u5177\u4F53\u7684", "\u306B", "\u8A00\u3046", "\u3068"], "utterance-initial", "neutral", "elaboration", "\u6839\u62E0\u63D0\u793A", "\u5177\u4F53\u5316", "being specific", 2),
+  P("K", "\u4E8B\u5B9F\u3068\u3057\u3066", ["\u4E8B\u5B9F", "\u3068\u3057\u3066"], "utterance-initial", "formal", "evidential", "\u6839\u62E0\u63D0\u793A", "\u4E8B\u5B9F\u5F15\u7528", "citing fact", 2),
+  P("K", "\u7814\u7A76\u306B\u3088\u308B\u3068", ["\u7814\u7A76", "\u306B", "\u3088\u308B", "\u3068"], "utterance-initial", "formal", "evidential", "\u6839\u62E0\u63D0\u793A", "\u7814\u7A76\u5F15\u7528", "citing research", 3),
+  // ── K.4 立場表明 (Stance-taking) ───────────────────────
+  P("K", "\u8CDB\u6210", ["\u8CDB\u6210"], "any", "neutral", "agreement", "\u7ACB\u5834\u8868\u660E", "\u660E\u793A\u7684\u8CDB\u6210", "explicit agreement", 1),
+  P("K", "\u53CD\u5BFE", ["\u53CD\u5BFE"], "any", "neutral", "disagreement", "\u7ACB\u5834\u8868\u660E", "\u660E\u793A\u7684\u53CD\u5BFE", "explicit opposition", 1),
+  P("K", "\u3069\u3061\u3089\u304B\u3068\u3044\u3046\u3068", ["\u3069\u3061\u3089", "\u304B", "\u3068\u3044\u3046", "\u3068"], "utterance-initial", "neutral", "hedge", "\u7ACB\u5834\u8868\u660E", "\u63A7\u3048\u3081\u306A\u7ACB\u5834", "tentative stance", 1),
+  P("K", "\u500B\u4EBA\u7684\u306B\u306F", ["\u500B\u4EBA\u7684", "\u306B", "\u306F"], "utterance-initial", "neutral", "stance-marking", "\u7ACB\u5834\u8868\u660E", "\u500B\u4EBA\u610F\u898B\u30DE\u30FC\u30AB\u30FC", "personal opinion marker", 1),
+  P("K", "\u6B63\u76F4\u306A\u3068\u3053\u308D", ["\u6B63\u76F4", "\u306A", "\u3068\u3053\u308D"], "utterance-initial", "neutral", "stance-marking", "\u7ACB\u5834\u8868\u660E", "\u7387\u76F4\u306A\u610F\u898B", "honest opinion", 1),
+  P("K", "\u6562\u3048\u3066\u8A00\u3046\u306A\u3089", ["\u6562\u3048\u3066", "\u8A00\u3046", "\u306A\u3089"], "utterance-initial", "formal", "stance-marking", "\u7ACB\u5834\u8868\u660E", "\u6562\u3048\u3066\u306E\u767A\u8A00", "daring to say", 2)
+];
+var CAT_L = [
+  // ── L.1 定義・説明 (Definition/Explanation) ────────────
+  P("L", "\u3068\u3044\u3046\u306E\u306F", ["\u3068\u3044\u3046", "\u306E", "\u306F"], "utterance-initial", "neutral", "definition", "\u5B9A\u7FA9", "\u5B9A\u7FA9\u306E\u5C0E\u5165", "definition introduction", 1),
+  P("L", "\u3044\u308F\u3086\u308B", ["\u3044\u308F\u3086\u308B"], "mid-utterance", "neutral", "definition", "\u5B9A\u7FA9", "\u3044\u308F\u3086\u308B\u301C", "so-called", 1),
+  P("L", "\u7C21\u5358\u306B\u8A00\u3048\u3070", ["\u7C21\u5358", "\u306B", "\u8A00\u3048", "\u3070"], "utterance-initial", "neutral", "explanation", "\u5B9A\u7FA9", "\u5E73\u6613\u306A\u8AAC\u660E", "simple explanation", 1),
+  P("L", "\u3056\u3063\u304F\u308A\u8A00\u3046\u3068", ["\u3056\u3063\u304F\u308A", "\u8A00\u3046", "\u3068"], "utterance-initial", "casual", "explanation", "\u5B9A\u7FA9", "\u6982\u8981\u8AAC\u660E", "rough explanation", 1),
+  P("L", "\u308F\u304B\u308A\u3084\u3059\u304F\u8A00\u3046\u3068", ["\u308F\u304B\u308A\u3084\u3059\u304F", "\u8A00\u3046", "\u3068"], "utterance-initial", "neutral", "explanation", "\u5B9A\u7FA9", "\u304B\u307F\u7815\u3044\u305F\u8AAC\u660E", "understandable explanation", 2),
+  P("L", "\u4F55\u304B\u3068\u3044\u3046\u3068", ["\u4F55", "\u304B", "\u3068\u3044\u3046", "\u3068"], "utterance-initial", "neutral", "definition", "\u5B9A\u7FA9", "\u5B9A\u7FA9\u306E\u63D0\u793A", "presenting definition", 1),
+  P("L", "\u3069\u3046\u3044\u3046\u3053\u3068\u304B\u3068\u3044\u3046\u3068", ["\u3069\u3046\u3044\u3046", "\u3053\u3068", "\u304B", "\u3068\u3044\u3046", "\u3068"], "utterance-initial", "neutral", "explanation", "\u5B9A\u7FA9", "\u8A73\u7D30\u8AAC\u660E\u306E\u958B\u59CB", "starting detailed explanation", 1),
+  // ── L.2 比喩・例示 (Analogy/Exemplification) ──────────
+  P("L", "\u305F\u3068\u3048\u308B\u306A\u3089", ["\u305F\u3068\u3048\u308B", "\u306A\u3089"], "utterance-initial", "neutral", "analogy", "\u6BD4\u55A9", "\u6BD4\u55A9\u306E\u5C0E\u5165", "analogy introduction", 2),
+  P("L", "\u30A4\u30E1\u30FC\u30B8\u3068\u3057\u3066\u306F", ["\u30A4\u30E1\u30FC\u30B8", "\u3068\u3057\u3066", "\u306F"], "utterance-initial", "neutral", "analogy", "\u6BD4\u55A9", "\u30A4\u30E1\u30FC\u30B8\u7684\u8AAC\u660E", "image-based explanation", 1),
+  P("L", "\u307F\u305F\u3044\u306A\u3082\u306E", ["\u307F\u305F\u3044", "\u306A", "\u3082\u306E"], "utterance-final", "casual", "analogy", "\u6BD4\u55A9", "\u6BD4\u55A9\u7684\u8868\u73FE", "metaphorical expression", 1),
+  P("L", "\u307F\u305F\u3044\u306A\u611F\u3058", ["\u307F\u305F\u3044", "\u306A", "\u611F\u3058"], "utterance-final", "casual", "analogy", "\u6BD4\u55A9", "\u66D6\u6627\u306A\u6BD4\u55A9", "vague analogy", 1),
+  P("L", "\u306B\u4F3C\u3066\u3044\u308B", ["\u306B", "\u4F3C\u3066", "\u3044\u308B"], "mid-utterance", "neutral", "comparison", "\u6BD4\u8F03", "\u985E\u4F3C\u306E\u6307\u6458", "pointing out similarity", 2),
+  P("L", "\u306B\u4F8B\u3048\u308B\u3068", ["\u306B", "\u4F8B\u3048\u308B", "\u3068"], "mid-utterance", "neutral", "analogy", "\u6BD4\u55A9", "\u4F8B\u3048\u306E\u63D0\u793A", "presenting analogy", 2),
+  P("L", "\u9006\u306B\u8A00\u3046\u3068", ["\u9006", "\u306B", "\u8A00\u3046", "\u3068"], "utterance-initial", "neutral", "contrast", "\u5BFE\u6BD4\u8AAC\u660E", "\u9006\u306E\u8996\u70B9", "reverse perspective", 1),
+  P("L", "\u8A00\u3044\u63DB\u3048\u308B\u3068", ["\u8A00\u3044\u63DB\u3048\u308B", "\u3068"], "utterance-initial", "neutral", "rephrasing", "\u5BFE\u6BD4\u8AAC\u660E", "\u8A00\u3044\u63DB\u3048", "rephrasing", 2),
+  // ── L.3 構造提示 (Structuring Explanation) ─────────────
+  P("L", "\u3053\u3053\u3067\u5927\u4E8B\u306A\u306E\u304C", ["\u3053\u3053", "\u3067", "\u5927\u4E8B", "\u306A", "\u306E", "\u304C"], "utterance-initial", "neutral", "emphasis", "\u69CB\u9020\u63D0\u793A", "\u91CD\u8981\u70B9\u30DE\u30FC\u30AF", "marking important point", 1),
+  P("L", "\u6CE8\u610F\u3057\u3066\u307B\u3057\u3044\u306E\u304C", ["\u6CE8\u610F", "\u3057\u3066", "\u307B\u3057\u3044", "\u306E", "\u304C"], "utterance-initial", "neutral", "attention", "\u69CB\u9020\u63D0\u793A", "\u6CE8\u610F\u559A\u8D77", "calling attention", 2),
+  P("L", "\u30DD\u30A4\u30F3\u30C8\u304C\u3042\u3063\u3066", ["\u30DD\u30A4\u30F3\u30C8", "\u304C", "\u3042\u3063", "\u3066"], "utterance-initial", "casual", "topic-initiation", "\u69CB\u9020\u63D0\u793A", "\u8981\u70B9\u306E\u4E88\u544A", "previewing key point", 1),
+  P("L", "\u6BB5\u968E\u7684\u306B\u898B\u3066\u3044\u304F\u3068", ["\u6BB5\u968E\u7684", "\u306B", "\u898B\u3066", "\u3044\u304F", "\u3068"], "utterance-initial", "neutral", "sequence", "\u69CB\u9020\u63D0\u793A", "\u6BB5\u968E\u7684\u8AAC\u660E\u306E\u958B\u59CB", "starting stepwise explanation", 2),
+  P("L", "\u307E\u305A\u6700\u521D\u306B", ["\u307E\u305A", "\u6700\u521D", "\u306B"], "utterance-initial", "neutral", "sequence", "\u69CB\u9020\u63D0\u793A", "\u7B2C\u4E00\u6BB5\u968E", "first stage", 1),
+  P("L", "\u6B21\u306E\u30B9\u30C6\u30C3\u30D7\u3068\u3057\u3066", ["\u6B21", "\u306E", "\u30B9\u30C6\u30C3\u30D7", "\u3068\u3057\u3066"], "utterance-initial", "neutral", "sequence", "\u69CB\u9020\u63D0\u793A", "\u6B21\u306E\u6BB5\u968E", "next step", 2),
+  P("L", "\u6700\u7D42\u7684\u306B\u306F", ["\u6700\u7D42\u7684", "\u306B", "\u306F"], "utterance-initial", "neutral", "summary", "\u69CB\u9020\u63D0\u793A", "\u6700\u7D42\u7D50\u679C", "final result", 1),
+  P("L", "\u3064\u307E\u308A\u3069\u3046\u3044\u3046\u3053\u3068\u304B", ["\u3064\u307E\u308A", "\u3069\u3046\u3044\u3046", "\u3053\u3068", "\u304B"], "utterance-initial", "neutral", "summary", "\u69CB\u9020\u63D0\u793A", "\u8981\u7D04\u306E\u958B\u59CB", "starting summary", 1),
+  // ── L.4 補足・注意 (Supplementary/Caution) ─────────────
+  P("L", "\u3061\u306A\u307F\u306B", ["\u3061\u306A\u307F\u306B"], "utterance-initial", "neutral", "digression", "\u88DC\u8DB3", "\u4ED8\u968F\u60C5\u5831", "supplementary info", 1),
+  P("L", "\u4F59\u8AC7\u3067\u3059\u304C", ["\u4F59\u8AC7", "\u3067\u3059", "\u304C"], "utterance-initial", "polite", "digression", "\u88DC\u8DB3", "\u8107\u9053\u60C5\u5831", "digression info", 2),
+  P("L", "\u305F\u3060\u3057", ["\u305F\u3060\u3057"], "utterance-initial", "neutral", "concession", "\u6CE8\u610F", "\u6761\u4EF6\u30FB\u5236\u9650\u306E\u8FFD\u52A0", "adding condition/limitation", 2),
+  P("L", "\u3053\u3053\u3067\u6CE8\u610F\u306A\u306E\u304C", ["\u3053\u3053", "\u3067", "\u6CE8\u610F", "\u306A", "\u306E", "\u304C"], "utterance-initial", "neutral", "attention", "\u6CE8\u610F", "\u6CE8\u610F\u70B9\u306E\u63D0\u793A", "presenting caution", 2),
+  P("L", "\u899A\u3048\u3066\u304A\u3044\u3066\u307B\u3057\u3044\u306E\u304C", ["\u899A\u3048\u3066", "\u304A\u3044\u3066", "\u307B\u3057\u3044", "\u306E", "\u304C"], "utterance-initial", "neutral", "emphasis", "\u6CE8\u610F", "\u8A18\u61B6\u3092\u4FC3\u3059", "urging to remember", 2),
+  P("L", "\u9593\u9055\u3048\u3084\u3059\u3044\u306E\u304C", ["\u9593\u9055\u3048", "\u3084\u3059\u3044", "\u306E", "\u304C"], "utterance-initial", "neutral", "attention", "\u6CE8\u610F", "\u8AA4\u308A\u3084\u3059\u3044\u70B9", "easy-to-mistake point", 2)
+];
+var CAT_M = [
+  // ── M.1 物語導入 (Story Introduction) ──────────────────
+  P("M", "\u3053\u306E\u524D\u3055", ["\u3053\u306E", "\u524D", "\u3055"], "utterance-initial", "casual", "narration", "\u7269\u8A9E\u5C0E\u5165", "\u6700\u8FD1\u306E\u4F53\u9A13\u8AC7", "recent personal story", 1),
+  P("M", "\u6628\u65E5\u306D", ["\u6628\u65E5", "\u306D"], "utterance-initial", "casual", "narration", "\u7269\u8A9E\u5C0E\u5165", "\u6628\u65E5\u306E\u8A71", "yesterday's story", 1),
+  P("M", "\u805E\u3044\u3066\u3088", ["\u805E\u3044\u3066", "\u3088"], "utterance-initial", "casual", "attention", "\u7269\u8A9E\u5C0E\u5165", "\u6CE8\u610F\u5F15\u304D", "attention-getting", 1),
+  P("M", "\u805E\u3044\u3066\u805E\u3044\u3066", ["\u805E\u3044\u3066", "\u805E\u3044\u3066"], "utterance-initial", "casual", "attention", "\u7269\u8A9E\u5C0E\u5165", "\u5F37\u3044\u6CE8\u610F\u5F15\u304D", "urgent attention-getting", 1),
+  P("M", "\u3073\u3063\u304F\u308A\u3057\u305F\u306E\u304C", ["\u3073\u3063\u304F\u308A", "\u3057\u305F", "\u306E", "\u304C"], "utterance-initial", "casual", "narration", "\u7269\u8A9E\u5C0E\u5165", "\u9A5A\u304D\u4F53\u9A13\u306E\u5C0E\u5165", "surprising experience intro", 1),
+  P("M", "\u9762\u767D\u3044\u8A71\u304C\u3042\u3063\u3066", ["\u9762\u767D\u3044", "\u8A71", "\u304C", "\u3042\u3063", "\u3066"], "utterance-initial", "casual", "narration", "\u7269\u8A9E\u5C0E\u5165", "\u9762\u767D\u3044\u8A71\u306E\u5C0E\u5165", "funny story intro", 1),
+  P("M", "\u307E\u3055\u304B\u306E", ["\u307E\u3055\u304B", "\u306E"], "utterance-initial", "casual", "surprise", "\u7269\u8A9E\u5C0E\u5165", "\u4E88\u60F3\u5916\u306E\u5C55\u958B", "unexpected development", 1),
+  P("M", "\u3042\u306E\u306D", ["\u3042\u306E", "\u306D"], "utterance-initial", "casual", "attention", "\u7269\u8A9E\u5C0E\u5165", "\u8A71\u3057\u304B\u3051", "addressing listener", 1),
+  // ── M.2 場面設定 (Scene Setting) ───────────────────────
+  P("M", "\u3042\u306E\u6642\u3055", ["\u3042\u306E", "\u6642", "\u3055"], "utterance-initial", "casual", "scene-setting", "\u5834\u9762\u8A2D\u5B9A", "\u904E\u53BB\u306E\u5834\u9762\u8A2D\u5B9A", "past scene setting", 1),
+  P("M", "\u305D\u3057\u305F\u3089\u306A\u3093\u3068", ["\u305D\u3057\u305F\u3089", "\u306A\u3093\u3068"], "utterance-initial", "casual", "narration", "\u5834\u9762\u8A2D\u5B9A", "\u610F\u5916\u306A\u5C55\u958B", "surprising turn", 1),
+  P("M", "\u3063\u3066\u3044\u3046\u6D41\u308C\u3067", ["\u3063\u3066", "\u3044\u3046", "\u6D41\u308C", "\u3067"], "utterance-final", "casual", "narration", "\u5834\u9762\u8A2D\u5B9A", "\u7D4C\u7DEF\u306E\u8AAC\u660E", "explaining sequence of events", 1),
+  P("M", "\u3053\u3046\u3044\u3046\u72B6\u6CC1\u3067", ["\u3053\u3046\u3044\u3046", "\u72B6\u6CC1", "\u3067"], "mid-utterance", "casual", "scene-setting", "\u5834\u9762\u8A2D\u5B9A", "\u72B6\u6CC1\u8AAC\u660E", "situation explanation", 1),
+  // ── M.3 共感・共有体験 (Empathy/Shared Experience) ─────
+  P("M", "\u3042\u308B\u3042\u308B", ["\u3042\u308B", "\u3042\u308B"], "utterance-initial", "casual", "shared-knowledge", "\u5171\u611F", "\u3088\u304F\u3042\u308B\u8A71", "relatable/common experience", 1),
+  P("M", "\u308F\u304B\u308B\u308F\u30FC", ["\u308F\u304B\u308B", "\u308F\u30FC"], "utterance-initial", "casual", "empathy", "\u5171\u611F", "\u6DF1\u3044\u5171\u611F", "deep empathy", 1),
+  P("M", "\u305D\u308C\u3042\u308B\u3088\u306D", ["\u305D\u308C", "\u3042\u308B", "\u3088", "\u306D"], "utterance-initial", "casual", "shared-knowledge", "\u5171\u611F", "\u5171\u6709\u4F53\u9A13\u306E\u78BA\u8A8D", "confirming shared experience", 1),
+  P("M", "\u3081\u3063\u3061\u3083\u308F\u304B\u308B", ["\u3081\u3063\u3061\u3083", "\u308F\u304B\u308B"], "utterance-initial", "slang", "empathy", "\u5171\u611F", "\u5F37\u3044\u5171\u611F", "intense empathy", 1),
+  P("M", "\u81EA\u5206\u3082\u305D\u3046\u3060\u3063\u305F", ["\u81EA\u5206", "\u3082", "\u305D\u3046", "\u3060\u3063\u305F"], "utterance-initial", "casual", "empathy", "\u5171\u611F", "\u540C\u3058\u7D4C\u9A13\u306E\u5171\u6709", "sharing same experience", 1),
+  // ── M.4 話題管理（雑談向け） (Topic Management for Chat) ─
+  P("M", "\u305D\u3046\u3044\u3048\u3070", ["\u305D\u3046\u3044\u3048\u3070"], "utterance-initial", "casual", "topic-shift", "\u8A71\u984C\u8EE2\u63DB", "\u60F3\u8D77\u7684\u8A71\u984C\u8EE2\u63DB", "recall-triggered topic shift", 1),
+  P("M", "\u305D\u308C\u3067\u601D\u3044\u51FA\u3057\u305F", ["\u305D\u308C", "\u3067", "\u601D\u3044\u51FA\u3057\u305F"], "utterance-initial", "casual", "topic-shift", "\u8A71\u984C\u8EE2\u63DB", "\u9023\u60F3\u7684\u8A71\u984C\u8EE2\u63DB", "association-triggered shift", 1),
+  P("M", "\u8A71\u5909\u308F\u308B\u3051\u3069", ["\u8A71", "\u5909\u308F\u308B", "\u3051\u3069"], "utterance-initial", "casual", "topic-shift", "\u8A71\u984C\u8EE2\u63DB", "\u660E\u793A\u7684\u8A71\u984C\u8EE2\u63DB", "explicit topic change", 1),
+  P("M", "\u5168\u7136\u95A2\u4FC2\u306A\u3044\u3093\u3060\u3051\u3069", ["\u5168\u7136", "\u95A2\u4FC2", "\u306A\u3044", "\u3093", "\u3060", "\u3051\u3069"], "utterance-initial", "casual", "digression", "\u8A71\u984C\u8EE2\u63DB", "\u8131\u7DDA\u306E\u524D\u7F6E\u304D", "digression preface", 1),
+  P("M", "\u5143\u306E\u8A71\u306B\u623B\u308B\u3068", ["\u5143", "\u306E", "\u8A71", "\u306B", "\u623B\u308B", "\u3068"], "utterance-initial", "casual", "return-from-digression", "\u8A71\u984C\u8EE2\u63DB", "\u8131\u7DDA\u304B\u3089\u306E\u5FA9\u5E30", "returning from digression", 2),
+  P("M", "\u3067\u4F55\u306E\u8A71\u3060\u3063\u3051", ["\u3067", "\u4F55", "\u306E", "\u8A71", "\u3060\u3063\u3051"], "utterance-initial", "casual", "return-from-digression", "\u8A71\u984C\u8EE2\u63DB", "\u8A71\u984C\u5FA9\u5E30\u306E\u8A66\u307F", "attempting topic return", 1),
+  // ── M.5 評価・感想 (Evaluation/Impression) ─────────────
+  P("M", "\u305D\u308C\u3044\u3044\u306D", ["\u305D\u308C", "\u3044\u3044", "\u306D"], "utterance-initial", "casual", "evaluation", "\u8A55\u4FA1", "\u80AF\u5B9A\u7684\u8A55\u4FA1", "positive evaluation", 1),
+  P("M", "\u5FAE\u5999\u3060\u3088\u306D", ["\u5FAE\u5999", "\u3060", "\u3088", "\u306D"], "utterance-initial", "casual", "evaluation", "\u8A55\u4FA1", "\u66D6\u6627\u306A\u8A55\u4FA1", "ambiguous evaluation", 1),
+  P("M", "\u305D\u308C\u306F\u3061\u3087\u3063\u3068", ["\u305D\u308C", "\u306F", "\u3061\u3087\u3063\u3068"], "utterance-initial", "casual", "evaluation", "\u8A55\u4FA1", "\u5426\u5B9A\u7684\u8A55\u4FA1", "negative evaluation", 1),
+  P("M", "\u3081\u3063\u3061\u3083\u3044\u3044", ["\u3081\u3063\u3061\u3083", "\u3044\u3044"], "any", "slang", "evaluation", "\u8A55\u4FA1", "\u5F37\u3044\u80AF\u5B9A\u8A55\u4FA1", "strong positive evaluation", 1),
+  P("M", "\u6700\u9AD8", ["\u6700\u9AD8"], "any", "casual", "evaluation", "\u8A55\u4FA1", "\u6700\u4E0A\u7D1A\u8A55\u4FA1", "highest evaluation", 1),
+  P("M", "\u6700\u60AA", ["\u6700\u60AA"], "any", "casual", "evaluation", "\u8A55\u4FA1", "\u6700\u4F4E\u8A55\u4FA1", "worst evaluation", 1),
+  // ── M.6 自己卑下 (Self-deprecation) ────────────────────
+  P("M", "\u81EA\u5206\u304C\u60AA\u3044\u3093\u3060\u3051\u3069", ["\u81EA\u5206", "\u304C", "\u60AA\u3044", "\u3093", "\u3060", "\u3051\u3069"], "utterance-initial", "casual", "self-deprecation", "\u81EA\u5DF1\u5351\u4E0B", "\u81EA\u8CAC\u306E\u524D\u7F6E\u304D", "self-blame preface", 1),
+  P("M", "\u30D0\u30AB\u3060\u304B\u3089", ["\u30D0\u30AB", "\u3060", "\u304B\u3089"], "utterance-initial", "casual", "self-deprecation", "\u81EA\u5DF1\u5351\u4E0B", "\u81EA\u8650\u7684\u7406\u7531", "self-deprecating reason", 1),
+  P("M", "\u30C9\u30B8\u3063\u3066", ["\u30C9\u30B8\u3063\u3066"], "any", "casual", "self-deprecation", "\u81EA\u5DF1\u5351\u4E0B", "\u5931\u6557\u306E\u544A\u767D", "confessing blunder", 2)
+];
+var CAT_N = [
+  // ── N.1 「〜ば〜ほど」型 Correlative Pairs ─────────────
+  P("N", "\u3070\u301C\u307B\u3069", ["\u3070", "\u307B\u3069"], "mid-utterance", "neutral", "cause", "\u76F8\u95A2\u69CB\u9020", "\u6BD4\u4F8B\u95A2\u4FC2", "the more... the more", 2),
+  P("N", "\u306B\u3057\u3066\u3082\u301C\u306B\u3057\u3066\u3082", ["\u306B\u3057\u3066\u3082", "\u306B\u3057\u3066\u3082"], "mid-utterance", "neutral", "concession", "\u76F8\u95A2\u69CB\u9020", "\u4E21\u65B9\u306E\u5834\u5408", "whether... or...", 2),
+  P("N", "\u306B\u3057\u308D\u301C\u306B\u3057\u308D", ["\u306B\u3057\u308D", "\u306B\u3057\u308D"], "mid-utterance", "neutral", "concession", "\u76F8\u95A2\u69CB\u9020", "\u540C\u4E0A\uFF08\u3084\u3084\u786C\u3044\uFF09", "whether... or... (formal)", 3),
+  P("N", "\u3067\u3042\u308C\u301C\u3067\u3042\u308C", ["\u3067\u3042\u308C", "\u3067\u3042\u308C"], "mid-utterance", "formal", "concession", "\u76F8\u95A2\u69CB\u9020", "\u301C\u3067\u3042\u308D\u3046\u3068", "whether... or... (literary)", 3),
+  // ── N.2 条件→帰結の対 (Condition→Consequence Pairs) ───
+  P("N", "\u3082\u3057\u301C\u306A\u3089", ["\u3082\u3057", "\u306A\u3089"], "mid-utterance", "neutral", "cause", "\u6761\u4EF6\u5E30\u7D50", "\u4EEE\u5B9A\u6761\u4EF6", "hypothetical if...then", 1),
+  P("N", "\u3082\u3057\u301C\u305F\u3089", ["\u3082\u3057", "\u305F\u3089"], "mid-utterance", "neutral", "cause", "\u6761\u4EF6\u5E30\u7D50", "\u4EEE\u5B9A\u6761\u4EF6\uFF08\u53E3\u8A9E\uFF09", "hypothetical if...then (spoken)", 1),
+  P("N", "\u4EEE\u306B\u301C\u3068\u3057\u3066\u3082", ["\u4EEE", "\u306B", "\u3068\u3057\u3066\u3082"], "mid-utterance", "formal", "concession", "\u6761\u4EF6\u5E30\u7D50", "\u4EEE\u5B9A\u7684\u8B72\u6B69", "even hypothetically", 2),
+  P("N", "\u305F\u3068\u3048\u301C\u3066\u3082", ["\u305F\u3068\u3048", "\u3066\u3082"], "mid-utterance", "neutral", "concession", "\u6761\u4EF6\u5E30\u7D50", "\u9006\u6761\u4EF6", "even if", 2),
+  // ── N.3 範囲・限定 (Scope/Limitation) ──────────────────
+  P("N", "\u306B\u9650\u3063\u3066", ["\u306B", "\u9650\u3063\u3066"], "mid-utterance", "neutral", "contrast", "\u7BC4\u56F2\u9650\u5B9A", "\u9650\u5B9A\u7684\u4E3B\u5F35", "limited to", 2),
+  P("N", "\u304B\u3089\u3057\u3066", ["\u304B\u3089", "\u3057\u3066"], "mid-utterance", "neutral", "evidential", "\u7BC4\u56F2\u9650\u5B9A", "\u301C\u304B\u3089\u5224\u65AD\u3057\u3066", "judging from", 2),
+  P("N", "\u306B\u95A2\u3057\u3066\u8A00\u3048\u3070", ["\u306B", "\u95A2\u3057\u3066", "\u8A00\u3048", "\u3070"], "mid-utterance", "neutral", "topic-initiation", "\u7BC4\u56F2\u9650\u5B9A", "\u301C\u306B\u9650\u5B9A\u3057\u3066", "speaking of/regarding", 2),
+  P("N", "\u306B\u304A\u3044\u3066\u306F", ["\u306B\u304A\u3044\u3066", "\u306F"], "mid-utterance", "formal", "topic-initiation", "\u7BC4\u56F2\u9650\u5B9A", "\u301C\u306E\u5834\u9762\u3067\u306F", "in the context of", 3),
+  // ── N.4 対比構造 (Contrastive Structures) ──────────────
+  P("N", "\u4E00\u65B9\u3067", ["\u4E00\u65B9", "\u3067"], "utterance-initial", "neutral", "contrast", "\u5BFE\u6BD4\u69CB\u9020", "\u5BFE\u6BD4\u306E\u5C0E\u5165", "on the other hand", 1),
+  P("N", "\u306B\u5BFE\u3057\u3066", ["\u306B", "\u5BFE\u3057\u3066"], "mid-utterance", "neutral", "contrast", "\u5BFE\u6BD4\u69CB\u9020", "\u5BFE\u6BD4\u5148\u306E\u6307\u5B9A", "in contrast to", 2),
+  P("N", "\u305D\u308C\u306B\u5BFE\u3057\u3066", ["\u305D\u308C", "\u306B", "\u5BFE\u3057\u3066"], "utterance-initial", "neutral", "contrast", "\u5BFE\u6BD4\u69CB\u9020", "\u524D\u6587\u3068\u306E\u5BFE\u6BD4", "in contrast to that", 2),
+  P("N", "\u53CD\u9762", ["\u53CD\u9762"], "mid-utterance", "neutral", "contrast", "\u5BFE\u6BD4\u69CB\u9020", "\u88CF\u5074\u306E\u63D0\u793A", "on the flip side", 2),
+  P("N", "\u3067\u306F\u306A\u304F", ["\u3067\u306F", "\u306A\u304F"], "mid-utterance", "neutral", "contrast", "\u5BFE\u6BD4\u69CB\u9020", "\u5426\u5B9A\u2192\u5BFE\u6BD4", "not X but Y", 1),
+  P("N", "\u3058\u3083\u306A\u304F\u3066", ["\u3058\u3083", "\u306A\u304F", "\u3066"], "mid-utterance", "casual", "contrast", "\u5BFE\u6BD4\u69CB\u9020", "\u5426\u5B9A\u2192\u5BFE\u6BD4\uFF08\u53E3\u8A9E\uFF09", "not X but Y (spoken)", 1),
+  P("N", "\u3068\u3044\u3046\u3088\u308A", ["\u3068\u3044\u3046", "\u3088\u308A"], "mid-utterance", "neutral", "rephrasing", "\u5BFE\u6BD4\u69CB\u9020", "\u8A02\u6B63\u7684\u5BFE\u6BD4", "rather than", 1),
+  P("N", "\u3080\u3057\u308D", ["\u3080\u3057\u308D"], "utterance-initial", "neutral", "contrast", "\u5BFE\u6BD4\u69CB\u9020", "\u9006\u8EE2\u306E\u63D0\u793A", "rather/instead", 1),
+  // ── N.5 累加・並列 (Cumulative/Parallel) ───────────────
+  P("N", "\u3060\u3051\u3067\u306A\u304F", ["\u3060\u3051", "\u3067", "\u306A\u304F"], "mid-utterance", "neutral", "addition", "\u7D2F\u52A0\u69CB\u9020", "\u90E8\u5206\u5426\u5B9A\u2192\u7D2F\u52A0", "not only", 1),
+  P("N", "\u306E\u307F\u306A\u3089\u305A", ["\u306E\u307F", "\u306A\u3089\u305A"], "mid-utterance", "formal", "addition", "\u7D2F\u52A0\u69CB\u9020", "\u306E\u307F\u306A\u3089\u305A\u2026\u3082", "not only (formal)", 3),
+  P("N", "\u306F\u3082\u3061\u308D\u3093", ["\u306F", "\u3082\u3061\u308D\u3093"], "mid-utterance", "neutral", "addition", "\u7D2F\u52A0\u69CB\u9020", "\u5F53\u7136\u306B\u52A0\u3048\u3066", "of course also", 1),
+  P("N", "\u306B\u52A0\u3048\u3066", ["\u306B", "\u52A0\u3048\u3066"], "mid-utterance", "neutral", "addition", "\u7D2F\u52A0\u69CB\u9020", "\u8FFD\u52A0\u60C5\u5831", "in addition to", 2),
+  P("N", "\u305D\u306E\u4E0A", ["\u305D\u306E", "\u4E0A"], "utterance-initial", "neutral", "addition", "\u7D2F\u52A0\u69CB\u9020", "\u66F4\u306B\u52A0\u3048\u3066", "moreover/on top of that", 2),
+  P("N", "\u304A\u307E\u3051\u306B", ["\u304A\u307E\u3051", "\u306B"], "utterance-initial", "casual", "addition", "\u7D2F\u52A0\u69CB\u9020", "\u305D\u306E\u4E0A\uFF08\u53E3\u8A9E\uFF09", "on top of that (casual)", 1)
+];
+var ALL_PATTERNS = [
+  ...CAT_A,
+  ...CAT_B,
+  ...CAT_C,
+  ...CAT_D,
+  ...CAT_E,
+  ...CAT_F,
+  ...CAT_G,
+  ...CAT_H,
+  ...CAT_I,
+  ...CAT_J,
+  ...CAT_K,
+  ...CAT_L,
+  ...CAT_M,
+  ...CAT_N
+].sort((a, b) => b.tokens.join("").length - a.tokens.join("").length);
+var PATTERN_BY_ID = new Map(ALL_PATTERNS.map((p) => [p.id, p]));
+var PATTERNS_BY_SURFACE = /* @__PURE__ */ new Map();
+for (const p of ALL_PATTERNS) {
+  if (!PATTERNS_BY_SURFACE.has(p.surface))
+    PATTERNS_BY_SURFACE.set(p.surface, []);
+  PATTERNS_BY_SURFACE.get(p.surface).push(p);
+}
+var PATTERNS_BY_CATEGORY = /* @__PURE__ */ new Map();
+for (const p of ALL_PATTERNS) {
+  if (!PATTERNS_BY_CATEGORY.has(p.category))
+    PATTERNS_BY_CATEGORY.set(p.category, []);
+  PATTERNS_BY_CATEGORY.get(p.category).push(p);
+}
+var PATTERN_COUNT = ALL_PATTERNS.length;
+
+// src/data/csj-spoken-data.ts
+var CSJ_FILLERS = [
+  // Primary fillers (extremely high frequency)
+  { surface: "\u3048\u30FC", reading: "\u30A8\u30FC", perMillion: 8200, dominantType: "APS", genderRatio: 1.3, position: "turn-initial", pragmaticFunction: "filler" },
+  { surface: "\u3048\u30FC\u3068", reading: "\u30A8\u30FC\u30C8", perMillion: 4800, dominantType: "APS", genderRatio: 1.2, position: "turn-initial", pragmaticFunction: "filler" },
+  { surface: "\u3042\u306E", reading: "\u30A2\u30CE", perMillion: 6500, dominantType: "SPS", genderRatio: 0.85, position: "mid-utterance", pragmaticFunction: "filler" },
+  { surface: "\u3042\u306E\u30FC", reading: "\u30A2\u30CE\u30FC", perMillion: 3900, dominantType: "SPS", genderRatio: 0.8, position: "turn-initial", pragmaticFunction: "filler" },
+  { surface: "\u307E\u3042", reading: "\u30DE\u30A2", perMillion: 5100, dominantType: "SPS", genderRatio: 1.4, position: "turn-initial", pragmaticFunction: "hedge" },
+  { surface: "\u305D\u306E", reading: "\u30BD\u30CE", perMillion: 3200, dominantType: "APS", genderRatio: 1.1, position: "mid-utterance", pragmaticFunction: "filler" },
+  // Secondary fillers
+  { surface: "\u3048\u3063\u3068", reading: "\u30A8\u30C3\u30C8", perMillion: 2100, dominantType: "SPS", genderRatio: 0.9, position: "turn-initial", pragmaticFunction: "filler" },
+  { surface: "\u306A\u3093\u304B", reading: "\u30CA\u30F3\u30AB", perMillion: 3800, dominantType: "SPS", genderRatio: 0.7, position: "mid-utterance", pragmaticFunction: "hedge" },
+  { surface: "\u3053\u3046", reading: "\u30B3\u30A6", perMillion: 2800, dominantType: "SPS", genderRatio: 1.05, position: "mid-utterance", pragmaticFunction: "filler" },
+  { surface: "\u307E", reading: "\u30DE", perMillion: 2400, dominantType: "SPS", genderRatio: 1.5, position: "clause-boundary", pragmaticFunction: "hedge" },
+  { surface: "\u3046\u30FC\u3093", reading: "\u30A6\u30FC\u30F3", perMillion: 1600, dominantType: "SPS", genderRatio: 1, position: "turn-initial", pragmaticFunction: "backchannel" },
+  { surface: "\u3048\u3048", reading: "\u30A8\u30A8", perMillion: 1200, dominantType: "SPS", genderRatio: 0.85, position: "turn-initial", pragmaticFunction: "backchannel" },
+  // Turn-management fillers
+  { surface: "\u306F\u3044", reading: "\u30CF\u30A4", perMillion: 4200, dominantType: "dialogue", genderRatio: 0.9, position: "turn-initial", pragmaticFunction: "backchannel" },
+  { surface: "\u3046\u3093", reading: "\u30A6\u30F3", perMillion: 3600, dominantType: "dialogue", genderRatio: 1, position: "turn-initial", pragmaticFunction: "backchannel" },
+  { surface: "\u3042\u3042", reading: "\u30A2\u30A2", perMillion: 1800, dominantType: "dialogue", genderRatio: 1.2, position: "turn-initial", pragmaticFunction: "backchannel" },
+  { surface: "\u3078\u3048", reading: "\u30D8\u30A8", perMillion: 420, dominantType: "dialogue", genderRatio: 0.75, position: "turn-initial", pragmaticFunction: "surprise" },
+  { surface: "\u3075\u30FC\u3093", reading: "\u30D5\u30FC\u30F3", perMillion: 380, dominantType: "dialogue", genderRatio: 0.7, position: "turn-initial", pragmaticFunction: "backchannel" },
+  // Clause-linking fillers
+  { surface: "\u3067", reading: "\u30C7", perMillion: 7800, dominantType: "SPS", genderRatio: 1.1, position: "clause-boundary", pragmaticFunction: "sequence" },
+  { surface: "\u305D\u308C\u3067", reading: "\u30BD\u30EC\u30C7", perMillion: 1100, dominantType: "SPS", genderRatio: 1, position: "clause-boundary", pragmaticFunction: "sequence" },
+  { surface: "\u3060\u304B\u3089", reading: "\u30C0\u30AB\u30E9", perMillion: 2600, dominantType: "SPS", genderRatio: 1.15, position: "clause-boundary", pragmaticFunction: "cause" },
+  // Self-repair / hesitation
+  { surface: "\u3063\u3066\u3044\u3046\u304B", reading: "\u30C3\u30C6\u30A4\u30A6\u30AB", perMillion: 950, dominantType: "SPS", genderRatio: 0.95, position: "mid-utterance", pragmaticFunction: "self-repair" },
+  { surface: "\u3058\u3083\u306A\u304F\u3066", reading: "\u30B8\u30E3\u30CA\u30AF\u30C6", perMillion: 520, dominantType: "SPS", genderRatio: 1, position: "mid-utterance", pragmaticFunction: "self-repair" },
+  { surface: "\u3068\u3044\u3046\u304B", reading: "\u30C8\u30A4\u30A6\u30AB", perMillion: 780, dominantType: "APS", genderRatio: 1.1, position: "mid-utterance", pragmaticFunction: "self-repair" }
+];
+var CSJ_SPOKEN_VARIATIONS = [
+  // Fusion: では → じゃ (CSJ data: 28.2% APS / 59.0% SPS for copula)
+  { standard: "\u3067\u306F\u306A\u3044", variant: "\u3058\u3083\u306A\u3044", type: "fusion", overallRate: 40.5, apsRate: 28.2, spsRate: 59, registerScore: -1, gloss: "\u5426\u5B9A\u306E\u878D\u5408", glossEn: "dewa\u2192ja fusion (negation)" },
+  { standard: "\u3067\u306F", variant: "\u3058\u3083", type: "fusion", overallRate: 35, apsRate: 0.8, spsRate: 4.7, registerScore: -1.5, gloss: "\u683C\u52A9\u8A5E\u306E\u878D\u5408", glossEn: "dewa\u2192ja fusion (particle)" },
+  { standard: "\u3067\u306F\u306A\u304F\u3066", variant: "\u3058\u3083\u306A\u304F\u3066", type: "fusion", overallRate: 42, apsRate: 30, spsRate: 55, registerScore: -1, gloss: "\u5426\u5B9A\u9023\u7528\u306E\u878D\u5408", glossEn: "dewa\u2192ja fusion (connective)" },
+  { standard: "\u3067\u3057\u3087\u3046", variant: "\u3067\u3057\u3087", type: "contraction", overallRate: 45, apsRate: 25, spsRate: 60, registerScore: -0.5, gloss: "\u63A8\u91CF\u306E\u7E2E\u7D04", glossEn: "deshou\u2192desho contraction" },
+  { standard: "\u3066\u3057\u307E\u3046", variant: "\u3061\u3083\u3046", type: "contraction", overallRate: 65, apsRate: 20, spsRate: 75, registerScore: -2, gloss: "\u5B8C\u4E86\u306E\u7E2E\u7D04", glossEn: "teshimau\u2192chau contraction" },
+  { standard: "\u3066\u3057\u307E\u3046", variant: "\u3061\u307E\u3046", type: "contraction", overallRate: 15, apsRate: 2, spsRate: 25, registerScore: -2.5, gloss: "\u5B8C\u4E86\u306E\u7E2E\u7D04\uFF08\u7537\u6027\u7684\uFF09", glossEn: "teshimau\u2192chimau (masculine)" },
+  { standard: "\u3066\u3044\u308B", variant: "\u3066\u308B", type: "contraction", overallRate: 55, apsRate: 30, spsRate: 72, registerScore: -1, gloss: "\u9032\u884C\u306E\u7E2E\u7D04", glossEn: "teiru\u2192teru contraction" },
+  { standard: "\u3066\u304A\u304F", variant: "\u3068\u304F", type: "contraction", overallRate: 50, apsRate: 15, spsRate: 65, registerScore: -1.5, gloss: "\u6E96\u5099\u306E\u7E2E\u7D04", glossEn: "teoku\u2192toku contraction" },
+  { standard: "\u3066\u3042\u3052\u308B", variant: "\u305F\u3052\u308B", type: "contraction", overallRate: 30, apsRate: 5, spsRate: 45, registerScore: -2, gloss: "\u6388\u53D7\u306E\u7E2E\u7D04", glossEn: "teageru\u2192tageru contraction" },
+  // Nasalization: の → ん (CSJ data: 0.5% case particle / 49.5% nominalizer)
+  { standard: "\u306E\u3060", variant: "\u3093\u3060", type: "nasalization", overallRate: 49.5, apsRate: 39.6, spsRate: 59.7, registerScore: -1, gloss: "\u6E96\u4F53\u52A9\u8A5E\u306E\u64A5\u97F3\u5316", glossEn: "no\u2192n nasalization (nominalizer)" },
+  { standard: "\u306E\u3067\u3059", variant: "\u3093\u3067\u3059", type: "nasalization", overallRate: 48, apsRate: 40, spsRate: 58, registerScore: 0, gloss: "\u8AAC\u660E\u306E\u30E2\u30C0\u30EA\u30C6\u30A3\u64A5\u97F3\u5316", glossEn: "nodesu\u2192ndesu nasalization" },
+  { standard: "\u306E\u3060\u3051\u3069", variant: "\u3093\u3060\u3051\u3069", type: "nasalization", overallRate: 52, apsRate: 38, spsRate: 62, registerScore: -1, gloss: "\u9006\u63A5\u64A5\u97F3\u5316", glossEn: "nodakedo\u2192ndakedo nasalization" },
+  { standard: "\u306A\u306E\u306B", variant: "\u306A\u3093\u306B", type: "nasalization", overallRate: 15, apsRate: 5, spsRate: 22, registerScore: -2, gloss: "\u9006\u63A5\u64A5\u97F3\u5316", glossEn: "nanoni\u2192nanni nasalization" },
+  { standard: "\u3082\u306E\u3060\u304B\u3089", variant: "\u3082\u3093\u3060\u304B\u3089", type: "nasalization", overallRate: 60, apsRate: 35, spsRate: 75, registerScore: -1.5, gloss: "\u539F\u56E0\u306E\u64A5\u97F3\u5316", glossEn: "mono\u2192mon nasalization" },
+  // Vowel shortening (CSJ: higher in SPS, correlated with casual register)
+  { standard: "\u307B\u3093\u3068\u3046", variant: "\u307B\u3093\u3068", type: "vowel-shortening", overallRate: 72, apsRate: 50, spsRate: 85, registerScore: -1, gloss: "\u9577\u6BCD\u97F3\u306E\u77ED\u547C", glossEn: "hontou\u2192honto vowel shortening" },
+  { standard: "\u3059\u3054\u3044", variant: "\u3059\u3054\u3044", type: "vowel-shortening", overallRate: 0, apsRate: 0, spsRate: 0, registerScore: -1, gloss: "\u5F62\u5BB9\u8A5E\u9023\u7528\u5F62\u306E\u5909\u5316", glossEn: "sugoi adverbial shift" },
+  // Particle dropping
+  { standard: "\u3092", variant: "\u2205", type: "particle-drop", overallRate: 35, apsRate: 15, spsRate: 50, registerScore: -2, gloss: "\u76EE\u7684\u683C\u52A9\u8A5E\u306E\u8131\u843D", glossEn: "wo particle drop" },
+  { standard: "\u304C", variant: "\u2205", type: "particle-drop", overallRate: 20, apsRate: 8, spsRate: 30, registerScore: -2, gloss: "\u4E3B\u683C\u52A9\u8A5E\u306E\u8131\u843D", glossEn: "ga particle drop" },
+  // Copula reduction
+  { standard: "\u306A\u306E\u3060", variant: "\u306A\u3093\u3060", type: "copula-reduction", overallRate: 55, apsRate: 40, spsRate: 68, registerScore: -1, gloss: "\u30B3\u30D4\u30E5\u30E9\u306E\u7E2E\u7D04", glossEn: "nanoda\u2192nanda copula reduction" },
+  { standard: "\u3067\u3042\u308B", variant: "\u3060", type: "copula-reduction", overallRate: 0, apsRate: 0, spsRate: 0, registerScore: -1.5, gloss: "\u30B3\u30D4\u30E5\u30E9\u306E\u7F6E\u63DB", glossEn: "dearu\u2192da copula reduction" }
+];
+var CSJ_PATTERN_FREQUENCIES = [
+  // ── Category A: Utterance-initial ──────────────────────────
+  { surface: "\u307E\u305A", perMillion: 1850, apsFreq: 2400, spsFreq: 1200, casualAcademicRatio: 0.5, patternIds: ["A001"] },
+  { surface: "\u3055\u3066", perMillion: 280, apsFreq: 350, spsFreq: 180, casualAcademicRatio: 0.51, patternIds: ["A002"] },
+  { surface: "\u3067\u306F", perMillion: 1650, apsFreq: 2100, spsFreq: 950, casualAcademicRatio: 0.45, patternIds: ["A003"] },
+  { surface: "\u3058\u3083", perMillion: 890, apsFreq: 350, spsFreq: 1500, casualAcademicRatio: 4.3, patternIds: ["A004"] },
+  { surface: "\u3068\u3053\u308D\u3067", perMillion: 210, apsFreq: 150, spsFreq: 280, casualAcademicRatio: 1.87, patternIds: ["A005"] },
+  { surface: "\u305D\u3046\u3044\u3048\u3070", perMillion: 95, apsFreq: 40, spsFreq: 160, casualAcademicRatio: 4, patternIds: ["A006"] },
+  { surface: "\u3064\u307E\u308A", perMillion: 1100, apsFreq: 1450, spsFreq: 680, casualAcademicRatio: 0.47, patternIds: ["A007"] },
+  { surface: "\u8981\u3059\u308B\u306B", perMillion: 420, apsFreq: 520, spsFreq: 280, casualAcademicRatio: 0.54, patternIds: ["A008"] },
+  { surface: "\u3059\u306A\u308F\u3061", perMillion: 310, apsFreq: 480, spsFreq: 80, casualAcademicRatio: 0.17, patternIds: ["A009"] },
+  { surface: "\u5B9F\u306F", perMillion: 380, apsFreq: 280, spsFreq: 500, casualAcademicRatio: 1.79, patternIds: ["A010"] },
+  { surface: "\u3084\u3063\u3071\u308A", perMillion: 1250, apsFreq: 650, spsFreq: 1900, casualAcademicRatio: 2.92, patternIds: ["A011"] },
+  { surface: "\u3084\u306F\u308A", perMillion: 980, apsFreq: 1350, spsFreq: 520, casualAcademicRatio: 0.39, patternIds: ["A012"] },
+  { surface: "\u3082\u3061\u308D\u3093", perMillion: 420, apsFreq: 350, spsFreq: 510, casualAcademicRatio: 1.46, patternIds: ["A013"] },
+  { surface: "\u78BA\u304B\u306B", perMillion: 310, apsFreq: 280, spsFreq: 350, casualAcademicRatio: 1.25, patternIds: ["A014"] },
+  { surface: "\u306A\u3093\u3068", perMillion: 120, apsFreq: 65, spsFreq: 190, casualAcademicRatio: 2.92, patternIds: ["A015"] },
+  // ── Category B: Utterance-final ────────────────────────────
+  { surface: "\u3067\u3059\u306D", perMillion: 3200, apsFreq: 2800, spsFreq: 3700, casualAcademicRatio: 1.32, patternIds: ["B001"] },
+  { surface: "\u3067\u3059\u3088\u306D", perMillion: 1100, apsFreq: 450, spsFreq: 1800, casualAcademicRatio: 4, patternIds: ["B002"] },
+  { surface: "\u3060\u3088\u306D", perMillion: 580, apsFreq: 80, spsFreq: 1150, casualAcademicRatio: 14.4, patternIds: ["B003"] },
+  { surface: "\u3051\u3069", perMillion: 2400, apsFreq: 1600, spsFreq: 3300, casualAcademicRatio: 2.06, patternIds: ["B004"] },
+  { surface: "\u3051\u308C\u3069\u3082", perMillion: 850, apsFreq: 1200, spsFreq: 420, casualAcademicRatio: 0.35, patternIds: ["B005"] },
+  { surface: "\u308F\u3051\u3067\u3059\u306D", perMillion: 680, apsFreq: 850, spsFreq: 450, casualAcademicRatio: 0.53, patternIds: ["B006"] },
+  { surface: "\u3068\u601D\u3044\u307E\u3059", perMillion: 2100, apsFreq: 2600, spsFreq: 1500, casualAcademicRatio: 0.58, patternIds: ["B007"] },
+  { surface: "\u3068\u601D\u3046\u3093\u3067\u3059\u3051\u3069", perMillion: 450, apsFreq: 380, spsFreq: 550, casualAcademicRatio: 1.45, patternIds: ["B008"] },
+  { surface: "\u3058\u3083\u306A\u3044\u3067\u3059\u304B", perMillion: 380, apsFreq: 120, spsFreq: 680, casualAcademicRatio: 5.67, patternIds: ["B009"] },
+  { surface: "\u3088\u306D", perMillion: 780, apsFreq: 180, spsFreq: 1450, casualAcademicRatio: 8.06, patternIds: ["B010"] },
+  // ── Category C: Logical connectives ────────────────────────
+  { surface: "\u3057\u304B\u3057", perMillion: 980, apsFreq: 1350, spsFreq: 520, casualAcademicRatio: 0.39, patternIds: ["C001"] },
+  { surface: "\u3067\u3082", perMillion: 2800, apsFreq: 1200, spsFreq: 4600, casualAcademicRatio: 3.83, patternIds: ["C002"] },
+  { surface: "\u3060\u3051\u3069", perMillion: 1900, apsFreq: 780, spsFreq: 3200, casualAcademicRatio: 4.1, patternIds: ["C003"] },
+  { surface: "\u305F\u3060", perMillion: 1050, apsFreq: 1200, spsFreq: 860, casualAcademicRatio: 0.72, patternIds: ["C004"] },
+  { surface: "\u3068\u3053\u308D\u304C", perMillion: 380, apsFreq: 350, spsFreq: 420, casualAcademicRatio: 1.2, patternIds: ["C005"] },
+  { surface: "\u3060\u304B\u3089", perMillion: 2600, apsFreq: 1800, spsFreq: 3500, casualAcademicRatio: 1.94, patternIds: ["C006"] },
+  { surface: "\u3057\u305F\u304C\u3063\u3066", perMillion: 420, apsFreq: 650, spsFreq: 120, casualAcademicRatio: 0.18, patternIds: ["C007"] },
+  { surface: "\u305D\u306E\u305F\u3081", perMillion: 380, apsFreq: 550, spsFreq: 150, casualAcademicRatio: 0.27, patternIds: ["C008"] },
+  { surface: "\u305D\u308C\u3067", perMillion: 1100, apsFreq: 680, spsFreq: 1600, casualAcademicRatio: 2.35, patternIds: ["C009"] },
+  { surface: "\u305D\u3057\u3066", perMillion: 1500, apsFreq: 1800, spsFreq: 1100, casualAcademicRatio: 0.61, patternIds: ["C010"] },
+  { surface: "\u307E\u305F", perMillion: 1800, apsFreq: 2400, spsFreq: 1050, casualAcademicRatio: 0.44, patternIds: ["C011"] },
+  { surface: "\u3055\u3089\u306B", perMillion: 650, apsFreq: 900, spsFreq: 320, casualAcademicRatio: 0.36, patternIds: ["C012"] },
+  { surface: "\u3064\u307E\u308A", perMillion: 1100, apsFreq: 1450, spsFreq: 680, casualAcademicRatio: 0.47, patternIds: ["C013"] },
+  { surface: "\u3080\u3057\u308D", perMillion: 280, apsFreq: 350, spsFreq: 190, casualAcademicRatio: 0.54, patternIds: ["C014"] },
+  { surface: "\u305D\u308C\u3068\u3082", perMillion: 120, apsFreq: 80, spsFreq: 170, casualAcademicRatio: 2.13, patternIds: ["C015"] },
+  { surface: "\u3042\u308B\u3044\u306F", perMillion: 350, apsFreq: 520, spsFreq: 140, casualAcademicRatio: 0.27, patternIds: ["C016"] },
+  // ── Category D: Discourse boundaries ───────────────────────
+  { surface: "\u3055\u3066", perMillion: 280, apsFreq: 350, spsFreq: 180, casualAcademicRatio: 0.51, patternIds: ["D001"] },
+  { surface: "\u3068\u3053\u308D\u3067", perMillion: 210, apsFreq: 150, spsFreq: 280, casualAcademicRatio: 1.87, patternIds: ["D002"] },
+  { surface: "\u305D\u308C\u3067\u306F", perMillion: 350, apsFreq: 480, spsFreq: 180, casualAcademicRatio: 0.38, patternIds: ["D003"] },
+  { surface: "\u3068\u3044\u3046\u3053\u3068\u3067", perMillion: 320, apsFreq: 280, spsFreq: 380, casualAcademicRatio: 1.36, patternIds: ["D004"] },
+  { surface: "\u3061\u306A\u307F\u306B", perMillion: 180, apsFreq: 120, spsFreq: 250, casualAcademicRatio: 2.08, patternIds: ["D005"] },
+  // ── Category E: Interactional ──────────────────────────────
+  { surface: "\u305D\u3046\u3067\u3059\u306D", perMillion: 1800, apsFreq: 800, spsFreq: 2900, casualAcademicRatio: 3.63, patternIds: ["E001"] },
+  { surface: "\u305D\u3046\u3060\u306D", perMillion: 450, apsFreq: 50, spsFreq: 900, casualAcademicRatio: 18, patternIds: ["E002"] },
+  { surface: "\u306A\u308B\u307B\u3069", perMillion: 380, apsFreq: 180, spsFreq: 620, casualAcademicRatio: 3.44, patternIds: ["E003"] },
+  { surface: "\u3061\u3087\u3063\u3068", perMillion: 2200, apsFreq: 1400, spsFreq: 3100, casualAcademicRatio: 2.21, patternIds: ["E004"] },
+  { surface: "\u3084\u3063\u3071\u308A", perMillion: 1250, apsFreq: 650, spsFreq: 1900, casualAcademicRatio: 2.92, patternIds: ["E005"] },
+  { surface: "\u3088\u308D\u3057\u304F\u304A\u9858\u3044\u3057\u307E\u3059", perMillion: 180, apsFreq: 220, spsFreq: 140, casualAcademicRatio: 0.64, patternIds: ["E006"] },
+  // ── Category F: Modality ───────────────────────────────────
+  { surface: "\u304B\u3082\u3057\u308C\u306A\u3044", perMillion: 550, apsFreq: 450, spsFreq: 680, casualAcademicRatio: 1.51, patternIds: ["F001"] },
+  { surface: "\u306F\u305A\u3060", perMillion: 280, apsFreq: 320, spsFreq: 220, casualAcademicRatio: 0.69, patternIds: ["F002"] },
+  { surface: "\u3079\u304D\u3060", perMillion: 210, apsFreq: 280, spsFreq: 120, casualAcademicRatio: 0.43, patternIds: ["F003"] },
+  { surface: "\u3089\u3057\u3044", perMillion: 480, apsFreq: 280, spsFreq: 720, casualAcademicRatio: 2.57, patternIds: ["F004"] },
+  { surface: "\u3088\u3046\u3060", perMillion: 650, apsFreq: 850, spsFreq: 400, casualAcademicRatio: 0.47, patternIds: ["F005"] },
+  { surface: "\u307F\u305F\u3044\u3060", perMillion: 380, apsFreq: 120, spsFreq: 680, casualAcademicRatio: 5.67, patternIds: ["F006"] },
+  // ── Category G: Quotation/Hearsay ──────────────────────────
+  { surface: "\u3068\u8A00\u308F\u308C\u3066\u3044\u308B", perMillion: 280, apsFreq: 380, spsFreq: 150, casualAcademicRatio: 0.39, patternIds: ["G001"] },
+  { surface: "\u3063\u3066", perMillion: 3200, apsFreq: 1200, spsFreq: 5500, casualAcademicRatio: 4.58, patternIds: ["G002"] },
+  { surface: "\u3060\u305D\u3046\u3060", perMillion: 180, apsFreq: 150, spsFreq: 220, casualAcademicRatio: 1.47, patternIds: ["G003"] },
+  { surface: "\u3068\u306E\u3053\u3068\u3060", perMillion: 120, apsFreq: 180, spsFreq: 50, casualAcademicRatio: 0.28, patternIds: ["G004"] }
+];
+function getCSJFrequency(surface) {
+  return CSJ_PATTERN_FREQUENCIES.find((e) => e.surface === surface);
+}
+function getFillerProfile(surface) {
+  return CSJ_FILLERS.find((f) => f.surface === surface);
+}
+function detectFillers(text) {
+  const found = [];
+  const sorted = [...CSJ_FILLERS].sort((a, b) => b.surface.length - a.surface.length);
+  for (const filler of sorted) {
+    if (text.includes(filler.surface)) {
+      found.push(filler);
+    }
+  }
+  return found;
+}
+function detectSpokenVariations(text) {
+  const found = [];
+  let totalAdj = 0;
+  for (const v of CSJ_SPOKEN_VARIATIONS) {
+    if (v.variant !== "\u2205" && text.includes(v.variant)) {
+      found.push(v);
+      totalAdj += v.registerScore;
+    }
+  }
+  return {
+    variations: found,
+    registerAdjustment: found.length > 0 ? totalAdj / found.length : 0
+  };
+}
+function classifySpeechType(markerSurfaces) {
+  let academicScore = 0;
+  let casualScore = 0;
+  let matched = 0;
+  for (const surface of markerSurfaces) {
+    const entry2 = CSJ_PATTERN_FREQUENCIES.find((e) => e.surface === surface);
+    if (!entry2)
+      continue;
+    matched++;
+    if (entry2.casualAcademicRatio < 0.7) {
+      academicScore += 1 / entry2.casualAcademicRatio;
+    } else if (entry2.casualAcademicRatio > 1.5) {
+      casualScore += entry2.casualAcademicRatio;
+    }
+  }
+  if (matched === 0)
+    return { type: "unknown", confidence: 0, score: 0 };
+  const normalizedAcademic = academicScore / matched;
+  const normalizedCasual = casualScore / matched;
+  const score = normalizedCasual - normalizedAcademic;
+  const confidence = Math.min(1, matched / 5);
+  if (score > 0.5)
+    return { type: "SPS", confidence, score };
+  if (score < -0.5)
+    return { type: "APS", confidence, score };
+  return { type: "unknown", confidence: confidence * 0.5, score };
+}
+function getCSJTier(surface) {
+  const entry2 = CSJ_PATTERN_FREQUENCIES.find((e) => e.surface === surface);
+  if (!entry2)
+    return 3;
+  if (entry2.perMillion >= 2e3)
+    return 1;
+  if (entry2.perMillion >= 800)
+    return 2;
+  if (entry2.perMillion >= 200)
+    return 3;
+  return 4;
+}
+function computeCSJRegisterScore(text, patternSurfaces) {
+  const speechClass = classifySpeechType(patternSurfaces);
+  const fillers = detectFillers(text);
+  const words = text.length / 2;
+  const fillerDensity = words > 0 ? fillers.length / words : 0;
+  const { variations, registerAdjustment } = detectSpokenVariations(text);
+  let score = speechClass.score + registerAdjustment;
+  if (fillerDensity > 0.15)
+    score -= 0.5;
+  else if (fillerDensity > 0.08)
+    score -= 0.2;
+  let label;
+  let labelEn;
+  if (score < -1.5) {
+    label = "\u5B66\u8853\u7684";
+    labelEn = "academic";
+  } else if (score < -0.5) {
+    label = "\u30D5\u30A9\u30FC\u30DE\u30EB";
+    labelEn = "formal";
+  } else if (score < 0.5) {
+    label = "\u666E\u901A\u4F53";
+    labelEn = "neutral";
+  } else if (score < 1.5) {
+    label = "\u30AB\u30B8\u30E5\u30A2\u30EB";
+    labelEn = "casual";
+  } else {
+    label = "\u304F\u3060\u3051\u305F\u8A71\u3057\u8A00\u8449";
+    labelEn = "colloquial";
+  }
+  return {
+    score,
+    label,
+    labelEn,
+    speechType: speechClass.type,
+    fillerDensity,
+    variationCount: variations.length
+  };
+}
+
+// src/discourse/transcript-processor.ts
+var TIMESTAMP_RE = /\[(\d{1,2}:\d{2}(?::\d{2})?)\]/g;
+var TIMESTAMP_LINE_RE = /^\s*\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*$/;
+var TIMESTAMPED_LINE_RE = /^\s*\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*(.*)/;
+var LONE_NUMBER_RE = /^\s*(\d{1,4})\s*$/;
+var BLOCK_ID_RE = /\^[a-z0-9]+$/;
+var URL_RE = /https?:\/\/[^\s\]）」』】\)]+/g;
+var HIGHLIGHT_RE = /==(.*?)==/g;
+var BOLD_RE = /\*\*(.*?)\*\*/g;
+var TURN_INITIAL_MARKERS = [
+  // Strong turn-openers (new speaker almost certain)
+  "\u3042\u308A\u304C\u3068\u3046\u3054\u3056\u3044\u307E\u3057\u305F",
+  "\u3088\u308D\u3057\u304F\u304A\u9858\u3044\u3057\u307E\u3059",
+  "\u3088\u308D\u3057\u304F\u304A\u9858\u3044\u3044\u305F\u3057\u307E\u3059",
+  "\u304A\u9858\u3044\u3044\u305F\u3057\u307E\u3059",
+  "\u304A\u9858\u3044\u3057\u307E\u3059",
+  "\u304A\u3063\u3057\u3083\u308B\u901A\u308A",
+  "\u3042\u308A\u304C\u3068\u3046\u3054\u3056\u3044\u307E\u3059",
+  "\u305D\u3046\u3067\u3059\u3088\u306D",
+  "\u305D\u3046\u306A\u3093\u3067\u3059\u3088",
+  "\u3044\u3084\u3044\u3084\u3044\u3084",
+  "\u306A\u308B\u307B\u3069\u3067\u3059\u306D",
+  "\u3069\u3046\u3067\u3059\u304B",
+  "\u3044\u304B\u304C\u3067\u3057\u3087\u3046\u304B",
+  "\u305D\u3046\u3067\u3057\u305F",
+  "\u305D\u3046\u3067\u3059\u306D",
+  "\u3068\u3044\u3046\u3053\u3068\u306F",
+  "\u3054\u3081\u3093\u306A\u3055\u3044",
+  "\u306A\u308B\u307B\u3069",
+  "\u3067\u306F\u30B2\u30B9\u30C8",
+  "\u3067\u306F\u884C\u304D\u307E\u3057\u3087\u3046",
+  "\u3067\u306F\u897F\u7530\u3055\u3093",
+  "\u3067\u306F\u65E9\u901F",
+  "\u5206\u304B\u308A\u307E\u3057\u305F",
+  "\u306F\u3044\u3002",
+  "\u3048\u3048\u3001",
+  "\u3048\u3048\u3002",
+  "\u3046\u3093\u3002",
+  "\u3044\u3084\u3001",
+  "\u3042\u3001"
+];
+var WEAK_TURN_MARKERS = [
+  "\u3067\u3001",
+  "\u307E\u3001",
+  "\u3042\u306E\u3001",
+  "\u3048\u3063\u3068\u3001",
+  "\u3060\u304B\u3089",
+  "\u305D\u308C\u3067",
+  "\u305F\u3060\u3001",
+  "\u3067\u3082",
+  "\u3057\u304B\u3057",
+  "\u3064\u307E\u308A"
+];
+var SENTENCE_FINAL_PATTERNS = [
+  "\u3067\u3059\u3088\u306D\u3002",
+  "\u3067\u3059\u304B\u306D\u3002",
+  "\u3067\u3059\u304B?",
+  "\u3067\u3059\u304B\uFF1F",
+  "\u3067\u3059\u3088\u3002",
+  "\u307E\u3059\u3088\u3002",
+  "\u307E\u3059\u306D\u3002",
+  "\u307E\u3057\u305F\u3088\u306D\u3002",
+  "\u3067\u3059\u3051\u3069\u306D\u3002",
+  "\u3068\u601D\u3044\u307E\u3059\u306D\u3002",
+  "\u3067\u3057\u3087\u3046\u306D\u3002",
+  "\u3067\u3059\u3088\u306D",
+  "\u3068\u601D\u3044\u307E\u3059\u3002",
+  "\u3054\u3056\u3044\u307E\u3059\u3002",
+  "\u307E\u305B\u3093\u304B\u3002",
+  "\u307E\u305B\u3093\u304B\uFF1F",
+  "\u3067\u3057\u3087\u3046\u304B\u3002",
+  "\u3067\u3057\u3087\u3046\u304B\uFF1F",
+  "\u307E\u3057\u305F\u306D\u3002",
+  "\u307E\u3057\u305F\u3088\u306D\u3002",
+  "\u304B\u306A\u3068\u3002",
+  "\u3068\u601D\u3046\u3093\u3067\u3059\u3051\u3069\u3002",
+  "\u3068\u601D\u3063\u3066\u3044\u307E\u3059\u3002",
+  "\u3057\u307E\u3057\u305F\u3088\u306D\u3002",
+  "\u3093\u3067\u3059\u3088\u306D\u3002",
+  "\u3058\u3083\u306A\u3044\u3067\u3059\u304B\u3002",
+  "\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
+];
+function parseTimestamp(ts) {
+  const parts = ts.split(":").map(Number);
+  if (parts.length === 3)
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  if (parts.length === 2)
+    return parts[0] * 60 + parts[1];
+  return 0;
+}
+function parseTimestampedLines(rawText) {
+  const rawLines = rawText.split("\n");
+  const result = [];
+  let pendingNumber = null;
+  let pendingLineNum = 0;
+  for (let i = 0; i < rawLines.length; i++) {
+    const lineNum = i + 1;
+    let line = rawLines[i];
+    line = line.replace(BLOCK_ID_RE, "").trimEnd();
+    const loneNum = line.match(LONE_NUMBER_RE);
+    if (loneNum) {
+      pendingNumber = loneNum[1];
+      pendingLineNum = lineNum;
+      continue;
+    }
+    if (TIMESTAMP_LINE_RE.test(line))
+      continue;
+    const tsMatch = line.match(TIMESTAMPED_LINE_RE);
+    if (tsMatch) {
+      let text = tsMatch[2].trim();
+      if (pendingNumber !== null) {
+        text = pendingNumber + text;
+        pendingNumber = null;
+      }
+      if (text) {
+        result.push({
+          timestamp: tsMatch[1],
+          seconds: parseTimestamp(tsMatch[1]),
+          text,
+          lineNumber: lineNum
+        });
+      }
+      continue;
+    }
+    if (pendingNumber !== null && line.trim()) {
+      if (result.length > 0) {
+        result[result.length - 1].text += pendingNumber + line.trim();
+      }
+      pendingNumber = null;
+      continue;
+    }
+    pendingNumber = null;
+    if (line.trim() && result.length > 0) {
+      result[result.length - 1].text += line.trim();
+    }
+  }
+  return result;
+}
+function extractUrls(text) {
+  const urls = [];
+  const cleaned = text.replace(URL_RE, (match2) => {
+    urls.push(match2);
+    return "";
+  });
+  return { cleaned: cleaned.replace(/\s{2,}/g, " "), urls };
+}
+function stripObsidianFormatting(text) {
+  return text.replace(HIGHLIGHT_RE, "$1").replace(BOLD_RE, "$1").replace(/\\\[/g, "[").replace(/\\\]/g, "]");
+}
+function cleanForAnalysis(text) {
+  let clean = text;
+  clean = clean.replace(TIMESTAMP_RE, "");
+  clean = clean.replace(/\^[a-z0-9]+/g, "");
+  clean = stripObsidianFormatting(clean);
+  clean = clean.replace(URL_RE, "");
+  clean = clean.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+  return clean;
+}
+function detectSpeakerChange(current, previous, prevEndedSentence) {
+  if (!previous)
+    return true;
+  const text = current.text;
+  const timeGap = current.seconds - previous.seconds;
+  for (const marker of TURN_INITIAL_MARKERS) {
+    if (text.startsWith(marker))
+      return true;
+  }
+  if (timeGap >= 2 && prevEndedSentence)
+    return true;
+  if (timeGap >= 3)
+    return true;
+  if (/^[うはえあ][\s、。]/.test(text) && prevEndedSentence)
+    return true;
+  if (prevEndedSentence) {
+    for (const marker of WEAK_TURN_MARKERS) {
+      if (text.startsWith(marker))
+        return true;
+    }
+  }
+  return false;
+}
+function endsSentence(text) {
+  const trimmed = text.trimEnd();
+  for (const pat of SENTENCE_FINAL_PATTERNS) {
+    if (trimmed.endsWith(pat))
+      return true;
+  }
+  if (trimmed.endsWith("\u3002") || trimmed.endsWith("\uFF1F") || trimmed.endsWith("?"))
+    return true;
+  return false;
+}
+function mergeIntoTurns(lines) {
+  if (lines.length === 0)
+    return [];
+  const turns = [];
+  let currentSpeaker = 0;
+  let currentTexts = [];
+  let currentLineNumbers = [];
+  let currentStartTime = lines[0].seconds;
+  let currentStartTimestamp = lines[0].timestamp;
+  let prevLine = null;
+  let prevEndedSentence = false;
+  for (const line of lines) {
+    const isNewSpeaker = detectSpeakerChange(line, prevLine, prevEndedSentence);
+    if (isNewSpeaker && currentTexts.length > 0) {
+      turns.push({
+        speaker: currentSpeaker,
+        startTime: currentStartTime,
+        endTime: line.seconds,
+        startTimestamp: currentStartTimestamp,
+        text: joinTurnTexts(currentTexts),
+        lineNumbers: currentLineNumbers,
+        isSpeakerChange: true
+      });
+      if (isNewSpeaker && prevLine) {
+        currentSpeaker = (currentSpeaker + 1) % 4;
+      }
+      currentTexts = [];
+      currentLineNumbers = [];
+      currentStartTime = line.seconds;
+      currentStartTimestamp = line.timestamp;
+    }
+    currentTexts.push(line.text);
+    currentLineNumbers.push(line.lineNumber);
+    prevEndedSentence = endsSentence(line.text);
+    prevLine = line;
+  }
+  if (currentTexts.length > 0) {
+    turns.push({
+      speaker: currentSpeaker,
+      startTime: currentStartTime,
+      endTime: prevLine ? prevLine.seconds + 1 : currentStartTime + 1,
+      startTimestamp: currentStartTimestamp,
+      text: joinTurnTexts(currentTexts),
+      lineNumbers: currentLineNumbers,
+      isSpeakerChange: true
+    });
+  }
+  return turns;
+}
+function joinTurnTexts(texts) {
+  if (texts.length === 0)
+    return "";
+  if (texts.length === 1)
+    return texts[0].trim();
+  let result = texts[0].trim();
+  for (let i = 1; i < texts.length; i++) {
+    const next = texts[i].trim();
+    if (!next)
+      continue;
+    const prevChar = result[result.length - 1];
+    const nextChar = next[0];
+    if (isSentenceEnd(prevChar) && !isContinuationStart(nextChar)) {
+      result += next;
+    } else {
+      result += next;
+    }
+  }
+  return result;
+}
+function isSentenceEnd(ch) {
+  return "\u3002\uFF1F\uFF01?!\u2026\u300D\u300F\u3011\uFF09)\u3009\u300B".includes(ch);
+}
+function isContinuationStart(ch) {
+  return "\u306E\u304C\u3092\u3067\u306B\u306F\u3068\u3082\u304B\u3089\u3051\u3069\u3063\u3066\u3066\u3044\u305F\u306A\u304F\u308A\u308C\u308B\u3093\u3060\u3057\u3055".includes(ch);
+}
+function isTranscriptFormat(text) {
+  var _a;
+  const matches = text.match(TIMESTAMP_RE);
+  return ((_a = matches == null ? void 0 : matches.length) != null ? _a : 0) >= 3;
+}
+function processTranscript(rawText) {
+  const { cleaned: textNoUrls, urls } = extractUrls(rawText);
+  const lines = parseTimestampedLines(textNoUrls);
+  const turns = mergeIntoTurns(lines);
+  const offsetMap = [];
+  const textParts = [];
+  let currentOffset = 0;
+  for (const turn of turns) {
+    const cleanTurnText = stripObsidianFormatting(turn.text);
+    offsetMap.push({
+      cleanOffset: currentOffset,
+      seconds: turn.startTime,
+      timestamp: turn.startTimestamp,
+      speaker: turn.speaker
+    });
+    textParts.push(cleanTurnText);
+    currentOffset += cleanTurnText.length + 1;
+  }
+  const cleanText = textParts.join("\n");
+  const speakerIds = new Set(turns.map((t) => t.speaker));
+  const duration = turns.length > 0 ? turns[turns.length - 1].endTime : 0;
+  return {
+    turns,
+    cleanText,
+    speakerCount: speakerIds.size,
+    offsetMap,
+    extractedUrls: urls,
+    durationSeconds: duration
+  };
+}
+function cleanSelection(selectedText) {
+  if (!isTranscriptFormat(selectedText)) {
+    return stripObsidianFormatting(selectedText).trim();
+  }
+  const result = processTranscript(selectedText);
+  return result.cleanText;
+}
+
+// src/discourse/discourse-grammar.ts
+var SURFACE_INDEX = (() => {
+  const map = /* @__PURE__ */ new Map();
+  for (const p of ALL_PATTERNS) {
+    const existing = map.get(p.surface);
+    if (existing) {
+      existing.push(p);
+    } else {
+      map.set(p.surface, [p]);
+    }
+  }
+  return Array.from(map.entries()).map(([surface, patterns]) => ({ surface, patterns })).sort((a, b) => b.surface.length - a.surface.length);
+})();
+var SINGLE_CHAR_SURFACES = new Set(
+  SURFACE_INDEX.filter((e) => e.surface.length === 1).map((e) => e.surface)
+);
+function normalizeForMatch(text) {
+  return text.replace(/\s+/g, "");
+}
+function detectPatterns(text) {
+  const normalized = normalizeForMatch(text);
+  const matches = [];
+  const used = /* @__PURE__ */ new Set();
+  for (const entry2 of SURFACE_INDEX) {
+    const { surface, patterns } = entry2;
+    let searchFrom = 0;
+    while (true) {
+      const idx = normalized.indexOf(surface, searchFrom);
+      if (idx === -1)
+        break;
+      let overlaps = false;
+      for (let i = idx; i < idx + surface.length; i++) {
+        if (used.has(i)) {
+          overlaps = true;
+          break;
+        }
+      }
+      if (!overlaps) {
+        for (let i = idx; i < idx + surface.length; i++) {
+          used.add(i);
+        }
+        const best = pickBestPattern(patterns, idx, normalized);
+        matches.push({
+          pattern: best,
+          offset: idx,
+          matchedText: surface
+        });
+      }
+      searchFrom = idx + 1;
+    }
+  }
+  return matches.sort((a, b) => a.offset - b.offset);
+}
+function pickBestPattern(patterns, offset, text) {
+  if (patterns.length === 1)
+    return patterns[0];
+  const isNearStart = offset < 10;
+  const isNearEnd = offset > text.length - 10;
+  const candidates = patterns.filter((p) => {
+    if (p.position === "any")
+      return true;
+    if (p.position === "utterance-initial" && isNearStart)
+      return true;
+    if (p.position === "utterance-final" && isNearEnd)
+      return true;
+    if (p.position === "mid-utterance" && !isNearStart && !isNearEnd)
+      return true;
+    if (p.position === "boundary")
+      return true;
+    return false;
+  });
+  if (candidates.length > 0)
+    return candidates[0];
+  return patterns.reduce((a, b) => a.frequencyTier <= b.frequencyTier ? a : b);
+}
+function detectLogicalFlows(matches) {
+  const flowMatches = [];
+  for (const flow of LOGICAL_FLOWS) {
+    const seqIds = flow.sequence;
+    let currentIdx = 0;
+    const found = [];
+    for (const targetId of seqIds) {
+      let matched = false;
+      for (let i = currentIdx; i < matches.length; i++) {
+        if (matches[i].pattern.id === targetId) {
+          found.push(matches[i]);
+          currentIdx = i + 1;
+          matched = true;
+          break;
+        }
+        const targetPattern = PATTERN_BY_ID.get(targetId);
+        if (targetPattern && matches[i].pattern.surface === targetPattern.surface) {
+          found.push(matches[i]);
+          currentIdx = i + 1;
+          matched = true;
+          break;
+        }
+      }
+      if (!matched)
+        break;
+    }
+    if (found.length === seqIds.length) {
+      flowMatches.push({ flow, matches: found });
+    }
+  }
+  return flowMatches;
+}
+function analyzeUtterance(text) {
+  var _a, _b, _c;
+  const patterns = detectPatterns(text);
+  const flows = detectLogicalFlows(patterns);
+  const categoryBreakdown = {};
+  const registerCounts = {};
+  const functionCounts = {};
+  for (const m of patterns) {
+    const cat = m.pattern.category;
+    categoryBreakdown[cat] = ((_a = categoryBreakdown[cat]) != null ? _a : 0) + 1;
+    registerCounts[m.pattern.register] = ((_b = registerCounts[m.pattern.register]) != null ? _b : 0) + 1;
+    functionCounts[m.pattern.pragmaticFunction] = ((_c = functionCounts[m.pattern.pragmaticFunction]) != null ? _c : 0) + 1;
+  }
+  const estimatedRegister = estimateRegister(registerCounts);
+  const dominantFunctions = Object.entries(functionCounts).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([fn]) => fn);
+  const patternSurfaces = patterns.map((m) => m.pattern.surface);
+  const fillers = detectFillers(text);
+  const { variations, registerAdjustment } = detectSpokenVariations(text);
+  const csjScore = computeCSJRegisterScore(text, patternSurfaces);
+  return {
+    text,
+    patterns,
+    flows,
+    categoryBreakdown,
+    estimatedRegister,
+    dominantFunctions,
+    csj: {
+      fillers,
+      spokenVariations: variations,
+      registerScore: csjScore.score,
+      registerLabel: csjScore.label,
+      speechType: csjScore.speechType,
+      fillerDensity: csjScore.fillerDensity
+    }
+  };
+}
+function estimateRegister(counts) {
+  var _a;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  if (total === 0)
+    return "neutral";
+  const weights = {
+    slang: -2,
+    casual: -1,
+    neutral: 0,
+    polite: 1,
+    formal: 2,
+    honorific: 3,
+    humble: 3,
+    academic: 2,
+    any: 0
+  };
+  let score = 0;
+  for (const [reg, count] of Object.entries(counts)) {
+    score += ((_a = weights[reg]) != null ? _a : 0) * count;
+  }
+  score /= total;
+  if (score < -1)
+    return "\u30B9\u30E9\u30F3\u30B0/\u4FD7\u8A9E";
+  if (score < -0.3)
+    return "\u30AB\u30B8\u30E5\u30A2\u30EB";
+  if (score < 0.3)
+    return "\u666E\u901A\u4F53";
+  if (score < 1)
+    return "\u4E01\u5BE7\u4F53";
+  if (score < 2)
+    return "\u30D5\u30A9\u30FC\u30DE\u30EB";
+  return "\u656C\u8A9E";
+}
+function buildDiscourseProfile(texts) {
+  var _a, _b, _c, _d, _e;
+  const allMatches = [];
+  let totalFlows = 0;
+  for (const text of texts) {
+    const m = detectPatterns(text);
+    allMatches.push(...m);
+    totalFlows += detectLogicalFlows(m).length;
+  }
+  const byCategory = {};
+  const patternFreq = /* @__PURE__ */ new Map();
+  const registerDist = {};
+  const functionDist = {};
+  let hedgeCount = 0;
+  for (const m of allMatches) {
+    const catLabel = `${m.pattern.category}: ${m.pattern.categoryLabel}`;
+    byCategory[catLabel] = ((_a = byCategory[catLabel]) != null ? _a : 0) + 1;
+    const key = m.pattern.surface;
+    patternFreq.set(key, ((_b = patternFreq.get(key)) != null ? _b : 0) + 1);
+    registerDist[m.pattern.register] = ((_c = registerDist[m.pattern.register]) != null ? _c : 0) + 1;
+    functionDist[m.pattern.pragmaticFunction] = ((_d = functionDist[m.pattern.pragmaticFunction]) != null ? _d : 0) + 1;
+    if (m.pattern.pragmaticFunction === "hedge" || m.pattern.pragmaticFunction === "softening") {
+      hedgeCount++;
+    }
+  }
+  const topPatterns = Array.from(patternFreq.entries()).sort((a, b) => b[1] - a[1]).slice(0, 20).map(([surface, count]) => {
+    var _a2;
+    const pat = allMatches.find((m) => m.pattern.surface === surface);
+    return { surface, count, id: (_a2 = pat == null ? void 0 : pat.pattern.id) != null ? _a2 : "" };
+  });
+  const formalityWeights = {
+    slang: -1,
+    casual: -0.5,
+    neutral: 0,
+    polite: 0.5,
+    formal: 0.8,
+    honorific: 1,
+    humble: 1,
+    academic: 0.8,
+    any: 0
+  };
+  let formalitySum = 0;
+  let formalityTotal = 0;
+  for (const [reg, count] of Object.entries(registerDist)) {
+    formalitySum += ((_e = formalityWeights[reg]) != null ? _e : 0) * count;
+    formalityTotal += count;
+  }
+  return {
+    totalMatches: allMatches.length,
+    byCategory,
+    topPatterns,
+    registerDistribution: registerDist,
+    functionDistribution: functionDist,
+    flowCount: totalFlows,
+    hedgingRatio: allMatches.length > 0 ? hedgeCount / allMatches.length : 0,
+    formalityScore: formalityTotal > 0 ? formalitySum / formalityTotal : 0
+  };
+}
+function detectBoundaries(text) {
+  const matches = detectPatterns(text);
+  const boundaries = [];
+  for (const m of matches) {
+    if (m.pattern.category === "D") {
+      boundaries.push(m.offset);
+    } else if (m.pattern.position === "utterance-initial" && m.offset > 0) {
+      if (m.pattern.frequencyTier <= 2) {
+        boundaries.push(m.offset);
+      }
+    }
+  }
+  return [...new Set(boundaries)].sort((a, b) => a - b);
+}
+function segmentAtBoundaries(text) {
+  const offsets = detectBoundaries(text);
+  if (offsets.length === 0)
+    return [text];
+  const segments = [];
+  let prev = 0;
+  for (const offset of offsets) {
+    if (offset > prev) {
+      const seg = text.slice(prev, offset).trim();
+      if (seg)
+        segments.push(seg);
+    }
+    prev = offset;
+  }
+  const last = text.slice(prev).trim();
+  if (last)
+    segments.push(last);
+  return segments;
+}
+function analyzeTranscript(rawText) {
+  var _a;
+  const transcript = processTranscript(rawText);
+  const turnAnalyses = transcript.turns.map((turn) => ({
+    turn,
+    analysis: analyzeUtterance(turn.text)
+  }));
+  const allTexts = transcript.turns.map((t) => t.text);
+  const aggregateProfile = buildDiscourseProfile(allTexts);
+  const speakerIds = [...new Set(transcript.turns.map((t) => t.speaker))];
+  const speakerProfiles = speakerIds.map((speaker) => {
+    const speakerTurns = transcript.turns.filter((t) => t.speaker === speaker);
+    const speakerTexts = speakerTurns.map((t) => t.text);
+    return {
+      speaker,
+      turnCount: speakerTurns.length,
+      charCount: speakerTexts.join("").length,
+      profile: buildDiscourseProfile(speakerTexts)
+    };
+  });
+  const pairCounts = /* @__PURE__ */ new Map();
+  for (let i = 1; i < turnAnalyses.length; i++) {
+    const prev = turnAnalyses[i - 1];
+    const curr = turnAnalyses[i];
+    if (prev.turn.speaker === curr.turn.speaker)
+      continue;
+    const firstMarker = curr.analysis.patterns[0];
+    if (firstMarker) {
+      const key = `${prev.turn.speaker}\u2192${curr.turn.speaker}:${firstMarker.pattern.pragmaticFunction}`;
+      pairCounts.set(key, ((_a = pairCounts.get(key)) != null ? _a : 0) + 1);
+    }
+  }
+  const turnPairPatterns = Array.from(pairCounts.entries()).map(([key, count]) => {
+    const [speakers, pattern] = key.split(":");
+    const [from, to] = speakers.split("\u2192").map(Number);
+    return { fromSpeaker: from, toSpeaker: to, pattern, count };
+  }).sort((a, b) => b.count - a.count);
+  return {
+    transcript,
+    turnAnalyses,
+    aggregateProfile,
+    speakerProfiles,
+    turnPairPatterns
+  };
+}
+var CATEGORY_LABELS = {
+  A: "\u767A\u8A71\u5192\u982D\u8868\u73FE",
+  B: "\u767A\u8A71\u672B\u8868\u73FE",
+  C: "\u8AD6\u7406\u5C55\u958B\u30D1\u30BF\u30FC\u30F3",
+  D: "\u8AC7\u8A71\u5883\u754C\u6A19\u8B58",
+  E: "\u76F8\u4E92\u884C\u70BA\u7684\u8868\u73FE",
+  F: "\u30E2\u30C0\u30EA\u30C6\u30A3",
+  G: "\u5F15\u7528\u30FB\u4F1D\u805E",
+  H: "\u30C6\u30F3\u30B9\u30FB\u30A2\u30B9\u30DA\u30AF\u30C8",
+  I: "\u5F85\u9047\u30FB\u30EC\u30B8\u30B9\u30BF\u30FC",
+  J: "\u30C4\u30C3\u30B3\u30DF\u30FB\u53CD\u5FDC",
+  K: "\u8A0E\u8AD6\u30D1\u30BF\u30FC\u30F3",
+  L: "\u89E3\u8AAC\u30D1\u30BF\u30FC\u30F3",
+  M: "\u96D1\u8AC7\u30D1\u30BF\u30FC\u30F3",
+  N: "\u8907\u6587\u69CB\u9020\u9023\u9396"
+};
+var CATEGORY_COLORS = {
+  A: "#e74c3c",
+  B: "#3498db",
+  C: "#2ecc71",
+  D: "#f39c12",
+  E: "#9b59b6",
+  F: "#1abc9c",
+  G: "#e67e22",
+  H: "#34495e",
+  I: "#fd79a8",
+  J: "#ff6b6b",
+  K: "#ff9f43",
+  L: "#0984e3",
+  M: "#00b894",
+  N: "#fdcb6e"
+};
+
+// src/discourse/cooperation-templates.ts
+var COOPERATION_TEMPLATES = [
+  // ── CT01: 譲歩→反論 (Concession → Rebuttal) ─────────────
+  {
+    id: "CT01",
+    name: "\u8B72\u6B69\u2192\u53CD\u8AD6",
+    nameEn: "Concession \u2192 Rebuttal",
+    context: "Speaker acknowledges the other's point, then presents counter-argument",
+    frequencyTier: 1,
+    slots: [
+      {
+        type: "concession",
+        acceptedCategories: ["A"],
+        acceptedFunctions: ["concession"],
+        optional: false,
+        speaker: "A",
+        description: "\u76F8\u624B\u306E\u610F\u898B\u3092\u8A8D\u3081\u308B\uFF08\u78BA\u304B\u306B\u3001\u3082\u3061\u308D\u3093\uFF09"
+      },
+      {
+        type: "backchannel",
+        acceptedCategories: ["E"],
+        acceptedFunctions: ["backchannel", "agreement"],
+        optional: true,
+        speaker: "B",
+        description: "\u76F8\u624B\u306E\u8B72\u6B69\u306B\u53CD\u5FDC\uFF08\u3046\u3093\u3001\u305D\u3046\u305D\u3046\uFF09"
+      },
+      {
+        type: "rebuttal",
+        acceptedCategories: ["A", "C"],
+        acceptedFunctions: ["contrast", "disagreement"],
+        optional: false,
+        speaker: "A",
+        description: "\u53CD\u8AD6\u3092\u63D0\u793A\uFF08\u3067\u3082\u3001\u305F\u3060\uFF09"
+      },
+      {
+        type: "claim",
+        acceptedCategories: ["B"],
+        acceptedFunctions: ["assertion", "emphasis"],
+        optional: false,
+        speaker: "A",
+        description: "\u4E3B\u5F35\u3092\u5C55\u958B\uFF08\u3093\u3067\u3059\u3088\u3001\u308F\u3051\u3067\u3059\uFF09"
+      }
+    ]
+  },
+  // ── CT02: 情報提示→反応 (Information → Response) ─────────
+  {
+    id: "CT02",
+    name: "\u60C5\u5831\u63D0\u793A\u2192\u53CD\u5FDC",
+    nameEn: "Information \u2192 Response",
+    context: "Speaker presents new information, listener responds",
+    frequencyTier: 1,
+    slots: [
+      {
+        type: "claim",
+        acceptedCategories: ["A", "B"],
+        acceptedFunctions: ["information-source", "assertion"],
+        optional: false,
+        speaker: "A",
+        description: "\u60C5\u5831\u3092\u63D0\u793A\uFF08\u5B9F\u306F\u3001\u3093\u3067\u3059\u3088\uFF09"
+      },
+      {
+        type: "emotional-response",
+        acceptedCategories: ["E"],
+        acceptedFunctions: ["surprise", "backchannel"],
+        optional: false,
+        speaker: "B",
+        description: "\u9A5A\u304D\u30FB\u95A2\u5FC3\u3092\u793A\u3059\uFF08\u3078\u3048\u3001\u30DE\u30B8\u3067\uFF09"
+      },
+      {
+        type: "elaboration",
+        acceptedCategories: ["C", "B"],
+        acceptedFunctions: ["elaboration", "cause"],
+        optional: true,
+        speaker: "A",
+        description: "\u8A73\u7D30\u3092\u8FFD\u52A0\uFF08\u3057\u304B\u3082\u3001\u3068\u3044\u3046\u306E\u306F\uFF09"
+      }
+    ]
+  },
+  // ── CT03: 質問→回答→評価 (Q→A→Evaluation) ──────────────
+  {
+    id: "CT03",
+    name: "\u8CEA\u554F\u2192\u56DE\u7B54\u2192\u8A55\u4FA1",
+    nameEn: "Q \u2192 A \u2192 Evaluation",
+    context: "Question-answer-evaluation triad (IRE pattern)",
+    frequencyTier: 1,
+    slots: [
+      {
+        type: "question",
+        acceptedCategories: ["B", "E"],
+        acceptedFunctions: ["confirmation-seeking"],
+        optional: false,
+        speaker: "A",
+        description: "\u8CEA\u554F\u3059\u308B\uFF08\u3058\u3083\u306A\u3044\u3067\u3059\u304B\u3001\u3067\u3057\u3087\u3046\uFF09"
+      },
+      {
+        type: "answer",
+        acceptedCategories: ["B"],
+        acceptedFunctions: ["assertion", "cause"],
+        optional: false,
+        speaker: "B",
+        description: "\u56DE\u7B54\u3059\u308B\uFF08\u308F\u3051\u3067\u3059\u3088\u3001\u3093\u3067\u3059\u3088\uFF09"
+      },
+      {
+        type: "agreement",
+        acceptedCategories: ["E"],
+        acceptedFunctions: ["backchannel", "agreement"],
+        optional: false,
+        speaker: "A",
+        description: "\u8A55\u4FA1\u3059\u308B\uFF08\u306A\u308B\u307B\u3069\u3001\u305F\u3057\u304B\u306B\uFF09"
+      }
+    ]
+  },
+  // ── CT04: 段階的説明 (Stepwise Explanation) ──────────────
+  {
+    id: "CT04",
+    name: "\u6BB5\u968E\u7684\u8AAC\u660E",
+    nameEn: "Stepwise Explanation",
+    context: "Speaker builds explanation step by step with listener backchanneling",
+    frequencyTier: 1,
+    slots: [
+      {
+        type: "claim",
+        acceptedCategories: ["A"],
+        acceptedFunctions: ["sequence", "topic-initiation"],
+        optional: false,
+        speaker: "A",
+        description: "\u5E8F\u8AD6\u3092\u958B\u59CB\uFF08\u307E\u305A\u3001\u305D\u3082\u305D\u3082\uFF09"
+      },
+      {
+        type: "backchannel",
+        acceptedCategories: ["E"],
+        acceptedFunctions: ["backchannel"],
+        optional: true,
+        speaker: "B",
+        description: "\u53D7\u4FE1\u78BA\u8A8D\uFF08\u3046\u3093\u3001\u306F\u3044\uFF09"
+      },
+      {
+        type: "elaboration",
+        acceptedCategories: ["C"],
+        acceptedFunctions: ["addition", "cause"],
+        optional: false,
+        speaker: "A",
+        description: "\u5C55\u958B\u3059\u308B\uFF08\u3057\u304B\u3082\u3001\u306A\u306E\u3067\uFF09"
+      },
+      {
+        type: "backchannel",
+        acceptedCategories: ["E"],
+        acceptedFunctions: ["backchannel", "agreement"],
+        optional: true,
+        speaker: "B",
+        description: "\u7406\u89E3\u3092\u793A\u3059\uFF08\u306A\u308B\u307B\u3069\uFF09"
+      },
+      {
+        type: "summary",
+        acceptedCategories: ["A", "D"],
+        acceptedFunctions: ["summary", "rephrasing"],
+        optional: false,
+        speaker: "A",
+        description: "\u307E\u3068\u3081\u308B\uFF08\u7D50\u5C40\u3001\u3068\u3044\u3046\u308F\u3051\u3067\uFF09"
+      }
+    ]
+  },
+  // ── CT05: 共感構築 (Empathy Building) ───────────────────
+  {
+    id: "CT05",
+    name: "\u5171\u611F\u69CB\u7BC9",
+    nameEn: "Empathy Building",
+    context: "Both speakers cooperatively build shared understanding",
+    frequencyTier: 1,
+    slots: [
+      {
+        type: "claim",
+        acceptedCategories: ["B"],
+        acceptedFunctions: ["assertion", "hedge"],
+        optional: false,
+        speaker: "A",
+        description: "\u610F\u898B\u3092\u8FF0\u3079\u308B\uFF08\u3093\u3067\u3059\u3051\u3069\uFF09"
+      },
+      {
+        type: "agreement",
+        acceptedCategories: ["E"],
+        acceptedFunctions: ["agreement", "backchannel"],
+        optional: false,
+        speaker: "B",
+        description: "\u5171\u611F\u3092\u793A\u3059\uFF08\u308F\u304B\u308B\u308F\u304B\u308B\u3001\u305D\u3046\u305D\u3046\uFF09"
+      },
+      {
+        type: "elaboration",
+        acceptedCategories: ["B", "C"],
+        acceptedFunctions: ["addition", "elaboration"],
+        optional: false,
+        speaker: "B",
+        description: "\u8A71\u3092\u81A8\u3089\u307E\u305B\u308B\uFF08\u3057\u304B\u3082\u3001\u305D\u308C\u306B\uFF09"
+      },
+      {
+        type: "agreement",
+        acceptedCategories: ["E"],
+        acceptedFunctions: ["agreement", "emotional"],
+        optional: false,
+        speaker: "A",
+        description: "\u76F8\u4E92\u5171\u611F\uFF08\u305F\u3057\u304B\u306B\u3001\u306A\uFF09"
+      }
+    ]
+  },
+  // ── CT06: 引用→オチ (Quotation → Punchline) ─────────────
+  {
+    id: "CT06",
+    name: "\u5F15\u7528\u2192\u30AA\u30C1",
+    nameEn: "Quotation \u2192 Punchline",
+    context: "Builds up narrative tension through quotation, leading to a punchline or twist.",
+    frequencyTier: 2,
+    slots: [
+      {
+        type: "claim",
+        acceptedCategories: ["A"],
+        acceptedFunctions: ["sequence", "attention"],
+        optional: true,
+        speaker: "A",
+        description: "\u5834\u9762\u8A2D\u5B9A\uFF08\u305D\u3057\u305F\u3089\u3055\u3001\u3067\u306D\uFF09"
+      },
+      {
+        type: "claim",
+        acceptedCategories: ["G"],
+        acceptedFunctions: ["quotation"],
+        optional: false,
+        speaker: "A",
+        description: "\u5F15\u7528\u3059\u308B\uFF08\u3063\u3066\u8A00\u3063\u305F\u3089\u3001\u3063\u3066\uFF09"
+      },
+      {
+        type: "emotional-response",
+        acceptedCategories: ["E"],
+        acceptedFunctions: ["surprise", "emotional", "backchannel"],
+        optional: false,
+        speaker: "B",
+        description: "\u53CD\u5FDC\u3059\u308B\uFF08\u3048\u30FC\u3001\u30DE\u30B8\u3067\u3001\u3084\u3070\uFF09"
+      }
+    ]
+  },
+  // ── CT07: 自己修正 (Self-Repair) ────────────────────────
+  {
+    id: "CT07",
+    name: "\u81EA\u5DF1\u4FEE\u6B63",
+    nameEn: "Self-Repair",
+    context: "Speaker corrects or rephrases their own statement",
+    frequencyTier: 2,
+    slots: [
+      {
+        type: "claim",
+        acceptedCategories: ["B"],
+        acceptedFunctions: ["assertion", "hedge"],
+        optional: false,
+        speaker: "A",
+        description: "\u6700\u521D\u306E\u767A\u8A71"
+      },
+      {
+        type: "repair",
+        acceptedCategories: ["A", "C"],
+        acceptedFunctions: ["self-repair", "rephrasing"],
+        optional: false,
+        speaker: "A",
+        description: "\u4FEE\u6B63\u3059\u308B\uFF08\u3066\u3044\u3046\u304B\u3001\u3068\u3044\u3046\u304B\uFF09"
+      },
+      {
+        type: "claim",
+        acceptedCategories: ["A", "B"],
+        acceptedFunctions: ["rephrasing", "summary"],
+        optional: false,
+        speaker: "A",
+        description: "\u8A00\u3044\u76F4\u3057\uFF08\u3064\u307E\u308A\u3001\u8981\u3059\u308B\u306B\uFF09"
+      }
+    ]
+  },
+  // ── CT08: 話題転換 (Topic Transition) ───────────────────
+  {
+    id: "CT08",
+    name: "\u8A71\u984C\u8EE2\u63DB",
+    nameEn: "Topic Transition",
+    context: "One speaker transitions to a new topic",
+    frequencyTier: 2,
+    slots: [
+      {
+        type: "summary",
+        acceptedCategories: ["D"],
+        acceptedFunctions: ["summary", "topic-close"],
+        optional: true,
+        speaker: "A",
+        description: "\u524D\u306E\u8A71\u984C\u3092\u9589\u3058\u308B\uFF08\u3068\u3044\u3046\u611F\u3058\u3067\uFF09"
+      },
+      {
+        type: "topic-shift",
+        acceptedCategories: ["D"],
+        acceptedFunctions: ["topic-shift", "topic-initiation"],
+        optional: false,
+        speaker: "A",
+        description: "\u8A71\u984C\u8EE2\u63DB\uFF08\u3068\u3053\u308D\u3067\u3001\u305D\u3046\u3044\u3048\u3070\uFF09"
+      },
+      {
+        type: "backchannel",
+        acceptedCategories: ["E"],
+        acceptedFunctions: ["backchannel"],
+        optional: true,
+        speaker: "B",
+        description: "\u53D7\u5BB9\u3059\u308B\uFF08\u3046\u3093\uFF09"
+      }
+    ]
+  },
+  // ── CT09: 証拠列挙 (Evidence Enumeration) ──────────────
+  {
+    id: "CT09",
+    name: "\u8A3C\u62E0\u5217\u6319",
+    nameEn: "Evidence Enumeration",
+    context: "Speaker systematically presents multiple pieces of evidence",
+    frequencyTier: 2,
+    slots: [
+      {
+        type: "claim",
+        acceptedCategories: ["A"],
+        acceptedFunctions: ["sequence"],
+        optional: false,
+        speaker: "A",
+        description: "\u7B2C\u4E00\u8A3C\u62E0\uFF081\u3064\u306F\u3055\u3001\u307E\u305A\uFF09"
+      },
+      {
+        type: "backchannel",
+        acceptedCategories: ["E"],
+        acceptedFunctions: ["backchannel"],
+        optional: true,
+        speaker: "B",
+        description: "\u53D7\u4FE1\u78BA\u8A8D"
+      },
+      {
+        type: "evidence",
+        acceptedCategories: ["A", "C"],
+        acceptedFunctions: ["sequence", "addition"],
+        optional: false,
+        speaker: "A",
+        description: "\u8FFD\u52A0\u8A3C\u62E0\uFF08\u3042\u3068\u3082\u30461\u500B\u3001\u3055\u3089\u306B\uFF09"
+      },
+      {
+        type: "summary",
+        acceptedCategories: ["A", "D"],
+        acceptedFunctions: ["summary", "result"],
+        optional: true,
+        speaker: "A",
+        description: "\u7D50\u8AD6\uFF08\u7D50\u5C40\u3001\u3060\u304B\u3089\uFF09"
+      }
+    ]
+  },
+  // ── CT10: 伝聞→評価→展開 (Hearsay → Evaluation → Development) ──
+  {
+    id: "CT10",
+    name: "\u4F1D\u805E\u2192\u8A55\u4FA1\u2192\u5C55\u958B",
+    nameEn: "Hearsay \u2192 Evaluation",
+    context: "Speaker reports hearsay, evaluates it, then develops their point",
+    frequencyTier: 2,
+    slots: [
+      {
+        type: "claim",
+        acceptedCategories: ["B", "G"],
+        acceptedFunctions: ["hearsay", "quotation", "evidential"],
+        optional: false,
+        speaker: "A",
+        description: "\u4F1D\u805E\u3092\u5831\u544A\uFF08\u3089\u3057\u3044\u3001\u3063\u3066\u8A00\u3063\u3066\u305F\uFF09"
+      },
+      {
+        type: "backchannel",
+        acceptedCategories: ["E"],
+        acceptedFunctions: ["surprise", "backchannel"],
+        optional: true,
+        speaker: "B",
+        description: "\u53CD\u5FDC\uFF08\u3078\u3048\uFF09"
+      },
+      {
+        type: "claim",
+        acceptedCategories: ["G", "F"],
+        acceptedFunctions: ["epistemic", "hedge"],
+        optional: false,
+        speaker: "A",
+        description: "\u8A55\u4FA1\u3059\u308B\uFF08\u3068\u601D\u3046\u3001\u6C17\u304C\u3059\u308B\uFF09"
+      }
+    ]
+  }
+];
+function matchTemplates(matches, minConfidence = 0.5) {
+  const results = [];
+  for (const template of COOPERATION_TEMPLATES) {
+    const result = tryMatchTemplate(template, matches);
+    if (result && result.confidence >= minConfidence) {
+      results.push(result);
+    }
+  }
+  return results.sort((a, b) => b.confidence - a.confidence);
+}
+function tryMatchTemplate(template, matches) {
+  const filledSlots = new Array(template.slots.length).fill(null);
+  let matchIdx = 0;
+  for (let slotIdx = 0; slotIdx < template.slots.length; slotIdx++) {
+    const slot = template.slots[slotIdx];
+    let filled = false;
+    for (let i = matchIdx; i < matches.length; i++) {
+      if (fitsSlot(matches[i], slot)) {
+        filledSlots[slotIdx] = matches[i];
+        matchIdx = i + 1;
+        filled = true;
+        break;
+      }
+    }
+    if (!filled && !slot.optional) {
+    }
+  }
+  const requiredSlots = template.slots.filter((s) => !s.optional);
+  const filledRequired = filledSlots.filter(
+    (s, i) => s !== null && !template.slots[i].optional
+  ).length;
+  const filledOptional = filledSlots.filter(
+    (s, i) => s !== null && template.slots[i].optional
+  ).length;
+  if (filledRequired === 0)
+    return null;
+  const confidence = requiredSlots.length > 0 ? (filledRequired + filledOptional * 0.5) / template.slots.length : 0;
+  return { template, filledSlots, confidence };
+}
+function fitsSlot(match2, slot) {
+  const p = match2.pattern;
+  if (slot.acceptedCategories.length > 0 && !slot.acceptedCategories.includes(p.category)) {
+    return false;
+  }
+  if (slot.acceptedFunctions.length > 0 && !slot.acceptedFunctions.includes(p.pragmaticFunction)) {
+    return false;
+  }
+  return true;
+}
+
+// src/srs/chunk-extractor.ts
+var CATEGORY_COLORS2 = {
+  A: "#e74c3c",
+  B: "#3498db",
+  C: "#2ecc71",
+  D: "#f39c12",
+  E: "#9b59b6",
+  F: "#1abc9c",
+  G: "#e67e22",
+  H: "#34495e",
+  I: "#fd79a8"
+};
+function inferRelation(current, next) {
+  var _a;
+  if (!next.length)
+    return "";
+  const nextFirst = next[0].pattern;
+  const fnMap = {
+    "concession": "\u2192 \u8B72\u6B69",
+    "contrast": "\u2192 \u5BFE\u6BD4",
+    "cause": "\u2192 \u539F\u56E0",
+    "result": "\u2192 \u7D50\u679C",
+    "addition": "\u2192 \u8FFD\u52A0",
+    "elaboration": "\u2192 \u5C55\u958B",
+    "rephrasing": "\u2192 \u8A00\u3044\u63DB\u3048",
+    "summary": "\u2192 \u307E\u3068\u3081",
+    "agreement": "\u2192 \u540C\u610F",
+    "disagreement": "\u2192 \u7570\u8B70",
+    "backchannel": "\u2192 \u76F8\u69CC",
+    "confirmation-seeking": "\u2192 \u78BA\u8A8D",
+    "quotation": "\u2192 \u5F15\u7528",
+    "hearsay": "\u2192 \u4F1D\u805E",
+    "surprise": "\u2192 \u9A5A\u304D",
+    "topic-shift": "\u2192 \u8A71\u984C\u8EE2\u63DB",
+    "topic-initiation": "\u2192 \u5C0E\u5165",
+    "sequence": "\u2192 \u9806\u5E8F",
+    "hedge": "\u2192 \u307C\u304B\u3057",
+    "softening": "\u2192 \u548C\u3089\u3052",
+    "emphasis": "\u2192 \u5F37\u8ABF",
+    "self-repair": "\u2192 \u4FEE\u6B63",
+    "turn-taking": "\u2192 \u767A\u8A71\u6A29",
+    "filler": "\u2192 \u3064\u306A\u304E"
+  };
+  return (_a = fnMap[nextFirst.pragmaticFunction]) != null ? _a : "\u2192";
+}
+function extractFromTranscript(text, sourceFile) {
+  const transcript = processTranscript(text);
+  const chunks = [];
+  const usedTurnIndices = /* @__PURE__ */ new Set();
+  let chunkCounter = 0;
+  const allTurnTexts = transcript.turns.map((t) => t.text);
+  const combinedForTemplates = allTurnTexts.join("\n");
+  const allPatterns = detectPatterns(combinedForTemplates);
+  const templateMatches = matchTemplates(allPatterns);
+  for (const tm of templateMatches) {
+    if (tm.confidence < 0.5)
+      continue;
+    const slotOffsets = tm.filledSlots.filter((s) => s !== null).map((s) => s.offset);
+    if (slotOffsets.length === 0)
+      continue;
+    let accumOffset = 0;
+    const turnRanges = [];
+    for (let i = 0; i < transcript.turns.length; i++) {
+      const len = transcript.turns[i].text.length + 1;
+      turnRanges.push({ start: accumOffset, end: accumOffset + len, turnIdx: i });
+      accumOffset += len;
+    }
+    const turnIndices = /* @__PURE__ */ new Set();
+    for (const offset of slotOffsets) {
+      for (const range of turnRanges) {
+        if (offset >= range.start && offset < range.end) {
+          turnIndices.add(range.turnIdx);
+          break;
+        }
+      }
+    }
+    const indices = [...turnIndices].sort((a, b) => a - b);
+    const minIdx = Math.max(0, indices[0] - 1);
+    const maxIdx = Math.min(transcript.turns.length - 1, indices[indices.length - 1] + 1);
+    const chunkTurns = [];
+    for (let i = minIdx; i <= maxIdx; i++) {
+      chunkTurns.push(transcript.turns[i]);
+      usedTurnIndices.add(i);
+    }
+    const chunk = buildChunkFromTurns(chunkTurns, chunkCounter++, sourceFile);
+    chunk.templateMatch = {
+      name: tm.template.name,
+      nameEn: tm.template.nameEn,
+      confidence: tm.confidence
+    };
+    chunk.boundaryReason = `\u30C6\u30F3\u30D7\u30EC\u30FC\u30C8: ${tm.template.name} (confidence: ${(tm.confidence * 100).toFixed(0)}%)`;
+    chunks.push(chunk);
+  }
+  let groupStart = -1;
+  let currentGroup = [];
+  for (let i = 0; i < transcript.turns.length; i++) {
+    if (usedTurnIndices.has(i)) {
+      if (currentGroup.length > 0) {
+        chunks.push(buildChunkFromTurns(currentGroup, chunkCounter++, sourceFile));
+        currentGroup = [];
+        groupStart = -1;
+      }
+      continue;
+    }
+    const turn = transcript.turns[i];
+    const analysis = analyzeUtterance(turn.text);
+    if (groupStart === -1) {
+      groupStart = i;
+      currentGroup = [turn];
+      continue;
+    }
+    const hasTopicShift = analysis.patterns.some(
+      (p) => p.pattern.category === "D" && (p.pattern.pragmaticFunction === "topic-shift" || p.pattern.pragmaticFunction === "topic-close")
+    );
+    const tooLong = currentGroup.length >= 6;
+    const prevTurn = currentGroup[currentGroup.length - 1];
+    const bigGap = turn.startTime - prevTurn.startTime > 5;
+    if (hasTopicShift || tooLong || bigGap) {
+      if (currentGroup.length > 0) {
+        const chunk = buildChunkFromTurns(currentGroup, chunkCounter++, sourceFile);
+        chunk.boundaryReason = hasTopicShift ? "\u8A71\u984C\u8EE2\u63DB\u30DE\u30FC\u30AB\u30FC\u691C\u51FA" : tooLong ? "\u6700\u5927\u30BF\u30FC\u30F3\u6570\u5230\u9054 (6)" : "\u9577\u3044\u9593 (>5s)";
+        chunks.push(chunk);
+      }
+      currentGroup = [turn];
+      groupStart = i;
+    } else {
+      currentGroup.push(turn);
+    }
+  }
+  if (currentGroup.length > 0) {
+    const chunk = buildChunkFromTurns(currentGroup, chunkCounter++, sourceFile);
+    chunk.boundaryReason = "\u30C6\u30AD\u30B9\u30C8\u7D42\u4E86";
+    chunks.push(chunk);
+  }
+  return chunks;
+}
+function buildChunkFromTurns(turns, index, sourceFile) {
+  var _a, _b, _c, _d, _e, _f, _g, _h;
+  const bits = [];
+  for (let i = 0; i < turns.length; i++) {
+    const turn = turns[i];
+    const cleanText = stripObsidianFormatting(turn.text);
+    const analysis = analyzeUtterance(cleanText);
+    const nextTurn = i < turns.length - 1 ? turns[i + 1] : null;
+    const nextPatterns = nextTurn ? detectPatterns(stripObsidianFormatting(nextTurn.text)) : [];
+    const primaryCat = (_b = (_a = Object.entries(analysis.categoryBreakdown).sort((a, b) => b[1] - a[1])[0]) == null ? void 0 : _a[0]) != null ? _b : "E";
+    bits.push({
+      text: cleanText,
+      speaker: turn.speaker,
+      timestamp: turn.startTimestamp,
+      patterns: analysis.patterns,
+      dominantFunction: (_c = analysis.dominantFunctions[0]) != null ? _c : "assertion",
+      register: analysis.estimatedRegister,
+      categoryBreakdown: analysis.categoryBreakdown,
+      relationToNext: nextTurn ? inferRelation(analysis.patterns, nextPatterns) : "",
+      color: (_d = CATEGORY_COLORS2[primaryCat]) != null ? _d : "#95a5a6"
+    });
+  }
+  const fullText = turns.map((t) => t.text).join("\n");
+  const speakers = new Set(turns.map((t) => t.speaker));
+  const allPatterns = detectPatterns(fullText);
+  const flows = detectLogicalFlows(allPatterns);
+  const regCounts = {};
+  for (const bit of bits) {
+    regCounts[bit.register] = ((_e = regCounts[bit.register]) != null ? _e : 0) + 1;
+  }
+  const topReg = (_g = (_f = Object.entries(regCounts).sort((a, b) => b[1] - a[1])[0]) == null ? void 0 : _f[0]) != null ? _g : "\u666E\u901A\u4F53";
+  return {
+    id: `chunk-${index}-${Date.now()}`,
+    bits,
+    fullText,
+    flows: flows.map((f) => ({ name: f.flow.name, nameEn: f.flow.nameEn })),
+    speakerCount: speakers.size,
+    register: topReg,
+    sourceFile,
+    startTimestamp: (_h = turns[0]) == null ? void 0 : _h.startTimestamp,
+    boundaryReason: ""
+  };
+}
+function extractFromPlainText(text, sourceFile) {
+  const sentences = text.split(/(?<=[。！？\n])/g).filter((s) => s.trim());
+  const chunks = [];
+  let chunkCounter = 0;
+  let currentGroup = [];
+  for (let i = 0; i < sentences.length; i++) {
+    const s = sentences[i].trim();
+    if (!s)
+      continue;
+    currentGroup.push(s);
+    const combined = currentGroup.join("");
+    const patterns = detectPatterns(s);
+    const hasTopicShift = patterns.some(
+      (p) => p.pattern.category === "D" && p.pattern.pragmaticFunction === "topic-shift"
+    );
+    const hasEnoughContext = currentGroup.length >= 2;
+    const tooLong = currentGroup.length >= 4;
+    if (hasTopicShift && hasEnoughContext || tooLong) {
+      const fullText = currentGroup.join("");
+      const analysis = analyzeUtterance(fullText);
+      const bits = currentGroup.map((text2, idx) => {
+        var _a, _b, _c, _d;
+        const a = analyzeUtterance(text2);
+        const nextPats = idx < currentGroup.length - 1 ? detectPatterns(currentGroup[idx + 1]) : [];
+        const primaryCat = (_b = (_a = Object.entries(a.categoryBreakdown).sort((a2, b) => b[1] - a2[1])[0]) == null ? void 0 : _a[0]) != null ? _b : "C";
+        return {
+          text: text2,
+          speaker: -1,
+          patterns: a.patterns,
+          dominantFunction: (_c = a.dominantFunctions[0]) != null ? _c : "assertion",
+          register: a.estimatedRegister,
+          categoryBreakdown: a.categoryBreakdown,
+          relationToNext: inferRelation(a.patterns, nextPats),
+          color: (_d = CATEGORY_COLORS2[primaryCat]) != null ? _d : "#95a5a6"
+        };
+      });
+      const flows = detectLogicalFlows(analysis.patterns);
+      chunks.push({
+        id: `chunk-${chunkCounter++}-${Date.now()}`,
+        bits,
+        fullText,
+        flows: flows.map((f) => ({ name: f.flow.name, nameEn: f.flow.nameEn })),
+        speakerCount: 1,
+        register: analysis.estimatedRegister,
+        sourceFile,
+        boundaryReason: hasTopicShift ? "\u8A71\u984C\u8EE2\u63DB" : "\u6587\u6570\u4E0A\u9650"
+      });
+      currentGroup = [];
+    }
+  }
+  if (currentGroup.length > 0) {
+    const fullText = currentGroup.join("");
+    const analysis = analyzeUtterance(fullText);
+    const bits = currentGroup.map((text2, idx) => {
+      var _a, _b, _c, _d;
+      const a = analyzeUtterance(text2);
+      const nextPats = idx < currentGroup.length - 1 ? detectPatterns(currentGroup[idx + 1]) : [];
+      const primaryCat = (_b = (_a = Object.entries(a.categoryBreakdown).sort((a2, b) => b[1] - a2[1])[0]) == null ? void 0 : _a[0]) != null ? _b : "C";
+      return {
+        text: text2,
+        speaker: -1,
+        patterns: a.patterns,
+        dominantFunction: (_c = a.dominantFunctions[0]) != null ? _c : "assertion",
+        register: a.estimatedRegister,
+        categoryBreakdown: a.categoryBreakdown,
+        relationToNext: inferRelation(a.patterns, nextPats),
+        color: (_d = CATEGORY_COLORS2[primaryCat]) != null ? _d : "#95a5a6"
+      };
+    });
+    const flows = detectLogicalFlows(analysis.patterns);
+    chunks.push({
+      id: `chunk-${chunkCounter++}-${Date.now()}`,
+      bits,
+      fullText,
+      flows: flows.map((f) => ({ name: f.flow.name, nameEn: f.flow.nameEn })),
+      speakerCount: 1,
+      register: analysis.estimatedRegister,
+      sourceFile,
+      boundaryReason: "\u30C6\u30AD\u30B9\u30C8\u7D42\u4E86"
+    });
+  }
+  return chunks;
+}
+function extractChunks(text, sourceFile) {
+  if (isTranscriptFormat(text)) {
+    return extractFromTranscript(text, sourceFile);
+  }
+  return extractFromPlainText(text, sourceFile);
+}
+
+// src/srs/collocation-extractor.ts
+var K = "[\\u4e00-\\u9faf\\u3400-\\u4dbf]";
+var H = "[\\u3041-\\u3096]";
+var KT = "[\\u30a1-\\u30f6\u30FC]";
+var JP = `(?:${K}|${H}|${KT})`;
+var PATTERN_RULES = [
+  // ── Compound verbs (V連用形 + V) ──────────────────────────
+  {
+    type: "compound-verb",
+    regex: new RegExp(`(${K}${H}*?)(\u51FA\u3059|\u59CB\u3081\u308B|\u7D9A\u3051\u308B|\u7D42\u308F\u308B|\u76F4\u3059|\u5408\u3046|\u8FBC\u3080|\u5207\u308B|\u629C\u304F|\u904E\u304E\u308B|\u8FD4\u3059|\u304B\u3051\u308B|\u640D\u306D\u308B|\u5FD8\u308C\u308B|\u6163\u308C\u308B|\u98FD\u304D\u308B|\u679C\u3066\u308B|\u5C3D\u304F\u3059|\u307E\u304F\u308B)`, "g"),
+    label: "\u8907\u5408\u52D5\u8A5E",
+    labelEn: "Compound verb",
+    confidence: 0.9,
+    extract: (m) => ({ core: m[1] + m[2], bound: m[2] })
+  },
+  // ── Noun + する ────────────────────────────────────────────
+  {
+    type: "noun-suru",
+    regex: new RegExp(`(${K}{1,4})(\u3059\u308B|\u3057\u305F|\u3057\u3066|\u3057\u306A\u3044|\u3057\u3088\u3046|\u3059\u308C\u3070|\u3057\u307E\u3059|\u3057\u307E\u3057\u305F|\u3067\u304D\u308B|\u3067\u304D\u306A\u3044|\u3055\u305B\u308B|\u3055\u308C\u308B)`, "g"),
+    label: "\u540D\u8A5E\uFF0B\u3059\u308B",
+    labelEn: "Noun + suru",
+    confidence: 0.85,
+    extract: (m) => ({ core: m[1], bound: m[2] })
+  },
+  // ── Noun + particle + verb (body-part idioms etc) ─────────
+  {
+    type: "noun-particle-verb",
+    regex: new RegExp(`(${K}{1,3})(\u3092|\u306B|\u304C|\u306F|\u3067|\u3068|\u304B\u3089|\u307E\u3067)(${K}${H}+)`, "g"),
+    label: "\u540D\u8A5E\uFF0B\u52A9\u8A5E\uFF0B\u52D5\u8A5E",
+    labelEn: "N + particle + V",
+    confidence: 0.7,
+    extract: (m) => ({ core: m[1] + m[2] + m[3], bound: m[2] })
+  },
+  // ── Adjective + noun ──────────────────────────────────────
+  {
+    type: "adj-noun",
+    regex: new RegExp(`(${K}${H}*\u3044|${K}+\u306A)(${K}{1,4})`, "g"),
+    label: "\u5F62\u5BB9\u8A5E\uFF0B\u540D\u8A5E",
+    labelEn: "Adj + Noun",
+    confidence: 0.65,
+    extract: (m) => ({ core: m[2], bound: m[1] })
+  },
+  // ── Compound particles ────────────────────────────────────
+  {
+    type: "compound-particle",
+    regex: /(?:に対して|に関して|によると|によれば|において|にとって|にかけて|について|をもって|に基づいて|に沿って|のもとで|に伴って|に先立って|を通じて|を通して|をめぐって|に応じて|にわたって|にかかわらず|にもかかわらず|を除いて|のほかに)/g,
+    label: "\u8907\u5408\u52A9\u8A5E",
+    labelEn: "Compound particle",
+    confidence: 0.95,
+    extract: (m) => ({ core: m[0], bound: "" })
+  },
+  // ── Auxiliary verb chains (て-form + auxiliary) ────────────
+  {
+    type: "auxiliary",
+    regex: new RegExp(`(${K}${H}*?\u3066|${K}${H}*?\u3067)(\u3057\u307E\u3046|\u3057\u307E\u3063\u305F|\u304A\u304F|\u304A\u3044\u305F|\u307F\u308B|\u307F\u305F|\u3044\u304F|\u3044\u3063\u305F|\u304F\u308B|\u304D\u305F|\u3042\u308B|\u3042\u3063\u305F|\u3044\u308B|\u3044\u305F|\u3082\u3089\u3046|\u3042\u3052\u308B|\u304F\u308C\u308B|\u3084\u308B|\u3084\u3063\u305F|\u307B\u3057\u3044)`, "g"),
+    label: "\u88DC\u52A9\u52D5\u8A5E",
+    labelEn: "Auxiliary verb",
+    confidence: 0.88,
+    extract: (m) => ({ core: m[1] + m[2], bound: m[2] })
+  },
+  // ── Onomatopoeia + verb ───────────────────────────────────
+  {
+    type: "onomatopoeia-verb",
+    regex: new RegExp(`((?:${H}{2}${H}{2}|${KT}{2}${KT}{2}))(\u3068|\u306B)?(${K}${H}+)`, "g"),
+    label: "\u30AA\u30CE\u30DE\u30C8\u30DA\uFF0B\u52D5\u8A5E",
+    labelEn: "Onomatopoeia + V",
+    confidence: 0.75,
+    extract: (m) => ({ core: m[3], bound: m[1] })
+  },
+  // ── Keigo patterns ────────────────────────────────────────
+  {
+    type: "keigo",
+    regex: new RegExp(`(\u304A${K}${H}*\u306B\u306A\u308B|\u304A${K}${H}*\u3059\u308B|\u304A${K}${H}*\u304F\u3060\u3055\u3044|\u3054${K}+\u306B\u306A\u308B|\u3054${K}+\u3059\u308B|\u3054${K}+\u304F\u3060\u3055\u3044|\u3054${K}+\u3044\u305F\u3060[\u304F\u3051\u304D]|\u304A${K}${H}*\u3044\u305F\u3060[\u304F\u3051\u304D]|\u304A${K}${H}*\u7533\u3057\u4E0A\u3052\u308B|\u3054${K}+\u7533\u3059)`, "g"),
+    label: "\u656C\u8A9E\u8868\u73FE",
+    labelEn: "Keigo",
+    confidence: 0.92,
+    extract: (m) => ({ core: m[0], bound: "" })
+  },
+  // ── Grammatical collocations ──────────────────────────────
+  {
+    type: "grammatical",
+    regex: /(?:ざるを得ない|に違いない|に決まっている|ようがない|しようがない|わけにはいかない|ないわけにはいかない|どころではない|ほかない|ほかはない|ことはない|にほかならない|に過ぎない|ではないか|のではないか|てならない|てたまらない|てしょうがない|てしかたがない|かねない|かねる|ぬきにしては|をおいて|をよそに|はおろか|はもとより|はさておき|ともかく|といっても|とはいえ|とは限らない|べきだ|べきではない|はずがない|はずだ|ものだ|ものではない|ことになっている|ことにしている|ことがある|ことができる|ようにする|ようになる|つもりだ|ことだ|ものか|ものの|ところだ|ばかりだ|たばかりだ|ところが|ところで|どころか|くせに|わりに|反面|一方で|にしても|としても|にしろ|にせよ|からといって|からこそ|ばこそ|さえ.?ば|でも.?ば|とすれば|とすると|としたら|たとしても)/g,
+    label: "\u6587\u6CD5\u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3",
+    labelEn: "Grammatical collocation",
+    confidence: 0.93,
+    extract: (m) => ({ core: m[0], bound: "" })
+  },
+  // ── Sentence-ending patterns ──────────────────────────────
+  {
+    type: "sentence-end",
+    regex: /(?:わけだ|わけです|わけがない|ものだから|もので|ものですから|ことだから|ことから|ことだし|しかない|にすぎない|ではないだろうか|のではなかろうか|と言えよう|と言えるだろう|に他ならない|に相違ない|てやまない|に堪えない|極まりない|極まる|の至りだ|の限りだ|に耐えない|を禁じ得ない|ずにはいられない|ないではいられない|ずにはおかない|ないではおかない|を余儀なくされる|を余儀なくさせる)/g,
+    label: "\u6587\u672B\u8868\u73FE",
+    labelEn: "Sentence-end pattern",
+    confidence: 0.91,
+    extract: (m) => ({ core: m[0], bound: "" })
+  },
+  // ── Adverb + verb common pairs ────────────────────────────
+  {
+    type: "adv-verb",
+    regex: /(?:じっと見|ゆっくり歩|はっきり言|しっかり握|ぐっすり眠|ぴったり合|すっかり忘|うっかり|ちゃんと|きちんと|ちょっと|なかなか|たっぷり|ぎりぎり|そっと|ふと|つい|ぜひ|きっと|必ず|かなり|すごく|とても|めっちゃ|まったく|全然|絶対に|思わず|急に|突然|いきなり|やっと|ようやく|ついに|とうとう|だんだん|次第に|思いっきり|一生懸命|精一杯)/g,
+    label: "\u526F\u8A5E\uFF0B\u52D5\u8A5E",
+    labelEn: "Adverb + Verb",
+    confidence: 0.72,
+    extract: (m) => ({ core: m[0], bound: "" })
+  },
+  // ── Connective collocations ───────────────────────────────
+  {
+    type: "connective",
+    regex: /(?:はもちろん.{0,8}も|だけでなく.{0,8}も|のみならず.{0,8}も|ばかりでなく.{0,8}も|に限らず.{0,8}も|はともかく.{0,8}は|であれ.{0,8}であれ|にしろ.{0,8}にしろ|にせよ.{0,8}にせよ|も.{0,8}も.{0,8}も|が.{0,8}たり.{0,8}たり)/g,
+    label: "\u9023\u7D50\u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3",
+    labelEn: "Connective collocation",
+    confidence: 0.78,
+    extract: (m) => ({ core: m[0], bound: "" })
+  },
+  // ── Set phrases / 四字熟語 ────────────────────────────────
+  {
+    type: "set-phrase",
+    regex: new RegExp(`(${K}{4})`, "g"),
+    label: "\u56DB\u5B57\u719F\u8A9E\u5019\u88DC",
+    labelEn: "Four-kanji compound",
+    confidence: 0.5,
+    // low confidence, needs filtering
+    extract: (m) => ({ core: m[1], bound: "" })
+  }
+];
+var KNOWN_YOJIJUKUGO = /* @__PURE__ */ new Set([
+  "\u4E00\u77F3\u4E8C\u9CE5",
+  "\u4EE5\u5FC3\u4F1D\u5FC3",
+  "\u4E00\u671F\u4E00\u4F1A",
+  "\u4E00\u9032\u4E00\u9000",
+  "\u4E00\u671D\u4E00\u5915",
+  "\u4E00\u9577\u4E00\u77ED",
+  "\u56E0\u679C\u5FDC\u5831",
+  "\u6211\u7530\u5F15\u6C34",
+  "\u8D77\u6B7B\u56DE\u751F",
+  "\u81EA\u696D\u81EA\u5F97",
+  "\u5F31\u8089\u5F37\u98DF",
+  "\u56DB\u9762\u695A\u6B4C",
+  "\u4E03\u8EE2\u516B\u5012",
+  "\u8A66\u884C\u932F\u8AA4",
+  "\u5341\u4EBA\u5341\u8272",
+  "\u524D\u4EE3\u672A\u805E",
+  "\u5927\u540C\u5C0F\u7570",
+  "\u5929\u771F\u721B\u6F2B",
+  "\u4E8C\u675F\u4E09\u6587",
+  "\u534A\u4FE1\u534A\u7591",
+  "\u4ED8\u548C\u96F7\u540C",
+  "\u672C\u672B\u8EE2\u5012",
+  "\u7121\u6211\u5922\u4E2D",
+  "\u81E8\u6A5F\u5FDC\u5909",
+  "\u7406\u8DEF\u6574\u7136",
+  "\u7ADC\u982D\u86C7\u5C3E",
+  "\u8001\u82E5\u7537\u5973",
+  "\u548C\u6D0B\u6298\u8877",
+  "\u4E00\u76EE\u77AD\u7136",
+  "\u7570\u53E3\u540C\u97F3",
+  "\u610F\u6C17\u6295\u5408",
+  "\u4E00\u89E6\u5373\u767A",
+  "\u6E29\u6545\u77E5\u65B0",
+  "\u82B1\u9CE5\u98A8\u6708",
+  "\u5B8C\u5168\u7121\u6B20",
+  "\u5371\u6A5F\u4E00\u9AEA",
+  "\u7591\u5FC3\u6697\u9B3C",
+  "\u8A00\u8A9E\u9053\u65AD",
+  "\u516C\u660E\u6B63\u5927",
+  "\u4E94\u91CC\u9727\u4E2D",
+  "\u4E09\u5BD2\u56DB\u6E29",
+  "\u8CEA\u5B9F\u525B\u5065",
+  "\u9996\u5C3E\u4E00\u8CAB",
+  "\u91DD\u5C0F\u68D2\u5927",
+  "\u9752\u5929\u767D\u65E5",
+  "\u5343\u5DEE\u4E07\u5225",
+  "\u671D\u4E09\u66AE\u56DB",
+  "\u96FB\u5149\u77F3\u706B",
+  "\u72EC\u7ACB\u72EC\u6B69",
+  "\u99AC\u8033\u6771\u98A8",
+  "\u516B\u65B9\u7F8E\u4EBA",
+  "\u767E\u767A\u767E\u4E2D",
+  "\u4E0D\u8A00\u5B9F\u884C",
+  "\u508D\u82E5\u7121\u4EBA",
+  "\u6E80\u5834\u4E00\u81F4",
+  "\u9580\u524D\u6255\u3044",
+  "\u6CB9\u65AD\u5927\u6575",
+  "\u512A\u67D4\u4E0D\u65AD",
+  "\u6709\u540D\u7121\u5B9F",
+  "\u5229\u5BB3\u95A2\u4FC2"
+]);
+function extractCollocations(text) {
+  const results = [];
+  for (const rule of PATTERN_RULES) {
+    rule.regex.lastIndex = 0;
+    let m;
+    while ((m = rule.regex.exec(text)) !== null) {
+      const surface = m[0];
+      const start = m.index;
+      const end = start + surface.length;
+      let confidence = rule.confidence;
+      if (rule.type === "set-phrase") {
+        if (KNOWN_YOJIJUKUGO.has(surface)) {
+          confidence = 0.95;
+        } else {
+          continue;
+        }
+      }
+      if (surface.length < 2)
+        continue;
+      if (rule.type === "noun-particle-verb") {
+        const bodyParts = /* @__PURE__ */ new Set(["\u624B", "\u76EE", "\u8033", "\u53E3", "\u9996", "\u8155", "\u8DB3", "\u982D", "\u9854", "\u80F8", "\u8179", "\u80CC", "\u9F3B", "\u80A9", "\u5FC3", "\u6C17", "\u529B", "\u8EAB", "\u606F"]);
+        const { core: core2 } = rule.extract(m);
+        const firstKanji = core2.charAt(0);
+        if (bodyParts.has(firstKanji)) {
+          confidence = Math.min(confidence + 0.15, 0.95);
+        }
+      }
+      const { core, bound } = rule.extract(m);
+      results.push({
+        surface,
+        start,
+        end,
+        type: rule.type,
+        confidence,
+        core,
+        bound,
+        patternLabel: rule.label,
+        patternLabelEn: rule.labelEn
+      });
+    }
+  }
+  results.sort((a, b) => b.confidence - a.confidence);
+  const kept = [];
+  const occupied = /* @__PURE__ */ new Set();
+  for (const r of results) {
+    let overlap = false;
+    for (let i = r.start; i < r.end; i++) {
+      if (occupied.has(i)) {
+        overlap = true;
+        break;
+      }
+    }
+    if (overlap)
+      continue;
+    kept.push(r);
+    for (let i = r.start; i < r.end; i++)
+      occupied.add(i);
+  }
+  kept.sort((a, b) => a.start - b.start);
+  return kept;
+}
+function identifyCollocationInSelection(selection, contextBefore, contextAfter) {
+  const fullContext = contextBefore + selection + contextAfter;
+  const selStart = contextBefore.length;
+  const selEnd = selStart + selection.length;
+  const all = extractCollocations(fullContext);
+  const overlapping = all.filter((c) => c.start < selEnd && c.end > selStart);
+  if (overlapping.length === 0)
+    return null;
+  overlapping.sort((a, b) => {
+    const confDiff = b.confidence - a.confidence;
+    if (Math.abs(confDiff) > 0.1)
+      return confDiff;
+    const overlapA = Math.min(a.end, selEnd) - Math.max(a.start, selStart);
+    const overlapB = Math.min(b.end, selEnd) - Math.max(b.start, selStart);
+    return overlapB - overlapA;
+  });
+  return overlapping[0];
+}
+
+// src/discourse/discourse-roles.ts
+var ROLE_BY_SURFACE = {
+  // ── Strong opposition / semantic-flip ─────────────────────
+  "\u3057\u304B\u3057": { role: "opposition", strength: "strong" },
+  "\u3067\u3082": { role: "opposition", strength: "strong" },
+  "\u3068\u3053\u308D\u304C": { role: "opposition", strength: "strong" },
+  "\u305D\u308C\u306A\u306E\u306B": { role: "opposition", strength: "strong" },
+  "\u306A\u306E\u306B": { role: "opposition", strength: "strong" },
+  "\u306E\u306B": { role: "opposition", strength: "medium" },
+  "\u306B\u3082\u304B\u304B\u308F\u3089\u305A": { role: "opposition", strength: "strong" },
+  "\u53CD\u5BFE\u306B": { role: "opposition", strength: "strong" },
+  "\u9006\u306B": { role: "opposition", strength: "medium" },
+  "\u3080\u3057\u308D": { role: "opposition", strength: "medium" },
+  "\u4E00\u65B9\u3067": { role: "opposition", strength: "medium" },
+  "\u305D\u308C\u306B\u5BFE\u3057\u3066": { role: "opposition", strength: "strong" },
+  "\u306B\u5BFE\u3057\u3066": { role: "opposition", strength: "medium" },
+  "\u53CD\u9762": { role: "opposition", strength: "medium" },
+  "\u3067\u306F\u306A\u304F": { role: "opposition", strength: "strong" },
+  "\u3058\u3083\u306A\u304F\u3066": { role: "opposition", strength: "strong" },
+  "\u305D\u3046\u3058\u3083\u306A\u304F\u3066": { role: "opposition", strength: "strong" },
+  "\u3044\u3084": { role: "opposition", strength: "strong" },
+  "\u3044\u3084\u3044\u3084": { role: "opposition", strength: "strong" },
+  // ── Weak contrast — often topic-shift / mere conjunction ──
+  "\u304C": { role: "weak-contrast", strength: "weak" },
+  "\u3051\u3069": { role: "weak-contrast", strength: "weak" },
+  "\u3051\u308C\u3069\u3082": { role: "weak-contrast", strength: "weak" },
+  "\u3082\u306E\u306E": { role: "weak-contrast", strength: "weak" },
+  "\u305F\u3060": { role: "qualification", strength: "medium" },
+  "\u305F\u3060\u3057": { role: "qualification", strength: "medium" },
+  "\u3082\u3063\u3068\u3082": { role: "qualification", strength: "medium" },
+  // ── Concession proper ─────────────────────────────────────
+  "\u78BA\u304B\u306B": { role: "concession", strength: "strong" },
+  "\u3082\u3061\u308D\u3093": { role: "concession", strength: "strong" },
+  "\u305D\u308A\u3083": { role: "concession", strength: "medium" },
+  "\u305D\u308A\u3083\u305D\u3046\u3060\u3051\u3069": { role: "concession", strength: "strong" },
+  "\u8A00\u3044\u305F\u3044\u3053\u3068\u306F\u308F\u304B\u308B\u3051\u3069": { role: "concession", strength: "strong" },
+  // ── Cause ─────────────────────────────────────────────────
+  "\u304B\u3089": { role: "cause", strength: "medium" },
+  "\u306E\u3067": { role: "cause", strength: "medium" },
+  "\u306A\u306E\u3067": { role: "cause", strength: "medium" },
+  "\u3060\u304B\u3089": { role: "cause", strength: "strong" },
+  "\u3060\u304B\u3089\u3055": { role: "cause", strength: "strong" },
+  "\u3060\u304B\u3089\u3053\u305D": { role: "cause", strength: "strong" },
+  "\u3067\u3059\u306E\u3067": { role: "cause", strength: "strong" },
+  "\u306A\u305C\u306A\u3089": { role: "cause", strength: "strong" },
+  "\u306A\u305C\u304B\u3068\u3044\u3046\u3068": { role: "cause", strength: "strong" },
+  "\u3068\u3044\u3046\u306E\u306F": { role: "cause", strength: "medium" },
+  "\u304A\u304B\u3052\u3067": { role: "cause", strength: "medium" },
+  "\u305B\u3044\u3067": { role: "cause", strength: "medium" },
+  "\u3060\u3063\u3066": { role: "cause", strength: "medium" },
+  "\u3082\u306E\u3067\u3059\u304B\u3089": { role: "cause", strength: "strong" },
+  "\u3082\u3093\u3060\u304B\u3089": { role: "cause", strength: "strong" },
+  // ── Consequence ───────────────────────────────────────────
+  "\u305D\u306E\u305F\u3081": { role: "consequence", strength: "strong" },
+  "\u305D\u306E\u7D50\u679C": { role: "consequence", strength: "strong" },
+  "\u5F93\u3063\u3066": { role: "consequence", strength: "strong" },
+  "\u305D\u308C\u3067": { role: "consequence", strength: "medium" },
+  "\u3059\u308B\u3068": { role: "consequence", strength: "medium" },
+  "\u305D\u3046\u3059\u308B\u3068": { role: "consequence", strength: "medium" },
+  "\u305D\u3053\u3067": { role: "consequence", strength: "medium" },
+  "\u3058\u3083\u3042": { role: "consequence", strength: "weak" },
+  "\u3058\u3083": { role: "consequence", strength: "weak" },
+  "\u7D50\u5C40": { role: "summary", strength: "strong" },
+  // ── Addition / sequence ──────────────────────────────────
+  "\u3057\u304B\u3082": { role: "addition", strength: "strong" },
+  "\u3055\u3089\u306B": { role: "addition", strength: "strong" },
+  "\u305D\u306E\u4E0A": { role: "addition", strength: "strong" },
+  "\u305D\u308C\u306B": { role: "addition", strength: "medium" },
+  "\u52A0\u3048\u3066": { role: "addition", strength: "strong" },
+  "\u304A\u307E\u3051\u306B": { role: "addition", strength: "medium" },
+  "\u305D\u308C\u3060\u3051\u3058\u3083\u306A\u304F\u3066": { role: "addition", strength: "strong" },
+  "\u307E\u305A": { role: "sequence", strength: "strong" },
+  "\u6B21\u306B": { role: "sequence", strength: "strong" },
+  "\u305D\u308C\u304B\u3089": { role: "sequence", strength: "medium" },
+  "\u6700\u5F8C\u306B": { role: "sequence", strength: "strong" },
+  "\u307E\u305A\u6700\u521D\u306B": { role: "sequence", strength: "strong" },
+  "\u6B21\u306E\u30B9\u30C6\u30C3\u30D7\u3068\u3057\u3066": { role: "sequence", strength: "strong" },
+  // ── Elaboration / rephrase / summary / example ───────────
+  "\u3064\u307E\u308A": { role: "rephrasing", strength: "strong" },
+  "\u8981\u3059\u308B\u306B": { role: "summary", strength: "strong" },
+  "\u8981\u306F": { role: "summary", strength: "medium" },
+  "\u307E\u3068\u3081\u308B\u3068": { role: "summary", strength: "strong" },
+  "\u7C21\u5358\u306B\u8A00\u3046\u3068": { role: "rephrasing", strength: "strong" },
+  "\u4E00\u8A00\u3067\u8A00\u3046\u3068": { role: "rephrasing", strength: "strong" },
+  "\u7AEF\u7684\u306B\u8A00\u3046\u3068": { role: "rephrasing", strength: "strong" },
+  "\u7D50\u8AD6\u304B\u3089\u8A00\u3046\u3068": { role: "summary", strength: "strong" },
+  "\u8A00\u3044\u63DB\u3048\u308B\u3068": { role: "rephrasing", strength: "strong" },
+  "\u3068\u3044\u3046\u304B": { role: "rephrasing", strength: "medium" },
+  "\u3063\u3066\u3044\u3046\u304B": { role: "repair", strength: "medium" },
+  "\u3066\u3044\u3046\u304B": { role: "repair", strength: "medium" },
+  "\u4F8B\u3048\u3070": { role: "exemplification", strength: "strong" },
+  "\u305F\u3068\u3048\u3070\u3055": { role: "exemplification", strength: "strong" },
+  "\u3044\u308F\u3070": { role: "exemplification", strength: "medium" },
+  "\u9006\u306B\u8A00\u3046\u3068": { role: "rephrasing", strength: "medium" },
+  "\u3082\u3063\u3068\u8A00\u3046\u3068": { role: "elaboration", strength: "medium" },
+  // ── Topic management ────────────────────────────────────
+  "\u3068\u3053\u308D\u3067": { role: "topic-shift", strength: "strong" },
+  "\u305D\u3046\u3044\u3048\u3070": { role: "topic-shift", strength: "strong" },
+  "\u8A71\u5909\u308F\u308B\u3051\u3069": { role: "topic-shift", strength: "strong" },
+  "\u4F59\u8AC7\u3067\u3059\u304C": { role: "topic-shift", strength: "strong" },
+  "\u4F59\u8AC7\u3060\u3051\u3069": { role: "topic-shift", strength: "strong" },
+  "\u305D\u308C\u3067\u306F": { role: "topic-shift", strength: "medium" },
+  "\u3055\u3066": { role: "topic-shift", strength: "medium" },
+  "\u3067": { role: "topic-shift", strength: "weak" },
+  "\u3067\u3001\u3055\u3063\u304D\u306E": { role: "topic-return", strength: "strong" },
+  "\u8A71\u623B\u3059\u3068": { role: "topic-return", strength: "strong" },
+  "\u5143\u306B\u623B\u308B\u3068": { role: "topic-return", strength: "strong" },
+  "\u5143\u306E\u8A71\u306B\u623B\u308B\u3068": { role: "topic-return", strength: "strong" },
+  "\u305D\u3082\u305D\u3082": { role: "topic-initiation", strength: "strong" },
+  "\u57FA\u672C\u7684\u306B": { role: "topic-initiation", strength: "medium" },
+  "\u524D\u63D0\u3068\u3057\u3066": { role: "topic-initiation", strength: "strong" },
+  "\u3061\u306A\u307F\u306B": { role: "topic-shift", strength: "medium" },
+  // ── Hedges (sentence-final) ─────────────────────────────
+  "\u3093\u3067\u3059\u3051\u3069": { role: "hedge", strength: "medium" },
+  "\u3093\u3060\u3051\u3069": { role: "hedge", strength: "medium" },
+  "\u3093\u3067\u3059\u3051\u308C\u3069\u3082": { role: "hedge", strength: "medium" },
+  "\u304B\u3082\u3057\u308C\u306A\u3044": { role: "hedge", strength: "strong" },
+  "\u304B\u3082\u3057\u308C\u307E\u305B\u3093": { role: "hedge", strength: "strong" },
+  "\u304B\u3082": { role: "hedge", strength: "medium" },
+  "\u3068\u601D\u3046": { role: "hedge", strength: "medium" },
+  "\u3068\u601D\u3044\u307E\u3059": { role: "hedge", strength: "medium" },
+  "\u3068\u601D\u3046\u3093\u3067\u3059\u3051\u3069": { role: "hedge", strength: "strong" },
+  "\u304B\u306A\u3068\u601D\u3063\u3066": { role: "hedge", strength: "strong" },
+  "\u306A\u3093\u3067\u3059\u3051\u3069\u306D": { role: "hedge", strength: "medium" },
+  // ── Assertion markers ─────────────────────────────────────
+  "\u3093\u3067\u3059\u3088": { role: "assertion-marker", strength: "medium" },
+  "\u306E\u3067\u3059\u3088": { role: "assertion-marker", strength: "medium" },
+  "\u3093\u3060\u3088": { role: "assertion-marker", strength: "medium" },
+  "\u306A\u3093\u3067\u3059\u3088": { role: "assertion-marker", strength: "strong" },
+  "\u308F\u3051\u3067\u3059": { role: "assertion-marker", strength: "strong" },
+  "\u308F\u3051\u3067\u3059\u3088": { role: "assertion-marker", strength: "strong" },
+  "\u308F\u3051\u306A\u3093\u3067\u3059\u3088": { role: "assertion-marker", strength: "strong" },
+  // ── Backchannel / agreement / reaction ──────────────────
+  "\u3046\u3093": { role: "backchannel", strength: "strong" },
+  "\u3046\u3093\u3046\u3093\u3046\u3093": { role: "backchannel", strength: "strong" },
+  "\u306F\u3044\u306F\u3044\u306F\u3044": { role: "backchannel", strength: "strong" },
+  "\u305D\u3046\u305D\u3046\u305D\u3046": { role: "backchannel", strength: "strong" },
+  "\u305D\u3046\u305D\u3046\u305D\u3046\u305D\u3046": { role: "backchannel", strength: "strong" },
+  "\u3042\u3042": { role: "backchannel", strength: "medium" },
+  "\u306A\u308B\u307B\u3069": { role: "agreement", strength: "strong" },
+  "\u306A\u308B\u307B\u3069\u306D": { role: "agreement", strength: "strong" },
+  "\u305F\u3057\u304B\u306B": { role: "agreement", strength: "strong" },
+  "\u5206\u304B\u308B": { role: "agreement", strength: "strong" },
+  "\u308F\u304B\u308B\u308F\u304B\u308B": { role: "agreement", strength: "strong" },
+  "\u308F\u304B\u308B\u308F\u30FC": { role: "agreement", strength: "strong" },
+  "\u3042\u308B\u3042\u308B": { role: "agreement", strength: "strong" },
+  "\u305D\u308C\u3042\u308B\u3088\u306D": { role: "agreement", strength: "strong" },
+  "\u3081\u3063\u3061\u3083\u308F\u304B\u308B": { role: "agreement", strength: "strong" },
+  "\u3048\u30FC": { role: "reaction", strength: "strong" },
+  "\u3078\u3048": { role: "reaction", strength: "strong" },
+  "\u3046\u305D": { role: "reaction", strength: "strong" },
+  "\u307E\u3058\u3067": { role: "reaction", strength: "strong" },
+  "\u30DE\u30B8": { role: "reaction", strength: "strong" },
+  "\u3084\u3070": { role: "reaction", strength: "strong" },
+  "\u3084\u3070\u3044": { role: "reaction", strength: "strong" },
+  "\u3059\u3054\u3044": { role: "reaction", strength: "strong" },
+  "\u3059\u3054\u3044\u306D": { role: "reaction", strength: "strong" },
+  // ── Repair ────────────────────────────────────────────────
+  "\u3058\u3083\u306A\u304F\u3066\u3001": { role: "repair", strength: "strong" },
+  // ── Fillers ────────────────────────────────────────────────
+  "\u3048\u30FC\u3068": { role: "filler", strength: "medium" },
+  "\u3048\u3063\u3068": { role: "filler", strength: "medium" },
+  "\u3042\u306E\u30FC": { role: "filler", strength: "medium" },
+  "\u3042\u306E": { role: "filler", strength: "medium" },
+  "\u306A\u3093\u304B": { role: "filler", strength: "medium" },
+  "\u307E\u3042": { role: "filler", strength: "medium" },
+  "\u3046\u30FC\u3093": { role: "filler", strength: "medium" },
+  "\u305D\u306E\u30FC": { role: "filler", strength: "medium" },
+  // ── Quotation / evidential ────────────────────────────────
+  "\u3068": { role: "quotation", strength: "weak" },
+  "\u3063\u3066": { role: "quotation", strength: "weak" },
+  "\u3068\u3044\u3046": { role: "quotation", strength: "weak" },
+  "\u3063\u3066\u3044\u3046": { role: "quotation", strength: "weak" },
+  "\u3089\u3057\u3044": { role: "evidential", strength: "medium" },
+  "\u3089\u3057\u3044\u3067\u3059": { role: "evidential", strength: "medium" },
+  "\u307F\u305F\u3044": { role: "evidential", strength: "medium" },
+  "\u307F\u305F\u3044\u3067\u3059": { role: "evidential", strength: "medium" },
+  "\u305D\u3046\u3067\u3059": { role: "evidential", strength: "medium" },
+  "\u3063\u3066\u8A00\u3063\u3066\u305F": { role: "quotation", strength: "strong" },
+  "\u3063\u3066\u805E\u3044\u305F": { role: "quotation", strength: "strong" }
+};
+function applyRoles() {
+  for (const p of ALL_PATTERNS) {
+    if (p.discourseRole)
+      continue;
+    const m = ROLE_BY_SURFACE[p.surface];
+    if (m) {
+      p.discourseRole = m.role;
+      p.roleStrength = m.strength;
+    }
+  }
+}
+applyRoles();
+function effectiveRole(p) {
+  if (p.discourseRole)
+    return p.discourseRole;
+  const fn = p.pragmaticFunction;
+  if (fn === "contrast")
+    return "weak-contrast";
+  if (fn === "concession")
+    return "concession";
+  if (fn === "cause")
+    return "cause";
+  if (fn === "result")
+    return "consequence";
+  if (fn === "addition")
+    return "addition";
+  if (fn === "sequence")
+    return "sequence";
+  if (fn === "summary")
+    return "summary";
+  if (fn === "rephrasing")
+    return "rephrasing";
+  if (fn === "elaboration")
+    return "elaboration";
+  if (fn === "reaction")
+    return "reaction";
+  if (fn === "rebuttal" || fn === "challenge" || fn === "counter-example")
+    return "opposition";
+  if (fn === "self-repair" || fn === "other-repair")
+    return "repair";
+  if (fn === "topic-shift")
+    return "topic-shift";
+  if (fn === "topic-return")
+    return "topic-return";
+  if (fn === "topic-initiation")
+    return "topic-initiation";
+  if (fn === "topic-close")
+    return "topic-shift";
+  if (fn === "assertion")
+    return "assertion-marker";
+  if (fn === "hedge" || fn === "softening")
+    return "hedge";
+  if (fn === "evidential" || fn === "hearsay")
+    return "evidential";
+  if (fn === "quotation")
+    return "quotation";
+  if (fn === "agreement")
+    return "agreement";
+  if (fn === "backchannel")
+    return "backchannel";
+  if (fn === "disagreement")
+    return "opposition";
+  if (fn === "surprise" || fn === "emotional")
+    return "reaction";
+  if (fn === "filler")
+    return "filler";
+  if (fn === "attention")
+    return "attention";
+  if (fn === "confirmation-seeking")
+    return "interrogative-marker";
+  if (fn === "desire")
+    return "desire";
+  if (fn === "obligation")
+    return "obligation";
+  return "other";
+}
+function effectiveStrength(p) {
+  var _a;
+  return (_a = p.roleStrength) != null ? _a : "medium";
+}
+
+// src/discourse/sentence-features.ts
+var RE_INTERROGATIVE_END = /(?:[？?]|か[？?\s]?$|かな$|かしら$|でしょうか$|の[？?]$|の\?$|っけ[？?]?$)/;
+var RE_IMPERATIVE_END = /(?:[\u3041-\u3093ろ]ろ$|なさい$|たまえ$|な[！!]?$)/;
+var RE_REQUESTIVE_END = /(?:てください|てくれ(?:る|ない|ます[？?]?)?$|てちょうだい|てもらえ(?:ます|る)?[？?]?$|ていただけ(?:ます|る)?[？?]?$)/;
+var RE_EXCLAMATIVE_END = /[！!]{1,}$/;
+var RE_NEGATION = /(?:ない|ません|ぬ|ず(?![っつ])|なく(?:て|な[いっ]|ね)|ねえ|無い)(?:[んよねけどさよ。！!？?]|$)/;
+var RE_LEADING_BACKCHANNEL = /^(?:うん+|はい+|ええ+|そう+|ああ+|うー+ん|なるほど|たしかに|わかる|そりゃ)/;
+var RE_LEADING_REACTION = /^(?:え[ー〜!?！？]*|へえ[ー〜]?|うそ[だよ]?|まじ[で]?|マジ|やば[い]?|すご[いー]+|ひど[いー]+)/;
+var RE_LEADING_DISAGREEMENT = /^(?:いや+|違う+|それは違|そうじゃ(?:なくて|ない)|ちが(?:う|くて))/;
+var RE_INLINE_OPPOSITION = /(?:ではなく|じゃなくて|とは違って|わけではない|わけじゃない|そうではない|そうじゃない|というよりは|というよりも|というより|そういう(?:こと|の|意味)じゃ(?:なくて|ない))/g;
+var RE_REPAIR = /(?:っていうか|ていうか|そうじゃなくて|じゃなくて[、,]|違う違う|ちょっと違|あ、違|あ違|つーか)/g;
+var RE_ASSERTION_MARKER = /(?:んですよ|んだよ|なんですよ|なんだよ|わけです|わけだよ|ですよ。|だよ。)/;
+var RE_HEDGE_MARKER = /(?:かもしれない|かもしれません|かもね|と思う|と思います|気がする|な気がする|っぽい|みたいな|なんかさ)/;
+var RE_TOPIC = /([\u4e00-\u9fff\u3400-\u4dbf\u30a1-\u30f6ー]{2,})(?:は|が(?!ち)|って|について|に関して)/g;
+var RE_CONTENT_HEAD = /[\u4e00-\u9fff\u3400-\u4dbf]{2,}|[\u30a1-\u30f6ー]{3,}/g;
+function extractPredicateHead(text) {
+  const stripped = text.replace(/[。！？!?、,\s]+$/, "");
+  const m = stripped.match(/([\u4e00-\u9fff]{1,}[\u3041-\u3093]{0,4})$/);
+  if (m)
+    return m[1];
+  const k = stripped.match(/([\u3041-\u3093]{2,5})$/);
+  return k ? k[1] : null;
+}
+function extractTerminalForm(text) {
+  const stripped = text.replace(/[\s]+$/, "");
+  return stripped.slice(Math.max(0, stripped.length - 8));
+}
+function uniq(arr) {
+  return Array.from(new Set(arr));
+}
+function extractSentenceFeatures(parse) {
+  var _a;
+  const text = parse.text;
+  const trimmed = text.trim();
+  let speechAct;
+  if (RE_INTERROGATIVE_END.test(trimmed))
+    speechAct = "interrogative";
+  else if (RE_REQUESTIVE_END.test(trimmed))
+    speechAct = "requestive";
+  else if (RE_IMPERATIVE_END.test(trimmed))
+    speechAct = "imperative";
+  else if (RE_EXCLAMATIVE_END.test(trimmed))
+    speechAct = "exclamative";
+  else if (trimmed.length < 6 && !/[。]$/.test(trimmed))
+    speechAct = "fragment";
+  else
+    speechAct = "declarative";
+  const terminalForm = extractTerminalForm(trimmed);
+  let polarity = "affirmative";
+  if (RE_NEGATION.test(terminalForm))
+    polarity = "negative";
+  else if (terminalForm.length < 2)
+    polarity = "unknown";
+  const predicateHead = extractPredicateHead(trimmed);
+  const topicNPs = [];
+  let m;
+  RE_TOPIC.lastIndex = 0;
+  while ((m = RE_TOPIC.exec(text)) !== null) {
+    topicNPs.push(m[1]);
+  }
+  const contentHeads = (_a = text.match(RE_CONTENT_HEAD)) != null ? _a : [];
+  const leadOffset = text.length - text.trimStart().length;
+  let leadingMarker = null;
+  const sortedByOffset = [...parse.patterns].sort((a, b) => a.offset - b.offset);
+  for (const pm of sortedByOffset) {
+    if (pm.offset > leadOffset + 2)
+      break;
+    const role = effectiveRole(pm.pattern);
+    if (pm.pattern.position === "utterance-initial" || role !== "other") {
+      leadingMarker = {
+        surface: pm.matchedText,
+        role,
+        strength: effectiveStrength(pm.pattern),
+        offset: pm.offset
+      };
+      break;
+    }
+  }
+  const markerHits = [];
+  const seenSpans = /* @__PURE__ */ new Set();
+  for (const pm of sortedByOffset) {
+    const role = effectiveRole(pm.pattern);
+    if (role === "other" && pm.pattern.position !== "utterance-initial")
+      continue;
+    const key = `${pm.offset}-${pm.matchedText}`;
+    if (seenSpans.has(key))
+      continue;
+    seenSpans.add(key);
+    markerHits.push({
+      surface: pm.matchedText,
+      role,
+      strength: effectiveStrength(pm.pattern),
+      offset: pm.offset,
+      position: pm.offset <= leadOffset + 2 ? "leading" : "inline",
+      patternId: pm.pattern.id
+    });
+  }
+  const oppositionTriggers = [];
+  if (leadingMarker && leadingMarker.role === "opposition") {
+    oppositionTriggers.push({
+      text: leadingMarker.surface,
+      position: "leading",
+      strength: leadingMarker.strength,
+      offset: leadingMarker.offset
+    });
+  }
+  for (const h of markerHits) {
+    if (h.role === "opposition" && h.position === "inline") {
+      oppositionTriggers.push({
+        text: h.surface,
+        position: "inline",
+        strength: h.strength,
+        offset: h.offset
+      });
+    }
+  }
+  RE_INLINE_OPPOSITION.lastIndex = 0;
+  let im;
+  while ((im = RE_INLINE_OPPOSITION.exec(text)) !== null) {
+    oppositionTriggers.push({
+      text: im[0],
+      position: "inline",
+      strength: "strong",
+      offset: im.index
+    });
+  }
+  const repairTriggers = [];
+  RE_REPAIR.lastIndex = 0;
+  let rm;
+  while ((rm = RE_REPAIR.exec(text)) !== null) {
+    repairTriggers.push(rm[0]);
+  }
+  const hasBackchannelStart = RE_LEADING_BACKCHANNEL.test(trimmed);
+  const hasReactionStart = RE_LEADING_REACTION.test(trimmed);
+  const hasDisagreementOpener = RE_LEADING_DISAGREEMENT.test(trimmed);
+  const hasAssertionMarker = RE_ASSERTION_MARKER.test(terminalForm) || (leadingMarker == null ? void 0 : leadingMarker.role) === "assertion-marker";
+  const hasHedge = RE_HEDGE_MARKER.test(terminalForm) || (leadingMarker == null ? void 0 : leadingMarker.role) === "hedge";
+  return {
+    speechAct,
+    polarity,
+    terminalForm,
+    predicateHead,
+    topicNPs: uniq(topicNPs),
+    contentHeads: uniq(contentHeads),
+    leadingMarker,
+    oppositionTriggers,
+    markerHits,
+    repairTriggers: uniq(repairTriggers),
+    hasBackchannelStart,
+    hasReactionStart,
+    hasDisagreementOpener,
+    hasAssertionMarker,
+    hasHedge
+  };
+}
+function topicOverlap(a, b) {
+  if (a.topicNPs.length && b.topicNPs.length) {
+    for (const t of a.topicNPs) {
+      if (b.topicNPs.includes(t))
+        return 1;
+    }
+  }
+  if (a.contentHeads.length && b.contentHeads.length) {
+    for (const h of a.contentHeads) {
+      if (b.contentHeads.includes(h) && h.length >= 2)
+        return 0.6;
+    }
+  }
+  return 0;
+}
+function detectNegationOf(a, b, bText) {
+  if (!a.predicateHead || b.polarity !== "negative")
+    return false;
+  const rootMatch = a.predicateHead.match(/[\u4e00-\u9fff]{1,}/);
+  if (!rootMatch)
+    return false;
+  const root = rootMatch[0];
+  if (root.length < 1)
+    return false;
+  return bText.includes(root);
+}
+function computeConfidence(base, contributions) {
+  let c = base;
+  for (const [fired, w] of contributions)
+    if (fired)
+      c += w;
+  if (c > 0.95)
+    c = 0.95;
+  if (c < 0)
+    c = 0;
+  return Math.round(c * 100) / 100;
+}
+
+// src/discourse/discourse-acts.ts
+var RE_EXAMPLE_OPENER = /^(?:例えば|たとえばさ?|具体的(?:に|には)|たとえ話[をだ]|一例[だで]|例で言うと)/;
+var RE_EXAMPLE_TOKAR = /(?:とか|みたいな|的な感じ|っていうのが|っていうやつ)/;
+var RE_NUMBERED = /(?:まず|次に|それから|最後に|一つ目|二つ目|三つ目|1つ目|2つ目|3つ目|第一に|第二に|第三に)/;
+var RE_CAUSE_OPENER = /^(?:なぜなら|というのは|なぜかというと|だって|それは)/;
+var RE_CAUSE_TAIL = /(?:から[だで]|からです|ので[すだ]|わけ[だで]|ためです|ためだ|もんだから)$/;
+var RE_DEFINITION = /(?:とは|というのは)(?:[^、]{1,30})(?:こと|もの|意味|事|物)[でだ]/;
+var RE_REPHRASE = /^(?:つまり|要するに|要は|簡単に言うと|一言で言うと|端的に言うと|言い換えると|逆に言うと)/;
+var RE_SUMMARY = /^(?:結論から言うと|まとめると|総じて|結局|いずれにせよ|要するに)/;
+var RE_CONCESSION = /^(?:確かに|もちろん|そりゃ|そりゃそうだけど|たしかに|なるほど(?:ね|です)?[、,])/;
+var RE_OPINION = /(?:と思う|と思います|と感じる|と感じます|気がする|な気がする|個人的には|私(?:は|としては)|僕(?:は|としては))/;
+var RE_NARRATION_PAST = /(?:[\u3042-\u3093]た。|[\u3042-\u3093]ました。|でした。|だった。)$/;
+var RE_TAG_QUESTION = /(?:よね[？?]?$|でしょ[？?う]?$|じゃん[？?]?$|だろ[？?う]?$)/;
+var RE_RHETORICAL_Q = /(?:じゃないですか[？?。]?$|じゃない[？?]?$|でしょう[？?か]?$|だろうか[？?。]?$)/;
+var RE_CLARIFICATION_Q = /^(?:え[？?]|何[？?]|は[？?]|ん[？?]|どういう(?:こと|意味)|もう一度|もう一回|もっと(?:詳しく|具体的に))/;
+var RE_DIRECTIVE = /(?:てください|てくれ|なさい|てちょうだい|てもらえ(?:ます|る)?[？?]?)$/;
+var RE_QUOT_DIRECT = /「[^」]{1,60}」(?:と|って)/;
+var RE_QUOT_REPORTED = /(?:って言って(?:た|ました)|と言って(?:た|ました|いた|いました)|って聞いた|と聞いた|って書いて(?:あった|ある))/;
+var RE_QUOT_HYPOTHETICAL = /って(?:言ったら|言われたら|なったら|思ったら|聞いたら)/;
+var RE_QUOT_HEARSAY = /(?:らしい[よねでです]?|そうです[よねけど]?|そうだ[よね]?|みたい[だですよね]?)/;
+var RE_QUOT_COMMON_CITATION = /(?:っていうじゃない|っていうやつ|っていうあれ|みたいな[、,。])/;
+var RE_QUOT_TERMINAL_TO = /(?:んだと|なんだと|だと|でしたと|ですと)[。．、,]?\s*$/;
+var RE_QUOT_TERMINAL_TTE = /(?:[んな]だって|ですって|だって(?:さ|よ|ね)?|っていうことだって|なんだって)[。．、,]?\s*$/;
+var RE_HYPO_COUNTERFACTUAL = /(?:[\u3042-\u3093]て?いたら|もし[\u4e00-\u9fff\u3041-\u3093]+(?:てい?たら|ていれば)|仮に[\u4e00-\u9fff\u3041-\u3093]+(?:なら|だったら))/;
+var RE_HYPO_FUTURE = /(?:もし[\u4e00-\u9fff\u3041-\u3093]+(?:たら|なら|ば)|[\u3042-\u3093]たら[、,])/;
+var RE_HYPO_CONCESSIVE = /(?:[\u3042-\u3093]ても[、,]|[\u3042-\u3093]でも[、,])/;
+var RE_NEG_EQ = /(?:ではなく|じゃなくて|わけではない|そうではない|というよりは|というよりも|というより)/;
+var RE_COMPARE = /(?:[\u4e00-\u9fff\u3041-\u3093]+より|と比べて|に比べて|それに対して|に対して)/;
+var RE_ANALOGY = /(?:いわば|まるで|〜のように|みたいに(?![、,。])|[\u4e00-\u9fff\u3041-\u3093]+のようなもの|かのよう(?:な|に|だ|です|でした))/;
+var RE_ENUM_TOKA = /(?:とか[、,]|だの[、,]|やら[、,])/;
+function pushEvidence(arr, m) {
+  if (m && m[0])
+    arr.push(m[0]);
+}
+function classifyForm(text, evidence) {
+  let m;
+  if (m = text.match(RE_QUOT_HYPOTHETICAL)) {
+    pushEvidence(evidence, m);
+    return { form: "quotation", subtype: "hypothetical-quote" };
+  }
+  if (m = text.match(RE_QUOT_DIRECT)) {
+    pushEvidence(evidence, m);
+    return { form: "quotation", subtype: "direct-quote" };
+  }
+  if (m = text.match(RE_QUOT_REPORTED)) {
+    pushEvidence(evidence, m);
+    return { form: "quotation", subtype: "reported-speech" };
+  }
+  if (m = text.match(RE_QUOT_COMMON_CITATION)) {
+    pushEvidence(evidence, m);
+    return { form: "quotation", subtype: "common-knowledge-citation" };
+  }
+  if (m = text.match(RE_QUOT_TERMINAL_TO)) {
+    pushEvidence(evidence, m);
+    return { form: "quotation", subtype: "reported-speech" };
+  }
+  if (m = text.match(RE_QUOT_TERMINAL_TTE)) {
+    pushEvidence(evidence, m);
+    return { form: "quotation", subtype: "common-knowledge-citation" };
+  }
+  if (m = text.match(RE_QUOT_HEARSAY)) {
+    pushEvidence(evidence, m);
+    return { form: "quotation", subtype: "hearsay" };
+  }
+  if (m = text.match(RE_HYPO_COUNTERFACTUAL)) {
+    pushEvidence(evidence, m);
+    return { form: "hypothetical", subtype: "counterfactual" };
+  }
+  if (m = text.match(RE_HYPO_FUTURE)) {
+    pushEvidence(evidence, m);
+    return { form: "hypothetical", subtype: "conditional-future" };
+  }
+  if (m = text.match(RE_HYPO_CONCESSIVE)) {
+    pushEvidence(evidence, m);
+    return { form: "hypothetical", subtype: "concessive-conditional" };
+  }
+  if (m = text.match(RE_NEG_EQ)) {
+    pushEvidence(evidence, m);
+    return { form: "negative-equation", subtype: "none" };
+  }
+  if (m = text.match(RE_RHETORICAL_Q)) {
+    pushEvidence(evidence, m);
+    return { form: "rhetorical-question", subtype: "none" };
+  }
+  if (m = text.match(RE_TAG_QUESTION)) {
+    pushEvidence(evidence, m);
+    return { form: "tag-question", subtype: "none" };
+  }
+  if (m = text.match(RE_ANALOGY)) {
+    pushEvidence(evidence, m);
+    return { form: "analogy", subtype: "none" };
+  }
+  if (m = text.match(RE_COMPARE)) {
+    pushEvidence(evidence, m);
+    return { form: "comparison", subtype: "none" };
+  }
+  if (RE_NUMBERED.test(text)) {
+    evidence.push("numbered-enumeration");
+    return { form: "enumerative-list", subtype: "none" };
+  }
+  if (RE_ENUM_TOKA.test(text)) {
+    evidence.push("\u301C\u3068\u304B");
+    return { form: "enumeration", subtype: "none" };
+  }
+  return { form: "plain", subtype: "none" };
+}
+function classifyAct(text, feats, evidence) {
+  var _a, _b, _c, _d, _e, _f;
+  const trimmed = text.trim();
+  if (feats.speechAct === "requestive" || RE_DIRECTIVE.test(trimmed)) {
+    evidence.push("directive-suffix");
+    return { act: "directive", confidence: 0.85 };
+  }
+  if (feats.speechAct === "imperative") {
+    return { act: "directive", confidence: 0.8 };
+  }
+  if (feats.speechAct === "fragment" && !feats.hasBackchannelStart && !feats.hasReactionStart) {
+    return { act: "fragment", confidence: 0.7 };
+  }
+  if (feats.hasBackchannelStart) {
+    const role2 = (_a = feats.leadingMarker) == null ? void 0 : _a.role;
+    if (role2 === "agreement") {
+      evidence.push(feats.leadingMarker.surface);
+      return { act: "agreement", confidence: 0.85 };
+    }
+    evidence.push("backchannel-start");
+    return { act: "acknowledgement", confidence: 0.8 };
+  }
+  if (feats.hasReactionStart) {
+    if (feats.leadingMarker)
+      evidence.push(feats.leadingMarker.surface);
+    return { act: "reaction", confidence: 0.85 };
+  }
+  if (feats.hasDisagreementOpener) {
+    evidence.push("disagreement-opener");
+    return { act: "disagreement", confidence: 0.8 };
+  }
+  if (feats.speechAct === "interrogative") {
+    if (RE_CLARIFICATION_Q.test(trimmed)) {
+      evidence.push("clarification-Q");
+      return { act: "clarification-request", confidence: 0.85 };
+    }
+    if (RE_RHETORICAL_Q.test(trimmed) || RE_TAG_QUESTION.test(trimmed)) {
+      evidence.push("rhetorical/tag-Q");
+      return { act: "assertion", confidence: 0.7 };
+    }
+    evidence.push("Q-terminal");
+    return { act: "question", confidence: 0.85 };
+  }
+  const role = (_b = feats.leadingMarker) == null ? void 0 : _b.role;
+  const leadStrength = (_c = feats.leadingMarker) == null ? void 0 : _c.strength;
+  const isStrongTopicShift = (role === "topic-shift" || role === "topic-return" || role === "topic-initiation") && leadStrength !== "weak";
+  const hasOpinionTail = RE_OPINION.test(text);
+  const hasTerminalQuote = RE_QUOT_TERMINAL_TO.test(text) || RE_QUOT_TERMINAL_TTE.test(text);
+  if (isStrongTopicShift && !hasOpinionTail && !hasTerminalQuote && !feats.hasAssertionMarker) {
+    if (feats.leadingMarker)
+      evidence.push(feats.leadingMarker.surface);
+    return { act: "topic-management", confidence: 0.8 };
+  }
+  if (role === "concession" || RE_CONCESSION.test(trimmed)) {
+    const m = trimmed.match(RE_CONCESSION);
+    if (m)
+      pushEvidence(evidence, m);
+    else if (feats.leadingMarker)
+      evidence.push(feats.leadingMarker.surface);
+    return { act: "concession", confidence: 0.8 };
+  }
+  if (role === "opposition" && ((_d = feats.leadingMarker) == null ? void 0 : _d.strength) === "strong") {
+    evidence.push(feats.leadingMarker.surface);
+    return { act: "rebuttal", confidence: 0.8 };
+  }
+  if (role === "qualification") {
+    if (feats.leadingMarker)
+      evidence.push(feats.leadingMarker.surface);
+    return { act: "qualification", confidence: 0.75 };
+  }
+  if (role === "summary" || RE_SUMMARY.test(trimmed)) {
+    const m = trimmed.match(RE_SUMMARY);
+    if (m)
+      pushEvidence(evidence, m);
+    else if (feats.leadingMarker)
+      evidence.push(feats.leadingMarker.surface);
+    return { act: "summary", confidence: 0.8 };
+  }
+  if (role === "rephrasing" || RE_REPHRASE.test(trimmed)) {
+    const m = trimmed.match(RE_REPHRASE);
+    if (m)
+      pushEvidence(evidence, m);
+    else if (feats.leadingMarker)
+      evidence.push(feats.leadingMarker.surface);
+    return { act: "rephrasing", confidence: 0.8 };
+  }
+  if (role === "exemplification" || RE_EXAMPLE_OPENER.test(trimmed)) {
+    const m = trimmed.match(RE_EXAMPLE_OPENER);
+    if (m)
+      pushEvidence(evidence, m);
+    else if (feats.leadingMarker)
+      evidence.push(feats.leadingMarker.surface);
+    return { act: "exemplification", confidence: 0.8 };
+  }
+  if (RE_EXAMPLE_TOKAR.test(text)) {
+    evidence.push("\u3068\u304B/\u307F\u305F\u3044\u306A");
+    return { act: "exemplification", confidence: 0.65 };
+  }
+  if (role === "cause" || RE_CAUSE_OPENER.test(trimmed) || RE_CAUSE_TAIL.test(feats.terminalForm.trim())) {
+    const m = (_e = trimmed.match(RE_CAUSE_OPENER)) != null ? _e : feats.terminalForm.trim().match(RE_CAUSE_TAIL);
+    if (m)
+      pushEvidence(evidence, m);
+    else if (feats.leadingMarker)
+      evidence.push(feats.leadingMarker.surface);
+    return { act: "justification", confidence: 0.8 };
+  }
+  if (RE_DEFINITION.test(text)) {
+    evidence.push("\u301C\u3068\u306F\u301C\u3053\u3068");
+    return { act: "definition", confidence: 0.75 };
+  }
+  if (role === "elaboration" || role === "addition") {
+    if (feats.leadingMarker)
+      evidence.push(feats.leadingMarker.surface);
+    return { act: "elaboration", confidence: 0.7 };
+  }
+  if (RE_OPINION.test(text)) {
+    const m = text.match(RE_OPINION);
+    if (m)
+      pushEvidence(evidence, m);
+    return { act: "opinion", confidence: 0.7 };
+  }
+  if (feats.hasAssertionMarker) {
+    evidence.push("assertion-marker");
+    return { act: "assertion", confidence: 0.75 };
+  }
+  if (((_f = feats.leadingMarker) == null ? void 0 : _f.role) === "filler" && text.trim().length < 6) {
+    return { act: "filler", confidence: 0.85 };
+  }
+  if (RE_NARRATION_PAST.test(trimmed)) {
+    evidence.push("past-final");
+    return { act: "narration", confidence: 0.6 };
+  }
+  return { act: "assertion", confidence: 0.55 };
+}
+function classifyFunctions(act, form, feats, text) {
+  var _a, _b;
+  const fns = /* @__PURE__ */ new Set();
+  switch (act) {
+    case "assertion":
+    case "opinion":
+      fns.add("claim-asserting");
+      break;
+    case "justification":
+    case "exemplification":
+    case "definition":
+    case "elaboration":
+      fns.add("evidence-providing");
+      break;
+    case "summary":
+    case "rephrasing":
+      fns.add("conclusion-drawing");
+      break;
+    case "concession":
+      fns.add("common-ground-establishing");
+      break;
+    case "rebuttal":
+    case "disagreement":
+      fns.add("objection-raising");
+      break;
+    case "qualification":
+      fns.add("face-saving");
+      break;
+    case "question":
+      fns.add("turn-yielding");
+      break;
+    case "clarification-request":
+      fns.add("doubt-sowing");
+      fns.add("turn-yielding");
+      break;
+    case "agreement":
+    case "acknowledgement":
+      fns.add("alignment-displaying");
+      break;
+    case "reaction":
+      fns.add("alignment-displaying");
+      break;
+    case "directive":
+      fns.add("turn-yielding");
+      break;
+    case "topic-management":
+      if (((_a = feats.leadingMarker) == null ? void 0 : _a.role) === "topic-initiation")
+        fns.add("topic-introducing");
+      else if (((_b = feats.leadingMarker) == null ? void 0 : _b.role) === "topic-return")
+        fns.add("topic-resuming");
+      else
+        fns.add("topic-shifting");
+      break;
+    case "narration":
+      fns.add("evidence-providing");
+      break;
+  }
+  if (form === "rhetorical-question") {
+    fns.add("claim-asserting");
+    fns.add("doubt-sowing");
+  }
+  if (form === "tag-question") {
+    fns.add("alignment-seeking");
+  }
+  if (form === "negative-equation") {
+    fns.add("objection-raising");
+  }
+  if (form === "hypothetical") {
+    fns.add("evidence-providing");
+  }
+  if (form === "quotation") {
+    fns.add("evidence-providing");
+  }
+  if (feats.hasHedge)
+    fns.add("face-saving");
+  if (feats.repairTriggers.length > 0)
+    fns.add("self-repair");
+  if (/^(?:ねえ|ね、|ほら[、,!?])/.test(text.trim()))
+    fns.add("attention-soliciting");
+  if (/(?:んだけど|けど|んですけど)[、,]?$/.test(feats.terminalForm.trim())) {
+    fns.add("turn-holding");
+  }
+  if (fns.size === 0)
+    fns.add("none");
+  return Array.from(fns);
+}
+function annotateAct(parse, feats) {
+  const evidence = [];
+  const { form, subtype } = classifyForm(parse.text, evidence);
+  const { act, confidence } = classifyAct(parse.text, feats, evidence);
+  const functions = classifyFunctions(act, form, feats, parse.text);
+  return {
+    act,
+    functions,
+    form,
+    formSubtype: subtype,
+    evidence,
+    confidence
+  };
+}
+
+// src/discourse/conversational-state.ts
+function newDialogueState() {
+  return {
+    openQuestions: [],
+    standingClaims: [],
+    recentDoubts: [],
+    lastSpeaker: null,
+    lastMoveBySpeaker: /* @__PURE__ */ new Map(),
+    lastTopicLaunchIdx: -1
+  };
+}
+var SPEAKER_UNKNOWN = "__unknown__";
+function speakerOf(s) {
+  var _a;
+  return (_a = s.speaker) != null ? _a : SPEAKER_UNKNOWN;
+}
+function sameSpeaker(a, b) {
+  const sa = speakerOf(a), sb = speakerOf(b);
+  return sa !== SPEAKER_UNKNOWN && sb !== SPEAKER_UNKNOWN && sa === sb;
+}
+function differentSpeaker(a, b) {
+  const sa = speakerOf(a), sb = speakerOf(b);
+  if (sa === SPEAKER_UNKNOWN || sb === SPEAKER_UNKNOWN)
+    return false;
+  return sa !== sb;
+}
+function findAnsweredQuestion(state, s, feats) {
+  const me = speakerOf(s);
+  for (let i = state.openQuestions.length - 1; i >= 0; i--) {
+    const q = state.openQuestions[i];
+    if (q.closed)
+      continue;
+    if (q.asker === me)
+      continue;
+    const qTopicSet = new Set(q.topicNPs);
+    const shares = feats.topicNPs.some((t) => qTopicSet.has(t)) || feats.contentHeads.some((h) => qTopicSet.has(h));
+    const adjacent = state.lastSpeaker === q.asker;
+    if (shares || adjacent)
+      return q;
+  }
+  return null;
+}
+function findActiveDoubtAgainst(state, meSpeaker) {
+  for (let i = state.recentDoubts.length - 1; i >= 0; i--) {
+    const d = state.recentDoubts[i];
+    if (d.againstSpeaker !== meSpeaker)
+      continue;
+    if (d.age > 3)
+      continue;
+    return d;
+  }
+  return null;
+}
+function lastStandingClaimBy(state, speaker) {
+  for (let i = state.standingClaims.length - 1; i >= 0; i--) {
+    if (state.standingClaims[i].claimer === speaker)
+      return state.standingClaims[i];
+  }
+  return null;
+}
+function lastStandingClaimByOther(state, meSpeaker) {
+  for (let i = state.standingClaims.length - 1; i >= 0; i--) {
+    const c = state.standingClaims[i];
+    if (c.claimer !== meSpeaker)
+      return c;
+  }
+  return null;
+}
+function classifyMove(parse, feats, act, prevParse, prevFeats, prevAct, state) {
+  var _a;
+  const me = speakerOf(parse);
+  const evidence = [];
+  if (act.act === "reaction") {
+    return {
+      move: "reactive-uptake",
+      reason: "act=reaction (cross-speaker emotive uptake)",
+      evidence: act.evidence.slice(),
+      confidence: 0.85
+    };
+  }
+  if (act.act === "acknowledgement") {
+    return {
+      move: "backchannel",
+      reason: "act=acknowledgement (backchannel-class opener)",
+      evidence: act.evidence.slice(),
+      confidence: 0.8
+    };
+  }
+  if (act.act === "agreement") {
+    if (prevAct && prevParse && differentSpeaker(prevParse, parse) && (prevAct.act === "rebuttal" || prevAct.act === "disagreement" || prevAct.functions.includes("self-repair") || prevAct.functions.includes("other-repair"))) {
+      return {
+        move: "acceptance-of-correction",
+        reason: "agreement immediately after other-speaker rebuttal/correction",
+        evidence: [...act.evidence, `prev-act=${prevAct.act}`],
+        confidence: 0.8
+      };
+    }
+    return {
+      move: "aligned-uptake",
+      reason: "act=agreement",
+      evidence: act.evidence.slice(),
+      confidence: 0.85
+    };
+  }
+  const answered = findAnsweredQuestion(state, parse, feats);
+  if (answered) {
+    if (act.act === "question" || act.act === "clarification-request" || feats.speechAct === "interrogative") {
+      return {
+        move: "counter-question",
+        reason: `answers open Q #${answered.sentenceIdx + 1} with another question`,
+        evidence: [`open-Q#${answered.sentenceIdx + 1}`],
+        confidence: 0.75
+      };
+    }
+    if (act.act === "assertion" || act.act === "opinion" || act.act === "exemplification" || act.act === "justification" || act.act === "narration" || act.act === "definition" || act.act === "elaboration") {
+      if (feats.hasHedge) {
+        return {
+          move: "partial-answer",
+          reason: `addresses open Q #${answered.sentenceIdx + 1} but hedged`,
+          evidence: [`open-Q#${answered.sentenceIdx + 1}`, ...act.evidence],
+          confidence: 0.75
+        };
+      }
+      return {
+        move: "answer-to-question",
+        reason: `closes open Q #${answered.sentenceIdx + 1}`,
+        evidence: [`open-Q#${answered.sentenceIdx + 1}`],
+        confidence: 0.85
+      };
+    }
+  }
+  if (act.act === "topic-management" && state.openQuestions.some((q) => !q.closed && q.asker !== me)) {
+    return {
+      move: "evasion",
+      reason: "topic-shift while an open question remains",
+      evidence: act.evidence.slice(),
+      confidence: 0.7
+    };
+  }
+  const doubt = findActiveDoubtAgainst(state, me);
+  if (doubt && (act.act === "exemplification" || act.act === "justification" || act.act === "definition" || act.act === "elaboration" || act.act === "rephrasing" || act.act === "summary")) {
+    return {
+      move: "defense-against-objection",
+      reason: `act=${act.act} after doubt raised by ${doubt.raiser} at #${doubt.sentenceIdx + 1}`,
+      evidence: [`doubt-from:${doubt.raiser}#${doubt.sentenceIdx + 1}`, ...act.evidence],
+      confidence: 0.85
+    };
+  }
+  if (prevParse && prevAct && differentSpeaker(prevParse, parse) && (prevAct.act === "rebuttal" || prevAct.act === "disagreement") && (act.act === "rephrasing" || act.act === "qualification" || feats.repairTriggers.length > 0)) {
+    const myClaim = lastStandingClaimBy(state, me);
+    return {
+      move: "reformulation-after-pushback",
+      reason: `rephrase/qualify after other-speaker ${prevAct.act}`,
+      evidence: [
+        `pushback#${prevParse ? "" : ""}`,
+        ...act.evidence,
+        ...myClaim ? [`my-claim#${myClaim.sentenceIdx + 1}`] : []
+      ],
+      confidence: 0.8
+    };
+  }
+  if (prevParse && prevAct && differentSpeaker(prevParse, parse) && (prevAct.functions.includes("self-repair") || prevAct.functions.includes("other-repair") || prevAct.act === "rebuttal") && (act.act === "disagreement" || act.act === "rebuttal" || feats.hasDisagreementOpener)) {
+    return {
+      move: "rejection-of-correction",
+      reason: "disagreement directly after other-speaker correction/rebuttal",
+      evidence: act.evidence.slice(),
+      confidence: 0.8
+    };
+  }
+  if (prevParse && sameSpeaker(prevParse, parse)) {
+    if (feats.repairTriggers.length > 0) {
+      return {
+        move: "clarification-of-own-prior",
+        reason: "self-repair trigger after own prior turn",
+        evidence: feats.repairTriggers.slice(),
+        confidence: 0.8
+      };
+    }
+    if (prevAct && prevAct.act === "concession" && act.act === "rebuttal") {
+      return {
+        move: "monologic-pivot",
+        reason: "own concession \u2192 own rebuttal (concession-then-pivot)",
+        evidence: act.evidence.slice(),
+        confidence: 0.8
+      };
+    }
+    if (act.act === "justification") {
+      return {
+        move: "monologic-justification",
+        reason: "justification continuing own prior claim",
+        evidence: act.evidence.slice(),
+        confidence: 0.75
+      };
+    }
+    if (act.act === "summary") {
+      return {
+        move: "monologic-summary",
+        reason: "summary continuing own segment",
+        evidence: act.evidence.slice(),
+        confidence: 0.75
+      };
+    }
+    if (act.act === "exemplification" || act.act === "elaboration" || act.act === "definition" || act.act === "rephrasing") {
+      return {
+        move: "monologic-elaboration",
+        reason: `same-speaker ${act.act}, no active doubt`,
+        evidence: act.evidence.slice(),
+        confidence: 0.7
+      };
+    }
+  }
+  if (act.act === "topic-management") {
+    const role = (_a = feats.leadingMarker) == null ? void 0 : _a.role;
+    if (role === "topic-return") {
+      return {
+        move: "topic-resumption",
+        reason: "topic-return marker",
+        evidence: act.evidence.slice(),
+        confidence: 0.8
+      };
+    }
+    return {
+      move: "topic-launch",
+      reason: "topic-management act",
+      evidence: act.evidence.slice(),
+      confidence: 0.75
+    };
+  }
+  if (act.act === "question" || act.act === "clarification-request") {
+    const otherClaim = lastStandingClaimByOther(state, me);
+    if (otherClaim && !otherClaim.challenged) {
+      const overlap = feats.topicNPs.some((t) => otherClaim.topicNPs.includes(t));
+      if (overlap || act.act === "clarification-request") {
+        return {
+          move: "doubt-sowing-challenge",
+          reason: `Q on ${otherClaim.claimer}'s standing claim #${otherClaim.sentenceIdx + 1}`,
+          evidence: [`challenged-claim#${otherClaim.sentenceIdx + 1}`, ...act.evidence],
+          confidence: 0.8
+        };
+      }
+    }
+    return {
+      move: "question-launch",
+      reason: "fresh question, no targeted standing claim",
+      evidence: act.evidence.slice(),
+      confidence: 0.7
+    };
+  }
+  if (act.act === "rebuttal" || act.act === "disagreement") {
+    const otherClaim = lastStandingClaimByOther(state, me);
+    return {
+      move: "doubt-sowing-challenge",
+      reason: otherClaim ? `direct challenge to ${otherClaim.claimer}'s claim #${otherClaim.sentenceIdx + 1}` : "rebuttal with no clear target",
+      evidence: act.evidence.slice(),
+      confidence: 0.75
+    };
+  }
+  if ((act.act === "assertion" || act.act === "opinion") && state.standingClaims.every((c) => c.claimer !== me)) {
+    return {
+      move: "claim-launch",
+      reason: "first/new assertion by this speaker",
+      evidence: act.evidence.slice(),
+      confidence: 0.7
+    };
+  }
+  if (prevParse && sameSpeaker(prevParse, parse) && prevAct && (prevAct.act === "assertion" || prevAct.act === "opinion") && (act.act === "definition" || act.act === "exemplification") && !doubt) {
+    return {
+      move: "pre-emptive-clarification",
+      reason: "definition/example right after own assertion with no doubt yet raised",
+      evidence: act.evidence.slice(),
+      confidence: 0.7
+    };
+  }
+  if (act.act === "filler" || act.act === "fragment") {
+    return {
+      move: "continuation",
+      reason: `act=${act.act} (low-content)`,
+      evidence: [],
+      confidence: 0.55
+    };
+  }
+  return {
+    move: "continuation",
+    reason: "no specific move detected",
+    evidence: [],
+    confidence: 0.55
+  };
+}
+function updateState(state, idx, parse, feats, act, move) {
+  const me = speakerOf(parse);
+  for (const d of state.recentDoubts)
+    d.age += 1;
+  if (move === "answer-to-question" || move === "partial-answer" || move === "counter-question" || move === "evasion") {
+    for (let i = state.openQuestions.length - 1; i >= 0; i--) {
+      const q = state.openQuestions[i];
+      if (q.closed)
+        continue;
+      if (q.asker !== me) {
+        q.closed = true;
+        break;
+      }
+    }
+  }
+  if (move === "doubt-sowing-challenge" || act.act === "rebuttal" || act.act === "disagreement" || act.act === "clarification-request") {
+    for (let i = state.standingClaims.length - 1; i >= 0; i--) {
+      const c = state.standingClaims[i];
+      if (c.claimer === me)
+        continue;
+      const overlap = feats.topicNPs.some((t) => c.topicNPs.includes(t)) || feats.contentHeads.some((h) => c.topicNPs.includes(h));
+      if (overlap || differentSpeaker({ speaker: c.claimer }, parse)) {
+        c.challenged = true;
+        state.recentDoubts.push({
+          sentenceIdx: idx,
+          raiser: me,
+          againstSpeaker: c.claimer,
+          topicNPs: c.topicNPs.slice(),
+          age: 0
+        });
+        break;
+      }
+    }
+  }
+  if (move === "defense-against-objection" || move === "reformulation-after-pushback") {
+    const own = lastStandingClaimBy(state, me);
+    if (own)
+      own.defended = true;
+  }
+  if (act.act === "question" || act.act === "clarification-request") {
+    state.openQuestions.push({
+      sentenceIdx: idx,
+      asker: me,
+      topicNPs: feats.topicNPs.slice(),
+      predicateHead: feats.predicateHead,
+      closed: false
+    });
+  }
+  if (act.act === "assertion" || act.act === "opinion") {
+    state.standingClaims.push({
+      sentenceIdx: idx,
+      claimer: me,
+      topicNPs: feats.topicNPs.length ? feats.topicNPs.slice() : feats.contentHeads.slice(0, 3),
+      predicateHead: feats.predicateHead,
+      challenged: false,
+      defended: false
+    });
+  }
+  if (act.act === "topic-management") {
+    state.lastTopicLaunchIdx = idx;
+  }
+  state.lastSpeaker = me;
+  state.lastMoveBySpeaker.set(me, move);
+  if (state.openQuestions.length > 30)
+    state.openQuestions = state.openQuestions.slice(-30);
+  if (state.standingClaims.length > 30)
+    state.standingClaims = state.standingClaims.slice(-30);
+  if (state.recentDoubts.length > 20)
+    state.recentDoubts = state.recentDoubts.slice(-20);
+}
+function annotateMoves(sentences, features, acts) {
+  const state = newDialogueState();
+  const out = [];
+  for (let i = 0; i < sentences.length; i++) {
+    const prev = i > 0 ? sentences[i - 1] : null;
+    const prevF = i > 0 ? features[i - 1] : null;
+    const prevA = i > 0 ? acts[i - 1] : null;
+    const move = classifyMove(sentences[i], features[i], acts[i], prev, prevF, prevA, state);
+    out.push(move);
+    updateState(state, i, sentences[i], features[i], acts[i], move.move);
+  }
+  return out;
+}
+
+// src/discourse/sentence-relations.ts
+var CONFIDENCE_FLOOR = 0.55;
+var CLAUSE_CONNECTORS = [
+  { pattern: /けれども$/, type: "kedo" },
+  { pattern: /ものの$/, type: "kedo" },
+  { pattern: /にもかかわらず$/, type: "kedo" },
+  { pattern: /ながら$/, type: "nagara" },
+  { pattern: /ために$/, type: "tame" },
+  { pattern: /ように$/, type: "you-ni" },
+  { pattern: /つつ$/, type: "tsutsu" },
+  { pattern: /ので$/, type: "node" },
+  { pattern: /から$/, type: "kara" },
+  { pattern: /けど$/, type: "kedo" },
+  { pattern: /のに$/, type: "noni" },
+  { pattern: /たら$/, type: "tara-form" },
+  { pattern: /なら$/, type: "nara-form" },
+  { pattern: /ば$/, type: "ba-form" },
+  { pattern: /が[、,]?$/, type: "ga" },
+  { pattern: /し[、,]?$/, type: "shi" },
+  { pattern: /て[、,]?$/, type: "te-form" },
+  { pattern: /で[、,]?$/, type: "te-form" }
+];
+function splitClauses(sentence, sentenceStart) {
+  var _a;
+  const clauses = [];
+  const segments = sentence.split(/([、,])/);
+  let offset = 0;
+  let currentText = "";
+  let currentStart = 0;
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (seg === "\u3001" || seg === ",") {
+      currentText += seg;
+      offset += seg.length;
+      continue;
+    }
+    currentText += seg;
+    offset += seg.length;
+    let matched = false;
+    for (const { pattern, type } of CLAUSE_CONNECTORS) {
+      if (pattern.test(currentText.trimEnd())) {
+        clauses.push({
+          text: currentText,
+          start: currentStart,
+          end: currentStart + currentText.length,
+          connector: (_a = currentText.match(pattern)) == null ? void 0 : _a[0],
+          connectorType: type
+        });
+        currentStart = currentStart + currentText.length;
+        currentText = "";
+        matched = true;
+        break;
+      }
+    }
+  }
+  if (currentText.trim()) {
+    clauses.push({
+      text: currentText,
+      start: currentStart,
+      end: currentStart + currentText.length,
+      connectorType: "terminal"
+    });
+  }
+  if (clauses.length === 0) {
+    clauses.push({
+      text: sentence,
+      start: 0,
+      end: sentence.length,
+      connectorType: "terminal"
+    });
+  }
+  for (const c of clauses) {
+    c.start += sentenceStart;
+    c.end += sentenceStart;
+  }
+  return clauses;
+}
+var ANAPHORA_PATTERNS = [
+  { regex: /(?:それ|その|そこ|そういう|そんな|そう(?:いった|した))/, series: "so" },
+  { regex: /(?:これ|この|ここ|こういう|こんな|こう(?:いった|した))/, series: "ko" },
+  { regex: /(?:あれ|あの|あそこ|ああいう|あんな|ああ(?:いった|した))/, series: "a" }
+];
+var ADJACENCY_PAIRS = [
+  // ─────────────────────────────────────────────────────────
+  // Question → Answer
+  //   Requires: s1 is interrogative AND s2 is declarative.
+  //   Boost for speaker change.
+  // ─────────────────────────────────────────────────────────
+  {
+    type: "question-answer",
+    label: "\u8CEA\u554F\u2192\u5FDC\u7B54",
+    labelEn: "Question \u2192 Answer",
+    evaluate: ({ f1, f2, sameSpeaker: sameSpeaker2, s1 }) => {
+      if (f1.speechAct !== "interrogative")
+        return null;
+      if (f2.speechAct !== "declarative" && f2.speechAct !== "fragment")
+        return null;
+      const triggers = [f1.terminalForm.trim()];
+      const confidence = computeConfidence(0.55, [
+        [!sameSpeaker2, 0.2],
+        [topicOverlap(f1, f2) >= 0.6, 0.1],
+        [f2.hasAssertionMarker, 0.05]
+      ]);
+      return { reason: "pair:question-answer", triggers, confidence };
+    }
+  },
+  // ─────────────────────────────────────────────────────────
+  // Assertion → Agreement
+  //   Requires: s1 ends as a declarative AND s2 leads with an
+  //   agreement/backchannel marker OR has agreement role.
+  //   Speaker change is a strong boost.
+  // ─────────────────────────────────────────────────────────
+  {
+    type: "assertion-agreement",
+    label: "\u4E3B\u5F35\u2192\u540C\u610F",
+    labelEn: "Assertion \u2192 Agreement",
+    evaluate: ({ f1, f2, sameSpeaker: sameSpeaker2 }) => {
+      var _a, _b;
+      if (f1.speechAct !== "declarative")
+        return null;
+      const role = (_a = f2.leadingMarker) == null ? void 0 : _a.role;
+      const isAgreement = role === "agreement" || role === "backchannel";
+      if (!isAgreement && !f2.hasBackchannelStart)
+        return null;
+      if (sameSpeaker2 && !isAgreement)
+        return null;
+      const triggers = [];
+      if (f2.leadingMarker)
+        triggers.push(f2.leadingMarker.surface);
+      const confidence = computeConfidence(0.55, [
+        [!sameSpeaker2, 0.15],
+        [((_b = f2.leadingMarker) == null ? void 0 : _b.strength) === "strong", 0.15],
+        [f1.hasAssertionMarker, 0.05]
+      ]);
+      return { reason: "pair:assertion-agreement", triggers, confidence };
+    }
+  },
+  // ─────────────────────────────────────────────────────────
+  // Assertion → Disagreement  ← THE BIG ONE
+  //   Now requires real opposition evidence, not just `'contrast'`-
+  //   tagged conjunctions. Specifically:
+  //     - s1 is declarative + affirmative.
+  //     - At least one of:
+  //         (a) s2 leads with a STRONG opposition marker
+  //         (b) s2 has an inline opposition trigger (ではなく, etc.)
+  //         (c) s2 is negative AND mentions s1's predicate head
+  //         (d) s2 opens with explicit disagreement (いや, 違う)
+  //     - Topic overlap or explicit reference (otherwise it's a
+  //       topic-shift, not a disagreement).
+  //     - Different speakers OR explicit self-repair triggers.
+  //     - s2's leading marker is NOT a topic-shift (ところで, etc.).
+  // ─────────────────────────────────────────────────────────
+  {
+    type: "assertion-disagreement",
+    label: "\u4E3B\u5F35\u2192\u53CD\u8AD6",
+    labelEn: "Assertion \u2192 Disagreement",
+    evaluate: ({ f1, f2, s1, s2, sameSpeaker: sameSpeaker2 }) => {
+      var _a, _b, _c, _d, _e;
+      if (f1.speechAct !== "declarative")
+        return null;
+      if (f1.polarity !== "affirmative")
+        return null;
+      if (f2.speechAct !== "declarative" && f2.speechAct !== "fragment")
+        return null;
+      if (((_a = f2.leadingMarker) == null ? void 0 : _a.role) === "topic-shift")
+        return null;
+      if (((_b = f2.leadingMarker) == null ? void 0 : _b.role) === "agreement" || ((_c = f2.leadingMarker) == null ? void 0 : _c.role) === "backchannel")
+        return null;
+      const hasStrongLeadOpposition = ((_d = f2.leadingMarker) == null ? void 0 : _d.role) === "opposition" && f2.leadingMarker.strength === "strong";
+      const hasInlineOpposition = f2.oppositionTriggers.some((t) => t.position === "inline");
+      const hasDisagreementOpener = f2.hasDisagreementOpener;
+      const negatesPrev = detectNegationOf(f1, f2, s2.text);
+      const oppositionEvidence = hasStrongLeadOpposition || hasInlineOpposition || hasDisagreementOpener || negatesPrev;
+      if (!oppositionEvidence)
+        return null;
+      const overlap = topicOverlap(f1, f2);
+      const hasExplicitRef = hasInlineOpposition || hasDisagreementOpener;
+      if (overlap < 0.6 && !hasExplicitRef)
+        return null;
+      if (sameSpeaker2 && f2.repairTriggers.length === 0 && !hasInlineOpposition)
+        return null;
+      const triggers = [];
+      if (((_e = f2.leadingMarker) == null ? void 0 : _e.role) === "opposition")
+        triggers.push(f2.leadingMarker.surface);
+      for (const t of f2.oppositionTriggers)
+        triggers.push(t.text);
+      if (hasDisagreementOpener) {
+        const m = s2.text.trim().match(/^(いや+|違う+|そうじゃ(?:なくて|ない)|ちが(?:う|くて))/);
+        if (m)
+          triggers.push(m[1]);
+      }
+      if (negatesPrev && f1.predicateHead)
+        triggers.push(`\xAC${f1.predicateHead}`);
+      if (f2.repairTriggers.length)
+        triggers.push(...f2.repairTriggers);
+      const confidence = computeConfidence(0.5, [
+        [hasStrongLeadOpposition, 0.15],
+        [hasInlineOpposition, 0.2],
+        [hasDisagreementOpener, 0.15],
+        [negatesPrev, 0.15],
+        [overlap >= 1, 0.1],
+        [!sameSpeaker2, 0.1]
+      ]);
+      return { reason: "pair:assertion-disagreement", triggers, confidence };
+    }
+  },
+  // ─────────────────────────────────────────────────────────
+  // ツッコミ・ボケ pair
+  //   Requires: s2 starts with corrective opener OR contains an
+  //   explicit ツッコミ phrase, AND speaker change.
+  // ─────────────────────────────────────────────────────────
+  {
+    type: "tsukkomi-boke",
+    label: "\u30DC\u30B1\u2192\u30C4\u30C3\u30B3\u30DF",
+    labelEn: "Boke \u2192 Tsukkomi",
+    evaluate: ({ s1, s2, f1, f2, sameSpeaker: sameSpeaker2 }) => {
+      if (sameSpeaker2)
+        return null;
+      const tsukkomiTriggers = s2.text.match(/(?:なんでやねん|ちゃうわ|おい[っ！!]?|どないやねん|ありえへん)/);
+      const correctiveStart = /^(?:違う|そうじゃなくて|いやいや|それは違|待って待って|ちゃうちゃう)/.test(s2.text.trim());
+      if (!tsukkomiTriggers && !correctiveStart)
+        return null;
+      const triggers = [];
+      if (tsukkomiTriggers)
+        triggers.push(tsukkomiTriggers[0]);
+      if (correctiveStart) {
+        const m = s2.text.trim().match(/^(違う|そうじゃなくて|いやいや|それは違|待って待って|ちゃうちゃう)/);
+        if (m)
+          triggers.push(m[1]);
+      }
+      const confidence = computeConfidence(0.65, [
+        [!!tsukkomiTriggers, 0.2],
+        [f1.speechAct === "declarative", 0.05]
+      ]);
+      return { reason: "pair:tsukkomi-boke", triggers, confidence };
+    }
+  },
+  // ─────────────────────────────────────────────────────────
+  // Reaction
+  //   Requires: s2 leads with a reaction or backchannel marker AND
+  //   speaker change (a speaker reacting to themselves is suspicious).
+  // ─────────────────────────────────────────────────────────
+  {
+    type: "reaction",
+    label: "\u767A\u8A71\u2192\u53CD\u5FDC",
+    labelEn: "Utterance \u2192 Reaction",
+    evaluate: ({ f2, sameSpeaker: sameSpeaker2 }) => {
+      var _a, _b;
+      if (sameSpeaker2)
+        return null;
+      const role = (_a = f2.leadingMarker) == null ? void 0 : _a.role;
+      if (!f2.hasReactionStart && !f2.hasBackchannelStart && role !== "reaction" && role !== "backchannel" && role !== "agreement") {
+        return null;
+      }
+      const triggers = [];
+      if (f2.leadingMarker)
+        triggers.push(f2.leadingMarker.surface);
+      const confidence = computeConfidence(0.6, [
+        [((_b = f2.leadingMarker) == null ? void 0 : _b.strength) === "strong", 0.15],
+        [f2.hasReactionStart, 0.1]
+      ]);
+      return { reason: "pair:reaction", triggers, confidence };
+    }
+  },
+  // ─────────────────────────────────────────────────────────
+  // Setup → Punchline
+  //   Requires: s1 contains a quotative wind-up (って言ったら / って聞いたら /
+  //   ってなったら) AND s2 contains an emotive reaction OR strong evaluation.
+  //   Speaker change boosts confidence (storytelling-then-react).
+  // ─────────────────────────────────────────────────────────
+  {
+    type: "setup-punchline",
+    label: "\u8A2D\u5B9A\u2192\u30AA\u30C1",
+    labelEn: "Setup \u2192 Punchline",
+    evaluate: ({ s1, s2, f2 }) => {
+      const setup = s1.text.match(/って(?:言ったら|聞いたら|なったら|思ったら)/);
+      if (!setup)
+        return null;
+      const hasReact = f2.hasReactionStart || /[！!]{1,}/.test(s2.text);
+      if (!hasReact)
+        return null;
+      const triggers = [setup[0]];
+      const reactMatch = s2.text.trim().match(/^(え[ー〜]?|うそ|まじ|やば|すご)/);
+      if (reactMatch)
+        triggers.push(reactMatch[1]);
+      const confidence = computeConfidence(0.65, [
+        [f2.hasReactionStart, 0.15]
+      ]);
+      return { reason: "pair:setup-punchline", triggers, confidence };
+    }
+  },
+  // ─────────────────────────────────────────────────────────
+  // Repair initiation → Repair
+  //   Requires: s1 is a clarification request (え?, 何?, は?) AND s2
+  //   contains a repair trigger AND speaker change.
+  // ─────────────────────────────────────────────────────────
+  {
+    type: "repair-initiation",
+    label: "\u4FEE\u5FA9\u958B\u59CB\u2192\u4FEE\u5FA9",
+    labelEn: "Repair Init \u2192 Repair",
+    evaluate: ({ s1, f2, sameSpeaker: sameSpeaker2 }) => {
+      const initiator = s1.text.trim().match(/^(?:え[？?]|何[？?]|は[？?]|ん[？?]|もう一回|もう1回|どういうこと[？?])/);
+      if (!initiator)
+        return null;
+      if (f2.repairTriggers.length === 0)
+        return null;
+      if (sameSpeaker2)
+        return null;
+      const triggers = [initiator[0], ...f2.repairTriggers];
+      const confidence = computeConfidence(0.7, [
+        [f2.repairTriggers.length >= 2, 0.1]
+      ]);
+      return { reason: "pair:repair-initiation", triggers, confidence };
+    }
+  },
+  // ─────────────────────────────────────────────────────────
+  // Concession → Counter
+  //   Requires: s1 leads with concession marker (確かに, もちろん, ただし)
+  //   AND s2 leads with opposition marker. Topic overlap required.
+  //   Same speaker is the normal case (rhetorical concession then pivot).
+  // ─────────────────────────────────────────────────────────
+  {
+    type: "concession-counter",
+    label: "\u8B72\u6B69\u2192\u53CD\u8AD6",
+    labelEn: "Concession \u2192 Counter",
+    evaluate: ({ f1, f2 }) => {
+      var _a, _b, _c;
+      if (((_a = f1.leadingMarker) == null ? void 0 : _a.role) !== "concession")
+        return null;
+      const oppRole = (_b = f2.leadingMarker) == null ? void 0 : _b.role;
+      if (oppRole !== "opposition" && f2.oppositionTriggers.length === 0)
+        return null;
+      const overlap = topicOverlap(f1, f2);
+      if (overlap < 0.6)
+        return null;
+      const triggers = [f1.leadingMarker.surface];
+      if (f2.leadingMarker)
+        triggers.push(f2.leadingMarker.surface);
+      for (const t of f2.oppositionTriggers)
+        triggers.push(t.text);
+      const confidence = computeConfidence(0.7, [
+        [((_c = f2.leadingMarker) == null ? void 0 : _c.strength) === "strong", 0.1],
+        [overlap >= 1, 0.1]
+      ]);
+      return { reason: "pair:concession-counter", triggers, confidence };
+    }
+  },
+  // ─────────────────────────────────────────────────────────
+  // Evidence → Conclusion
+  //   Requires: s1 has cause/elaboration marker AND s2 leads with
+  //   summary/consequence marker. Same speaker. Topic overlap.
+  // ─────────────────────────────────────────────────────────
+  {
+    type: "evidence-for",
+    label: "\u6839\u62E0\u2192\u7D50\u8AD6",
+    labelEn: "Evidence \u2192 Conclusion",
+    evaluate: ({ f1, f2, sameSpeaker: sameSpeaker2 }) => {
+      var _a, _b, _c;
+      if (!sameSpeaker2)
+        return null;
+      const f1Role = (_a = f1.leadingMarker) == null ? void 0 : _a.role;
+      const hasEvidence = f1Role === "cause" || f1Role === "elaboration" || f1Role === "exemplification";
+      if (!hasEvidence)
+        return null;
+      const f2Role = (_b = f2.leadingMarker) == null ? void 0 : _b.role;
+      const hasConclusion = f2Role === "summary" || f2Role === "consequence" || f2Role === "rephrasing";
+      if (!hasConclusion)
+        return null;
+      const overlap = topicOverlap(f1, f2);
+      if (overlap < 0.6)
+        return null;
+      const triggers = [f1.leadingMarker.surface, f2.leadingMarker.surface];
+      const confidence = computeConfidence(0.7, [
+        [((_c = f2.leadingMarker) == null ? void 0 : _c.strength) === "strong", 0.1],
+        [overlap >= 1, 0.1]
+      ]);
+      return { reason: "pair:evidence-for", triggers, confidence };
+    }
+  },
+  // ─────────────────────────────────────────────────────────
+  // Hedge → Assert
+  //   Requires: s1 ends with a hedge AND s2 ends with assertion
+  //   marker. Same speaker. Topic overlap.
+  // ─────────────────────────────────────────────────────────
+  {
+    type: "hedge-then-assert",
+    label: "\u30D8\u30C3\u30B8\u2192\u4E3B\u5F35",
+    labelEn: "Hedge \u2192 Assert",
+    evaluate: ({ f1, f2, sameSpeaker: sameSpeaker2 }) => {
+      var _a;
+      if (!sameSpeaker2)
+        return null;
+      if (!f1.hasHedge)
+        return null;
+      if (!f2.hasAssertionMarker)
+        return null;
+      const overlap = topicOverlap(f1, f2);
+      if (overlap < 0.6)
+        return null;
+      const triggers = [];
+      if (((_a = f1.leadingMarker) == null ? void 0 : _a.role) === "hedge")
+        triggers.push(f1.leadingMarker.surface);
+      triggers.push(f1.terminalForm.trim(), f2.terminalForm.trim());
+      const confidence = computeConfidence(0.65, [
+        [overlap >= 1, 0.1]
+      ]);
+      return { reason: "pair:hedge-then-assert", triggers, confidence };
+    }
+  },
+  // ─────────────────────────────────────────────────────────
+  // Topic shift (sentence-level)
+  //   When s2 leads with a strong topic-shift marker we emit an
+  //   explicit `topic-shift` relation so the demo can show "this is
+  //   NOT a continuation."
+  // ─────────────────────────────────────────────────────────
+  {
+    type: "topic-shift",
+    label: "\u8A71\u984C\u8EE2\u63DB",
+    labelEn: "Topic shift",
+    evaluate: ({ f2 }) => {
+      var _a;
+      if (((_a = f2.leadingMarker) == null ? void 0 : _a.role) !== "topic-shift")
+        return null;
+      if (f2.leadingMarker.strength === "weak")
+        return null;
+      const triggers = [f2.leadingMarker.surface];
+      const confidence = computeConfidence(0.7, [
+        [f2.leadingMarker.strength === "strong", 0.1]
+      ]);
+      return { reason: "pair:topic-shift", triggers, confidence };
+    }
+  }
+];
+var RELATION_COLORS = {
+  "cause-effect": "jp-rel-cause",
+  "concession-counter": "jp-rel-concession",
+  "conditional": "jp-rel-conditional",
+  "temporal-sequence": "jp-rel-temporal",
+  "purpose": "jp-rel-purpose",
+  "means": "jp-rel-means",
+  "contrast": "jp-rel-contrast",
+  "addition": "jp-rel-addition",
+  "elaboration": "jp-rel-elaboration",
+  "exemplification": "jp-rel-example",
+  "anaphoric-reference": "jp-rel-reference",
+  "lexical-repetition": "jp-rel-repetition",
+  "lexical-chain": "jp-rel-lexchain",
+  "topic-continuation": "jp-rel-topic",
+  "scaffolding": "jp-rel-scaffold",
+  "question-answer": "jp-rel-qa",
+  "assertion-agreement": "jp-rel-agree",
+  "assertion-disagreement": "jp-rel-disagree",
+  "offer-accept": "jp-rel-offer",
+  "offer-decline": "jp-rel-decline",
+  "complaint-remedy": "jp-rel-complaint",
+  "tsukkomi-boke": "jp-rel-tsukkomi",
+  "reaction": "jp-rel-reaction",
+  "repair-initiation": "jp-rel-repair",
+  "repair-completion": "jp-rel-repair",
+  "topic-shift": "jp-rel-shift",
+  "topic-return": "jp-rel-return",
+  "summary-of": "jp-rel-summary",
+  "evidence-for": "jp-rel-evidence",
+  "counter-to": "jp-rel-counter",
+  "hedge-then-assert": "jp-rel-hedge",
+  "setup-punchline": "jp-rel-punchline",
+  "bit-relation-locked": "jp-rel-bit-locked",
+  "bit-relation-td": "jp-rel-bit-td",
+  "bit-relation-bu": "jp-rel-bit-bu"
+};
+var CONNECTOR_RELATIONS = {
+  "kara": { type: "cause-effect", label: "\u56E0\u679C\uFF08\u304B\u3089\uFF09", labelEn: "Cause (kara)" },
+  "node": { type: "cause-effect", label: "\u56E0\u679C\uFF08\u306E\u3067\uFF09", labelEn: "Cause (node)" },
+  "kedo": { type: "concession-counter", label: "\u9006\u63A5\uFF08\u3051\u3069\uFF09", labelEn: "Concession (kedo)" },
+  "ga": { type: "contrast", label: "\u5BFE\u6BD4\uFF08\u304C\uFF09", labelEn: "Contrast (ga)" },
+  "noni": { type: "concession-counter", label: "\u9006\u63A5\uFF08\u306E\u306B\uFF09", labelEn: "Concession (noni)" },
+  "ba-form": { type: "conditional", label: "\u6761\u4EF6\uFF08\u3070\uFF09", labelEn: "Conditional (ba)" },
+  "tara-form": { type: "conditional", label: "\u6761\u4EF6\uFF08\u305F\u3089\uFF09", labelEn: "Conditional (tara)" },
+  "nara-form": { type: "conditional", label: "\u6761\u4EF6\uFF08\u306A\u3089\uFF09", labelEn: "Conditional (nara)" },
+  "te-form": { type: "temporal-sequence", label: "\u7D99\u8D77\uFF08\u3066\u5F62\uFF09", labelEn: "Sequential (te)" },
+  "tame": { type: "purpose", label: "\u76EE\u7684\uFF08\u305F\u3081\uFF09", labelEn: "Purpose (tame)" },
+  "you-ni": { type: "purpose", label: "\u76EE\u7684\uFF08\u3088\u3046\u306B\uFF09", labelEn: "Purpose (you-ni)" },
+  "shi": { type: "addition", label: "\u4E26\u5217\uFF08\u3057\uFF09", labelEn: "Addition (shi)" },
+  "nagara": { type: "temporal-sequence", label: "\u540C\u6642\uFF08\u306A\u304C\u3089\uFF09", labelEn: "Simultaneous (nagara)" },
+  "tsutsu": { type: "temporal-sequence", label: "\u6F38\u9032\uFF08\u3064\u3064\uFF09", labelEn: "Gradual (tsutsu)" }
+};
+function splitSentences(text) {
+  const results = [];
+  const lines = text.split("\n");
+  let offset = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      offset += line.length + 1;
+      continue;
+    }
+    let speaker;
+    let content = trimmed;
+    const speakerMatch = trimmed.match(/^([^\s:：]{1,20})[：:]\s*(.+)/);
+    if (speakerMatch) {
+      speaker = speakerMatch[1];
+      content = speakerMatch[2];
+    }
+    const sentRegex = /[^。！？!?\n]*[。！？!?][」』）\)]*|[^。！？!?\n]+$/gm;
+    let match2;
+    let localOffset = offset + (trimmed.length - content.length + (line.length - trimmed.length));
+    const contentStart = offset + line.indexOf(content);
+    sentRegex.lastIndex = 0;
+    while ((match2 = sentRegex.exec(content)) !== null) {
+      const sentText = match2[0].trim();
+      if (!sentText)
+        continue;
+      results.push({
+        text: sentText,
+        start: contentStart + match2.index,
+        end: contentStart + match2.index + match2[0].length,
+        speaker
+      });
+    }
+    if (results.length === 0 || results[results.length - 1].end <= offset) {
+      results.push({
+        text: content,
+        start: contentStart,
+        end: contentStart + content.length,
+        speaker
+      });
+    }
+    offset += line.length + 1;
+  }
+  return results;
+}
+function extractContentWords(text) {
+  var _a, _b;
+  const kanjiRuns = (_a = text.match(/[\u4e00-\u9fff\u3400-\u4dbf]{2,}/g)) != null ? _a : [];
+  const katakanaRuns = (_b = text.match(/[\u30a1-\u30f6ー]{3,}/g)) != null ? _b : [];
+  return [...kanjiRuns, ...katakanaRuns];
+}
+function analyzeRelations(text) {
+  var _a, _b;
+  const rawSentences = splitSentences(text);
+  const sentences = rawSentences.map((s, idx) => {
+    const patterns = detectPatterns(s.text);
+    const clauses = splitClauses(s.text, s.start);
+    return {
+      text: s.text,
+      start: s.start,
+      end: s.end,
+      speaker: s.speaker,
+      patterns,
+      clauses
+    };
+  });
+  const relations = [];
+  for (let si = 0; si < sentences.length; si++) {
+    const sent = sentences[si];
+    for (let ci = 0; ci < sent.clauses.length - 1; ci++) {
+      const clause = sent.clauses[ci];
+      const nextClause = sent.clauses[ci + 1];
+      if (!clause.connectorType || clause.connectorType === "terminal")
+        continue;
+      const relDef = CONNECTOR_RELATIONS[clause.connectorType];
+      if (!relDef)
+        continue;
+      relations.push({
+        type: relDef.type,
+        source: {
+          start: clause.start,
+          end: clause.end,
+          text: clause.text,
+          sentenceIdx: si,
+          speaker: sent.speaker
+        },
+        target: {
+          start: nextClause.start,
+          end: nextClause.end,
+          text: nextClause.text,
+          sentenceIdx: si,
+          speaker: sent.speaker
+        },
+        confidence: 0.85,
+        label: relDef.label,
+        labelEn: relDef.labelEn,
+        colorClass: RELATION_COLORS[relDef.type],
+        reason: `connector:${clause.connectorType}`,
+        triggers: clause.connector ? [clause.connector] : []
+      });
+    }
+  }
+  const features = sentences.map(extractSentenceFeatures);
+  const acts = sentences.map((s, i) => annotateAct(s, features[i]));
+  const moves = annotateMoves(sentences, features, acts);
+  for (let i = 0; i < sentences.length; i++) {
+    sentences[i].features = features[i];
+    sentences[i].act = acts[i];
+    sentences[i].move = moves[i];
+  }
+  for (let i = 0; i < sentences.length - 1; i++) {
+    const s1 = sentences[i];
+    const s2 = sentences[i + 1];
+    const f1 = features[i];
+    const f2 = features[i + 1];
+    const sameSpeaker2 = !!s1.speaker && !!s2.speaker && s1.speaker === s2.speaker;
+    const ctx = { s1, s2, f1, f2, sameSpeaker: sameSpeaker2 };
+    for (const pair of ADJACENCY_PAIRS) {
+      const result = pair.evaluate(ctx);
+      if (!result)
+        continue;
+      relations.push({
+        type: pair.type,
+        source: { start: s1.start, end: s1.end, text: s1.text, sentenceIdx: i, speaker: s1.speaker },
+        target: { start: s2.start, end: s2.end, text: s2.text, sentenceIdx: i + 1, speaker: s2.speaker },
+        confidence: result.confidence,
+        label: pair.label,
+        labelEn: pair.labelEn,
+        colorClass: RELATION_COLORS[pair.type],
+        reason: result.reason,
+        triggers: result.triggers
+      });
+    }
+    const scaffoldFuncs = ["sequence"];
+    const s1Scaffold = s1.patterns.find((p) => scaffoldFuncs.includes(p.pattern.pragmaticFunction));
+    const s2Scaffold = s2.patterns.find((p) => scaffoldFuncs.includes(p.pattern.pragmaticFunction));
+    if (s1Scaffold && s2Scaffold) {
+      relations.push({
+        type: "scaffolding",
+        source: { start: s1.start, end: s1.end, text: s1.text, sentenceIdx: i, speaker: s1.speaker },
+        target: { start: s2.start, end: s2.end, text: s2.text, sentenceIdx: i + 1, speaker: s2.speaker },
+        confidence: 0.75,
+        label: "\u5217\u6319\u9023\u9396",
+        labelEn: "Scaffolding chain",
+        colorClass: RELATION_COLORS["scaffolding"],
+        reason: "scaffolding:sequence",
+        triggers: [s1Scaffold.matchedText, s2Scaffold.matchedText]
+      });
+    }
+  }
+  for (let i = 1; i < sentences.length; i++) {
+    const s = sentences[i];
+    for (const ap of ANAPHORA_PATTERNS) {
+      const match2 = s.text.match(ap.regex);
+      if (match2) {
+        const prevSent = sentences[i - 1];
+        relations.push({
+          type: "anaphoric-reference",
+          source: { start: prevSent.start, end: prevSent.end, text: prevSent.text, sentenceIdx: i - 1, speaker: prevSent.speaker },
+          target: { start: s.start + ((_a = match2.index) != null ? _a : 0), end: s.start + ((_b = match2.index) != null ? _b : 0) + match2[0].length, text: match2[0], sentenceIdx: i, speaker: s.speaker },
+          confidence: 0.65,
+          label: "\u7167\u5FDC\uFF08" + ap.series + "\u7CFB\uFF09",
+          labelEn: `Anaphora (${ap.series}-series)`,
+          colorClass: RELATION_COLORS["anaphoric-reference"],
+          reason: `anaphora:${ap.series}`,
+          triggers: [match2[0]]
+        });
+      }
+    }
+  }
+  for (let i = 0; i < sentences.length; i++) {
+    const words1 = extractContentWords(sentences[i].text);
+    for (let j = i + 1; j < Math.min(i + 4, sentences.length); j++) {
+      const words2 = extractContentWords(sentences[j].text);
+      const shared = words1.filter((w) => words2.includes(w));
+      if (shared.length > 0) {
+        relations.push({
+          type: "lexical-repetition",
+          source: { start: sentences[i].start, end: sentences[i].end, text: shared[0], sentenceIdx: i, speaker: sentences[i].speaker },
+          target: { start: sentences[j].start, end: sentences[j].end, text: shared[0], sentenceIdx: j, speaker: sentences[j].speaker },
+          confidence: 0.6,
+          label: "\u8A9E\u5F59\u53CD\u5FA9\u300C" + shared[0] + "\u300D",
+          labelEn: `Lexical repetition "${shared[0]}"`,
+          colorClass: RELATION_COLORS["lexical-repetition"],
+          reason: "lexical-repetition",
+          triggers: shared.slice(0, 3)
+        });
+      }
+    }
+  }
+  const filtered = relations.filter((r) => r.confidence >= CONFIDENCE_FLOOR);
+  const chunks = buildContextChunks(sentences, filtered);
+  return { sentences, relations: filtered, chunks };
+}
+function buildContextChunks(sentences, relations) {
+  if (sentences.length === 0)
+    return [];
+  const chunks = [];
+  let chunkStart = 0;
+  for (let i = 1; i < sentences.length; i++) {
+    const prev = sentences[i - 1];
+    const curr = sentences[i];
+    const hasTopicShift = curr.patterns.some(
+      (p) => p.pattern.pragmaticFunction === "topic-shift"
+    );
+    const hasRelation = relations.some(
+      (r) => r.source.sentenceIdx === i - 1 && r.target.sentenceIdx === i || r.source.sentenceIdx === i && r.target.sentenceIdx === i - 1
+    );
+    if (hasTopicShift && !hasRelation) {
+      const chunkSents2 = sentences.slice(chunkStart, i);
+      const chunkRels = relations.filter(
+        (r) => r.source.sentenceIdx >= chunkStart && r.target.sentenceIdx < i
+      );
+      chunks.push({
+        text: chunkSents2.map((s) => s.text).join(""),
+        start: chunkSents2[0].start,
+        end: chunkSents2[chunkSents2.length - 1].end,
+        sentences: chunkSents2,
+        relations: chunkRels,
+        speakers: [...new Set(chunkSents2.map((s) => s.speaker).filter((s) => !!s))]
+      });
+      chunkStart = i;
+    }
+  }
+  const chunkSents = sentences.slice(chunkStart);
+  if (chunkSents.length > 0) {
+    const chunkRels = relations.filter(
+      (r) => r.source.sentenceIdx >= chunkStart
+    );
+    chunks.push({
+      text: chunkSents.map((s) => s.text).join(""),
+      start: chunkSents[0].start,
+      end: chunkSents[chunkSents.length - 1].end,
+      sentences: chunkSents,
+      relations: chunkRels,
+      speakers: [...new Set(chunkSents.map((s) => s.speaker).filter((s) => !!s))]
+    });
+  }
+  return chunks;
+}
+function summarizeRelations(relations) {
+  var _a, _b, _c;
+  const byType = /* @__PURE__ */ new Map();
+  for (const r of relations) {
+    byType.set(r.type, ((_a = byType.get(r.type)) != null ? _a : 0) + 1);
+  }
+  const parts = [];
+  for (const [type, count] of byType) {
+    const label = (_c = (_b = relations.find((r) => r.type === type)) == null ? void 0 : _b.label) != null ? _c : type;
+    parts.push(`${label}\xD7${count}`);
+  }
+  return parts.join("\u3001") || "\u95A2\u4FC2\u306A\u3057";
+}
+
+// src/discourse/relations-resolver.ts
+function reconciliationToType(r) {
+  switch (r) {
+    case "locked":
+      return "bit-relation-locked";
+    case "top_down_only":
+      return "bit-relation-td";
+    case "bottom_up_only":
+      return "bit-relation-bu";
+    default:
+      return "bit-relation-locked";
+  }
+}
+function humanizeLabel(label) {
+  return label.replace(/_/g, " ");
+}
+function nfcRangeToRaw(nfcStart, nfcEnd, rawFromNfc) {
+  if (nfcStart < 0 || nfcEnd > rawFromNfc.length || nfcStart >= nfcEnd)
+    return null;
+  const rawStart = rawFromNfc[nfcStart];
+  const rawEnd = nfcEnd < rawFromNfc.length ? rawFromNfc[nfcEnd] : rawFromNfc[rawFromNfc.length - 1];
+  if (rawEnd <= rawStart)
+    return null;
+  return { start: rawStart, end: rawEnd };
+}
+function buildRelationsFromSidecar(bridge, filePath, text, rangeStart, sentencesByOffset) {
+  var _a, _b, _c;
+  const hash = bridge.getTextHashForFile(filePath);
+  if (!hash)
+    return null;
+  const index = bridge.getBitRelationIndex();
+  if (!index.hasHash(hash))
+    return null;
+  const rawFileText = bridge.getRawTextForFile(filePath);
+  if (rawFileText === void 0)
+    return null;
+  const offsetMap = buildNfcOffsetMap(rawFileText);
+  const anns = index.getAnnotationsForHash(hash);
+  const pairs = /* @__PURE__ */ new Map();
+  for (const ann of anns) {
+    if (ann.kind !== "bit_relation")
+      continue;
+    if (!ann.pairId)
+      continue;
+    let p = pairs.get(ann.pairId);
+    if (!p) {
+      p = {};
+      pairs.set(ann.pairId, p);
+    }
+    if (ann.role === "source")
+      p.source = ann;
+    else if (ann.role === "target")
+      p.target = ann;
+    else if (!p.source)
+      p.source = ann;
+    else if (!p.target)
+      p.target = ann;
+  }
+  if (pairs.size === 0)
+    return null;
+  const textEnd = rangeStart + text.length;
+  function sentenceIdxFor(rawStart) {
+    for (let i = 0; i < sentencesByOffset.length; i++) {
+      const s = sentencesByOffset[i];
+      const local = rawStart - rangeStart;
+      if (local >= s.start && local < s.end)
+        return i;
+    }
+    return 0;
+  }
+  const relations = [];
+  for (const [, pair] of pairs) {
+    if (!pair.source || !pair.target)
+      continue;
+    const srcRaw = nfcRangeToRaw(pair.source.charStart, pair.source.charEnd, offsetMap.rawFromNfc);
+    const tgtRaw = nfcRangeToRaw(pair.target.charStart, pair.target.charEnd, offsetMap.rawFromNfc);
+    if (!srcRaw || !tgtRaw)
+      continue;
+    if (srcRaw.start < rangeStart || srcRaw.end > textEnd)
+      continue;
+    if (tgtRaw.start < rangeStart || tgtRaw.end > textEnd)
+      continue;
+    const recon = pair.source.reconciliation === "locked" || pair.target.reconciliation === "locked" ? "locked" : (_a = pair.source.reconciliation) != null ? _a : pair.target.reconciliation;
+    const type = reconciliationToType(recon);
+    const colorClass = RELATION_COLORS[type];
+    const labelEn = humanizeLabel(pair.source.label || pair.target.label || "bit-relation");
+    relations.push({
+      type,
+      source: {
+        start: srcRaw.start - rangeStart,
+        end: srcRaw.end - rangeStart,
+        text: text.slice(srcRaw.start - rangeStart, srcRaw.end - rangeStart),
+        sentenceIdx: sentenceIdxFor(srcRaw.start)
+      },
+      target: {
+        start: tgtRaw.start - rangeStart,
+        end: tgtRaw.end - rangeStart,
+        text: text.slice(tgtRaw.start - rangeStart, tgtRaw.end - rangeStart),
+        sentenceIdx: sentenceIdxFor(tgtRaw.start)
+      },
+      confidence: Math.max(
+        (_b = pair.source.confidence) != null ? _b : 0.5,
+        (_c = pair.target.confidence) != null ? _c : 0.5
+      ),
+      label: labelEn,
+      labelEn,
+      colorClass,
+      reason: `sidecar:${pair.source.label || pair.target.label || "bit-relation"}`,
+      triggers: [recon != null ? recon : "unknown"]
+    });
+  }
+  if (relations.length === 0)
+    return null;
+  return { relations, hash };
+}
+function resolveRelations(text, ctx = {}) {
+  const heur = analyzeRelations(text);
+  if (!ctx.bridge) {
+    return { source: "heuristic", ...heur };
+  }
+  if (!ctx.filePath) {
+    return { source: "heuristic", ...heur, fallbackReason: "no-file-path" };
+  }
+  const rawFileText = ctx.bridge.getRawTextForFile(ctx.filePath);
+  if (rawFileText === void 0) {
+    return { source: "heuristic", ...heur, fallbackReason: "no-raw-text" };
+  }
+  if (!ctx.bridge.getTextHashForFile(ctx.filePath)) {
+    return { source: "heuristic", ...heur, fallbackReason: "no-hash" };
+  }
+  let rangeStart;
+  if (text === rawFileText) {
+    rangeStart = 0;
+  } else {
+    const first = rawFileText.indexOf(text);
+    if (first === -1) {
+      return { source: "heuristic", ...heur, fallbackReason: "chunk-not-locatable" };
+    }
+    const second = rawFileText.indexOf(text, first + 1);
+    if (second !== -1) {
+      return { source: "heuristic", ...heur, fallbackReason: "chunk-not-locatable" };
+    }
+    rangeStart = first;
+  }
+  const sidecarBuilt = buildRelationsFromSidecar(
+    ctx.bridge,
+    ctx.filePath,
+    text,
+    rangeStart,
+    heur.sentences
+  );
+  if (!sidecarBuilt) {
+    return { source: "heuristic", ...heur, fallbackReason: "no-pairs" };
+  }
+  return {
+    source: "sidecar",
+    sentences: heur.sentences,
+    chunks: heur.chunks,
+    relations: sidecarBuilt.relations,
+    sidecarHash: sidecarBuilt.hash
+  };
+}
+function makeRelationsResolver(bridge) {
+  return (text, ctx) => resolveRelations(text, { bridge, filePath: ctx == null ? void 0 : ctx.filePath });
+}
+var heuristicResolver = (text) => resolveRelations(text, {});
+
+// src/srs/grammar-set-engine.ts
+var RELATION_LABELS = {
+  "cause-effect": { jp: "\u539F\u56E0\u2192\u7D50\u679C", en: "Cause \u2192 Effect" },
+  "concession-counter": { jp: "\u8B72\u6B69\u2192\u53CD\u8AD6", en: "Concession \u2192 Counter" },
+  "conditional": { jp: "\u6761\u4EF6\u2192\u5E30\u7D50", en: "Condition \u2192 Result" },
+  "temporal-sequence": { jp: "\u6642\u9593\u9806\u5E8F", en: "Temporal Sequence" },
+  "purpose": { jp: "\u76EE\u7684\u2192\u624B\u6BB5", en: "Purpose \u2192 Means" },
+  "means": { jp: "\u624B\u6BB5\u2192\u7D50\u679C", en: "Means \u2192 Result" },
+  "contrast": { jp: "\u5BFE\u6BD4", en: "Contrast" },
+  "addition": { jp: "\u8FFD\u52A0", en: "Addition" },
+  "elaboration": { jp: "\u8A73\u8FF0", en: "Elaboration" },
+  "exemplification": { jp: "\u4F8B\u793A", en: "Exemplification" },
+  "topic-shift": { jp: "\u8A71\u984C\u8EE2\u63DB", en: "Topic Shift" },
+  "topic-return": { jp: "\u8A71\u984C\u56DE\u5E30", en: "Topic Return" },
+  "summary-of": { jp: "\u8981\u7D04", en: "Summary" },
+  "evidence-for": { jp: "\u6839\u62E0", en: "Evidence" },
+  "counter-to": { jp: "\u53CD\u8A3C", en: "Counter-evidence" },
+  "hedge-then-assert": { jp: "\u307C\u304B\u3057\u2192\u4E3B\u5F35", en: "Hedge \u2192 Assert" },
+  "question-answer": { jp: "\u8CEA\u554F\u2192\u5FDC\u7B54", en: "Question \u2192 Answer" },
+  "assertion-agreement": { jp: "\u4E3B\u5F35\u2192\u540C\u610F", en: "Assertion \u2192 Agreement" },
+  "assertion-disagreement": { jp: "\u4E3B\u5F35\u2192\u53CD\u8AD6", en: "Assertion \u2192 Disagreement" },
+  "tsukkomi-boke": { jp: "\u30DC\u30B1\u2192\u30C4\u30C3\u30B3\u30DF", en: "Boke \u2192 Tsukkomi" },
+  "setup-punchline": { jp: "\u524D\u632F\u308A\u2192\u30AA\u30C1", en: "Setup \u2192 Punchline" },
+  "scaffolding": { jp: "\u69CB\u9020\u6A19\u8B58", en: "Scaffolding" }
+};
+var FUNCTION_LABELS = {
+  "hedge": { jp: "\u307C\u304B\u3057\u8868\u73FE", en: "Hedging" },
+  "softening": { jp: "\u548C\u3089\u3052\u8868\u73FE", en: "Softening" },
+  "emphasis": { jp: "\u5F37\u8ABF\u8868\u73FE", en: "Emphasis" },
+  "assertion": { jp: "\u4E3B\u5F35\u8868\u73FE", en: "Assertion" },
+  "concession": { jp: "\u8B72\u6B69\u8868\u73FE", en: "Concession" },
+  "contrast": { jp: "\u5BFE\u6BD4\u8868\u73FE", en: "Contrast" },
+  "quotation": { jp: "\u5F15\u7528\u8868\u73FE", en: "Quotation" },
+  "hearsay": { jp: "\u4F1D\u805E\u8868\u73FE", en: "Hearsay" },
+  "surprise": { jp: "\u9A5A\u304D\u8868\u73FE", en: "Surprise" },
+  "backchannel": { jp: "\u76F8\u69CC", en: "Backchannel" },
+  "agreement": { jp: "\u540C\u610F\u8868\u73FE", en: "Agreement" },
+  "disagreement": { jp: "\u7570\u8B70\u8868\u73FE", en: "Disagreement" },
+  "self-repair": { jp: "\u8A00\u3044\u76F4\u3057", en: "Self-Repair" },
+  "filler": { jp: "\u30D5\u30A3\u30E9\u30FC", en: "Filler" },
+  "turn-taking": { jp: "\u767A\u8A71\u6A29\u53D6\u308A", en: "Turn-Taking" }
+};
+var gseResolver = heuristicResolver;
+function setGrammarSetResolver(r) {
+  gseResolver = r;
+}
+function analyzeChunkForSets(text, ctx = {}) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q;
+  const patterns = detectPatterns(text);
+  const { relations, source: relationSource } = gseResolver(text, { filePath: ctx.filePath });
+  const flows = detectLogicalFlows(patterns);
+  const sentenceTexts = text.split(/(?<=[。！？\n])/g).filter((s) => s.trim());
+  const sentences = [];
+  let offset = 0;
+  for (const st of sentenceTexts) {
+    const idx = text.indexOf(st, offset);
+    const clauses = splitClauses(st, idx);
+    sentences.push({ text: st, start: idx, end: idx + st.length, clauses });
+    offset = idx + st.length;
+  }
+  const sets = [];
+  const assigned = /* @__PURE__ */ new Set();
+  let setId = 0;
+  for (const rel of relations) {
+    const sourcePatterns = findPatternsInSpan(patterns, rel.source.start, rel.source.end, assigned);
+    const targetPatterns = findPatternsInSpan(patterns, rel.target.start, rel.target.end, assigned);
+    if (sourcePatterns.length === 0 && targetPatterns.length === 0)
+      continue;
+    const combined = [...sourcePatterns, ...targetPatterns].sort((a, b) => a.offset - b.offset);
+    if (combined.length === 0)
+      continue;
+    for (const p of combined) {
+      assigned.add(patterns.indexOf(p));
+    }
+    const labels = (_a = RELATION_LABELS[rel.type]) != null ? _a : { jp: rel.label, en: rel.labelEn };
+    const domCat = getDominantCategory(combined);
+    sets.push({
+      id: setId++,
+      label: labels.jp,
+      labelEn: labels.en,
+      groupingReason: "relation-pair",
+      patterns: combined,
+      spans: getSpans(combined),
+      dominantCategory: domCat,
+      color: (_b = CATEGORY_COLORS[domCat]) != null ? _b : "#95a5a6",
+      revealOrder: 0
+      // Will be recalculated
+    });
+  }
+  for (const flow of flows) {
+    const flowPatterns = flow.matches.filter((m) => !assigned.has(patterns.indexOf(m)));
+    if (flowPatterns.length < 2)
+      continue;
+    for (const p of flowPatterns) {
+      assigned.add(patterns.indexOf(p));
+    }
+    const domCat = getDominantCategory(flowPatterns);
+    sets.push({
+      id: setId++,
+      label: flow.flow.name,
+      labelEn: (_c = flow.flow.nameEn) != null ? _c : flow.flow.name,
+      groupingReason: "flow-chain",
+      patterns: flowPatterns.sort((a, b) => a.offset - b.offset),
+      spans: getSpans(flowPatterns),
+      dominantCategory: domCat,
+      color: (_d = CATEGORY_COLORS[domCat]) != null ? _d : "#95a5a6",
+      revealOrder: 0
+    });
+  }
+  for (const sentence of sentences) {
+    for (let ci = 0; ci < sentence.clauses.length - 1; ci++) {
+      const clause = sentence.clauses[ci];
+      const nextClause = sentence.clauses[ci + 1];
+      const connectorPats = findPatternsInSpan(
+        patterns,
+        Math.max(clause.start, clause.end - 10),
+        // last 10 chars
+        clause.end,
+        assigned
+      );
+      const nextPats = findPatternsInSpan(
+        patterns,
+        nextClause.start,
+        Math.min(nextClause.end, nextClause.start + 15),
+        // first 15 chars
+        assigned
+      );
+      const combined = [...connectorPats, ...nextPats];
+      if (combined.length < 2)
+        continue;
+      for (const p of combined) {
+        assigned.add(patterns.indexOf(p));
+      }
+      const connType = (_e = clause.connectorType) != null ? _e : "terminal";
+      const labels = (_f = CONNECTOR_LABELS[connType]) != null ? _f : { jp: "\u7BC0\u63A5\u7D9A", en: "Clause Connection" };
+      const domCat = getDominantCategory(combined);
+      sets.push({
+        id: setId++,
+        label: labels.jp,
+        labelEn: labels.en,
+        groupingReason: "clause-pair",
+        patterns: combined.sort((a, b) => a.offset - b.offset),
+        spans: getSpans(combined),
+        dominantCategory: domCat,
+        color: (_g = CATEGORY_COLORS[domCat]) != null ? _g : "#95a5a6",
+        revealOrder: 0
+      });
+    }
+  }
+  const unassigned = patterns.filter((_, i) => !assigned.has(i));
+  const funcGroups = /* @__PURE__ */ new Map();
+  for (const p of unassigned) {
+    const fn = p.pattern.pragmaticFunction;
+    if (!funcGroups.has(fn))
+      funcGroups.set(fn, []);
+    funcGroups.get(fn).push(p);
+  }
+  for (const [fn, pats] of funcGroups) {
+    const sorted = [...pats].sort((a, b) => a.offset - b.offset);
+    let group = [sorted[0]];
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1];
+      const curr = sorted[i];
+      if (curr.offset - (prev.offset + prev.matchedText.length) <= 40) {
+        group.push(curr);
+      } else {
+        if (group.length >= 2) {
+          for (const p of group)
+            assigned.add(patterns.indexOf(p));
+          const labels = (_h = FUNCTION_LABELS[fn]) != null ? _h : { jp: fn, en: fn };
+          const domCat = getDominantCategory(group);
+          sets.push({
+            id: setId++,
+            label: labels.jp,
+            labelEn: labels.en,
+            groupingReason: "functional-unit",
+            patterns: group,
+            spans: getSpans(group),
+            dominantCategory: domCat,
+            color: (_i = CATEGORY_COLORS[domCat]) != null ? _i : "#95a5a6",
+            revealOrder: 0
+          });
+        }
+        group = [curr];
+      }
+    }
+    if (group.length >= 2) {
+      for (const p of group)
+        assigned.add(patterns.indexOf(p));
+      const labels = (_j = FUNCTION_LABELS[fn]) != null ? _j : { jp: fn, en: fn };
+      const domCat = getDominantCategory(group);
+      sets.push({
+        id: setId++,
+        label: labels.jp,
+        labelEn: labels.en,
+        groupingReason: "functional-unit",
+        patterns: group,
+        spans: getSpans(group),
+        dominantCategory: domCat,
+        color: (_k = CATEGORY_COLORS[domCat]) != null ? _k : "#95a5a6",
+        revealOrder: 0
+      });
+    }
+  }
+  const stillUnassigned = patterns.filter((_, i) => !assigned.has(i));
+  for (const p of stillUnassigned) {
+    const def = PATTERN_BY_ID.get(p.pattern.id);
+    const cat = p.pattern.category;
+    sets.push({
+      id: setId++,
+      label: (_l = def == null ? void 0 : def.gloss) != null ? _l : p.matchedText,
+      labelEn: (_m = def == null ? void 0 : def.glossEn) != null ? _m : p.matchedText,
+      groupingReason: "orphan",
+      patterns: [p],
+      spans: [{ start: p.offset, end: p.offset + p.matchedText.length }],
+      dominantCategory: cat,
+      color: (_n = CATEGORY_COLORS[cat]) != null ? _n : "#95a5a6",
+      revealOrder: 0
+    });
+  }
+  sets.sort((a, b) => {
+    const aFirst = Math.min(...a.patterns.map((p) => p.offset));
+    const bFirst = Math.min(...b.patterns.map((p) => p.offset));
+    return aFirst - bFirst;
+  });
+  for (let i = 0; i < sets.length; i++) {
+    sets[i].revealOrder = i;
+    sets[i].id = i;
+  }
+  const regScores = {};
+  for (const p of patterns) {
+    const r = p.pattern.register;
+    regScores[r] = ((_o = regScores[r]) != null ? _o : 0) + 1;
+  }
+  const register = (_q = (_p = Object.entries(regScores).sort((a, b) => b[1] - a[1])[0]) == null ? void 0 : _p[0]) != null ? _q : "\u666E\u901A\u4F53";
+  return {
+    text,
+    patterns,
+    relations,
+    flows,
+    grammarSets: sets,
+    sentences,
+    register,
+    totalSets: sets.length,
+    relationSource
+  };
+}
+function findPatternsInSpan(patterns, start, end, assigned) {
+  return patterns.filter((p, i) => {
+    if (assigned.has(i))
+      return false;
+    const pStart = p.offset;
+    const pEnd = p.offset + p.matchedText.length;
+    return pStart < end && pEnd > start;
+  });
+}
+function getDominantCategory(patterns) {
+  var _a, _b, _c;
+  const counts = {};
+  for (const p of patterns) {
+    const c = p.pattern.category;
+    counts[c] = ((_a = counts[c]) != null ? _a : 0) + 1;
+  }
+  return (_c = (_b = Object.entries(counts).sort((a, b) => b[1] - a[1])[0]) == null ? void 0 : _b[0]) != null ? _c : "C";
+}
+function getSpans(patterns) {
+  const sorted = [...patterns].sort((a, b) => a.offset - b.offset);
+  const spans = [];
+  for (const p of sorted) {
+    const s = p.offset;
+    const e = p.offset + p.matchedText.length;
+    if (spans.length > 0 && s <= spans[spans.length - 1].end + 1) {
+      spans[spans.length - 1].end = Math.max(spans[spans.length - 1].end, e);
+    } else {
+      spans.push({ start: s, end: e });
+    }
+  }
+  return spans;
+}
+var CONNECTOR_LABELS = {
+  "te-form": { jp: "\u3066\u5F62\u63A5\u7D9A", en: "Te-form connection" },
+  "ba-form": { jp: "\u3070\u6761\u4EF6", en: "Ba-conditional" },
+  "tara-form": { jp: "\u305F\u3089\u6761\u4EF6", en: "Tara-conditional" },
+  "nara-form": { jp: "\u306A\u3089\u4EEE\u5B9A", en: "Nara-hypothetical" },
+  "node": { jp: "\u306E\u3067\u7406\u7531", en: "Node-reason" },
+  "kara": { jp: "\u304B\u3089\u539F\u56E0", en: "Kara-cause" },
+  "kedo": { jp: "\u3051\u3069\u8B72\u6B69", en: "Kedo-concession" },
+  "ga": { jp: "\u304C\u9006\u63A5", en: "Ga-but" },
+  "shi": { jp: "\u3057\u4E26\u5217", en: "Shi-addition" },
+  "noni": { jp: "\u306E\u306B\u4E0D\u6E80", en: "Noni-despite" },
+  "tame": { jp: "\u305F\u3081\u76EE\u7684", en: "Tame-purpose" },
+  "you-ni": { jp: "\u3088\u3046\u306B\u76EE\u6A19", en: "You ni-goal" },
+  "nagara": { jp: "\u306A\u304C\u3089\u540C\u6642", en: "Nagara-while" },
+  "tsutsu": { jp: "\u3064\u3064\u9032\u884C", en: "Tsutsu-ongoing" },
+  "terminal": { jp: "\u6587\u672B", en: "Sentence end" }
+};
+function buildRevealSteps(analysis) {
+  const { text, grammarSets } = analysis;
+  if (grammarSets.length === 0) {
+    return [{
+      setId: 0,
+      label: "\u30C6\u30AD\u30B9\u30C8\u5168\u4F53",
+      labelEn: "Full text",
+      color: "#95a5a6",
+      segments: [{ start: 0, end: text.length, type: "bridge", text }]
+    }];
+  }
+  const timeline = [];
+  for (const set of grammarSets) {
+    for (const p of set.patterns) {
+      timeline.push({
+        start: p.offset,
+        end: p.offset + p.matchedText.length,
+        setId: set.id,
+        patternId: p.pattern.id,
+        isPattern: true
+      });
+    }
+  }
+  timeline.sort((a, b) => a.start - b.start);
+  const steps = [];
+  const setMap = /* @__PURE__ */ new Map();
+  for (const set of grammarSets) {
+    const step = {
+      setId: set.id,
+      label: set.label,
+      labelEn: set.labelEn,
+      color: set.color,
+      segments: []
+    };
+    setMap.set(set.id, step);
+    steps.push(step);
+  }
+  let cursor = 0;
+  for (let ti = 0; ti < timeline.length; ti++) {
+    const entry2 = timeline[ti];
+    if (entry2.start > cursor) {
+      const step2 = setMap.get(entry2.setId);
+      if (step2) {
+        step2.segments.push({
+          start: cursor,
+          end: entry2.start,
+          type: "bridge",
+          text: text.slice(cursor, entry2.start)
+        });
+      }
+    }
+    const step = setMap.get(entry2.setId);
+    if (step) {
+      step.segments.push({
+        start: entry2.start,
+        end: entry2.end,
+        type: "pattern",
+        patternId: entry2.patternId,
+        text: text.slice(entry2.start, entry2.end)
+      });
+    }
+    cursor = Math.max(cursor, entry2.end);
+  }
+  if (cursor < text.length) {
+    const lastStep = steps[steps.length - 1];
+    if (lastStep) {
+      lastStep.segments.push({
+        start: cursor,
+        end: text.length,
+        type: "bridge",
+        text: text.slice(cursor)
+      });
+    }
+  }
+  for (const step of steps) {
+    step.segments.sort((a, b) => a.start - b.start);
+  }
+  return steps;
+}
+function buildRenderSegments(analysis) {
+  const steps = buildRevealSteps(analysis);
+  const segments = [];
+  for (const step of steps) {
+    for (const seg of step.segments) {
+      segments.push({
+        start: seg.start,
+        end: seg.end,
+        text: seg.text,
+        revealStep: step.setId,
+        isPattern: seg.type === "pattern",
+        patternId: seg.patternId,
+        setLabel: step.label,
+        setLabelEn: step.labelEn,
+        color: step.color
+      });
+    }
+  }
+  segments.sort((a, b) => a.start - b.start);
+  const filled = [];
+  let cursor = 0;
+  for (const seg of segments) {
+    if (seg.start > cursor) {
+      const prevStep = filled.length > 0 ? filled[filled.length - 1].revealStep : 0;
+      filled.push({
+        start: cursor,
+        end: seg.start,
+        text: analysis.text.slice(cursor, seg.start),
+        revealStep: prevStep,
+        isPattern: false
+      });
+    }
+    filled.push(seg);
+    cursor = Math.max(cursor, seg.end);
+  }
+  if (cursor < analysis.text.length) {
+    const lastStep = filled.length > 0 ? filled[filled.length - 1].revealStep : 0;
+    filled.push({
+      start: cursor,
+      end: analysis.text.length,
+      text: analysis.text.slice(cursor),
+      revealStep: lastStep,
+      isPattern: false
+    });
+  }
+  return filled;
+}
+
+// src/srs/card-generator.ts
+var cardGenResolver = heuristicResolver;
+function setCardGenResolver(r) {
+  cardGenResolver = r;
+}
+var DEFAULT_CARD_OPTIONS = {
+  tagPrefix: "flashcards/jp",
+  includeTimestamps: false,
+  includeRegister: true,
+  includeRelations: true,
+  maxBitsPerCard: 6,
+  includeEnglish: true,
+  speakerFormat: "icon"
+};
+var SPEAKER_ICONS = ["\u{1F535}", "\u{1F7E0}", "\u{1F7E2}", "\u{1F7E3}"];
+var SPEAKER_LETTERS = ["A", "B", "C", "D"];
+function speakerLabel(speaker, format) {
+  if (speaker < 0)
+    return "";
+  switch (format) {
+    case "icon":
+      return SPEAKER_ICONS[speaker % 4];
+    case "letter":
+      return SPEAKER_LETTERS[speaker % 4];
+    case "number":
+      return `[${speaker + 1}]`;
+  }
+}
+function annotateBit(bit, includeRelations) {
+  let text = bit.text;
+  const sorted = [...bit.patterns].sort((a, b) => b.offset - a.offset);
+  for (const p of sorted) {
+    const start = p.offset;
+    const end = start + p.matchedText.length;
+    if (start >= 0 && end <= text.length) {
+      const before = text.slice(0, start);
+      const match2 = text.slice(start, end);
+      const after = text.slice(end);
+      const cat = p.pattern.category;
+      if (cat === "C") {
+        text = `${before}<u>${match2}</u>${after}`;
+      } else if (cat === "E" || cat === "D") {
+        text = `${before}**${match2}**${after}`;
+      } else {
+        text = `${before}==${match2}==${after}`;
+      }
+    }
+  }
+  return text;
+}
+function generateChunkCard(chunk, options) {
+  const bits = chunk.bits.slice(0, options.maxBitsPerCard);
+  const frontLines = [];
+  if (chunk.templateMatch) {
+    frontLines.push(`> \u{1F4DD} **${chunk.templateMatch.name}** ${chunk.templateMatch.nameEn}`);
+    frontLines.push("");
+  }
+  if (options.includeRegister) {
+    frontLines.push(`> \u30EC\u30B8\u30B9\u30BF\u30FC: ${chunk.register}`);
+    frontLines.push("");
+  }
+  for (let i = 0; i < bits.length; i++) {
+    const bit = bits[i];
+    const speaker = speakerLabel(bit.speaker, options.speakerFormat);
+    const timestamp = options.includeTimestamps && bit.timestamp ? `\`${bit.timestamp}\` ` : "";
+    const annotated = annotateBit(bit, options.includeRelations);
+    frontLines.push(`%%${timestamp}${speaker} ${annotated}%%`);
+    if (options.includeRelations && bit.relationToNext && i < bits.length - 1) {
+      frontLines.push(`<small>${bit.relationToNext}</small>`);
+    }
+  }
+  const front = frontLines.join("\n");
+  const backLines = [];
+  for (let i = 0; i < bits.length; i++) {
+    const bit = bits[i];
+    const speaker = speakerLabel(bit.speaker, options.speakerFormat);
+    const annotated = annotateBit(bit, options.includeRelations);
+    const timestamp = options.includeTimestamps && bit.timestamp ? `\`${bit.timestamp}\` ` : "";
+    backLines.push(`${timestamp}${speaker} ${annotated}`);
+    if (options.includeRelations && bit.relationToNext && i < bits.length - 1) {
+      backLines.push(`<small>${bit.relationToNext}</small>`);
+    }
+  }
+  backLines.push("");
+  backLines.push("---");
+  if (chunk.templateMatch) {
+    backLines.push(`\u{1F4DD} **${chunk.templateMatch.name}** (${chunk.templateMatch.nameEn}) \u2014 confidence: ${(chunk.templateMatch.confidence * 100).toFixed(0)}%`);
+  }
+  if (chunk.flows.length > 0) {
+    backLines.push(`\u{1F517} ${chunk.flows.map((f) => `${f.name}`).join(" \xB7 ")}`);
+  }
+  backLines.push(`\u{1F3AD} ${chunk.register} \xB7 ${chunk.speakerCount}\u4EBA`);
+  const allPatterns = bits.flatMap((b) => b.patterns);
+  if (allPatterns.length > 0) {
+    const patternList = allPatterns.slice(0, 8).map((p) => `${p.pattern.surface} (${p.pattern.gloss})`).join(" \xB7 ");
+    backLines.push(`\u{1F4CC} ${patternList}`);
+  }
+  const fullText = bits.map((b) => b.text).join("");
+  const surfaces = allPatterns.map((p) => p.pattern.surface);
+  const csjReg = computeCSJRegisterScore(fullText, surfaces);
+  backLines.push(`\u{1F4CA} CSJ: ${csjReg.label} (${csjReg.labelEn}) \xB7 ${csjReg.speechType !== "unknown" ? csjReg.speechType : ""}`);
+  const { variations } = detectSpokenVariations(fullText);
+  if (variations.length > 0) {
+    const varList = variations.slice(0, 4).map(
+      (v) => `${v.standard}\u2192${v.variant} (${v.type})`
+    ).join(" \xB7 ");
+    backLines.push(`\u{1F4AC} \u8A71\u3057\u8A00\u8449: ${varList}`);
+  }
+  if (chunk.sourceFile) {
+    backLines.push(`\u{1F4C4} [[${chunk.sourceFile}]]`);
+  }
+  const back = backLines.join("\n");
+  const difficulty = Math.min(5, Math.max(
+    1,
+    Math.ceil(allPatterns.length / 3) + (chunk.speakerCount > 1 ? 1 : 0)
+  ));
+  const tags = [`${options.tagPrefix}/discourse`];
+  if (chunk.templateMatch) {
+    tags.push(`${options.tagPrefix}/template/${chunk.templateMatch.name}`);
+  }
+  if (chunk.register) {
+    tags.push(`${options.tagPrefix}/register/${chunk.register}`);
+  }
+  const tagLine = tags.map((t) => `#${t}`).join(" ");
+  const markdown = `${tagLine}
+${front}
+?
+${back}
+`;
+  return {
+    id: chunk.id,
+    type: "discourse-chunk",
+    front,
+    back,
+    tags,
+    sourceFile: chunk.sourceFile,
+    difficulty,
+    markdown
+  };
+}
+function generateCollocationCard(entry2, options) {
+  const front = [
+    `**${entry2.headword}** ${entry2.pattern ? `\u3014${entry2.pattern}\u3015` : ""} \uFF3F\uFF3F\uFF3F\uFF3F`,
+    "",
+    `> \u30D2\u30F3\u30C8: ${entry2.collocatePOS || entry2.headwordPOS}`
+  ].join("\n");
+  const backLines = [
+    `**${entry2.fullPhrase || `${entry2.headword} ${entry2.collocate}`}**`,
+    ""
+  ];
+  if (entry2.headwordReading) {
+    backLines.push(`\u8AAD\u307F: ${entry2.headwordReading}`);
+  }
+  backLines.push(`\u54C1\u8A5E: ${entry2.headwordPOS} + ${entry2.collocatePOS}`);
+  if (entry2.pattern) {
+    backLines.push(`\u578B: ${entry2.pattern}`);
+  }
+  if (entry2.exampleSentences.length > 0) {
+    backLines.push("", "**\u4F8B\u6587:**");
+    for (const s of entry2.exampleSentences.slice(0, 3)) {
+      backLines.push(`- ${s}`);
+    }
+  }
+  if (entry2.notes) {
+    backLines.push("", `\u{1F4DD} ${entry2.notes}`);
+  }
+  if (entry2.tags.includes("twc")) {
+    backLines.push("", "\u{1F4CA} **\u7B51\u6CE2\u30A6\u30A7\u30D6\u30B3\u30FC\u30D1\u30B9** (1.1B words)");
+  }
+  if (entry2.tags.length > 0) {
+    backLines.push("", entry2.tags.map((t) => `\`${t}\``).join(" "));
+  }
+  const back = backLines.join("\n");
+  const tags = [
+    `${options.tagPrefix}/collocation`,
+    `${options.tagPrefix}/pos/${entry2.headwordPOS}`
+  ];
+  const tagLine = tags.map((t) => `#${t}`).join(" ");
+  const markdown = `${tagLine}
+${front}
+?
+${back}
+`;
+  const difficulty = Math.min(5, Math.max(
+    1,
+    entry2.frequency > 3 ? 1 : entry2.frequency > 1 ? 2 : 3
+  ));
+  return {
+    id: `col-${entry2.id}`,
+    type: "collocation",
+    front,
+    back,
+    tags,
+    difficulty,
+    markdown
+  };
+}
+function generatePatternCards(chunk, options) {
+  const cards = [];
+  for (const bit of chunk.bits) {
+    for (const p of bit.patterns) {
+      const context = bit.text;
+      const start = p.offset;
+      const end = start + p.matchedText.length;
+      if (start >= 0 && end <= context.length) {
+        const frontText = context.slice(0, start) + "%%" + p.matchedText + "%%" + context.slice(end);
+        const front = [
+          `${speakerLabel(bit.speaker, options.speakerFormat)} ${frontText}`,
+          "",
+          `> \u4F55\u304C\u5165\u308B\uFF1F (${p.pattern.categoryLabel})`
+        ].join("\n");
+        const back = [
+          `**${p.pattern.surface}** \u2014 ${p.pattern.gloss}`,
+          "",
+          options.includeEnglish ? `${p.pattern.glossEn}` : "",
+          `\u5206\u985E: ${p.pattern.category}: ${p.pattern.categoryLabel}`,
+          `\u6A5F\u80FD: ${p.pattern.pragmaticFunction}`,
+          `\u30EC\u30B8\u30B9\u30BF\u30FC: ${p.pattern.register}`,
+          `\u983B\u5EA6: Tier ${getCSJTier(p.pattern.surface)}`,
+          (() => {
+            const csj = getCSJFrequency(p.pattern.surface);
+            if (!csj)
+              return "";
+            return `CSJ: ${csj.perMillion}/M (APS:${csj.apsFreq} SPS:${csj.spsFreq} ratio:${csj.casualAcademicRatio.toFixed(1)})`;
+          })(),
+          (() => {
+            const filler = getFillerProfile(p.pattern.surface);
+            if (!filler)
+              return "";
+            return `\u30D5\u30A3\u30E9\u30FC: ${filler.position} \xB7 ${filler.pragmaticFunction} \xB7 ${filler.dominantType}`;
+          })(),
+          "",
+          `\u6587\u8108: ${context}`
+        ].filter(Boolean).join("\n");
+        const tags = [
+          `${options.tagPrefix}/pattern`,
+          `${options.tagPrefix}/cat/${p.pattern.category}`
+        ];
+        const tagLine = tags.map((t) => `#${t}`).join(" ");
+        cards.push({
+          id: `pat-${p.pattern.id}-${chunk.id}`,
+          type: "discourse-chunk",
+          front,
+          back,
+          tags,
+          sourceFile: chunk.sourceFile,
+          difficulty: Math.min(5, p.pattern.frequencyTier + 1),
+          markdown: `${tagLine}
+${front}
+?
+${back}
+`
+        });
+      }
+    }
+  }
+  return cards;
+}
+function generateCardsFromChunks(chunks, options = {}) {
+  const opts = { ...DEFAULT_CARD_OPTIONS, ...options };
+  const cards = [];
+  for (const chunk of chunks) {
+    cards.push(generateChunkCard(chunk, opts));
+    cards.push(...generatePatternCards(chunk, opts));
+  }
+  return cards;
+}
+function generateCollocationCards(entries, options = {}) {
+  const opts = { ...DEFAULT_CARD_OPTIONS, ...options };
+  return entries.map((e) => generateCollocationCard(e, opts));
+}
+function buildCardFileContent(cards) {
+  const lines = [
+    "---",
+    "tags: [flashcards/jp]",
+    "---",
+    ""
+  ];
+  const discourseCards = cards.filter((c) => c.type === "discourse-chunk");
+  const collocationCards = cards.filter((c) => c.type === "collocation");
+  if (discourseCards.length > 0) {
+    lines.push("## \u8AC7\u8A71\u30B9\u30AF\u30EA\u30D7\u30C8\u30AB\u30FC\u30C9");
+    lines.push("");
+    for (const card of discourseCards) {
+      lines.push(card.markdown);
+      lines.push("");
+    }
+  }
+  if (collocationCards.length > 0) {
+    lines.push("## \u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3\u30AB\u30FC\u30C9");
+    lines.push("");
+    for (const card of collocationCards) {
+      lines.push(card.markdown);
+      lines.push("");
+    }
+  }
+  return lines.join("\n");
+}
+function generateContextChunkCards(text, sourceFile, options = {}) {
+  const opts = { ...DEFAULT_CARD_OPTIONS, ...options };
+  const cards = [];
+  const chunks = extractContextChunks(text);
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const chunkText = chunks[ci];
+    const analysis = analyzeChunkForSets(chunkText, { filePath: sourceFile });
+    const renderSegs = buildRenderSegments(analysis);
+    const frontLines = [];
+    frontLines.push(`> \u{1F4DD} \u6587\u8108\u30C1\u30E3\u30F3\u30AF ${ci + 1}/${chunks.length} \xB7 ${analysis.totalSets} sets \xB7 ${analysis.register}`);
+    frontLines.push("");
+    for (let si = 0; si < analysis.grammarSets.length; si++) {
+      const set = analysis.grammarSets[si];
+      const setSegs = renderSegs.filter((s) => s.revealStep === si);
+      const setText = setSegs.map((s) => s.text).join("");
+      frontLines.push(`%%\u3010${set.label}\u3011${setText}%%`);
+    }
+    const front = frontLines.join("\n");
+    const backLines = [];
+    backLines.push(chunkText);
+    backLines.push("");
+    backLines.push("---");
+    backLines.push(`\u{1F4CA} ${analysis.grammarSets.length} grammar sets:`);
+    for (const set of analysis.grammarSets) {
+      const patList = set.patterns.map((p) => p.matchedText).join(" \xB7 ");
+      backLines.push(`  ${set.id + 1}. **${set.label}** (${set.labelEn}) \u2014 ${set.groupingReason}`);
+      backLines.push(`     ${patList}`);
+    }
+    if (analysis.relations.length > 0) {
+      backLines.push(`\u{1F517} ${analysis.relations.length} relations`);
+    }
+    if (analysis.flows.length > 0) {
+      backLines.push(`\u{1F517} ${analysis.flows.map((f) => f.flow.name).join(" \xB7 ")}`);
+    }
+    backLines.push(`\u{1F3AD} ${analysis.register}`);
+    if (sourceFile)
+      backLines.push(`\u{1F4C4} [[${sourceFile}]]`);
+    const back = backLines.join("\n");
+    const tags = [`${opts.tagPrefix}/context-chunk`];
+    if (analysis.register)
+      tags.push(`${opts.tagPrefix}/register/${analysis.register}`);
+    const tageLine = tags.map((t) => `#${t}`).join(" ");
+    const markdown = `${tageLine}
+${front}
+?
+${back}
+`;
+    const difficulty = Math.min(5, Math.max(
+      1,
+      Math.ceil(analysis.grammarSets.length / 2) + (analysis.relations.length > 3 ? 1 : 0)
+    ));
+    cards.push({
+      id: `ctx-chunk-${ci}-${Date.now()}`,
+      type: "context-chunk",
+      front,
+      back,
+      tags,
+      sourceFile,
+      difficulty,
+      markdown,
+      chunkAnalysis: analysis,
+      renderSegments: renderSegs
+    });
+  }
+  return cards;
+}
+function extractContextChunks(text) {
+  const paragraphs = text.split(/\n{2,}/).filter((p) => p.trim());
+  const chunks = [];
+  for (const para of paragraphs) {
+    if (para.length <= 200) {
+      if (para.trim())
+        chunks.push(para.trim());
+      continue;
+    }
+    const sentences = para.split(/(?<=[。！？])/g).filter((s) => s.trim());
+    let currentChunk = [];
+    for (const sent of sentences) {
+      currentChunk.push(sent);
+      const combined = currentChunk.join("");
+      const patterns = detectPatterns(sent);
+      const hasTopicShift = patterns.some(
+        (p) => p.pattern.category === "D" && (p.pattern.pragmaticFunction === "topic-shift" || p.pattern.pragmaticFunction === "topic-close")
+      );
+      if (hasTopicShift && currentChunk.length >= 2 || currentChunk.length >= 4 || combined.length >= 250) {
+        chunks.push(combined.trim());
+        currentChunk = [];
+      }
+    }
+    if (currentChunk.length > 0) {
+      chunks.push(currentChunk.join("").trim());
+    }
+  }
+  return chunks.filter((c) => c.length > 10);
+}
+function generatePhraseInContextCard(selection, fullText, selectionStart, sourceFile, options = {}) {
+  const opts = { ...DEFAULT_CARD_OPTIONS, ...options };
+  const contextRadius = 150;
+  let ctxStart = Math.max(0, selectionStart - contextRadius);
+  let ctxEnd = Math.min(fullText.length, selectionStart + selection.length + contextRadius);
+  const sentEndBefore = fullText.lastIndexOf("\u3002", ctxStart);
+  if (sentEndBefore >= 0 && selectionStart - sentEndBefore < contextRadius * 2) {
+    ctxStart = sentEndBefore + 1;
+  }
+  const sentEndAfter = fullText.indexOf("\u3002", ctxEnd);
+  if (sentEndAfter >= 0 && sentEndAfter - (selectionStart + selection.length) < contextRadius * 2) {
+    ctxEnd = sentEndAfter + 1;
+  }
+  const rawContext = fullText.slice(ctxStart, ctxEnd);
+  const leadingTrimmed = rawContext.length - rawContext.trimStart().length;
+  const contextText = rawContext.trim();
+  let phraseStart = selectionStart - ctxStart - leadingTrimmed;
+  let phraseEnd = phraseStart + selection.length;
+  phraseStart = Math.max(0, Math.min(phraseStart, contextText.length));
+  phraseEnd = Math.max(phraseStart, Math.min(phraseEnd, contextText.length));
+  const before = fullText.slice(Math.max(0, selectionStart - 30), selectionStart);
+  const after = fullText.slice(selectionStart + selection.length, selectionStart + selection.length + 30);
+  const collocation = identifyCollocationInSelection(selection, before, after);
+  const hint = collocation ? `${collocation.patternLabel} (${collocation.patternLabelEn})` : "\u30D5\u30EC\u30FC\u30BA";
+  const blanked = contextText.slice(0, phraseStart) + "\u3010\uFF3F\uFF3F\uFF3F\uFF3F\uFF3F\u3011" + contextText.slice(phraseEnd);
+  const frontLines = [blanked, "", `> \u30D2\u30F3\u30C8: ${hint}`];
+  if (collocation && collocation.confidence > 0.7) {
+    frontLines.push(`> \u578B: ${collocation.patternLabel}`);
+  }
+  const front = frontLines.join("\n");
+  const highlighted = contextText.slice(0, phraseStart) + `**${selection}**` + contextText.slice(phraseEnd);
+  const backLines = [highlighted, "", "---"];
+  backLines.push(`\u7B54\u3048: **${selection}**`);
+  if (collocation) {
+    backLines.push(`\u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3: ${collocation.surface} (${collocation.patternLabel})`);
+    backLines.push(`\u4FE1\u983C\u5EA6: ${(collocation.confidence * 100).toFixed(0)}%`);
+  }
+  const patterns = detectPatterns(contextText);
+  if (patterns.length > 0) {
+    backLines.push(`\u{1F4CC} ${patterns.slice(0, 5).map((p) => `${p.matchedText}(${p.pattern.gloss})`).join(" \xB7 ")}`);
+  }
+  if (sourceFile)
+    backLines.push(`\u{1F4C4} [[${sourceFile}]]`);
+  const back = backLines.join("\n");
+  const tags = [`${opts.tagPrefix}/phrase-in-context`];
+  if (collocation)
+    tags.push(`${opts.tagPrefix}/collocation/${collocation.type}`);
+  const tagLine = tags.map((t) => `#${t}`).join(" ");
+  const markdown = `${tagLine}
+${front}
+?
+${back}
+`;
+  return {
+    id: `pic-${Date.now()}-${selectionStart}`,
+    type: "phrase-in-context",
+    front,
+    back,
+    tags,
+    sourceFile,
+    difficulty: collocation ? Math.min(5, Math.max(1, Math.ceil((1 - collocation.confidence) * 5))) : 3,
+    markdown,
+    phraseData: {
+      phrase: selection,
+      phraseStart,
+      phraseEnd,
+      contextText,
+      collocation: collocation != null ? collocation : void 0,
+      hint
+    }
+  };
+}
+function generateRelationChunkCards(text, sourceFile, options = {}) {
+  const opts = { ...DEFAULT_CARD_OPTIONS, ...options };
+  const cards = [];
+  const chunks = extractContextChunks(text);
+  for (let ci = 0; ci < chunks.length; ci++) {
+    const chunkText = chunks[ci];
+    const card = buildRelationChunkCard(chunkText, ci, chunks.length, sourceFile, opts);
+    if (card)
+      cards.push(card);
+  }
+  return cards;
+}
+function buildRelationChunkCard(chunkText, chunkIdx, totalChunks, sourceFile, opts) {
+  const patterns = detectPatterns(chunkText);
+  const { relations, source: relSource } = cardGenResolver(chunkText, { filePath: sourceFile });
+  const sentences = chunkText.split(/(?<=[。！？\n])/g).filter((s) => s.trim());
+  const sections = [];
+  let secId = 0;
+  let offset = 0;
+  let currentSentences = [];
+  let currentStart = 0;
+  for (const sent of sentences) {
+    const sentStart = chunkText.indexOf(sent, offset);
+    if (sentStart < 0)
+      continue;
+    offset = sentStart + sent.length;
+    currentSentences.push(sent);
+    const sentPatterns = detectPatterns(sent);
+    const hasTopicShift = sentPatterns.some(
+      (p) => p.pattern.pragmaticFunction === "topic-shift" || p.pattern.pragmaticFunction === "topic-close"
+    );
+    const shouldSplit = hasTopicShift || currentSentences.length >= 2;
+    if (shouldSplit) {
+      const sectionText = currentSentences.join("");
+      const sectionStart = chunkText.indexOf(sectionText, currentStart);
+      if (sectionStart < 0) {
+        currentSentences = [];
+        continue;
+      }
+      sections.push(buildSection(
+        secId++,
+        sectionText,
+        sectionStart,
+        sectionStart + sectionText.length,
+        patterns,
+        chunkText
+      ));
+      currentStart = sectionStart + sectionText.length;
+      currentSentences = [];
+    }
+  }
+  if (currentSentences.length > 0) {
+    const sectionText = currentSentences.join("");
+    const sectionStart = chunkText.indexOf(sectionText, currentStart);
+    if (sectionStart >= 0) {
+      sections.push(buildSection(
+        secId++,
+        sectionText,
+        sectionStart,
+        sectionStart + sectionText.length,
+        patterns,
+        chunkText
+      ));
+    }
+  }
+  if (sections.length === 0)
+    return null;
+  const sectionRelations = [];
+  for (const rel of relations) {
+    const fromSec = sections.find((s) => rel.source.start >= s.start && rel.source.start < s.end);
+    const toSec = sections.find((s) => rel.target.start >= s.start && rel.target.start < s.end);
+    if (fromSec && toSec) {
+      sectionRelations.push({
+        fromSection: fromSec.id,
+        toSection: toSec.id,
+        fromBitStart: rel.source.start - fromSec.start,
+        toBitStart: rel.target.start - toSec.start,
+        type: rel.type,
+        label: rel.label,
+        labelEn: rel.labelEn,
+        color: rel.colorClass
+      });
+    }
+  }
+  const relationData = {
+    sections,
+    relations: sectionRelations,
+    fullText: chunkText,
+    register: computeCSJRegisterScore(chunkText, patterns.map((p) => p.pattern.surface)).label
+  };
+  const frontLines = [`> \u{1F517} \u95A2\u4FC2\u30C1\u30E3\u30F3\u30AF ${chunkIdx + 1}/${totalChunks} \xB7 ${sections.length} sections`];
+  for (const sec of sections) {
+    frontLines.push(`%%\u3010${sec.label}\u3011${sec.text}%%`);
+  }
+  const front = frontLines.join("\n");
+  const backLines = [chunkText, "", "---", `\u{1F4CA} ${sections.length} sections \xB7 ${sectionRelations.length} relations`];
+  for (const rel of sectionRelations) {
+    backLines.push(`  ${rel.label} (${rel.labelEn}): \xA7${rel.fromSection + 1} \u2192 \xA7${rel.toSection + 1}`);
+  }
+  if (sourceFile)
+    backLines.push(`\u{1F4C4} [[${sourceFile}]]`);
+  const back = backLines.join("\n");
+  const tags = [`${opts.tagPrefix}/relation-chunk`];
+  const tagLine = tags.map((t) => `#${t}`).join(" ");
+  const markdown = `${tagLine}
+${front}
+?
+${back}
+`;
+  return {
+    id: `relchunk-${chunkIdx}-${Date.now()}`,
+    type: "relation-chunk",
+    front,
+    back,
+    tags,
+    sourceFile,
+    difficulty: Math.min(5, Math.max(1, sections.length + (sectionRelations.length > 2 ? 1 : 0))),
+    markdown,
+    relationData
+  };
+}
+function buildSection(id, text, start, end, allPatterns, _fullText) {
+  var _a, _b, _c, _d, _e, _f;
+  const sectionPatterns = allPatterns.filter(
+    (p) => p.offset >= start && p.offset + p.matchedText.length <= end
+  );
+  const bits = [];
+  let cursor = 0;
+  const sorted = [...sectionPatterns].sort((a, b) => a.offset - b.offset);
+  for (const p of sorted) {
+    const pStart = p.offset - start;
+    const pEnd = pStart + p.matchedText.length;
+    if (pStart > cursor) {
+      bits.push({ text: text.slice(cursor, pStart), start: cursor, end: pStart });
+    }
+    bits.push({
+      text: p.matchedText,
+      start: pStart,
+      end: pEnd,
+      patternId: p.pattern.id,
+      patternLabel: p.pattern.gloss,
+      color: (_a = CATEGORY_COLORS[p.pattern.category]) != null ? _a : "#95a5a6"
+    });
+    cursor = pEnd;
+  }
+  if (cursor < text.length) {
+    bits.push({ text: text.slice(cursor), start: cursor, end: text.length });
+  }
+  const domPat = sectionPatterns[0];
+  const label = domPat ? (_c = (_b = PATTERN_BY_ID.get(domPat.pattern.id)) == null ? void 0 : _b.gloss) != null ? _c : text.slice(0, 8) + "\u2026" : text.slice(0, 8) + "\u2026";
+  const labelEn = domPat ? (_e = (_d = PATTERN_BY_ID.get(domPat.pattern.id)) == null ? void 0 : _d.glossEn) != null ? _e : "" : "";
+  const color = domPat ? (_f = CATEGORY_COLORS[domPat.pattern.category]) != null ? _f : "#95a5a6" : "#95a5a6";
+  return { id, text, start, end, bits, label, labelEn, color };
+}
+
+// src/ui/CardPreviewModal.ts
+var CardPreviewModal = class extends import_obsidian4.Modal {
+  constructor(app, sourceText, collocations, sourceFile, options, injectedCards) {
+    super(app);
+    this.cards = [];
+    this.currentIndex = 0;
+    this.revealedBits = 0;
+    this.cardContainer = null;
+    this.navContainer = null;
+    /** When set, generateCards() is skipped and these are used directly */
+    this.injectedCards = null;
+    this.sourceText = sourceText;
+    this.collocations = collocations;
+    this.sourceFile = sourceFile;
+    this.options = { ...DEFAULT_CARD_OPTIONS, ...options };
+    if (injectedCards && injectedCards.length > 0) {
+      this.injectedCards = injectedCards;
+    }
+  }
+  onOpen() {
+    this.generateCards();
+    this.buildUI();
+    this.renderCurrentCard();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+  generateCards() {
+    if (this.injectedCards) {
+      this.cards = [...this.injectedCards];
+      return;
+    }
+    this.cards = [];
+    if (this.sourceText.trim()) {
+      this.cards.push(...generateContextChunkCards(this.sourceText, this.sourceFile, this.options));
+      this.cards.push(...generateRelationChunkCards(this.sourceText, this.sourceFile, this.options));
+      const chunks = extractChunks(this.sourceText, this.sourceFile);
+      this.cards.push(...generateCardsFromChunks(chunks, this.options));
+    }
+    if (this.collocations.length > 0) {
+      this.cards.push(...generateCollocationCards(this.collocations, this.options));
+    }
+  }
+  buildUI() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("jp-srs-modal");
+    const header = contentEl.createDiv("jp-srs-header");
+    header.createEl("h3", { text: "SRS \u30AB\u30FC\u30C9\u30D7\u30EC\u30D3\u30E5\u30FC", cls: "jp-srs-title" });
+    const statsRow = header.createDiv("jp-srs-stats");
+    const contextCount = this.cards.filter((c) => c.type === "context-chunk").length;
+    const discourseCount = this.cards.filter((c) => c.type === "discourse-chunk").length;
+    const collocCount = this.cards.filter((c) => c.type === "collocation").length;
+    const phraseCount = this.cards.filter((c) => c.type === "phrase-in-context").length;
+    const relationCount = this.cards.filter((c) => c.type === "relation-chunk").length;
+    const statParts = [];
+    if (contextCount)
+      statParts.push(`${contextCount} \u6587\u8108`);
+    if (discourseCount)
+      statParts.push(`${discourseCount} \u8AC7\u8A71`);
+    if (phraseCount)
+      statParts.push(`${phraseCount} \u7A74\u57CB\u3081`);
+    if (relationCount)
+      statParts.push(`${relationCount} \u95A2\u4FC2`);
+    if (collocCount)
+      statParts.push(`${collocCount} \u30B3\u30ED\u30B1`);
+    statsRow.createSpan({
+      text: `\u{1F4CA} ${statParts.join(" \xB7 ") || `${this.cards.length} \u30AB\u30FC\u30C9`}`,
+      cls: "jp-srs-stat"
+    });
+    this.cardContainer = contentEl.createDiv("jp-srs-card-container");
+    this.navContainer = contentEl.createDiv("jp-srs-nav");
+    const prevBtn = this.navContainer.createEl("button", {
+      text: "\u25C0 \u524D",
+      cls: "jp-srs-nav-btn"
+    });
+    prevBtn.addEventListener("click", () => this.prevCard());
+    const counterEl = this.navContainer.createSpan({
+      cls: "jp-srs-counter"
+    });
+    const nextBtn = this.navContainer.createEl("button", {
+      text: "\u6B21 \u25B6",
+      cls: "jp-srs-nav-btn"
+    });
+    nextBtn.addEventListener("click", () => this.nextCard());
+    const revealBtn = contentEl.createEl("button", {
+      text: "\u{1F446} \u6B21\u306E\u30C1\u30E3\u30F3\u30AF\u3092\u8868\u793A",
+      cls: "jp-srs-reveal-btn"
+    });
+    revealBtn.addEventListener("click", () => this.revealNext());
+    const actions = contentEl.createDiv("jp-srs-actions");
+    const writeBtn = actions.createEl("button", {
+      text: "\u{1F4DD} \u30CE\u30FC\u30C8\u306B\u66F8\u304D\u51FA\u3059",
+      cls: "jp-srs-action-btn jp-srs-action-btn--primary"
+    });
+    writeBtn.addEventListener("click", () => this.writeToNote());
+    const copyBtn = actions.createEl("button", {
+      text: "\u{1F4CB} \u30B3\u30D4\u30FC",
+      cls: "jp-srs-action-btn"
+    });
+    copyBtn.addEventListener("click", () => this.copyCards());
+    const copyCurrentBtn = actions.createEl("button", {
+      text: "\u{1F4CB} \u3053\u306E\u30AB\u30FC\u30C9\u3092\u30B3\u30D4\u30FC",
+      cls: "jp-srs-action-btn"
+    });
+    copyCurrentBtn.addEventListener("click", () => this.copyCurrentCard());
+    const optSection = contentEl.createDiv("jp-srs-options");
+    optSection.createEl("h4", { text: "\u2699\uFE0F \u30AA\u30D7\u30B7\u30E7\u30F3", cls: "jp-srs-opt-title" });
+    new import_obsidian4.Setting(optSection).setName("\u30EC\u30B8\u30B9\u30BF\u30FC\u8868\u793A").addToggle((t) => t.setValue(this.options.includeRegister).onChange((v) => {
+      this.options.includeRegister = v;
+      this.regenerate();
+    }));
+    new import_obsidian4.Setting(optSection).setName("\u95A2\u4FC2\u77E2\u5370").addToggle((t) => t.setValue(this.options.includeRelations).onChange((v) => {
+      this.options.includeRelations = v;
+      this.regenerate();
+    }));
+    new import_obsidian4.Setting(optSection).setName("\u82F1\u8A9E\u30B0\u30ED\u30B9").addToggle((t) => t.setValue(this.options.includeEnglish).onChange((v) => {
+      this.options.includeEnglish = v;
+      this.regenerate();
+    }));
+    new import_obsidian4.Setting(optSection).setName("\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7").addToggle((t) => t.setValue(this.options.includeTimestamps).onChange((v) => {
+      this.options.includeTimestamps = v;
+      this.regenerate();
+    }));
+  }
+  renderCurrentCard() {
+    if (!this.cardContainer || !this.navContainer)
+      return;
+    this.cardContainer.empty();
+    if (this.cards.length === 0) {
+      this.cardContainer.createDiv({
+        text: "\u30AB\u30FC\u30C9\u304C\u751F\u6210\u3055\u308C\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+        cls: "jp-srs-empty"
+      });
+      return;
+    }
+    const card = this.cards[this.currentIndex];
+    const counter = this.navContainer.querySelector(".jp-srs-counter");
+    if (counter) {
+      counter.textContent = `${this.currentIndex + 1} / ${this.cards.length}`;
+    }
+    const typeBadge = this.cardContainer.createDiv("jp-srs-type-badge");
+    typeBadge.textContent = card.type === "context-chunk" ? "\u{1F9E0} \u6587\u8108" : card.type === "discourse-chunk" ? "\u{1F3AD} \u8AC7\u8A71" : card.type === "phrase-in-context" ? "\u{1F3AF} \u7A74\u57CB\u3081" : card.type === "relation-chunk" ? "\u{1F517} \u95A2\u4FC2" : "\u{1F4DA} \u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3";
+    typeBadge.addClass(
+      card.type === "context-chunk" ? "jp-srs-badge--context" : card.type === "discourse-chunk" ? "jp-srs-badge--discourse" : card.type === "phrase-in-context" ? "jp-srs-badge--phrase" : card.type === "relation-chunk" ? "jp-srs-badge--relation" : "jp-srs-badge--collocation"
+    );
+    const diffRow = this.cardContainer.createDiv("jp-srs-difficulty");
+    for (let i = 0; i < 5; i++) {
+      const dot = diffRow.createSpan({ cls: "jp-srs-diff-dot" });
+      if (i < card.difficulty)
+        dot.addClass("jp-srs-diff-dot--filled");
+    }
+    const frontEl = this.cardContainer.createDiv("jp-srs-card-front");
+    frontEl.createEl("h5", { text: "\u8868 (Front)", cls: "jp-srs-card-label" });
+    if (card.type === "context-chunk" && card.chunkAnalysis && card.renderSegments) {
+      this.renderContextChunkFront(frontEl, card);
+    } else if (card.type === "phrase-in-context" && card.phraseData) {
+      this.renderPhraseInContextFront(frontEl, card);
+    } else if (card.type === "relation-chunk" && card.relationData) {
+      this.renderRelationChunkFront(frontEl, card);
+    } else {
+      this.renderProgressiveFront(frontEl, card);
+    }
+    const backToggle = this.cardContainer.createEl("button", {
+      text: "\u{1F4D6} \u88CF\u3092\u898B\u308B (Flip)",
+      cls: "jp-srs-flip-btn"
+    });
+    const backEl = this.cardContainer.createDiv("jp-srs-card-back");
+    backEl.style.display = "none";
+    backEl.createEl("h5", { text: "\u88CF (Back)", cls: "jp-srs-card-label" });
+    this.renderMarkdownContent(backEl, card.back);
+    backToggle.addEventListener("click", () => {
+      const isHidden = backEl.style.display === "none";
+      backEl.style.display = isHidden ? "block" : "none";
+      backToggle.textContent = isHidden ? "\u{1F648} \u88CF\u3092\u96A0\u3059" : "\u{1F4D6} \u88CF\u3092\u898B\u308B (Flip)";
+    });
+    const tagsEl = this.cardContainer.createDiv("jp-srs-tags");
+    for (const tag of card.tags) {
+      tagsEl.createSpan({ text: `#${tag}`, cls: "jp-srs-tag" });
+    }
+  }
+  /**
+   * Render the front with progressive spoiler reveal.
+   * %%hidden text%% → clickable spoiler blocks that fade in.
+   */
+  renderProgressiveFront(container, card) {
+    const frontText = card.front;
+    const parts = frontText.split(/%%/g);
+    let spoilerIndex = 0;
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i].trim();
+      if (!part)
+        continue;
+      if (i % 2 === 1) {
+        const spoilerEl = container.createDiv("jp-srs-spoiler");
+        spoilerEl.dataset.index = String(spoilerIndex);
+        if (spoilerIndex < this.revealedBits) {
+          spoilerEl.addClass("jp-srs-spoiler--revealed");
+          this.renderMarkdownContent(spoilerEl, part);
+        } else {
+          spoilerEl.addClass("jp-srs-spoiler--hidden");
+          spoilerEl.textContent = "\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588";
+          spoilerEl.addEventListener("click", () => {
+            this.revealedBits = spoilerIndex + 1;
+            this.renderCurrentCard();
+          });
+        }
+        spoilerIndex++;
+      } else {
+        if (part.startsWith("<small>")) {
+          const arrowEl = container.createDiv("jp-srs-relation");
+          arrowEl.innerHTML = part.replace(/<\/?small>/g, "");
+        } else if (part.startsWith(">")) {
+          const quoteEl = container.createDiv("jp-srs-quote");
+          quoteEl.textContent = part.replace(/^>\s*/, "");
+        } else {
+          const textEl = container.createDiv("jp-srs-text");
+          this.renderMarkdownContent(textEl, part);
+        }
+      }
+    }
+  }
+  // ══════════════════════════════════════════════════════════
+  // CONTEXT-CHUNK CARD RENDERER — the "I know the words but
+  //   not the script" fade-in reveal system
+  // ══════════════════════════════════════════════════════════
+  /**
+   * Render a context-chunk card front with grammar-set-based reveal.
+   *
+   * The full chunk text is displayed as a single block.
+   * Each text segment belongs to a "grammar set" (reveal step).
+   * Initially all segments are hidden (blurred/blocked).
+   * As the learner taps "reveal next", each grammar set fades in
+   * WITH ITS SURROUNDING BRIDGE TEXT — so meaning emerges idea by idea.
+   *
+   * Discourse pattern spans get colored underlines when revealed.
+   * Bridge text fades in plain.
+   */
+  renderContextChunkFront(container, card) {
+    var _a, _b;
+    const analysis = card.chunkAnalysis;
+    const segments = card.renderSegments;
+    const totalSteps = analysis.totalSets;
+    const metaRow = container.createDiv("jp-ctx-card-meta");
+    metaRow.createSpan({
+      text: `\u{1F9E0} ${totalSteps} sets \xB7 ${analysis.register}`,
+      cls: "jp-ctx-card-meta-text"
+    });
+    const isSidecar = analysis.relationSource === "sidecar";
+    metaRow.createSpan({
+      text: isSidecar ? "\u2713 sidecar" : "~ heuristic",
+      cls: isSidecar ? "jp-ctx-card-source-badge jp-ctx-card-source-badge--sidecar" : "jp-ctx-card-source-badge jp-ctx-card-source-badge--heuristic",
+      attr: {
+        title: isSidecar ? "Relations validated by the Python analysis pipeline (top-down + bottom-up reconciled)." : "Relations come from the TypeScript regex-on-connector heuristic. Not validated \u2014 best-guess only."
+      }
+    });
+    const stepBar = container.createDiv("jp-ctx-step-bar");
+    for (let i = 0; i < totalSteps; i++) {
+      const set = analysis.grammarSets[i];
+      const pill = stepBar.createDiv("jp-ctx-step-pill");
+      pill.style.backgroundColor = i < this.revealedBits ? set.color : "var(--background-modifier-border)";
+      pill.title = `${set.label} (${set.labelEn})`;
+      if (i < this.revealedBits) {
+        pill.addClass("jp-ctx-step-pill--revealed");
+      }
+    }
+    const textBody = container.createDiv("jp-ctx-card-text-body");
+    for (const seg of segments) {
+      const isRevealed = seg.revealStep < this.revealedBits;
+      if (isRevealed) {
+        const span = textBody.createSpan({
+          text: seg.text,
+          cls: "jp-ctx-seg jp-ctx-seg--revealed"
+        });
+        if (seg.isPattern && seg.patternId) {
+          const pDef = PATTERN_BY_ID.get(seg.patternId);
+          if (pDef) {
+            span.addClass("jp-ctx-seg--pattern");
+            span.style.borderBottom = `2px solid ${(_b = (_a = seg.color) != null ? _a : CATEGORY_COLORS[pDef.category]) != null ? _b : "#95a5a6"}`;
+            span.title = `${pDef.category}: ${pDef.gloss} \u2014 ${pDef.glossEn}`;
+          }
+        }
+        if (seg.revealStep === this.revealedBits - 1) {
+          span.addClass("jp-ctx-seg--fade-in");
+        }
+      } else {
+        const span = textBody.createSpan({
+          cls: "jp-ctx-seg jp-ctx-seg--hidden"
+        });
+        const blockText = seg.text.replace(/[^\s\n]/g, "\u2588");
+        span.textContent = blockText;
+        span.title = 'Tap "reveal" to show this grammar set';
+      }
+    }
+    if (this.revealedBits < totalSteps) {
+      const nextSet = analysis.grammarSets[this.revealedBits];
+      const nextLabel = container.createDiv("jp-ctx-next-label");
+      nextLabel.createSpan({
+        text: `\u6B21: ${nextSet.label} (${nextSet.labelEn})`,
+        cls: "jp-ctx-next-label-text"
+      });
+      const reason = nextSet.groupingReason === "relation-pair" ? "\u95A2\u4FC2\u30DA\u30A2" : nextSet.groupingReason === "flow-chain" ? "\u8AD6\u7406\u30D5\u30ED\u30FC" : nextSet.groupingReason === "clause-pair" ? "\u7BC0\u63A5\u7D9A" : nextSet.groupingReason === "functional-unit" ? "\u6A5F\u80FD\u30E6\u30CB\u30C3\u30C8" : "\u5358\u72EC";
+      nextLabel.createSpan({
+        text: reason,
+        cls: "jp-ctx-next-reason"
+      });
+    } else {
+      const doneLabel = container.createDiv("jp-ctx-done-label");
+      doneLabel.textContent = "\u2705 \u3059\u3079\u3066\u306E\u30BB\u30C3\u30C8\u304C\u8868\u793A\u3055\u308C\u307E\u3057\u305F \u2014 \u30B9\u30AF\u30EA\u30D7\u30C8\u5B8C\u6210!";
+    }
+    if (this.revealedBits > 0) {
+      const revealedSets = container.createDiv("jp-ctx-revealed-sets");
+      for (let i = 0; i < this.revealedBits && i < totalSteps; i++) {
+        const set = analysis.grammarSets[i];
+        const chip = revealedSets.createSpan({ cls: "jp-ctx-revealed-chip" });
+        chip.style.borderLeft = `3px solid ${set.color}`;
+        chip.textContent = `${i + 1}. ${set.label}`;
+        chip.title = set.patterns.map((p) => p.matchedText).join(" \xB7 ");
+      }
+    }
+  }
+  // ══════════════════════════════════════════════════════════
+  // CARD TYPE 1: PHRASE-IN-CONTEXT cloze renderer
+  // ══════════════════════════════════════════════════════════
+  renderPhraseInContextFront(container, card) {
+    const data = card.phraseData;
+    const hintRow = container.createDiv("jp-pic-hint");
+    hintRow.createSpan({ text: `\u{1F3AF} ${data.hint}`, cls: "jp-pic-hint-text" });
+    if (data.collocation && data.collocation.confidence > 0.7) {
+      const confBadge = hintRow.createSpan({ cls: "jp-pic-conf-badge" });
+      confBadge.textContent = `${(data.collocation.confidence * 100).toFixed(0)}%`;
+    }
+    const textBody = container.createDiv("jp-pic-text-body");
+    if (data.phraseStart > 0) {
+      textBody.createSpan({
+        text: data.contextText.slice(0, data.phraseStart),
+        cls: "jp-pic-context"
+      });
+    }
+    const blankEl = textBody.createSpan({ cls: "jp-pic-blank" });
+    if (this.revealedBits > 0) {
+      blankEl.textContent = data.phrase;
+      blankEl.addClass("jp-pic-blank--revealed");
+    } else {
+      blankEl.textContent = "\uFF3F\uFF3F\uFF3F\uFF3F\uFF3F";
+      blankEl.addClass("jp-pic-blank--hidden");
+      blankEl.addEventListener("click", () => {
+        this.revealedBits = 1;
+        this.renderCurrentCard();
+      });
+    }
+    if (data.phraseEnd < data.contextText.length) {
+      textBody.createSpan({
+        text: data.contextText.slice(data.phraseEnd),
+        cls: "jp-pic-context"
+      });
+    }
+    if (data.collocation) {
+      const colTag = container.createDiv("jp-pic-colloc-tag");
+      colTag.createSpan({
+        text: `${data.collocation.patternLabel}: ${data.collocation.surface}`,
+        cls: "jp-pic-colloc-text"
+      });
+    }
+  }
+  // ══════════════════════════════════════════════════════════
+  // CARD TYPE 2: RELATION-CHUNK sectioned fade-in + viz
+  // ══════════════════════════════════════════════════════════
+  renderRelationChunkFront(container, card) {
+    var _a;
+    const data = card.relationData;
+    const totalSections = data.sections.length;
+    const metaRow = container.createDiv("jp-rel-card-meta");
+    metaRow.createSpan({
+      text: `\u{1F517} ${totalSections} sections \xB7 ${data.relations.length} relations \xB7 ${data.register}`,
+      cls: "jp-rel-meta-text"
+    });
+    const stepBar = container.createDiv("jp-rel-step-bar");
+    for (let i = 0; i < totalSections; i++) {
+      const sec = data.sections[i];
+      const pill = stepBar.createDiv("jp-rel-step-pill");
+      pill.style.backgroundColor = i < this.revealedBits ? sec.color : "var(--background-modifier-border)";
+      pill.title = `${sec.label} (${sec.labelEn})`;
+      if (i < this.revealedBits)
+        pill.addClass("jp-rel-step-pill--revealed");
+    }
+    const sectionsEl = container.createDiv("jp-rel-sections");
+    for (let si = 0; si < totalSections; si++) {
+      const sec = data.sections[si];
+      const isRevealed = si < this.revealedBits;
+      const secEl = sectionsEl.createDiv("jp-rel-section");
+      secEl.style.borderLeft = `3px solid ${sec.color}`;
+      if (isRevealed) {
+        secEl.addClass("jp-rel-section--revealed");
+        if (si === this.revealedBits - 1)
+          secEl.addClass("jp-rel-section--fade-in");
+        const labelEl = secEl.createDiv("jp-rel-section-label");
+        labelEl.createSpan({ text: `\xA7${si + 1} ${sec.label}`, cls: "jp-rel-section-label-text" });
+        const bitsEl = secEl.createDiv("jp-rel-section-bits");
+        for (const bit of sec.bits) {
+          const bitSpan = bitsEl.createSpan({
+            text: bit.text,
+            cls: "jp-rel-bit"
+          });
+          if (bit.patternId) {
+            bitSpan.addClass("jp-rel-bit--pattern");
+            bitSpan.style.borderBottom = `2px solid ${(_a = bit.color) != null ? _a : "#95a5a6"}`;
+            if (bit.patternLabel)
+              bitSpan.title = bit.patternLabel;
+          }
+        }
+        const outRels = data.relations.filter((r) => r.fromSection === si);
+        if (outRels.length > 0) {
+          const arrowsEl = secEl.createDiv("jp-rel-arrows");
+          for (const rel of outRels) {
+            const arrowEl = arrowsEl.createDiv("jp-rel-arrow");
+            arrowEl.addClass(rel.color);
+            const targetRevealed = rel.toSection < this.revealedBits;
+            arrowEl.createSpan({
+              text: `${rel.label} \u2192 \xA7${rel.toSection + 1}`,
+              cls: targetRevealed ? "jp-rel-arrow-text" : "jp-rel-arrow-text jp-rel-arrow-text--target-hidden"
+            });
+          }
+        }
+      } else {
+        secEl.addClass("jp-rel-section--hidden");
+        const blockText = sec.text.replace(/[^\s\n]/g, "\u2588");
+        secEl.createSpan({ text: blockText, cls: "jp-rel-section-blocked" });
+      }
+    }
+    if (this.revealedBits < totalSections) {
+      const nextSec = data.sections[this.revealedBits];
+      const nextLabel = container.createDiv("jp-rel-next-label");
+      nextLabel.createSpan({
+        text: `\u6B21: \xA7${this.revealedBits + 1} ${nextSec.label}`,
+        cls: "jp-rel-next-label-text"
+      });
+    } else {
+      const doneLabel = container.createDiv("jp-rel-done-label");
+      doneLabel.textContent = "\u2705 \u3059\u3079\u3066\u306E\u30BB\u30AF\u30B7\u30E7\u30F3\u8868\u793A \u2014 \u95A2\u4FC2\u30DE\u30C3\u30D7\u5B8C\u6210!";
+    }
+  }
+  /**
+   * Simple markdown renderer for card content.
+   * Handles: **bold**, ==highlight==, <u>underline</u>, <small>small</small>
+   */
+  renderMarkdownContent(container, markdown) {
+    const lines = markdown.split("\n");
+    for (const line of lines) {
+      if (!line.trim()) {
+        container.createEl("br");
+        continue;
+      }
+      const p = container.createDiv("jp-srs-line");
+      let html = line.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>").replace(/==(.*?)==/g, "<mark>$1</mark>").replace(/<u>(.*?)<\/u>/g, "<u>$1</u>").replace(/<small>(.*?)<\/small>/g, "<small>$1</small>").replace(/`(.*?)`/g, "<code>$1</code>").replace(/\[\[(.*?)\]\]/g, "<em>\u{1F4C4} $1</em>");
+      const safeHtml = html.replace(/<(?!\/?(?:strong|mark|u|small|code|em|br)\b)[^>]*>/gi, "");
+      p.innerHTML = safeHtml;
+    }
+  }
+  // ── Navigation ─────────────────────────────────────────────
+  prevCard() {
+    if (this.currentIndex > 0) {
+      this.currentIndex--;
+      this.revealedBits = 0;
+      this.renderCurrentCard();
+    }
+  }
+  nextCard() {
+    if (this.currentIndex < this.cards.length - 1) {
+      this.currentIndex++;
+      this.revealedBits = 0;
+      this.renderCurrentCard();
+    }
+  }
+  revealNext() {
+    var _a;
+    const card = this.cards[this.currentIndex];
+    if (!card)
+      return;
+    if (card.type === "phrase-in-context") {
+      if (this.revealedBits < 1) {
+        this.revealedBits = 1;
+        this.renderCurrentCard();
+      }
+    } else if (card.type === "relation-chunk" && card.relationData) {
+      if (this.revealedBits < card.relationData.sections.length) {
+        this.revealedBits++;
+        this.renderCurrentCard();
+      }
+    } else if (card.type === "context-chunk" && card.chunkAnalysis) {
+      if (this.revealedBits < card.chunkAnalysis.totalSets) {
+        this.revealedBits++;
+        this.renderCurrentCard();
+      }
+    } else {
+      const spoilerCount = ((_a = card.front.match(/%%/g)) != null ? _a : []).length / 2;
+      if (this.revealedBits < spoilerCount) {
+        this.revealedBits++;
+        this.renderCurrentCard();
+      }
+    }
+  }
+  // ── Actions ────────────────────────────────────────────────
+  async writeToNote() {
+    const content = buildCardFileContent(this.cards);
+    const fileName = `JP SRS Cards ${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.md`;
+    const folder = this.app.vault.getAbstractFileByPath("JP SRS Cards");
+    let targetPath;
+    if (folder) {
+      targetPath = `JP SRS Cards/${fileName}`;
+    } else {
+      targetPath = fileName;
+    }
+    const existing = this.app.vault.getAbstractFileByPath(targetPath);
+    if (existing && "path" in existing) {
+      const file = existing;
+      const currentContent = await this.app.vault.read(file);
+      await this.app.vault.modify(file, currentContent + "\n\n" + content);
+      new import_obsidian4.Notice(`\u{1F4DD} ${this.cards.length} cards appended to ${targetPath}`);
+    } else {
+      await this.app.vault.create(targetPath, content);
+      new import_obsidian4.Notice(`\u{1F4DD} ${this.cards.length} cards written to ${targetPath}`);
+    }
+    this.close();
+  }
+  async copyCards() {
+    const content = buildCardFileContent(this.cards);
+    await navigator.clipboard.writeText(content);
+    new import_obsidian4.Notice(`\u{1F4CB} ${this.cards.length} cards copied to clipboard`);
+  }
+  async copyCurrentCard() {
+    const card = this.cards[this.currentIndex];
+    if (card) {
+      await navigator.clipboard.writeText(card.markdown);
+      new import_obsidian4.Notice("\u{1F4CB} Card copied to clipboard");
+    }
+  }
+  regenerate() {
+    if (this.sourceText.trim() || this.collocations.length > 0) {
+      this.injectedCards = null;
+    }
+    this.generateCards();
+    this.currentIndex = Math.min(this.currentIndex, Math.max(0, this.cards.length - 1));
+    this.revealedBits = 0;
+    this.buildUI();
+    this.renderCurrentCard();
+  }
+};
+
+// src/discourse/variation-trees.ts
+var STEM_DEFINITIONS = [
+  { stem: "\u308F\u3051", concept: "\u63A8\u8AD6\u30FB\u7406\u7531\u3065\u3051", conceptEn: "reasoning/justification" },
+  { stem: "\u306F\u305A", concept: "\u671F\u5F85\u30FB\u4E88\u6E2C", conceptEn: "expectation/prediction" },
+  { stem: "\u3082\u306E", concept: "\u7406\u7531\u30FB\u6B63\u5F53\u5316", conceptEn: "reason/legitimization" },
+  { stem: "\u3093\u3067\u3059", concept: "\u8AAC\u660E\u7684\u30E2\u30C0\u30EA\u30C6\u30A3", conceptEn: "explanatory modality" },
+  { stem: "\u3093\u3060", concept: "\u8AAC\u660E\uFF08\u666E\u901A\u4F53\uFF09", conceptEn: "explanation (plain)" },
+  { stem: "\u305D\u3046", concept: "\u69D8\u614B\u30FB\u4F1D\u805E", conceptEn: "manner/hearsay" },
+  { stem: "\u307F\u305F\u3044", concept: "\u985E\u4F3C\u30FB\u63A8\u6E2C", conceptEn: "resemblance/conjecture" },
+  { stem: "\u3089\u3057\u3044", concept: "\u8A3C\u62E0\u63A8\u6E2C", conceptEn: "evidence-based conjecture" },
+  { stem: "\u3058\u3083\u306A\u3044", concept: "\u5426\u5B9A\u78BA\u8A8D", conceptEn: "negative confirmation" },
+  { stem: "\u3067\u3057\u3087\u3046", concept: "\u63A8\u91CF\u78BA\u8A8D", conceptEn: "conjectural confirmation" },
+  { stem: "\u306A\u3093\u304B", concept: "\u66D6\u6627\u5316", conceptEn: "vagueness marker" },
+  { stem: "\u3066\u3044\u3046", concept: "\u5F15\u7528", conceptEn: "quotation" },
+  { stem: "\u3063\u3066", concept: "\u53E3\u8A9E\u5F15\u7528", conceptEn: "colloquial quotation" },
+  { stem: "\u3068\u3044\u3046", concept: "\u5F15\u7528\uFF08\u4E2D\u7ACB\uFF09", conceptEn: "quotation (neutral)" },
+  { stem: "\u3060\u304B\u3089", concept: "\u56E0\u679C\u5E30\u7D50", conceptEn: "causal consequence" },
+  { stem: "\u3051\u3069", concept: "\u9006\u63A5\u30FB\u30D8\u30C3\u30B8", conceptEn: "adversative/hedge" },
+  { stem: "\u307E\u3042", concept: "\u7DE9\u548C", conceptEn: "softening" },
+  { stem: "\u3084\u3063\u3071", concept: "\u4E88\u60F3\u78BA\u8A8D", conceptEn: "confirming expectation" },
+  { stem: "\u305D\u3082\u305D\u3082", concept: "\u6839\u672C\u524D\u63D0", conceptEn: "fundamental premise" },
+  { stem: "\u3064\u307E\u308A", concept: "\u8981\u7D04\u30FB\u8A00\u3044\u63DB\u3048", conceptEn: "summary/rephrasing" },
+  { stem: "\u3068\u3053\u308D", concept: "\u5C40\u9762\u30FB\u5834\u9762", conceptEn: "phase/scene" },
+  { stem: "\u3061\u3083", concept: "\u53E3\u8A9E\u5B8C\u4E86", conceptEn: "colloquial completion" },
+  { stem: "\u3066\u304A\u304F", concept: "\u6E96\u5099", conceptEn: "preparation" },
+  { stem: "\u3066\u3044\u308B", concept: "\u9032\u884C\u30FB\u7D50\u679C", conceptEn: "progressive/resultative" },
+  { stem: "\u3066\u304F\u308B", concept: "\u63A5\u8FD1\u5909\u5316", conceptEn: "approach/change" },
+  { stem: "\u3066\u3044\u304F", concept: "\u96E2\u53CD\u9032\u884C", conceptEn: "departure/progression" },
+  { stem: "\u78BA\u304B", concept: "\u8B72\u6B69", conceptEn: "concession" },
+  { stem: "\u3067\u3082", concept: "\u9006\u63A5", conceptEn: "adversative" },
+  { stem: "\u7D50\u5C40", concept: "\u7D50\u8AD6", conceptEn: "conclusion" },
+  { stem: "\u5B9F\u306F", concept: "\u771F\u76F8\u5410\u9732", conceptEn: "revelation" }
+];
+function buildVariationTrees() {
+  var _a, _b, _c;
+  const trees = [];
+  const claimed = /* @__PURE__ */ new Set();
+  for (const def of STEM_DEFINITIONS) {
+    const variants = [];
+    for (const p of ALL_PATTERNS) {
+      if (claimed.has(p.id))
+        continue;
+      if (p.surface.includes(def.stem) || p.tokens.some((t) => t.includes(def.stem))) {
+        variants.push({
+          patternId: p.id,
+          surface: p.surface,
+          register: p.register,
+          pragmaticFunction: p.pragmaticFunction,
+          frequencyTier: p.frequencyTier,
+          extension: p.surface.replace(def.stem, "")
+        });
+        claimed.add(p.id);
+      }
+    }
+    if (variants.length > 0) {
+      trees.push({
+        stem: def.stem,
+        conceptLabel: def.concept,
+        conceptLabelEn: def.conceptEn,
+        variants: variants.sort((a, b) => a.frequencyTier - b.frequencyTier),
+        totalFrequency: variants.reduce((s, v) => s + (5 - v.frequencyTier), 0)
+      });
+    }
+  }
+  const unclaimed = ALL_PATTERNS.filter((p) => !claimed.has(p.id));
+  const prefixGroups = /* @__PURE__ */ new Map();
+  for (const p of unclaimed) {
+    for (let len = 3; len >= 2; len--) {
+      if (p.surface.length >= len) {
+        const prefix = p.surface.slice(0, len);
+        if (!prefixGroups.has(prefix))
+          prefixGroups.set(prefix, []);
+        prefixGroups.get(prefix).push(p);
+      }
+    }
+  }
+  for (const [prefix, group] of prefixGroups) {
+    const unique = [...new Set(group.map((p) => p.id))];
+    if (unique.length < 3)
+      continue;
+    if (unique.some((id) => claimed.has(id)))
+      continue;
+    const variants = [];
+    for (const id of unique) {
+      const p = PATTERN_BY_ID.get(id);
+      if (claimed.has(p.id))
+        continue;
+      variants.push({
+        patternId: p.id,
+        surface: p.surface,
+        register: p.register,
+        pragmaticFunction: p.pragmaticFunction,
+        frequencyTier: p.frequencyTier,
+        extension: p.surface.slice(prefix.length)
+      });
+      claimed.add(p.id);
+    }
+    if (variants.length >= 3) {
+      const subcats = /* @__PURE__ */ new Map();
+      for (const v of variants) {
+        const p = PATTERN_BY_ID.get(v.patternId);
+        if (p)
+          subcats.set(p.subcategory, ((_a = subcats.get(p.subcategory)) != null ? _a : 0) + 1);
+      }
+      const dominant = (_c = (_b = [...subcats.entries()].sort((a, b) => b[1] - a[1])[0]) == null ? void 0 : _b[0]) != null ? _c : "\u6DF7\u5408";
+      trees.push({
+        stem: prefix,
+        conceptLabel: dominant,
+        conceptLabelEn: `auto:${prefix}`,
+        variants: variants.sort((a, b) => a.frequencyTier - b.frequencyTier),
+        totalFrequency: variants.reduce((s, v) => s + (5 - v.frequencyTier), 0)
+      });
+    }
+  }
+  return trees.sort((a, b) => b.totalFrequency - a.totalFrequency);
+}
+function getTreeForPattern(trees, patternId) {
+  return trees.find((t) => t.variants.some((v) => v.patternId === patternId));
+}
+function getRegisterProgression(tree) {
+  const order = [
+    "slang",
+    "casual",
+    "neutral",
+    "polite",
+    "formal",
+    "honorific",
+    "humble",
+    "academic",
+    "any"
+  ];
+  return [...tree.variants].sort(
+    (a, b) => order.indexOf(a.register) - order.indexOf(b.register)
+  );
+}
+
 // src/ui/CollocationView.ts
+var collocationViewResolver = heuristicResolver;
+function setCollocationViewResolver(r) {
+  collocationViewResolver = r;
+}
 var JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
-var CollocationView = class extends import_obsidian3.ItemView {
-  constructor(leaf, store, engine, settings) {
+var CollocationView = class extends import_obsidian5.ItemView {
+  constructor(leaf, store, engine, settings, contextEngine, dictStore) {
     super(leaf);
     this.results = [];
     this.currentPOSFilter = [];
@@ -1244,9 +8277,16 @@ var CollocationView = class extends import_obsidian3.ItemView {
     this.searchInput = null;
     this.resultContainer = null;
     this.statsEl = null;
+    this.tabBar = null;
+    this.filterRow = null;
+    this.activeTab = "lexicon";
+    /** Currently expanded context card query (for focus mode) */
+    this.focusedQuery = null;
     this.store = store;
     this.engine = engine;
     this.settings = settings;
+    this.contextEngine = contextEngine;
+    this.dictStore = dictStore;
   }
   getViewType() {
     return JP_COLLOCATIONS_VIEW_TYPE;
@@ -1263,25 +8303,59 @@ var CollocationView = class extends import_obsidian3.ItemView {
   }
   async onClose() {
   }
+  // ══════════════════════════════════════════════════════════
+  // UI SCAFFOLD
+  // ══════════════════════════════════════════════════════════
   buildUI() {
     const container = this.containerEl.children[1];
     container.empty();
     container.addClass("jp-collocations-view");
     const header = container.createDiv("jp-col-header");
-    header.createEl("h4", { text: "JP Collocations", cls: "jp-col-title" });
+    header.createEl("h4", { text: "JP \u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3", cls: "jp-col-title" });
+    this.tabBar = container.createDiv("jp-col-tab-bar");
+    const tabs = [
+      { id: "lexicon", label: "\u8F9E\u66F8", icon: "\u{1F4D6}" },
+      { id: "discourse", label: "\u8AC7\u8A71", icon: "\u{1F50D}" },
+      { id: "patterns", label: "\u30D1\u30BF\u30FC\u30F3", icon: "\u{1F4CA}" },
+      { id: "vault", label: "\u30DC\u30EB\u30C8", icon: "\u{1F5C2}" }
+    ];
+    for (const tab of tabs) {
+      const btn = this.tabBar.createEl("button", {
+        text: `${tab.icon} ${tab.label}`,
+        cls: `jp-col-tab ${tab.id === this.activeTab ? "jp-col-tab--active" : ""}`
+      });
+      btn.dataset.tab = tab.id;
+      btn.addEventListener("click", () => {
+        this.activeTab = tab.id;
+        this.focusedQuery = null;
+        this.tabBar.querySelectorAll(".jp-col-tab").forEach((el) => el.removeClass("jp-col-tab--active"));
+        btn.addClass("jp-col-tab--active");
+        this.refresh();
+      });
+    }
     const searchRow = container.createDiv("jp-col-search-row");
     this.searchInput = searchRow.createEl("input", {
-      type: "text",
-      placeholder: "Search collocations... (JP/EN/romaji)",
-      cls: "jp-col-search-input"
+      type: "search",
+      placeholder: "\u691C\u7D22\u2026 (JP\u30FBEN\u30FBromaji)",
+      cls: "jp-col-search-input",
+      attr: { autocomplete: "off", autocapitalize: "off", spellcheck: "false" }
     });
     this.searchInput.addEventListener("input", () => this.refresh());
+    this.searchInput.addEventListener("keydown", (e) => {
+      var _a;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const q = (_a = this.searchInput) == null ? void 0 : _a.value.trim();
+        if (q)
+          this.openContextCard(q);
+      }
+    });
     const addBtn = searchRow.createEl("button", { text: "+", cls: "jp-col-add-btn", title: "Add entry" });
     addBtn.addEventListener("click", () => {
       new AddEntryModal(this.app, this.store, () => this.refresh()).open();
     });
-    const filterRow = container.createDiv("jp-col-filter-row");
-    this.buildPOSChips(filterRow);
+    this.filterRow = container.createDiv("jp-col-filter-row");
+    this.buildPOSChips(this.filterRow);
     this.statsEl = container.createDiv("jp-col-stats");
     this.resultContainer = container.createDiv("jp-col-results");
   }
@@ -1300,7 +8374,7 @@ var CollocationView = class extends import_obsidian3.ItemView {
         this.refresh();
       });
     }
-    const clearBtn = parent.createEl("span", { text: "\u2715 clear", cls: "jp-col-chip jp-col-chip--clear" });
+    const clearBtn = parent.createEl("span", { text: "\u2715", cls: "jp-col-chip jp-col-chip--clear" });
     clearBtn.addEventListener("click", () => {
       this.currentPOSFilter = [];
       this.currentTagFilter = [];
@@ -1309,8 +8383,392 @@ var CollocationView = class extends import_obsidian3.ItemView {
     });
   }
   refresh() {
+    if (!this.resultContainer)
+      return;
+    if (this.filterRow) {
+      this.filterRow.style.display = this.activeTab === "lexicon" ? "" : "none";
+    }
+    switch (this.activeTab) {
+      case "lexicon":
+        this.refreshLexicon();
+        break;
+      case "discourse":
+        this.refreshDiscourse();
+        break;
+      case "patterns":
+        this.refreshPatterns();
+        break;
+      case "vault":
+        this.refreshVaultIndex();
+        break;
+    }
+  }
+  // ══════════════════════════════════════════════════════════
+  // CONTEXT CARD — the hivemind unified view for any query
+  // ══════════════════════════════════════════════════════════
+  async openContextCard(query) {
+    if (!this.resultContainer || !this.statsEl)
+      return;
+    this.focusedQuery = query;
+    this.resultContainer.empty();
+    this.statsEl.empty();
+    const loading = this.resultContainer.createDiv("jp-col-loading");
+    loading.createSpan({ text: "\u{1F50D} Searching vault\u2026" });
+    const card = await this.contextEngine.getContext(query);
+    this.resultContainer.empty();
+    this.statsEl.empty();
+    const backBtn = this.statsEl.createEl("button", { text: "\u2190 \u623B\u308B", cls: "jp-col-back-btn" });
+    backBtn.addEventListener("click", () => {
+      this.focusedQuery = null;
+      this.refresh();
+    });
+    this.statsEl.createSpan({
+      text: `\u300C${query}\u300D \u2014 ${card.totalExamples} examples \xB7 ${card.vaultNoteCount} notes \xB7 ${card.patternCount} co-patterns`,
+      cls: "jp-col-stat-text"
+    });
+    this.renderContextCard(this.resultContainer, card);
+  }
+  renderContextCard(parent, card) {
+    var _a, _b, _c, _d, _e;
+    if (card.dictResults.length > 0) {
+      const sec = parent.createDiv("jp-ctx-section");
+      sec.createEl("h5", { text: "\u{1F4D6} \u8F9E\u66F8", cls: "jp-ctx-section-title" });
+      for (const r of card.dictResults.slice(0, 3)) {
+        const row = sec.createDiv("jp-ctx-dict-row");
+        row.createSpan({ text: r.term.expression, cls: "jp-ctx-dict-expr" });
+        if (r.term.reading !== r.term.expression) {
+          row.createSpan({ text: `\u3010${r.term.reading}\u3011`, cls: "jp-ctx-dict-reading" });
+        }
+        const defText = r.term.definitions.slice(0, 2).map((d) => {
+          if (typeof d === "string")
+            return d;
+          if ("type" in d && d.type === "text" && "text" in d)
+            return d.text;
+          return "";
+        }).filter(Boolean).join(" / ");
+        if (defText)
+          row.createSpan({ text: defText, cls: "jp-ctx-dict-def" });
+        row.addEventListener("click", () => {
+          this.app.commands.executeCommandById("jp-collocations:open-dictionary");
+        });
+      }
+    }
+    if (card.collocations.length > 0) {
+      const sec = parent.createDiv("jp-ctx-section");
+      sec.createEl("h5", { text: "\u{1F4DA} \u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3", cls: "jp-ctx-section-title" });
+      for (const e of card.collocations) {
+        const row = sec.createDiv("jp-ctx-collocation-row");
+        row.createSpan({ text: e.fullPhrase, cls: "jp-ctx-coll-phrase" });
+        row.createSpan({ text: e.headwordPOS, cls: "jp-ctx-coll-pos" });
+        if (e.pattern)
+          row.createSpan({ text: e.pattern, cls: "jp-ctx-coll-pattern" });
+      }
+    }
+    if (card.surferEntries.length > 0) {
+      const sec = parent.createDiv("jp-ctx-section");
+      sec.createEl("h5", { text: "\u{1F3C4} \u30B5\u30FC\u30D5\u30A1\u30FC\u30A8\u30F3\u30C8\u30EA\u30FC", cls: "jp-ctx-section-title" });
+      for (const e of card.surferEntries) {
+        const row = sec.createDiv("jp-ctx-surfer-row");
+        row.createSpan({ text: e.surface, cls: "jp-ctx-surfer-surface" });
+        if (e.discourseCategory) {
+          row.createSpan({ text: e.discourseCategory, cls: "jp-ctx-surfer-cat" });
+        }
+        if (e.pragmaticFunction) {
+          row.createSpan({ text: e.pragmaticFunction, cls: "jp-ctx-surfer-fn" });
+        }
+      }
+    }
+    if (card.examples.length > 0) {
+      const sec = parent.createDiv("jp-ctx-section jp-ctx-examples-section");
+      sec.createEl("h5", { text: `\u{1F4AC} \u7528\u4F8B (${card.examples.length})`, cls: "jp-ctx-section-title" });
+      for (const ex of card.examples.slice(0, 30)) {
+        this.renderStyledExample(sec, ex, card.query);
+      }
+    }
+    if (card.vaultOccurrences.length > 0) {
+      const sec = parent.createDiv("jp-ctx-section");
+      sec.createEl("h5", { text: `\u{1F5C2} \u30CE\u30FC\u30C8 (${card.vaultNoteCount})`, cls: "jp-ctx-section-title" });
+      const byFile = /* @__PURE__ */ new Map();
+      for (const occ of card.vaultOccurrences) {
+        if (!byFile.has(occ.filePath))
+          byFile.set(occ.filePath, []);
+        byFile.get(occ.filePath).push(occ);
+      }
+      for (const [fp, occs] of byFile) {
+        const fileGroup = sec.createDiv("jp-ctx-vault-file");
+        const fileHeader = fileGroup.createDiv("jp-ctx-vault-file-header");
+        fileHeader.createSpan({ text: `\u{1F4C4} ${occs[0].fileName}`, cls: "jp-ctx-vault-filename" });
+        fileHeader.createSpan({ text: `(${occs.length})`, cls: "jp-ctx-vault-count" });
+        fileHeader.addEventListener("click", () => {
+          const file = this.app.vault.getAbstractFileByPath(fp);
+          if (file)
+            this.app.workspace.getLeaf().openFile(file);
+        });
+        for (const occ of occs.slice(0, 5)) {
+          const occRow = fileGroup.createDiv("jp-ctx-vault-occ");
+          this.renderHighlightedContext(occRow, occ.context, card.query);
+          if (occ.nearbyPatterns.length > 0) {
+            const pills = occRow.createDiv("jp-ctx-vault-patterns");
+            for (const pid of occ.nearbyPatterns.slice(0, 5)) {
+              const p = PATTERN_BY_ID.get(pid);
+              if (p) {
+                const pill = pills.createSpan({
+                  text: p.surface,
+                  cls: "jp-ctx-pattern-pill"
+                });
+                pill.style.borderLeft = `2px solid ${(_a = CATEGORY_COLORS[p.category]) != null ? _a : "#95a5a6"}`;
+                pill.addEventListener("click", (e) => {
+                  e.stopPropagation();
+                  this.openPatternCard(pid);
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+    if (card.bitRelations.length > 0) {
+      const sec = parent.createDiv("jp-ctx-section");
+      sec.createEl("h5", {
+        text: `\u2713 \u578B\u4ED8\u304D\u95A2\u4FC2 (${card.bitRelations.length}) \u30B5\u30A4\u30C9\u30AB\u30FC`,
+        cls: "jp-ctx-section-title"
+      });
+      const list = sec.createDiv("jp-ctx-bitrel-list");
+      for (const br of card.bitRelations.slice(0, 12)) {
+        const row = list.createDiv("jp-ctx-bitrel-row");
+        row.dataset.reconciliation = (_b = br.reconciliation) != null ? _b : "unknown";
+        const labelEl = row.createSpan({
+          text: br.label.replace(/_/g, " "),
+          cls: "jp-ctx-bitrel-label"
+        });
+        labelEl.title = `reconciliation: ${(_c = br.reconciliation) != null ? _c : "n/a"} \xB7 confidence: ${((_d = br.confidence) != null ? _d : 0).toFixed(2)} \xB7 hash: ${br.textHash.slice(0, 8)}\u2026`;
+        const pair = row.createDiv("jp-ctx-bitrel-pair");
+        const srcCls = br.matchedRole === "source" ? "jp-ctx-bitrel-endpoint jp-ctx-bitrel-endpoint--matched" : "jp-ctx-bitrel-endpoint";
+        const tgtCls = br.matchedRole === "target" ? "jp-ctx-bitrel-endpoint jp-ctx-bitrel-endpoint--matched" : "jp-ctx-bitrel-endpoint";
+        pair.createSpan({ text: br.sourceSurface, cls: srcCls });
+        pair.createSpan({ text: "\u2192", cls: "jp-ctx-bitrel-arrow" });
+        pair.createSpan({ text: br.targetSurface, cls: tgtCls });
+      }
+    }
+    if (card.coPatterns.length > 0) {
+      const sec = parent.createDiv("jp-ctx-section");
+      sec.createEl("h5", { text: "\u{1F517} \u5171\u8D77\u30D1\u30BF\u30FC\u30F3", cls: "jp-ctx-section-title" });
+      const grid = sec.createDiv("jp-ctx-copattern-grid");
+      for (const cp of card.coPatterns) {
+        const chip = grid.createDiv("jp-ctx-copattern-chip");
+        chip.createSpan({ text: cp.surface, cls: "jp-ctx-copattern-surface" });
+        chip.createSpan({ text: `\xD7${cp.count}`, cls: "jp-ctx-copattern-count" });
+        const color = (_e = CATEGORY_COLORS[cp.category]) != null ? _e : "#95a5a6";
+        chip.style.borderLeft = `3px solid ${color}`;
+        chip.addEventListener("click", () => this.openPatternCard(cp.patternId));
+      }
+    }
+  }
+  // ══════════════════════════════════════════════════════════
+  // PATTERN CONTEXT CARD
+  // ══════════════════════════════════════════════════════════
+  async openPatternCard(patternId) {
+    if (!this.resultContainer || !this.statsEl)
+      return;
+    this.resultContainer.empty();
+    this.statsEl.empty();
+    const loading = this.resultContainer.createDiv("jp-col-loading");
+    loading.createSpan({ text: "\u{1F50D} \u30D1\u30BF\u30FC\u30F3\u6587\u8108\u3092\u691C\u7D22\u4E2D\u2026" });
+    const card = await this.contextEngine.getPatternContext(patternId);
+    this.resultContainer.empty();
+    this.statsEl.empty();
+    if (!card) {
+      this.resultContainer.createDiv({ text: "Pattern not found", cls: "jp-col-empty" });
+      return;
+    }
+    const backRow = this.statsEl.createDiv("jp-ctx-back-row");
+    const backBtn = backRow.createEl("button", { text: "\u2190 \u623B\u308B", cls: "jp-col-back-btn" });
+    backBtn.addEventListener("click", () => {
+      this.focusedQuery = null;
+      this.refresh();
+    });
+    const header = this.resultContainer.createDiv("jp-ctx-pattern-header");
+    const badge = header.createSpan({ text: card.category, cls: "jp-ctx-pattern-badge" });
+    badge.style.backgroundColor = card.categoryColor;
+    header.createEl("h4", { text: card.surface, cls: "jp-ctx-pattern-title" });
+    const metaRow = header.createDiv("jp-ctx-pattern-meta");
+    metaRow.createSpan({ text: card.gloss, cls: "jp-ctx-pattern-gloss" });
+    metaRow.createSpan({ text: card.glossEn, cls: "jp-ctx-pattern-gloss-en" });
+    metaRow.createSpan({ text: `[${card.register}]`, cls: "jp-ctx-pattern-register" });
+    metaRow.createSpan({ text: `Tier ${card.frequencyTier}`, cls: "jp-ctx-pattern-freq" });
+    metaRow.createSpan({ text: card.categoryLabel, cls: "jp-ctx-pattern-cat-label" });
+    if (card.kwicLines.length > 0) {
+      const sec = this.resultContainer.createDiv("jp-ctx-section");
+      sec.createEl("h5", { text: `\u{1F4DD} KWIC (${card.kwicLines.length})`, cls: "jp-ctx-section-title" });
+      for (const kw of card.kwicLines.slice(0, 20)) {
+        const row = sec.createDiv("jp-ctx-kwic-row");
+        row.createSpan({ text: kw.left, cls: "jp-ctx-kwic-left" });
+        row.createSpan({ text: kw.match, cls: "jp-ctx-kwic-match" });
+        row.createSpan({ text: kw.right, cls: "jp-ctx-kwic-right" });
+        const fileLink = row.createSpan({ text: kw.file.replace(/.*\//, ""), cls: "jp-ctx-kwic-file" });
+        fileLink.addEventListener("click", () => {
+          const f = this.app.vault.getAbstractFileByPath(kw.file);
+          if (f)
+            this.app.workspace.getLeaf().openFile(f);
+        });
+      }
+    }
+    if (card.vaultOccurrences.length > 0) {
+      const sec = this.resultContainer.createDiv("jp-ctx-section");
+      sec.createEl("h5", { text: `\u{1F5C2} \u30DC\u30EB\u30C8\u51FA\u73FE (${card.vaultOccurrences.length})`, cls: "jp-ctx-section-title" });
+      for (const occ of card.vaultOccurrences.slice(0, 15)) {
+        const row = sec.createDiv("jp-ctx-vault-occ");
+        const fileLink = row.createSpan({ text: `\u{1F4C4} ${occ.fileName}`, cls: "jp-ctx-vault-filename" });
+        fileLink.addEventListener("click", () => {
+          const f = this.app.vault.getAbstractFileByPath(occ.filePath);
+          if (f)
+            this.app.workspace.getLeaf().openFile(f);
+        });
+        this.renderHighlightedContext(row, occ.context, card.surface);
+      }
+    }
+    if (card.examples.length > 0) {
+      const sec = this.resultContainer.createDiv("jp-ctx-section jp-ctx-examples-section");
+      sec.createEl("h5", { text: `\u{1F4AC} \u7528\u4F8B (${card.examples.length})`, cls: "jp-ctx-section-title" });
+      for (const ex of card.examples.slice(0, 20)) {
+        this.renderStyledExample(sec, ex, card.surface);
+      }
+    }
+    if (card.coPatterns.length > 0) {
+      const sec = this.resultContainer.createDiv("jp-ctx-section");
+      sec.createEl("h5", { text: "\u{1F517} \u5171\u8D77\u30D1\u30BF\u30FC\u30F3", cls: "jp-ctx-section-title" });
+      const grid = sec.createDiv("jp-ctx-copattern-grid");
+      for (const cp of card.coPatterns) {
+        const chip = grid.createDiv("jp-ctx-copattern-chip");
+        chip.createSpan({ text: cp.surface, cls: "jp-ctx-copattern-surface" });
+        chip.createSpan({ text: `\xD7${cp.count}`, cls: "jp-ctx-copattern-count" });
+        chip.addEventListener("click", () => this.openPatternCard(cp.patternId));
+      }
+    }
+  }
+  // ══════════════════════════════════════════════════════════
+  // STYLED EXAMPLE RENDERING — discourse patterns inline
+  // ══════════════════════════════════════════════════════════
+  /**
+   * Render an example sentence with inline discourse pattern highlighting,
+   * relation markers, source badge, and clickable Japanese text.
+   */
+  renderStyledExample(parent, ex, highlightTerm) {
+    var _a, _b;
+    const row = parent.createDiv("jp-ctx-example");
+    const sourceBadge = row.createSpan({ cls: "jp-ctx-example-source" });
+    const sourceIcons = {
+      vault: "\u{1F4C4}",
+      dictionary: "\u{1F4D6}",
+      collocation: "\u{1F4DA}",
+      surfer: "\u{1F3C4}",
+      manual: "\u270F\uFE0F"
+    };
+    sourceBadge.textContent = (_a = sourceIcons[ex.source]) != null ? _a : "?";
+    sourceBadge.title = `${ex.source}: ${ex.sourceDetail}`;
+    const textEl = row.createDiv("jp-ctx-example-text");
+    this.renderAnnotatedText(textEl, ex.text, ex.patterns, highlightTerm);
+    if (ex.relations.length > 0) {
+      const relRow = row.createDiv("jp-ctx-example-relations");
+      for (const rel of ex.relations.slice(0, 3)) {
+        const relChip = relRow.createSpan({ cls: "jp-ctx-rel-chip" });
+        const colorCls = (_b = RELATION_COLORS[rel.type]) != null ? _b : "jp-rel-cause";
+        relChip.addClass(colorCls);
+        relChip.textContent = `${rel.type.replace(/-/g, " ")}`;
+        relChip.title = `${rel.source.text} \u2192 ${rel.target.text}`;
+      }
+    }
+    if (ex.source === "vault") {
+      row.addEventListener("click", () => {
+        const f = this.app.vault.getAbstractFileByPath(ex.sourceDetail);
+        if (f)
+          this.app.workspace.getLeaf().openFile(f);
+      });
+      row.addClass("jp-ctx-example--clickable");
+    }
+  }
+  /**
+   * Render text with discourse patterns highlighted inline.
+   * Patterns get colored underlines; the search term gets a highlight.
+   */
+  renderAnnotatedText(parent, text, patterns, highlightTerm) {
+    const ranges = [];
+    for (const m of patterns) {
+      ranges.push({
+        start: m.offset,
+        end: m.offset + m.matchedText.length,
+        cls: `jp-ctx-inline-pattern jp-vis-cat-${m.pattern.category}`,
+        title: `${m.pattern.category}: ${m.pattern.gloss} \u2014 ${m.pattern.glossEn}`,
+        patternId: m.pattern.id
+      });
+    }
+    if (highlightTerm) {
+      let idx = 0;
+      while (true) {
+        const pos = text.indexOf(highlightTerm, idx);
+        if (pos === -1)
+          break;
+        ranges.push({
+          start: pos,
+          end: pos + highlightTerm.length,
+          cls: "jp-ctx-highlight-term"
+        });
+        idx = pos + 1;
+      }
+    }
+    ranges.sort((a, b) => a.start - b.start || a.end - b.end);
+    let cursor = 0;
+    for (const r of ranges) {
+      if (r.start < cursor)
+        continue;
+      if (r.start > cursor) {
+        parent.appendText(text.slice(cursor, r.start));
+      }
+      const span = parent.createSpan({
+        text: text.slice(r.start, r.end),
+        cls: r.cls
+      });
+      if (r.title)
+        span.title = r.title;
+      if (r.patternId) {
+        span.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.openPatternCard(r.patternId);
+        });
+      }
+      cursor = r.end;
+    }
+    if (cursor < text.length) {
+      parent.appendText(text.slice(cursor));
+    }
+  }
+  /** Render a context snippet with the query term highlighted */
+  renderHighlightedContext(parent, context, term) {
+    const ctxEl = parent.createDiv("jp-ctx-highlighted-text");
+    const lower = context.toLowerCase();
+    const tLower = term.toLowerCase();
+    let cursor = 0;
+    let idx = lower.indexOf(tLower, cursor);
+    while (idx !== -1) {
+      if (idx > cursor)
+        ctxEl.appendText(context.slice(cursor, idx));
+      ctxEl.createSpan({ text: context.slice(idx, idx + term.length), cls: "jp-ctx-highlight-term" });
+      cursor = idx + term.length;
+      idx = lower.indexOf(tLower, cursor);
+    }
+    if (cursor < context.length)
+      ctxEl.appendText(context.slice(cursor));
+  }
+  // ══════════════════════════════════════════════════════════
+  // TAB: LEXICON
+  // ══════════════════════════════════════════════════════════
+  refreshLexicon() {
     var _a, _b;
     const query = (_b = (_a = this.searchInput) == null ? void 0 : _a.value) != null ? _b : "";
+    if (this.focusedQuery) {
+      this.openContextCard(this.focusedQuery);
+      return;
+    }
     this.results = this.engine.search({
       query,
       posFilter: this.currentPOSFilter.length ? this.currentPOSFilter : void 0,
@@ -1323,18 +8781,33 @@ var CollocationView = class extends import_obsidian3.ItemView {
     this.renderResults();
   }
   renderStats() {
+    var _a, _b;
     if (!this.statsEl)
       return;
     const stats = this.store.getStats();
     this.statsEl.empty();
-    this.statsEl.createSpan({ text: `${this.results.length} / ${stats.total} entries`, cls: "jp-col-stat-text" });
+    const indexStats = this.contextEngine.getIndexStats();
+    this.statsEl.createSpan({
+      text: `${this.results.length}/${stats.total} entries \xB7 ${(_b = (_a = indexStats == null ? void 0 : indexStats.indexStats) == null ? void 0 : _a.filesIndexed) != null ? _b : 0} files indexed`,
+      cls: "jp-col-stat-text"
+    });
   }
   renderResults() {
+    var _a, _b;
     if (!this.resultContainer)
       return;
     this.resultContainer.empty();
     if (this.results.length === 0) {
-      this.resultContainer.createDiv({ text: "No results found.", cls: "jp-col-empty" });
+      const emptyDiv = this.resultContainer.createDiv({ cls: "jp-col-empty" });
+      emptyDiv.createSpan({ text: "\u7D50\u679C\u306A\u3057" });
+      const q = (_b = (_a = this.searchInput) == null ? void 0 : _a.value) == null ? void 0 : _b.trim();
+      if (q) {
+        const ctxBtn = emptyDiv.createEl("button", {
+          text: `\u{1F50D} \u300C${q}\u300D\u3092\u30DC\u30EB\u30C8\u5168\u4F53\u3067\u691C\u7D22`,
+          cls: "jp-col-action-btn"
+        });
+        ctxBtn.addEventListener("click", () => this.openContextCard(q));
+      }
       return;
     }
     for (const result of this.results) {
@@ -1345,21 +8818,28 @@ var CollocationView = class extends import_obsidian3.ItemView {
     const card = parent.createDiv("jp-col-card");
     const mainRow = card.createDiv("jp-col-card-main");
     const hwSpan = mainRow.createSpan({ cls: "jp-col-headword", text: entry2.headword });
+    hwSpan.addEventListener("click", () => this.openContextCard(entry2.headword));
     if (this.settings.showReadings && entry2.headwordReading) {
       mainRow.createSpan({ cls: "jp-col-reading", text: `\uFF08${entry2.headwordReading}\uFF09` });
     }
     mainRow.createSpan({ cls: "jp-col-collocate", text: " " + entry2.collocate });
-    mainRow.createSpan({ cls: `jp-col-pos jp-col-pos--${this.posClass(entry2.headwordPOS)}`, text: entry2.headwordPOS });
+    mainRow.createSpan({
+      cls: `jp-col-pos jp-col-pos--${this.posClass(entry2.headwordPOS)}`,
+      text: entry2.headwordPOS
+    });
     if (entry2.pattern) {
-      mainRow.createSpan({ cls: "jp-col-pattern", text: entry2.pattern });
+      mainRow.createSpan({ cls: "jp-col-pattern-label", text: entry2.pattern });
     }
     const actRow = card.createDiv("jp-col-actions");
     this.buildActions(actRow, entry2);
     if (entry2.exampleSentences.length > 0 || entry2.notes) {
       const details = card.createEl("details", { cls: "jp-col-details" });
-      details.createEl("summary", { text: "examples / notes" });
+      const summary = details.createEl("summary", { cls: "jp-col-details-summary" });
+      summary.createSpan({ text: `\u{1F4AC} ${entry2.exampleSentences.length} examples` });
       for (const s of entry2.exampleSentences) {
-        details.createEl("p", { text: s, cls: "jp-col-example" });
+        const exDiv = details.createDiv("jp-col-example-styled");
+        const patterns = detectPatterns(s);
+        this.renderAnnotatedText(exDiv, s, patterns, entry2.headword);
       }
       if (entry2.notes) {
         details.createEl("p", { text: entry2.notes, cls: "jp-col-notes" });
@@ -1367,36 +8847,345 @@ var CollocationView = class extends import_obsidian3.ItemView {
     }
   }
   buildActions(parent, entry2) {
-    const copyBtn = parent.createEl("button", { text: "Copy", cls: "jp-col-action-btn" });
-    copyBtn.addEventListener("click", () => {
-      navigator.clipboard.writeText(entry2.fullPhrase).then(() => {
-        new import_obsidian3.Notice(`Copied: ${entry2.fullPhrase}`);
-      }).catch(() => {
-        new import_obsidian3.Notice("Copy failed.");
+    var _a;
+    const btns = [
+      { text: "\u{1F4CB}", title: "Copy", fn: () => {
+        navigator.clipboard.writeText(entry2.fullPhrase).then(() => new import_obsidian5.Notice(`Copied: ${entry2.fullPhrase}`));
+      } },
+      { text: "\u{1F4E5}", title: "Insert", fn: () => {
+        var _a2;
+        const editor = (_a2 = this.app.workspace.activeEditor) == null ? void 0 : _a2.editor;
+        if (editor) {
+          editor.replaceSelection(entry2.fullPhrase);
+          new import_obsidian5.Notice(`Inserted`);
+        }
+      } },
+      { text: "\u270F\uFE0F", title: "Edit", fn: () => {
+        new AddEntryModal(this.app, this.store, () => this.refresh(), entry2).open();
+      } },
+      { text: "\u{1F50D}", title: "Context", fn: () => this.openContextCard(entry2.headword) },
+      { text: "\u{1F3B4}", title: "SRS", fn: () => {
+        var _a2;
+        new CardPreviewModal(this.app, "", [entry2], void 0, (_a2 = this.settings.srs) != null ? _a2 : {}).open();
+      } },
+      { text: "\xD7", title: "Delete", cls: "jp-col-action-btn--danger", fn: () => {
+        this.store.delete(entry2.id);
+        new import_obsidian5.Notice(`Deleted`);
+        this.refresh();
+      } }
+    ];
+    for (const b of btns) {
+      const btn = parent.createEl("button", {
+        text: b.text,
+        cls: `jp-col-action-btn ${(_a = b.cls) != null ? _a : ""}`,
+        attr: { title: b.title, "aria-label": b.title }
       });
-    });
-    const insertBtn = parent.createEl("button", { text: "Insert", cls: "jp-col-action-btn" });
-    insertBtn.addEventListener("click", () => {
-      var _a;
-      const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
-      if (editor) {
-        editor.replaceSelection(entry2.fullPhrase);
-        new import_obsidian3.Notice(`Inserted: ${entry2.fullPhrase}`);
-      } else {
-        new import_obsidian3.Notice("No active editor.");
-      }
-    });
-    const editBtn = parent.createEl("button", { text: "Edit", cls: "jp-col-action-btn" });
-    editBtn.addEventListener("click", () => {
-      new AddEntryModal(this.app, this.store, () => this.refresh(), entry2).open();
-    });
-    const delBtn = parent.createEl("button", { text: "\xD7", cls: "jp-col-action-btn jp-col-action-btn--danger" });
-    delBtn.addEventListener("click", () => {
-      this.store.delete(entry2.id);
-      new import_obsidian3.Notice(`Deleted: ${entry2.fullPhrase}`);
-      this.refresh();
-    });
+      btn.addEventListener("click", b.fn);
+    }
   }
+  // ══════════════════════════════════════════════════════════
+  // TAB: DISCOURSE ANALYSIS
+  // ══════════════════════════════════════════════════════════
+  refreshDiscourse() {
+    var _a, _b, _c, _d, _e, _f, _g;
+    if (!this.resultContainer || !this.statsEl)
+      return;
+    this.resultContainer.empty();
+    this.statsEl.empty();
+    const query = (_b = (_a = this.searchInput) == null ? void 0 : _a.value) != null ? _b : "";
+    if (!query.trim()) {
+      this.statsEl.createSpan({ text: "\u8AC7\u8A71\u6587\u6CD5\u5206\u6790 \u2014 \u30C6\u30AD\u30B9\u30C8\u3092\u5165\u529B\u3057\u3066\u5206\u6790", cls: "jp-col-stat-text" });
+      this.resultContainer.createDiv({
+        text: "\u65E5\u672C\u8A9E\u30C6\u30AD\u30B9\u30C8\u3092\u5165\u529B\u3059\u308B\u3068\u3001\u8AC7\u8A71\u30D1\u30BF\u30FC\u30F3\u30FB\u8AD6\u7406\u5C55\u958B\u30D5\u30ED\u30FC\u30FB\u30EC\u30B8\u30B9\u30BF\u30FC\u3092\u691C\u51FA\u3057\u307E\u3059\u3002",
+        cls: "jp-col-empty"
+      });
+      return;
+    }
+    const analysis = analyzeUtterance(query);
+    const resolved = collocationViewResolver(query, { filePath: (_c = this.app.workspace.getActiveFile()) == null ? void 0 : _c.path });
+    const { relations } = resolved;
+    const sourceTag = resolved.source === "sidecar" ? "[sidecar]" : "[heuristic]";
+    this.statsEl.createSpan({
+      text: `${analysis.patterns.length} markers \xB7 ${relations.length} relations ${sourceTag} \xB7 ${analysis.estimatedRegister}`,
+      cls: "jp-col-stat-text"
+    });
+    const textSection = this.resultContainer.createDiv("jp-col-discourse-annotated");
+    textSection.createEl("h5", { text: "\u6CE8\u91C8\u4ED8\u304D\u30C6\u30AD\u30B9\u30C8", cls: "jp-col-section-title" });
+    const textBody = textSection.createDiv("jp-ctx-annotated-body");
+    this.renderAnnotatedText(textBody, query, analysis.patterns, "");
+    if (relations.length > 0) {
+      const relSection = this.resultContainer.createDiv("jp-col-discourse-section");
+      relSection.createEl("h5", { text: `\u{1F517} \u6587\u9593\u95A2\u4FC2 (${relations.length})`, cls: "jp-col-section-title" });
+      for (const rel of relations) {
+        const row = relSection.createDiv("jp-ctx-relation-row");
+        const colorCls = (_d = RELATION_COLORS[rel.type]) != null ? _d : "jp-rel-cause";
+        row.addClass(colorCls);
+        row.createSpan({ text: rel.source.text.slice(0, 30), cls: "jp-ctx-rel-source" });
+        row.createSpan({ text: ` \u2192[${rel.type}]\u2192 `, cls: "jp-ctx-rel-arrow" });
+        row.createSpan({ text: rel.target.text.slice(0, 30), cls: "jp-ctx-rel-target" });
+        row.createSpan({
+          text: ` (${(rel.confidence * 100).toFixed(0)}%)`,
+          cls: "jp-ctx-rel-confidence"
+        });
+      }
+    }
+    const catRow = this.resultContainer.createDiv("jp-col-discourse-cats");
+    for (const [cat, count] of Object.entries(analysis.categoryBreakdown)) {
+      const label = (_e = CATEGORY_LABELS[cat]) != null ? _e : cat;
+      const color = (_f = CATEGORY_COLORS[cat]) != null ? _f : "#95a5a6";
+      const chip = catRow.createEl("span", {
+        text: `${cat}: ${label} (${count})`,
+        cls: "jp-col-discourse-chip"
+      });
+      chip.style.borderLeft = `3px solid ${color}`;
+    }
+    if (analysis.patterns.length > 0) {
+      const patSection = this.resultContainer.createDiv("jp-col-discourse-section");
+      patSection.createEl("h5", { text: "\u691C\u51FA\u30D1\u30BF\u30FC\u30F3", cls: "jp-col-section-title" });
+      for (const m of analysis.patterns) {
+        const row = patSection.createDiv("jp-col-discourse-match");
+        const color = (_g = CATEGORY_COLORS[m.pattern.category]) != null ? _g : "#95a5a6";
+        const badge = row.createSpan({ text: m.pattern.category, cls: "jp-col-discourse-badge" });
+        badge.style.backgroundColor = color;
+        const surfSpan = row.createSpan({ text: m.pattern.surface, cls: "jp-col-discourse-surface" });
+        surfSpan.addEventListener("click", () => this.openPatternCard(m.pattern.id));
+        row.createSpan({ text: m.pattern.gloss, cls: "jp-col-discourse-gloss" });
+        row.createSpan({ text: m.pattern.glossEn, cls: "jp-col-discourse-gloss-en" });
+        row.createSpan({ text: `[${m.pattern.register}]`, cls: "jp-col-discourse-register" });
+      }
+    }
+    if (analysis.flows.length > 0) {
+      const flowSection = this.resultContainer.createDiv("jp-col-discourse-section");
+      flowSection.createEl("h5", { text: "\u8AD6\u7406\u5C55\u958B\u30D5\u30ED\u30FC", cls: "jp-col-section-title" });
+      for (const f of analysis.flows) {
+        const row = flowSection.createDiv("jp-col-discourse-flow");
+        row.createSpan({ text: `\u{1F517} ${f.flow.name}`, cls: "jp-col-flow-name" });
+        row.createSpan({ text: f.flow.descriptionEn, cls: "jp-col-flow-desc" });
+      }
+    }
+    if (analysis.dominantFunctions.length > 0) {
+      const fnSection = this.resultContainer.createDiv("jp-col-discourse-section");
+      fnSection.createEl("h5", { text: "\u4E3B\u8981\u6A5F\u80FD", cls: "jp-col-section-title" });
+      const fnRow = fnSection.createDiv("jp-col-discourse-functions");
+      for (const fn of analysis.dominantFunctions) {
+        fnRow.createSpan({ text: fn, cls: "jp-col-fn-chip" });
+      }
+    }
+    const { csj } = analysis;
+    if (csj.fillers.length > 0 || csj.spokenVariations.length > 0 || csj.speechType !== "unknown") {
+      const csjSection = this.resultContainer.createDiv("jp-col-discourse-section");
+      csjSection.createEl("h5", { text: "CSJ \u8A71\u3057\u8A00\u8449\u5206\u6790", cls: "jp-col-section-title" });
+      const summaryRow = csjSection.createDiv("jp-col-csj-summary");
+      summaryRow.createSpan({
+        text: `\u30EC\u30B8\u30B9\u30BF\u30FC: ${csj.registerLabel} (${csj.registerScore > 0 ? "+" : ""}${csj.registerScore.toFixed(1)})`,
+        cls: "jp-col-csj-register"
+      });
+      if (csj.speechType !== "unknown") {
+        summaryRow.createSpan({ text: `\u8A71\u4F53: ${csj.speechType}`, cls: "jp-col-csj-speech-type" });
+      }
+      summaryRow.createSpan({
+        text: `\u30D5\u30A3\u30E9\u30FC\u5BC6\u5EA6: ${(csj.fillerDensity * 100).toFixed(1)}%`,
+        cls: "jp-col-csj-filler-density"
+      });
+      if (csj.fillers.length > 0) {
+        const fillerDiv = csjSection.createDiv("jp-col-csj-fillers");
+        fillerDiv.createEl("h6", { text: "\u691C\u51FA\u30D5\u30A3\u30E9\u30FC" });
+        for (const f of csj.fillers) {
+          const row = fillerDiv.createDiv("jp-col-csj-filler-row");
+          row.createSpan({ text: f.surface, cls: "jp-col-csj-filler-surface" });
+          row.createSpan({ text: `${f.perMillion}/M`, cls: "jp-col-csj-freq" });
+          row.createSpan({ text: f.pragmaticFunction, cls: "jp-col-csj-function" });
+        }
+      }
+      if (csj.spokenVariations.length > 0) {
+        const varDiv = csjSection.createDiv("jp-col-csj-variations");
+        varDiv.createEl("h6", { text: "\u8A71\u3057\u8A00\u8449\u5909\u7570" });
+        for (const v of csj.spokenVariations) {
+          const row = varDiv.createDiv("jp-col-csj-variation-row");
+          row.createSpan({ text: `${v.standard} \u2192 ${v.variant}`, cls: "jp-col-csj-variation-pair" });
+          row.createSpan({ text: v.type, cls: "jp-col-csj-variation-type" });
+          row.createSpan({ text: v.glossEn, cls: "jp-col-csj-gloss" });
+        }
+      }
+    }
+    if (analysis.patterns.length > 0) {
+      const srsBtn = this.resultContainer.createEl("button", {
+        text: "\u{1F3B4} Generate Script Cards",
+        cls: "jp-col-action-btn jp-srs-generate-btn"
+      });
+      srsBtn.addEventListener("click", () => {
+        var _a2;
+        new CardPreviewModal(this.app, query, [], void 0, (_a2 = this.settings.srs) != null ? _a2 : {}).open();
+      });
+    }
+  }
+  // ══════════════════════════════════════════════════════════
+  // TAB: PATTERN DATABASE
+  // ══════════════════════════════════════════════════════════
+  refreshPatterns() {
+    var _a, _b, _c;
+    if (!this.resultContainer || !this.statsEl)
+      return;
+    this.resultContainer.empty();
+    this.statsEl.empty();
+    const query = (_b = (_a = this.searchInput) == null ? void 0 : _a.value) != null ? _b : "";
+    this.statsEl.createSpan({
+      text: `\u8AC7\u8A71\u30D1\u30BF\u30FC\u30F3DB: ${PATTERN_COUNT} patterns \xB7 14 categories (A\u2013N)`,
+      cls: "jp-col-stat-text"
+    });
+    let patterns = ALL_PATTERNS;
+    if (query.trim()) {
+      const lower = query.toLowerCase();
+      patterns = ALL_PATTERNS.filter(
+        (p) => p.surface.includes(lower) || p.gloss.includes(query) || p.glossEn.toLowerCase().includes(lower) || p.subcategory.includes(query) || p.categoryLabel.includes(query) || p.id.toLowerCase().includes(lower)
+      );
+    }
+    const grouped = /* @__PURE__ */ new Map();
+    for (const p of patterns) {
+      if (!grouped.has(p.category))
+        grouped.set(p.category, []);
+      grouped.get(p.category).push(p);
+    }
+    for (const [cat, pats] of grouped) {
+      const section = this.resultContainer.createDiv("jp-col-pattern-section");
+      const color = (_c = CATEGORY_COLORS[cat]) != null ? _c : "#95a5a6";
+      const title = section.createEl("h5", {
+        text: `${cat}: ${CATEGORY_LABELS[cat]} (${pats.length})`,
+        cls: "jp-col-section-title"
+      });
+      title.style.borderLeft = `3px solid ${color}`;
+      const list = section.createDiv("jp-col-pattern-list");
+      for (const p of pats.slice(0, 30)) {
+        const row = list.createDiv("jp-col-pattern-row");
+        const surfSpan = row.createSpan({ text: p.surface, cls: "jp-col-pattern-surface jp-col-pattern-surface--clickable" });
+        surfSpan.style.borderBottom = `2px solid ${color}`;
+        surfSpan.addEventListener("click", () => this.openPatternCard(p.id));
+        row.createSpan({ text: p.gloss, cls: "jp-col-pattern-gloss" });
+        row.createSpan({ text: p.glossEn, cls: "jp-col-pattern-gloss-en" });
+        const meta = row.createSpan({ cls: "jp-col-pattern-meta" });
+        meta.createSpan({ text: p.register, cls: "jp-col-meta-register" });
+        meta.createSpan({ text: `T${p.frequencyTier}`, cls: "jp-col-meta-freq" });
+      }
+      if (pats.length > 30) {
+        const moreBtn = list.createEl("button", {
+          text: `+ ${pats.length - 30} more`,
+          cls: "jp-col-pattern-more-btn"
+        });
+        moreBtn.addEventListener("click", () => {
+          moreBtn.remove();
+          for (const p of pats.slice(30)) {
+            const row = list.createDiv("jp-col-pattern-row");
+            const surfSpan = row.createSpan({ text: p.surface, cls: "jp-col-pattern-surface jp-col-pattern-surface--clickable" });
+            surfSpan.style.borderBottom = `2px solid ${color}`;
+            surfSpan.addEventListener("click", () => this.openPatternCard(p.id));
+            row.createSpan({ text: p.gloss, cls: "jp-col-pattern-gloss" });
+            row.createSpan({ text: p.glossEn, cls: "jp-col-pattern-gloss-en" });
+          }
+        });
+      }
+    }
+    if (!query.trim()) {
+      const treeSection = this.resultContainer.createDiv("jp-col-pattern-section");
+      treeSection.createEl("h5", { text: "\u6D3B\u7528\u30C4\u30EA\u30FC (Variation Trees)", cls: "jp-col-section-title" });
+      const trees = buildVariationTrees();
+      for (const tree of trees.slice(0, 10)) {
+        const treeDiv = treeSection.createDiv("jp-col-var-tree");
+        treeDiv.createSpan({ text: `\u300C${tree.stem}\u300D`, cls: "jp-col-tree-stem" });
+        treeDiv.createSpan({ text: tree.conceptLabel, cls: "jp-col-tree-concept" });
+        const variants = getRegisterProgression(tree);
+        const varList = treeDiv.createDiv("jp-col-tree-variants");
+        for (const v of variants.slice(0, 5)) {
+          const varSpan = varList.createSpan({ text: `${v.surface} [${v.register}]`, cls: "jp-col-tree-variant" });
+        }
+        if (variants.length > 5) {
+          varList.createSpan({ text: `+${variants.length - 5} more`, cls: "jp-col-tree-more" });
+        }
+      }
+    }
+  }
+  // ══════════════════════════════════════════════════════════
+  // TAB: VAULT INDEX — see your vault's discourse fingerprint
+  // ══════════════════════════════════════════════════════════
+  refreshVaultIndex() {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m;
+    if (!this.resultContainer || !this.statsEl)
+      return;
+    this.resultContainer.empty();
+    this.statsEl.empty();
+    const stats = this.contextEngine.getIndexStats();
+    const indexedFiles = this.contextEngine.getIndexedFiles();
+    this.statsEl.createSpan({
+      text: `${(_b = (_a = stats == null ? void 0 : stats.indexStats) == null ? void 0 : _a.filesIndexed) != null ? _b : 0} files \xB7 ${(_d = (_c = stats == null ? void 0 : stats.indexStats) == null ? void 0 : _c.totalOccurrences) != null ? _d : 0} patterns \xB7 ${(_f = (_e = stats == null ? void 0 : stats.indexStats) == null ? void 0 : _e.coOccurrencePairs) != null ? _f : 0} co-occurrences`,
+      cls: "jp-col-stat-text"
+    });
+    if (indexedFiles.length === 0) {
+      this.resultContainer.createDiv({
+        text: "\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u304F\u3068\u81EA\u52D5\u7684\u306B\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3055\u308C\u307E\u3059\u3002\u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u8AC7\u8A71\u30D1\u30BF\u30FC\u30F3\u306E\u691C\u51FA\u3092\u59CB\u3081\u307E\u3057\u3087\u3046\u3002",
+        cls: "jp-col-empty"
+      });
+      return;
+    }
+    const heatSection = this.resultContainer.createDiv("jp-ctx-section");
+    heatSection.createEl("h5", { text: "\u30D1\u30BF\u30FC\u30F3\u5BC6\u5EA6", cls: "jp-ctx-section-title" });
+    const catCounts = {};
+    for (const fp of indexedFiles) {
+      const pats = this.contextEngine.getFilePatterns(fp);
+      for (const pid of pats) {
+        const cat = pid.charAt(0);
+        catCounts[cat] = ((_g = catCounts[cat]) != null ? _g : 0) + 1;
+      }
+    }
+    const heatGrid = heatSection.createDiv("jp-ctx-heat-grid");
+    for (const cat of Object.keys(CATEGORY_LABELS).sort()) {
+      const count = (_h = catCounts[cat]) != null ? _h : 0;
+      if (count === 0)
+        continue;
+      const bar = heatGrid.createDiv("jp-ctx-heat-bar");
+      bar.createSpan({ text: `${cat}`, cls: "jp-ctx-heat-cat" });
+      const fill = bar.createDiv("jp-ctx-heat-fill");
+      const maxCount = Math.max(...Object.values(catCounts));
+      fill.style.width = `${Math.max(5, count / maxCount * 100)}%`;
+      fill.style.backgroundColor = (_i = CATEGORY_COLORS[cat]) != null ? _i : "#95a5a6";
+      bar.createSpan({ text: `${count}`, cls: "jp-ctx-heat-count" });
+      bar.createSpan({
+        text: (_j = CATEGORY_LABELS[cat]) != null ? _j : cat,
+        cls: "jp-ctx-heat-label"
+      });
+    }
+    const fileSection = this.resultContainer.createDiv("jp-ctx-section");
+    fileSection.createEl("h5", { text: `\u{1F4C1} \u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u6E08\u307F (${indexedFiles.length})`, cls: "jp-ctx-section-title" });
+    const filePats = indexedFiles.map((fp) => ({
+      path: fp,
+      name: fp.replace(/.*\//, "").replace(/\.md$/, ""),
+      patterns: this.contextEngine.getFilePatterns(fp)
+    })).sort((a, b) => b.patterns.length - a.patterns.length);
+    for (const fp of filePats.slice(0, 50)) {
+      const row = fileSection.createDiv("jp-ctx-vault-file-row");
+      const nameSpan = row.createSpan({ text: `\u{1F4C4} ${fp.name}`, cls: "jp-ctx-vault-filename" });
+      nameSpan.addEventListener("click", () => {
+        const f = this.app.vault.getAbstractFileByPath(fp.path);
+        if (f)
+          this.app.workspace.getLeaf().openFile(f);
+      });
+      row.createSpan({ text: `${fp.patterns.length} patterns`, cls: "jp-ctx-vault-patcount" });
+      const miniBar = row.createDiv("jp-ctx-mini-bar");
+      const catBreakdown = {};
+      for (const pid of fp.patterns) {
+        const c = pid.charAt(0);
+        catBreakdown[c] = ((_k = catBreakdown[c]) != null ? _k : 0) + 1;
+      }
+      const total = fp.patterns.length || 1;
+      for (const [c, n] of Object.entries(catBreakdown)) {
+        const seg = miniBar.createDiv("jp-ctx-mini-bar-seg");
+        seg.style.width = `${n / total * 100}%`;
+        seg.style.backgroundColor = (_l = CATEGORY_COLORS[c]) != null ? _l : "#95a5a6";
+        seg.title = `${c}: ${(_m = CATEGORY_LABELS[c]) != null ? _m : c} (${n})`;
+      }
+    }
+  }
+  // ══════════════════════════════════════════════════════════
+  // HELPERS
+  // ══════════════════════════════════════════════════════════
   posClass(pos) {
     var _a;
     const map = {
@@ -1412,8 +9201,8 @@ var CollocationView = class extends import_obsidian3.ItemView {
 };
 
 // src/ui/SearchModal.ts
-var import_obsidian4 = require("obsidian");
-var SearchModal = class extends import_obsidian4.SuggestModal {
+var import_obsidian6 = require("obsidian");
+var SearchModal = class extends import_obsidian6.SuggestModal {
   constructor(app, engine) {
     super(app);
     this.engine = engine;
@@ -1449,20 +9238,273 @@ var SearchModal = class extends import_obsidian4.SuggestModal {
     const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
     if (editor) {
       editor.replaceSelection(entry2.fullPhrase);
-      new import_obsidian4.Notice(`Inserted: ${entry2.fullPhrase}`);
+      new import_obsidian6.Notice(`Inserted: ${entry2.fullPhrase}`);
     } else {
       navigator.clipboard.writeText(entry2.fullPhrase).then(() => {
-        new import_obsidian4.Notice(`Copied: ${entry2.fullPhrase}`);
+        new import_obsidian6.Notice(`Copied: ${entry2.fullPhrase}`);
       }).catch(() => {
-        new import_obsidian4.Notice("No active editor. Clipboard copy failed.");
+        new import_obsidian6.Notice("No active editor. Clipboard copy failed.");
       });
     }
   }
 };
 
 // src/ui/SettingsTab.ts
-var import_obsidian5 = require("obsidian");
-var SettingsTab = class extends import_obsidian5.PluginSettingTab {
+var import_obsidian7 = require("obsidian");
+
+// src/x/query-builder.ts
+function parseTerms(raw) {
+  var _a, _b;
+  const terms = [];
+  const re = /"([^"]+)"|(\S+)/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) {
+    const term = ((_b = (_a = m[1]) != null ? _a : m[2]) != null ? _b : "").trim();
+    if (term)
+      terms.push(term);
+  }
+  return terms;
+}
+function quoteTerm(term) {
+  const t = term.trim();
+  if (!t)
+    return "";
+  if (/^[-"]/.test(t))
+    return t;
+  if (/^[A-Za-z0-9_]+$/.test(t))
+    return t;
+  return `"${t.replace(/"/g, "")}"`;
+}
+function buildRawQuery(q) {
+  const parts = [];
+  for (const t of q.allTerms) {
+    const quoted = quoteTerm(t);
+    if (quoted)
+      parts.push(quoted);
+  }
+  const anyQuoted = q.anyTerms.map(quoteTerm).filter(Boolean);
+  if (anyQuoted.length === 1) {
+    parts.push(anyQuoted[0]);
+  } else if (anyQuoted.length > 1) {
+    parts.push(`(${anyQuoted.join(" OR ")})`);
+  }
+  for (const t of q.noneTerms) {
+    const quoted = quoteTerm(t);
+    if (quoted)
+      parts.push(`-${quoted}`);
+  }
+  if (q.lang)
+    parts.push(`lang:${q.lang}`);
+  if (q.fromUser)
+    parts.push(`from:${q.fromUser.replace(/^@/, "")}`);
+  if (q.toUser)
+    parts.push(`to:${q.toUser.replace(/^@/, "")}`);
+  if (q.minFaves > 0)
+    parts.push(`min_faves:${q.minFaves}`);
+  if (q.minRetweets > 0)
+    parts.push(`min_retweets:${q.minRetweets}`);
+  if (q.minReplies > 0)
+    parts.push(`min_replies:${q.minReplies}`);
+  if (q.since)
+    parts.push(`since:${q.since}`);
+  if (q.until)
+    parts.push(`until:${q.until}`);
+  return parts.join(" ").trim();
+}
+function isEmptyQuery(q) {
+  return q.allTerms.length === 0 && q.anyTerms.length === 0 && q.noneTerms.length === 0 && !q.fromUser && !q.toUser && q.minFaves === 0 && q.minRetweets === 0 && q.minReplies === 0;
+}
+function highlightTerms(q) {
+  return [...q.allTerms, ...q.anyTerms].map((t) => t.trim()).filter(Boolean);
+}
+function normTerm(term) {
+  return normalizeJapanese(term.trim());
+}
+
+// src/x/mobile-capture.ts
+var X_CAPTURE_ACTION = "jp-x-capture";
+function buildBrowserCaptureUrl(opts) {
+  const rawQuery = buildRawQuery(opts.query);
+  const url = `https://x.com/search?q=${encodeURIComponent(rawQuery)}&src=typed_query&f=live&jpcap=1&jpvault=${encodeURIComponent(opts.vaultName)}`;
+  return { url, rawQuery };
+}
+function decodeCaptureData(b64) {
+  if (!b64)
+    return "";
+  const bin = atob(b64);
+  try {
+    return decodeURIComponent(escape(bin));
+  } catch (e) {
+    return bin;
+  }
+}
+var SCRIPTABLE_SOURCE = [
+  "// JP-X-Cooc \u2014 Scriptable capture for jp-collocations (Obsidian)",
+  "// Auto-invoked by Obsidian. One-time setup:",
+  '//   1. Create a new Scriptable script named exactly "JP-X-Cooc" and paste this in.',
+  "//   2. Run it once, tap into the WebView, and log into x.com. The session persists.",
+  "// After that, the Obsidian command does the rest automatically.",
+  "",
+  "const p = args.queryParameters || {};",
+  "const pageUrl = p.url;",
+  "let terms = [];",
+  'try { terms = JSON.parse(p.terms || "[]"); } catch (e) { terms = []; }',
+  'const maxN = parseInt(p.max || "40", 10) || 40;',
+  'const success = p.success || "";',
+  "",
+  "async function scrape() {",
+  "  const wv = new WebView();",
+  "  await wv.loadURL(pageUrl);",
+  "  const code = [",
+  '    "(async () => {",',
+  '    "  const sleep = ms => new Promise(r => setTimeout(r, ms));",',
+  '    "  const out = {};",',
+  '    "  for (let i = 0; i < 8; i++) {",',
+  `    "    document.querySelectorAll('article[data-testid=\\"tweet\\"]').forEach(a => {",`,
+  '    "      try {",',
+  `    "        const link = a.querySelector('a[href*=\\"/status/\\"]');",`,
+  `    "        const href = link ? link.href : '';",`,
+  '    "        const m = href.match(/\\\\/([^\\\\/]+)\\\\/status\\\\/(\\\\d+)/);",',
+  '    "        if (!m) return;",',
+  '    "        const handle = m[1]; const id = m[2];",',
+  `    "        const tx = a.querySelector('[data-testid=\\"tweetText\\"]');",`,
+  `    "        const text = tx ? tx.innerText : '';",`,
+  `    "        const tm = a.querySelector('time');",`,
+  `    "        const created = tm ? tm.getAttribute('datetime') : '';",`,
+  `    "        out[id] = { id: id, author: handle, text: text, createdAt: created, url: 'https://x.com/' + handle + '/status/' + id };",`,
+  '    "      } catch (e) {}",',
+  '    "    });",',
+  '    "    window.scrollTo(0, document.body.scrollHeight);",',
+  '    "    await sleep(1000);",',
+  '    "  }",',
+  '    "  completion(JSON.stringify(Object.values(out)));",',
+  '    "})()"',
+  '  ].join("\\n");',
+  '  let raw = "[]";',
+  '  try { raw = await wv.evaluateJavaScript(code, true); } catch (e) { raw = "[]"; }',
+  "  try { return JSON.parse(raw) || []; } catch (e) { return []; }",
+  "}",
+  "",
+  'function nfkc(s) { return (s || "").normalize("NFKC"); }',
+  "",
+  "async function main() {",
+  "  // Manual run (no params from Obsidian) = setup mode: show x.com so you can",
+  "  // log in. The session persists in Scriptable for later headless lookups.",
+  "  if (!pageUrl || !success) {",
+  "    const wv = new WebView();",
+  '    await wv.loadURL("https://x.com/home");',
+  "    await wv.present();",
+  "    Script.complete();",
+  "    return;",
+  "  }",
+  "  let rows = [];",
+  "  try { rows = await scrape(); } catch (e) { rows = []; }",
+  "  const want = terms.map(nfkc).filter(Boolean);",
+  "  const matched = rows.filter(r => {",
+  "    const t = nfkc(r.text);",
+  "    return want.every(w => t.indexOf(w) !== -1);",
+  "  });",
+  "  const capped = matched.slice(0, maxN);",
+  "  const jsonl = capped.map(r => JSON.stringify({",
+  "    id: r.id, url: r.url, text: r.text, author: r.author,",
+  "    createdAt: r.createdAt || new Date().toISOString(),",
+  "    likeCount: 0, matchedQueries: []",
+  '  })).join("\\n");',
+  "  const b64 = Data.fromString(jsonl).toBase64String();",
+  "  if (success) {",
+  '    let ret = success + (success.indexOf("?") === -1 ? "?" : "&");',
+  '    ret += "n=" + matched.length + "&total=" + rows.length + "&data=" + encodeURIComponent(b64);',
+  "    Safari.open(ret);",
+  "  }",
+  "  Script.complete();",
+  "}",
+  "",
+  "await main();",
+  ""
+].join("\n");
+var USERSCRIPT_SOURCE = [
+  "// ==UserScript==",
+  "// @name         JP-X-Cooc capture",
+  "// @namespace    jp-collocations",
+  "// @match        https://x.com/search*",
+  "// @match        https://twitter.com/search*",
+  "// @run-at       document-start",
+  "// @grant        none",
+  "// ==/UserScript==",
+  "(function () {",
+  '  "use strict";',
+  "  // Read launch params at document-start, before x.com rewrites the URL.",
+  "  var usp = new URLSearchParams(location.search);",
+  '  if (usp.get("jpcap") !== "1") return;',
+  '  var vault = usp.get("jpvault") || "";',
+  '  var q = usp.get("q") || "";',
+  "  var terms = [];",
+  '  var re = /"([^"]+)"/g, mm;',
+  "  while ((mm = re.exec(q)) !== null) terms.push(mm[1]);",
+  "  if (terms.length < 2) return;",
+  "  var MAX = 40, done = false;",
+  '  function nfkc(s) { return (s || "").normalize("NFKC"); }',
+  "",
+  "  function scrapeInto(out) {",
+  `    document.querySelectorAll('article[data-testid="tweet"]').forEach(function (a) {`,
+  "      try {",
+  `        var link = a.querySelector('a[href*="/status/"]');`,
+  '        var href = link ? link.href : "";',
+  "        var m = href.match(/\\/([^\\/]+)\\/status\\/(\\d+)/);",
+  "        if (!m) return;",
+  "        var handle = m[1], id = m[2];",
+  `        var tx = a.querySelector('[data-testid="tweetText"]');`,
+  '        var text = tx ? tx.innerText : "";',
+  '        var tm = a.querySelector("time");',
+  '        var created = tm ? tm.getAttribute("datetime") : "";',
+  '        out[id] = { id: id, author: handle, text: text, createdAt: created, url: "https://x.com/" + handle + "/status/" + id };',
+  "      } catch (e) {}",
+  "    });",
+  "  }",
+  "",
+  "  function finish(rows) {",
+  "    if (done) return; done = true;",
+  "    var want = terms.map(nfkc).filter(Boolean);",
+  "    var matched = rows.filter(function (r) { var t = nfkc(r.text); return want.every(function (w) { return t.indexOf(w) !== -1; }); });",
+  "    var capped = matched.slice(0, MAX);",
+  "    var jsonl = capped.map(function (r) {",
+  "      return JSON.stringify({ id: r.id, url: r.url, text: r.text, author: r.author, createdAt: r.createdAt || new Date().toISOString(), likeCount: 0, matchedQueries: [] });",
+  '    }).join("\\n");',
+  "    var b64 = btoa(unescape(encodeURIComponent(jsonl)));",
+  '    var ret = "obsidian://jp-x-capture?vault=" + encodeURIComponent(vault)',
+  '      + "&q=" + encodeURIComponent(terms.join(" "))',
+  '      + "&n=" + matched.length + "&total=" + rows.length',
+  '      + "&data=" + encodeURIComponent(b64);',
+  "    location.href = ret;",
+  "  }",
+  "",
+  "  function run() {",
+  "    var out = {}, scrolls = 0;",
+  "    var timer = setInterval(function () {",
+  "      scrapeInto(out);",
+  "      window.scrollTo(0, document.body.scrollHeight);",
+  "      if (++scrolls >= 8) { clearInterval(timer); finish(Object.keys(out).map(function (k) { return out[k]; })); }",
+  "    }, 1200);",
+  "    setTimeout(function () { try { clearInterval(timer); } catch (e) {} finish(Object.keys(out).map(function (k) { return out[k]; })); }, 15000);",
+  "  }",
+  "",
+  "  function waitForTweets() {",
+  `    if (document.querySelector('article[data-testid="tweet"]')) { run(); return; }`,
+  "    var tries = 0;",
+  "    var t = setInterval(function () {",
+  `      if (document.querySelector('article[data-testid="tweet"]')) { clearInterval(t); run(); }`,
+  "      else if (++tries > 40) { clearInterval(t); finish([]); }",
+  "    }, 500);",
+  "  }",
+  "",
+  '  if (document.readyState === "complete" || document.readyState === "interactive") waitForTweets();',
+  '  else window.addEventListener("DOMContentLoaded", waitForTweets);',
+  "})();",
+  ""
+].join("\n");
+
+// src/ui/SettingsTab.ts
+var SettingsTab = class extends import_obsidian7.PluginSettingTab {
   constructor(app, plugin, settings, store, getScraper, onSettingsChange) {
     super(app, plugin);
     this.settings = settings;
@@ -1475,23 +9517,120 @@ var SettingsTab = class extends import_obsidian5.PluginSettingTab {
     containerEl.empty();
     containerEl.createEl("h2", { text: "JP Collocations Settings" });
     containerEl.createEl("h3", { text: "Hyogen Scraper" });
-    new import_obsidian5.Setting(containerEl).setName("Enable Hyogen scraping").setDesc("Allow fetching from collocation.hyogen.info").addToggle((t) => t.setValue(this.settings.hyogenEnabled).onChange(async (v) => {
+    new import_obsidian7.Setting(containerEl).setName("Enable Hyogen scraping").setDesc("Allow fetching from collocation.hyogen.info").addToggle((t) => t.setValue(this.settings.hyogenEnabled).onChange(async (v) => {
       this.settings.hyogenEnabled = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian5.Setting(containerEl).setName("Rate limit (ms)").setDesc("Minimum milliseconds between requests (default: 2000)").addSlider((s) => s.setLimits(1e3, 1e4, 500).setValue(this.settings.hyogenRateLimit).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian7.Setting(containerEl).setName("Rate limit (ms)").setDesc("Minimum milliseconds between requests (default: 2000)").addSlider((s) => s.setLimits(1e3, 1e4, 500).setValue(this.settings.hyogenRateLimit).setDynamicTooltip().onChange(async (v) => {
       this.settings.hyogenRateLimit = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian5.Setting(containerEl).setName("Word list to scrape").setDesc("Comma-separated list of Japanese words to fetch from Hyogen").addTextArea((t) => {
+    new import_obsidian7.Setting(containerEl).setName("Word list to scrape").setDesc("Comma-separated list of Japanese words to fetch from Hyogen").addTextArea((t) => {
       t.setValue(this.settings.hyogenWordList.join(", ")).onChange(async (v) => {
         this.settings.hyogenWordList = v.split(",").map((w) => w.trim()).filter(Boolean);
         await this.onSettingsChange();
       });
       t.inputEl.rows = 3;
     });
+    containerEl.createEl("h3", { text: "\u7B51\u6CE2\u30A6\u30A7\u30D6\u30B3\u30FC\u30D1\u30B9 (TWC)" });
+    new import_obsidian7.Setting(containerEl).setName("Enable TWC lookup").setDesc("Fetch collocation profiles from Tsukuba Web Corpus (\u7814\u7A76\u30FB\u6559\u80B2\u76EE\u7684\u306E\u307F)").addToggle((t) => t.setValue(this.settings.twcEnabled).onChange(async (v) => {
+      this.settings.twcEnabled = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("TWC rate limit (ms)").setDesc("Minimum milliseconds between TWC requests (default: 3000)").addSlider((s) => s.setLimits(2e3, 15e3, 500).setValue(this.settings.twcRateLimit).setDynamicTooltip().onChange(async (v) => {
+      this.settings.twcRateLimit = v;
+      await this.onSettingsChange();
+    }));
+    containerEl.createEl("h3", { text: "X (Twitter) \u691C\u7D22\u8F9E\u66F8" });
+    containerEl.createEl("p", {
+      text: "\u30ED\u30B0\u30A4\u30F3\u4E2D\u306E x.com \u304B\u3089 auth_token \u3068 ct0 \u30AF\u30C3\u30AD\u30FC\u3092\u8CBC\u308A\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\uFF08\u7AEF\u672B\u5185\u306E\u307F\u4FDD\u5B58\uFF09\u3002\u8A73\u7D30\u306F\u30B5\u30A4\u30C9\u30D0\u30FC\u306E \u{1D54F} \u30D3\u30E5\u30FC\u306E \u{1F511} \u304B\u3089\u3082\u8A2D\u5B9A\u3067\u304D\u307E\u3059\u3002\u975E\u516C\u5F0F\u30A8\u30F3\u30C9\u30DD\u30A4\u30F3\u30C8\u3092\u4F7F\u3046\u305F\u3081\u3001ToS \u3068\u30EC\u30FC\u30C8\u5236\u9650\u306B\u3054\u6CE8\u610F\u304F\u3060\u3055\u3044\u3002",
+      cls: "setting-item-description"
+    });
+    new import_obsidian7.Setting(containerEl).setName("\u30E9\u30A4\u30D6\u53D6\u5F97\u3092\u6709\u52B9\u5316").setDesc("\u30AA\u30D5\u306B\u3059\u308B\u3068\u30AD\u30E3\u30C3\u30B7\u30E5\u6E08\u307F\u30B3\u30FC\u30D1\u30B9\u306E\u307F\u3067\u691C\u7D22\u3057\u307E\u3059").addToggle((t) => t.setValue(this.settings.x.enabled).onChange(async (v) => {
+      this.settings.x.enabled = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("auth_token \u30AF\u30C3\u30AD\u30FC").addText((t) => {
+      t.setValue(this.settings.x.authToken).onChange(async (v) => {
+        this.settings.x.authToken = v.trim();
+        await this.onSettingsChange();
+      });
+      t.inputEl.type = "password";
+    });
+    new import_obsidian7.Setting(containerEl).setName("ct0 (csrf) \u30AF\u30C3\u30AD\u30FC").addText((t) => {
+      t.setValue(this.settings.x.csrfToken).onChange(async (v) => {
+        this.settings.x.csrfToken = v.trim();
+        await this.onSettingsChange();
+      });
+      t.inputEl.type = "password";
+    });
+    new import_obsidian7.Setting(containerEl).setName("\u65E2\u5B9A\u306E\u8A00\u8A9E\u30D5\u30A3\u30EB\u30BF").setDesc("\u65B0\u898F\u691C\u7D22\u306E lang:\uFF08\u7A7A\u6B04\u3067\u5168\u8A00\u8A9E\uFF09").addText((t) => t.setValue(this.settings.x.defaultLang).onChange(async (v) => {
+      this.settings.x.defaultLang = v.trim();
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("\u65E2\u5B9A\u306E\u30BF\u30D6").addDropdown((d) => {
+      d.addOption("Latest", "\u6700\u65B0");
+      d.addOption("Top", "\u8A71\u984C");
+      d.addOption("Media", "\u30E1\u30C7\u30A3\u30A2");
+      d.setValue(this.settings.x.defaultProduct).onChange(async (v) => {
+        this.settings.x.defaultProduct = v;
+        await this.onSettingsChange();
+      });
+    });
+    new import_obsidian7.Setting(containerEl).setName("1\u30DA\u30FC\u30B8\u306E\u53D6\u5F97\u4EF6\u6570").addSlider((s) => s.setLimits(10, 100, 10).setValue(this.settings.x.resultLimit).setDynamicTooltip().onChange(async (v) => {
+      this.settings.x.resultLimit = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("\u30CE\u30FC\u30C8\u66F8\u304D\u51FA\u3057\u30D5\u30A9\u30EB\u30C0").setDesc("\u30C4\u30A4\u30FC\u30C8\u3092\u30CE\u30FC\u30C8\u5316\u3059\u308B Vault \u30D5\u30A9\u30EB\u30C0\uFF08\u30D7\u30E9\u30B0\u30A4\u30F3\u304C\u81EA\u52D5\u7D22\u5F15\uFF09").addText((t) => t.setValue(this.settings.x.exportFolder).onChange(async (v) => {
+      this.settings.x.exportFolder = v.trim() || "X Tweets";
+      await this.onSettingsChange();
+    }));
+    const xMobile = containerEl.createEl("details");
+    xMobile.createEl("summary", { text: "iOS \u5171\u8D77\u30C1\u30A7\u30C3\u30AF\uFF08Orion \u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\uFF09" });
+    xMobile.createEl("p", {
+      text: "iPhone/iPad \u3067\u300C\u3053\u306E2\u8A9E\u3001\u4E00\u7DD2\u306B\u4F7F\u308F\u308C\u3066\u308B?\u300D\u3092\u5373\u30C1\u30A7\u30C3\u30AF\u3059\u308B\u7D4C\u8DEF\u3002x.com \u306E SPA \u306F\u57CB\u3081\u8FBC\u307FWebView \u3067\u306F\u52D5\u304B\u306A\u3044\u305F\u3081\u3001\u30ED\u30B0\u30A4\u30F3\u6E08\u307F\u306E\u5B9F\u30D6\u30E9\u30A6\u30B6 Orion \u3067\u691C\u7D22\u3092\u958B\u304D\u3001\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\u304C\u7D50\u679C\u3092\u81EA\u52D5\u53D6\u5F97\u3057\u3066 Obsidian \u306B\u623B\u3057\u307E\u3059\u3002X \u306E\u7F72\u540D(anti-bot)\u3092\u56DE\u907F\u3067\u304D\u3001\u78BA\u5B9F\u306B\u65B0\u7740\u3092\u53D6\u5F97\u3067\u304D\u307E\u3059\u3002",
+      cls: "setting-item-description"
+    });
+    xMobile.createEl("p", {
+      text: "\u30BB\u30C3\u30C8\u30A2\u30C3\u30D7: \u2460 Orion \u3092\u65E2\u5B9A\u30D6\u30E9\u30A6\u30B6\u306B\u8A2D\u5B9A\uFF08\u8A2D\u5B9A\u2192\u30A2\u30D7\u30EA\u2192Orion\u2192\u30C7\u30D5\u30A9\u30EB\u30C8\u306E\u30D6\u30E9\u30A6\u30B6App\uFF09\u2192 \u2461 \u4E0B\u306E\u30DC\u30BF\u30F3\u3067\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u30B3\u30D4\u30FC \u2192 \u2462 Orion \u306B\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\u7BA1\u7406\uFF08Violentmonkey \u7B49\u3001\u307E\u305F\u306F Orion \u5185\u8535\u306E\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\uFF09\u3067\u65B0\u898F\u4F5C\u6210\u3057\u8CBC\u308A\u4ED8\u3051 \u2192 \u2463 Orion \u3067 x.com \u306B\u4E00\u5EA6\u30ED\u30B0\u30A4\u30F3\u3002\u4EE5\u964D\u306F Obsidian \u306E\u30B3\u30DE\u30F3\u30C9\u300CX \u5171\u8D77\u30C1\u30A7\u30C3\u30AF\uFF08\u30E2\u30D0\u30A4\u30EB\uFF09\u300D\u3067\u30012\u8A9E\u3092\u30B3\u30D4\u30FC(or \u9078\u629E)\u3057\u3066\u5B9F\u884C\u3059\u308B\u3060\u3051\u3002",
+      cls: "setting-item-description"
+    });
+    new import_obsidian7.Setting(xMobile).setName("\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u66F8\u304D\u51FA\u3059 / \u30B3\u30D4\u30FC").setDesc("Vault \u76F4\u4E0B\u306B JP-X-Cooc.user.js \u3092\u4F5C\u6210\u3057\u3001\u5185\u5BB9\u3092\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u306B\u3082\u30B3\u30D4\u30FC\u3057\u307E\u3059").addButton((b) => b.setButtonText("Vault \u306B\u66F8\u304D\u51FA\u3059").onClick(async () => {
+      const name = "JP-X-Cooc.user.js";
+      try {
+        await this.app.vault.adapter.write(name, USERSCRIPT_SOURCE);
+        new import_obsidian7.Notice(`\u66F8\u304D\u51FA\u3057\u307E\u3057\u305F: ${name}`);
+      } catch (e) {
+        new import_obsidian7.Notice(`\u66F8\u304D\u51FA\u3057\u5931\u6557: ${e.message}`, 6e3);
+      }
+    })).addButton((b) => b.setButtonText("\u30B3\u30D4\u30FC").onClick(async () => {
+      try {
+        await navigator.clipboard.writeText(USERSCRIPT_SOURCE);
+        new import_obsidian7.Notice("\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F");
+      } catch (e) {
+        new import_obsidian7.Notice("\u30B3\u30D4\u30FC\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F", 5e3);
+      }
+    }));
+    const xAdv = containerEl.createEl("details");
+    xAdv.createEl("summary", { text: "\u8A73\u7D30\uFF08X \u304C\u4ED5\u69D8\u5909\u66F4\u3057\u305F\u6642\u306E\u307F\uFF09" });
+    new import_obsidian7.Setting(xAdv).setName("SearchTimeline queryId").setDesc("\u691C\u7D22\u304C 404/\u5931\u6557\u3059\u308B\u6642\u306F\u30D6\u30E9\u30A6\u30B6\u306E devtools \u304B\u3089\u6700\u65B0\u5024\u3092\u53D6\u5F97").addText((t) => t.setValue(this.settings.x.searchQueryId).onChange(async (v) => {
+      this.settings.x.searchQueryId = v.trim();
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(xAdv).setName("Bearer token").addText((t) => t.setValue(this.settings.x.bearerToken).onChange(async (v) => {
+      this.settings.x.bearerToken = v.trim();
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(xAdv).setName("Features JSON").setDesc("GraphQL feature \u30D5\u30E9\u30B0\u3002X \u306E\u30A8\u30E9\u30FC\u304C\u8981\u6C42\u3059\u308B\u30AD\u30FC\u3092\u3053\u3053\u3067\u8ABF\u6574").addTextArea((t) => {
+      t.setValue(this.settings.x.featuresJson).onChange(async (v) => {
+        this.settings.x.featuresJson = v.trim();
+        await this.onSettingsChange();
+      });
+      t.inputEl.rows = 4;
+      t.inputEl.style.width = "100%";
+    });
     containerEl.createEl("h3", { text: "Display" });
-    new import_obsidian5.Setting(containerEl).setName("Default sort order").addDropdown((d) => {
+    new import_obsidian7.Setting(containerEl).setName("Default sort order").addDropdown((d) => {
       d.addOption("frequency", "Frequency");
       d.addOption("headword", "Headword (\u3042\u3044\u3046\u3048\u304A)");
       d.addOption("createdAt", "Date added");
@@ -1501,21 +9640,21 @@ var SettingsTab = class extends import_obsidian5.PluginSettingTab {
         await this.onSettingsChange();
       });
     });
-    new import_obsidian5.Setting(containerEl).setName("Entries per page").addSlider((s) => s.setLimits(10, 200, 10).setValue(this.settings.entriesPerPage).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian7.Setting(containerEl).setName("Entries per page").addSlider((s) => s.setLimits(10, 200, 10).setValue(this.settings.entriesPerPage).setDynamicTooltip().onChange(async (v) => {
       this.settings.entriesPerPage = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian5.Setting(containerEl).setName("Show readings").addToggle((t) => t.setValue(this.settings.showReadings).onChange(async (v) => {
+    new import_obsidian7.Setting(containerEl).setName("Show readings").addToggle((t) => t.setValue(this.settings.showReadings).onChange(async (v) => {
       this.settings.showReadings = v;
       await this.onSettingsChange();
     }));
     containerEl.createEl("h3", { text: "Search" });
-    new import_obsidian5.Setting(containerEl).setName("Max results").addSlider((s) => s.setLimits(10, 500, 10).setValue(this.settings.maxResults).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian7.Setting(containerEl).setName("Max results").addSlider((s) => s.setLimits(10, 500, 10).setValue(this.settings.maxResults).setDynamicTooltip().onChange(async (v) => {
       this.settings.maxResults = v;
       await this.onSettingsChange();
     }));
     containerEl.createEl("h3", { text: "Data Management" });
-    new import_obsidian5.Setting(containerEl).setName("Export data").setDesc("Export all collocations as a JSON file").addButton((b) => b.setButtonText("Export JSON").onClick(() => {
+    new import_obsidian7.Setting(containerEl).setName("Export data").setDesc("Export all collocations as a JSON file").addButton((b) => b.setButtonText("Export JSON").onClick(() => {
       const data = JSON.stringify(this.store.exportAll(), null, 2);
       const blob = new Blob([data], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -1524,9 +9663,9 @@ var SettingsTab = class extends import_obsidian5.PluginSettingTab {
       a.download = "jp-collocations-export.json";
       a.click();
       URL.revokeObjectURL(url);
-      new import_obsidian5.Notice("Exported collocations.");
+      new import_obsidian7.Notice("Exported collocations.");
     }));
-    new import_obsidian5.Setting(containerEl).setName("Import data").setDesc("Import collocations from a JSON file").addButton((b) => b.setButtonText("Import JSON").onClick(() => {
+    new import_obsidian7.Setting(containerEl).setName("Import data").setDesc("Import collocations from a JSON file").addButton((b) => b.setButtonText("Import JSON").onClick(() => {
       const input = document.createElement("input");
       input.type = "file";
       input.accept = ".json";
@@ -1539,20 +9678,58 @@ var SettingsTab = class extends import_obsidian5.PluginSettingTab {
         try {
           const parsed = JSON.parse(text);
           const count = this.store.bulkImport(parsed);
-          new import_obsidian5.Notice(`Imported ${count} entries.`);
+          new import_obsidian7.Notice(`Imported ${count} entries.`);
         } catch (e) {
-          new import_obsidian5.Notice("Failed to parse JSON file.");
+          new import_obsidian7.Notice("Failed to parse JSON file.");
         }
       };
       input.click();
     }));
-    new import_obsidian5.Setting(containerEl).setName("Reset to seed data").setDesc("Clear all data and restore the built-in collocations").addButton((b) => b.setButtonText("Reset").setWarning().onClick(async () => {
+    new import_obsidian7.Setting(containerEl).setName("Reset to seed data").setDesc("Clear all data and restore the built-in collocations").addButton((b) => b.setButtonText("Reset").setWarning().onClick(async () => {
       await this.store.resetToSeed();
-      new import_obsidian5.Notice("Reset to seed data.");
+      new import_obsidian7.Notice("Reset to seed data.");
     }));
-    new import_obsidian5.Setting(containerEl).setName("Clear all data").setDesc("Delete all collocation entries permanently").addButton((b) => b.setButtonText("Clear All").setWarning().onClick(async () => {
+    new import_obsidian7.Setting(containerEl).setName("Clear all data").setDesc("Delete all collocation entries permanently").addButton((b) => b.setButtonText("Clear All").setWarning().onClick(async () => {
       await this.store.clearAll();
-      new import_obsidian5.Notice("All data cleared.");
+      new import_obsidian7.Notice("All data cleared.");
+    }));
+    containerEl.createEl("h3", { text: "SRS Card Generation" });
+    new import_obsidian7.Setting(containerEl).setName("Tag prefix").setDesc("Base tag for Spaced Repetition cards (e.g. flashcards/jp)").addText((t) => t.setValue(this.settings.srs.tagPrefix).onChange(async (v) => {
+      this.settings.srs.tagPrefix = v.trim() || "flashcards/jp";
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("Speaker format").setDesc("How to display speakers in discourse chunk cards").addDropdown((d) => {
+      d.addOption("icon", "Icon (\u{1F535}\u{1F7E0}\u{1F7E2}\u{1F7E3})");
+      d.addOption("letter", "Letter (A/B/C/D)");
+      d.addOption("number", "Number (1/2/3/4)");
+      d.setValue(this.settings.srs.speakerFormat).onChange(async (v) => {
+        this.settings.srs.speakerFormat = v;
+        await this.onSettingsChange();
+      });
+    });
+    new import_obsidian7.Setting(containerEl).setName("Include register labels").addToggle((t) => t.setValue(this.settings.srs.includeRegister).onChange(async (v) => {
+      this.settings.srs.includeRegister = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("Include relation arrows").addToggle((t) => t.setValue(this.settings.srs.includeRelations).onChange(async (v) => {
+      this.settings.srs.includeRelations = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("Include English glosses").addToggle((t) => t.setValue(this.settings.srs.includeEnglish).onChange(async (v) => {
+      this.settings.srs.includeEnglish = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("Include timestamps").addToggle((t) => t.setValue(this.settings.srs.includeTimestamps).onChange(async (v) => {
+      this.settings.srs.includeTimestamps = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("Max bits per card").setDesc("Maximum discourse chunks (spoiler blocks) per card").addSlider((s) => s.setLimits(2, 12, 1).setValue(this.settings.srs.maxBitsPerCard).setDynamicTooltip().onChange(async (v) => {
+      this.settings.srs.maxBitsPerCard = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian7.Setting(containerEl).setName("Output folder").setDesc("Folder for generated SRS card files").addText((t) => t.setValue(this.settings.srs.outputFolder).onChange(async (v) => {
+      this.settings.srs.outputFolder = v.trim() || "JP SRS Cards";
+      await this.onSettingsChange();
     }));
     containerEl.createEl("h3", { text: "Statistics" });
     const stats = this.store.getStats();
@@ -2427,8 +10604,8 @@ var TextClassifier = class {
 };
 
 // src/ui/ClassifyModal.ts
-var import_obsidian6 = require("obsidian");
-var ClassifyModal = class extends import_obsidian6.Modal {
+var import_obsidian8 = require("obsidian");
+var ClassifyModal = class extends import_obsidian8.Modal {
   constructor(app, result, store, onSave) {
     super(app);
     this.result = result;
@@ -2465,33 +10642,33 @@ var ClassifyModal = class extends import_obsidian6.Modal {
     fill.style.width = `${this.result.confidence}%`;
     fill.style.backgroundColor = this.result.confidence >= 70 ? "#4caf50" : this.result.confidence >= 40 ? "#ff9800" : "#f44336";
     contentEl.createEl("hr");
-    new import_obsidian6.Setting(contentEl).setName("Headword").setDesc("Main entry word").addText((t) => t.setValue(this.headword).onChange((v) => {
+    new import_obsidian8.Setting(contentEl).setName("Headword").setDesc("Main entry word").addText((t) => t.setValue(this.headword).onChange((v) => {
       this.headword = v;
     }));
-    new import_obsidian6.Setting(contentEl).setName("Collocate").setDesc("Collocating element (particle + verb, etc.)").addText((t) => t.setValue(this.collocate).onChange((v) => {
+    new import_obsidian8.Setting(contentEl).setName("Collocate").setDesc("Collocating element (particle + verb, etc.)").addText((t) => t.setValue(this.collocate).onChange((v) => {
       this.collocate = v;
     }));
-    new import_obsidian6.Setting(contentEl).setName("Full Phrase").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
+    new import_obsidian8.Setting(contentEl).setName("Full Phrase").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
       this.fullPhrase = v;
     }));
-    new import_obsidian6.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
+    new import_obsidian8.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
       for (const pos of Object.values(PartOfSpeech))
         d.addOption(pos, pos);
       d.setValue(this.headwordPOS).onChange((v) => {
         this.headwordPOS = v;
       });
     });
-    new import_obsidian6.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
+    new import_obsidian8.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
       for (const pos of Object.values(PartOfSpeech))
         d.addOption(pos, pos);
       d.setValue(this.collocatePOS).onChange((v) => {
         this.collocatePOS = v;
       });
     });
-    new import_obsidian6.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u3092+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
+    new import_obsidian8.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u3092+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
       this.pattern = v;
     }));
-    const tagSetting = new import_obsidian6.Setting(contentEl).setName("Tags").setDesc("Click to toggle; edit the text field to add more");
+    const tagSetting = new import_obsidian8.Setting(contentEl).setName("Tags").setDesc("Click to toggle; edit the text field to add more");
     const tagChipRow = contentEl.createDiv("jp-col-tag-chips");
     let tagInputEl = null;
     const renderChips = () => {
@@ -2514,13 +10691,13 @@ var ClassifyModal = class extends import_obsidian6.Modal {
         renderChips();
       });
     });
-    new import_obsidian6.Setting(contentEl).setName("Notes").addTextArea((t) => {
+    new import_obsidian8.Setting(contentEl).setName("Notes").addTextArea((t) => {
       t.setValue(this.notes).onChange((v) => {
         this.notes = v;
       });
       t.inputEl.rows = 2;
     });
-    new import_obsidian6.Setting(contentEl).setName("Frequency / Importance").setDesc("1\u2013100").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
+    new import_obsidian8.Setting(contentEl).setName("Frequency / Importance").setDesc("1\u2013100").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
       this.frequency = v;
     }));
     const btnRow = contentEl.createDiv("jp-col-modal-btns");
@@ -2533,7 +10710,7 @@ var ClassifyModal = class extends import_obsidian6.Modal {
     const hw = this.headword.trim();
     const col = this.collocate.trim();
     if (!hw) {
-      new import_obsidian6.Notice("Headword is required.");
+      new import_obsidian8.Notice("Headword is required.");
       return;
     }
     const now = Date.now();
@@ -2555,7 +10732,7 @@ var ClassifyModal = class extends import_obsidian6.Modal {
       updatedAt: now
     };
     this.store.add(entry2);
-    new import_obsidian6.Notice(`Saved: ${entry2.fullPhrase}`);
+    new import_obsidian8.Notice(`Saved: ${entry2.fullPhrase}`);
     this.onSave();
     this.close();
   }
@@ -2564,23 +10741,6022 @@ var ClassifyModal = class extends import_obsidian6.Modal {
   }
 };
 
+// src/ui/DictionaryView.ts
+var import_obsidian9 = require("obsidian");
+
+// src/dictionary/types.ts
+var DEFAULT_DICTIONARY_SETTINGS = {
+  enabledDictionaries: [],
+  maxResults: 50,
+  showPitch: true,
+  showFrequency: true,
+  compactMode: false
+};
+
+// src/dictionary/DictionaryStore.ts
+var DictionaryStore = class _DictionaryStore {
+  constructor(app, persistFn) {
+    this.dictionaries = /* @__PURE__ */ new Map();
+    this.settings = { ...DEFAULT_DICTIONARY_SETTINGS };
+    this.app = app;
+    this.persistFn = persistFn;
+  }
+  // ── Load / Save ────────────────────────────────────────────
+  loadFromData(saved) {
+    if (saved.settings) {
+      this.settings = { ...DEFAULT_DICTIONARY_SETTINGS, ...saved.settings };
+    }
+    if (saved.dictionaries) {
+      for (const sd of saved.dictionaries) {
+        const data = this.deserialize(sd);
+        this.dictionaries.set(data.meta.title, data);
+      }
+    }
+  }
+  async save() {
+    const serialized = [];
+    for (const dict of this.dictionaries.values()) {
+      serialized.push(this.serialize(dict));
+    }
+    await this.persistFn({ dictionaries: serialized, settings: this.settings });
+  }
+  serialize(dict) {
+    return {
+      meta: dict.meta,
+      tags: [...dict.tags.entries()],
+      terms: dict.terms,
+      expressionIndex: [...dict.expressionIndex.entries()],
+      readingIndex: [...dict.readingIndex.entries()],
+      frequencies: [...dict.frequencies.entries()],
+      pitches: [...dict.pitches.entries()]
+    };
+  }
+  deserialize(sd) {
+    return {
+      meta: sd.meta,
+      tags: new Map(sd.tags),
+      terms: sd.terms,
+      expressionIndex: new Map(sd.expressionIndex),
+      readingIndex: new Map(sd.readingIndex),
+      frequencies: new Map(sd.frequencies),
+      pitches: new Map(sd.pitches)
+    };
+  }
+  // ── Dictionary management ──────────────────────────────────
+  addDictionary(data) {
+    this.dictionaries.set(data.meta.title, data);
+    if (!this.settings.enabledDictionaries.includes(data.meta.title)) {
+      this.settings.enabledDictionaries.push(data.meta.title);
+    }
+  }
+  removeDictionary(title) {
+    this.dictionaries.delete(title);
+    this.settings.enabledDictionaries = this.settings.enabledDictionaries.filter((t) => t !== title);
+  }
+  getDictionaryList() {
+    return [...this.dictionaries.values()].map((d) => d.meta);
+  }
+  getDictionary(title) {
+    return this.dictionaries.get(title);
+  }
+  hasDictionaries() {
+    return this.dictionaries.size > 0;
+  }
+  getTotalTermCount() {
+    let total = 0;
+    for (const d of this.dictionaries.values())
+      total += d.terms.length;
+    return total;
+  }
+  // ── Lookup ─────────────────────────────────────────────────
+  /**
+   * Look up a term across all enabled dictionaries.
+   * Returns results ordered by dictionary priority, then by score.
+   */
+  lookup(query) {
+    if (!query.trim())
+      return [];
+    const normalized = normalizeJapanese(query.trim());
+    const hiragana = toHiragana(normalized);
+    const results = [];
+    for (const dictTitle of this.settings.enabledDictionaries) {
+      const dict = this.dictionaries.get(dictTitle);
+      if (!dict)
+        continue;
+      const matchedIds = /* @__PURE__ */ new Set();
+      const exprIds = dict.expressionIndex.get(normalized);
+      if (exprIds)
+        exprIds.forEach((id) => matchedIds.add(id));
+      const readIds = dict.readingIndex.get(normalized);
+      if (readIds)
+        readIds.forEach((id) => matchedIds.add(id));
+      if (hiragana !== normalized) {
+        const hiraIds = dict.readingIndex.get(hiragana);
+        if (hiraIds)
+          hiraIds.forEach((id) => matchedIds.add(id));
+      }
+      for (const id of matchedIds) {
+        const term = dict.terms[id];
+        if (!term)
+          continue;
+        const termTags = term.definitionTags.concat(term.termTags).map((t) => dict.tags.get(t)).filter((t) => !!t);
+        results.push({
+          term,
+          dictionary: dictTitle,
+          tags: termTags,
+          frequency: dict.frequencies.get(term.expression),
+          pitch: dict.pitches.get(term.expression)
+        });
+      }
+    }
+    results.sort((a, b) => b.term.score - a.term.score);
+    return results.slice(0, this.settings.maxResults);
+  }
+  /**
+   * Prefix search for autocomplete / quick-find.
+   * Scans expression + reading indexes for prefix matches.
+   */
+  prefixSearch(prefix, limit = 20) {
+    if (!prefix.trim())
+      return [];
+    const normalized = normalizeJapanese(prefix.trim());
+    const hiragana = toHiragana(normalized);
+    const results = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const dictTitle of this.settings.enabledDictionaries) {
+      const dict = this.dictionaries.get(dictTitle);
+      if (!dict)
+        continue;
+      for (const [expr, ids] of dict.expressionIndex) {
+        if (expr.startsWith(normalized) || expr.startsWith(hiragana)) {
+          for (const id of ids) {
+            const term = dict.terms[id];
+            if (!term)
+              continue;
+            const key = `${term.expression}|${term.reading}|${dictTitle}`;
+            if (seen.has(key))
+              continue;
+            seen.add(key);
+            results.push({
+              term,
+              dictionary: dictTitle,
+              tags: [],
+              frequency: dict.frequencies.get(term.expression)
+            });
+            if (results.length >= limit)
+              return results;
+          }
+        }
+      }
+      for (const [read, ids] of dict.readingIndex) {
+        if (read.startsWith(normalized) || read.startsWith(hiragana)) {
+          for (const id of ids) {
+            const term = dict.terms[id];
+            if (!term)
+              continue;
+            const key = `${term.expression}|${term.reading}|${dictTitle}`;
+            if (seen.has(key))
+              continue;
+            seen.add(key);
+            results.push({
+              term,
+              dictionary: dictTitle,
+              tags: [],
+              frequency: dict.frequencies.get(term.expression)
+            });
+            if (results.length >= limit)
+              return results;
+          }
+        }
+      }
+    }
+    return results;
+  }
+  /**
+   * Substring/contains search for live-as-you-type results.
+   * Falls back to prefix, then to substring scan. Fast enough for
+   * mobile if dictionaries are reasonably sized (<200K entries).
+   */
+  substringSearch(query, limit = 15) {
+    if (!query.trim())
+      return [];
+    const exact = this.lookup(query);
+    if (exact.length >= limit)
+      return exact.slice(0, limit);
+    const prefix = this.prefixSearch(query, limit);
+    const results = [...exact];
+    const seen = new Set(exact.map((r) => `${r.term.expression}|${r.term.reading}|${r.dictionary}`));
+    for (const r of prefix) {
+      const key = `${r.term.expression}|${r.term.reading}|${r.dictionary}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        results.push(r);
+        if (results.length >= limit)
+          return results;
+      }
+    }
+    const normalized = normalizeJapanese(query.trim());
+    const hiragana = toHiragana(normalized);
+    for (const dictTitle of this.settings.enabledDictionaries) {
+      const dict = this.dictionaries.get(dictTitle);
+      if (!dict)
+        continue;
+      for (const [expr, ids] of dict.expressionIndex) {
+        if (expr.includes(normalized) || expr.includes(hiragana)) {
+          for (const id of ids) {
+            const term = dict.terms[id];
+            if (!term)
+              continue;
+            const key = `${term.expression}|${term.reading}|${dictTitle}`;
+            if (seen.has(key))
+              continue;
+            seen.add(key);
+            results.push({
+              term,
+              dictionary: dictTitle,
+              tags: [],
+              frequency: dict.frequencies.get(term.expression)
+            });
+            if (results.length >= limit)
+              return results;
+          }
+        }
+      }
+    }
+    return results;
+  }
+  /**
+   * Render a definition to plain text (strips structured content to readable text).
+   */
+  static definitionToText(def) {
+    if (typeof def === "string")
+      return def;
+    if (Array.isArray(def)) {
+      return `\u2192 ${def[0]} (${def[1].join(", ")})`;
+    }
+    if (def.type === "text" && def.text)
+      return def.text;
+    if (def.type === "structured-content" && def.content) {
+      return _DictionaryStore.extractText(def.content);
+    }
+    if (def.type === "image")
+      return "[image]";
+    return "";
+  }
+  /**
+   * Recursively extract text from structured content nodes.
+   */
+  static extractText(content) {
+    if (typeof content === "string")
+      return content;
+    if (Array.isArray(content)) {
+      return content.map((c) => _DictionaryStore.extractText(c)).join("");
+    }
+    if (content && typeof content === "object" && "tag" in content) {
+      const node = content;
+      if (node.tag === "br")
+        return "\n";
+      if (node.content)
+        return _DictionaryStore.extractText(node.content);
+    }
+    return "";
+  }
+};
+
+// src/dictionary/YomitanImporter.ts
+function readZipEntries(buf) {
+  const view = new DataView(buf);
+  const entries = [];
+  let eocdOffset = -1;
+  for (let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 65557); i--) {
+    if (view.getUint32(i, true) === 101010256) {
+      eocdOffset = i;
+      break;
+    }
+  }
+  if (eocdOffset < 0)
+    throw new Error("Invalid ZIP: EOCD not found");
+  const cdOffset = view.getUint32(eocdOffset + 16, true);
+  const cdCount = view.getUint16(eocdOffset + 10, true);
+  let offset = cdOffset;
+  for (let i = 0; i < cdCount; i++) {
+    if (view.getUint32(offset, true) !== 33639248)
+      break;
+    const compressionMethod = view.getUint16(offset + 10, true);
+    const compressedSize = view.getUint32(offset + 20, true);
+    const uncompressedSize = view.getUint32(offset + 24, true);
+    const filenameLen = view.getUint16(offset + 28, true);
+    const extraLen = view.getUint16(offset + 30, true);
+    const commentLen = view.getUint16(offset + 32, true);
+    const localHeaderOffset = view.getUint32(offset + 42, true);
+    const filenameBytes = new Uint8Array(buf, offset + 46, filenameLen);
+    const filename = new TextDecoder().decode(filenameBytes);
+    const localExtraLen = view.getUint16(localHeaderOffset + 28, true);
+    const localFilenameLen = view.getUint16(localHeaderOffset + 26, true);
+    const dataOffset = localHeaderOffset + 30 + localFilenameLen + localExtraLen;
+    entries.push({
+      filename,
+      compressionMethod,
+      compressedSize,
+      uncompressedSize,
+      dataOffset
+    });
+    offset += 46 + filenameLen + extraLen + commentLen;
+  }
+  return entries;
+}
+async function extractEntry(buf, entry2) {
+  const raw = new Uint8Array(buf, entry2.dataOffset, entry2.compressedSize);
+  if (entry2.compressionMethod === 0) {
+    return new TextDecoder("utf-8").decode(raw);
+  }
+  if (entry2.compressionMethod === 8) {
+    if (typeof DecompressionStream !== "undefined") {
+      const ds = new DecompressionStream("deflate-raw");
+      const writer = ds.writable.getWriter();
+      const reader = ds.readable.getReader();
+      writer.write(raw).then(() => writer.close());
+      const chunks = [];
+      let done = false;
+      while (!done) {
+        const result = await reader.read();
+        if (result.done) {
+          done = true;
+          break;
+        }
+        chunks.push(result.value);
+      }
+      const totalLen = chunks.reduce((s, c) => s + c.byteLength, 0);
+      const merged = new Uint8Array(totalLen);
+      let pos = 0;
+      for (const c of chunks) {
+        merged.set(c, pos);
+        pos += c.byteLength;
+      }
+      return new TextDecoder("utf-8").decode(merged);
+    }
+    throw new Error(
+      "ZIP entry is deflate-compressed but DecompressionStream is not available. Please re-export the dictionary as a stored (uncompressed) ZIP, or use a newer Obsidian/Electron version."
+    );
+  }
+  throw new Error(`Unsupported ZIP compression method: ${entry2.compressionMethod}`);
+}
+var YomitanImporter = class {
+  /**
+   * Parse a Yomitan/Yomichan dictionary ZIP ArrayBuffer.
+   * Returns a fully-indexed DictionaryData ready for lookup.
+   */
+  async import(zipBuffer, onProgress) {
+    var _a, _b, _c, _d, _e, _f;
+    const progress = onProgress != null ? onProgress : () => {
+    };
+    progress("Reading ZIP structure\u2026");
+    const zipEntries = readZipEntries(zipBuffer);
+    const fileMap = /* @__PURE__ */ new Map();
+    for (const e of zipEntries) {
+      if (e.filename.endsWith("/"))
+        continue;
+      fileMap.set(e.filename, e);
+    }
+    let prefix = "";
+    let indexEntry = fileMap.get("index.json");
+    if (!indexEntry) {
+      for (const [name, entry2] of fileMap) {
+        if (name.endsWith("/index.json") || name.endsWith("\\index.json")) {
+          prefix = name.slice(0, name.lastIndexOf("index.json"));
+          indexEntry = entry2;
+          break;
+        }
+      }
+    }
+    if (!indexEntry)
+      throw new Error("Invalid Yomitan dictionary: missing index.json");
+    function findFiles(pattern) {
+      const matches = [];
+      for (const [name, entry2] of fileMap) {
+        const relative = prefix && name.startsWith(prefix) ? name.slice(prefix.length) : name;
+        if (pattern.test(relative)) {
+          matches.push(entry2);
+        }
+      }
+      return matches.sort((a, b) => a.filename.localeCompare(b.filename));
+    }
+    progress("Parsing index\u2026");
+    const indexStr = await extractEntry(zipBuffer, indexEntry);
+    const index = JSON.parse(indexStr);
+    const format = (_b = (_a = index.format) != null ? _a : index.version) != null ? _b : 3;
+    const tags = /* @__PURE__ */ new Map();
+    const tagEntries = findFiles(/^tag_bank_\d+\.json$/);
+    for (const te of tagEntries) {
+      progress(`Parsing ${te.filename}\u2026`);
+      const json = await extractEntry(zipBuffer, te);
+      const tuples = JSON.parse(json);
+      for (const [name, category, order, notes, score] of tuples) {
+        tags.set(name, { name, category, order, notes, score });
+      }
+    }
+    const terms = [];
+    const expressionIndex = /* @__PURE__ */ new Map();
+    const readingIndex = /* @__PURE__ */ new Map();
+    const termEntries = findFiles(/^term_bank_\d+\.json$/);
+    let termId = 0;
+    for (const te of termEntries) {
+      progress(`Loading ${te.filename}\u2026 (${terms.length} terms)`);
+      const json = await extractEntry(zipBuffer, te);
+      const tuples = JSON.parse(json);
+      for (const tuple of tuples) {
+        const [expression, reading, defTags, rules, score, definitions, sequence, termTags] = tuple;
+        const term = {
+          id: termId,
+          expression,
+          reading: reading || expression,
+          definitionTags: defTags ? defTags.split(" ").filter(Boolean) : [],
+          rules: rules ? rules.split(" ").filter(Boolean) : [],
+          score,
+          definitions,
+          sequence,
+          termTags: termTags ? termTags.split(" ").filter(Boolean) : []
+        };
+        terms.push(term);
+        if (!expressionIndex.has(expression))
+          expressionIndex.set(expression, []);
+        expressionIndex.get(expression).push(termId);
+        const readKey = reading || expression;
+        if (!readingIndex.has(readKey))
+          readingIndex.set(readKey, []);
+        readingIndex.get(readKey).push(termId);
+        termId++;
+      }
+    }
+    const frequencies = /* @__PURE__ */ new Map();
+    const pitches = /* @__PURE__ */ new Map();
+    const metaEntries = findFiles(/^term_meta_bank_\d+\.json$/);
+    let hasFrequency = false;
+    let hasPitch = false;
+    for (const me of metaEntries) {
+      progress(`Loading ${me.filename}\u2026`);
+      const json = await extractEntry(zipBuffer, me);
+      const metas = JSON.parse(json);
+      for (const [expr, type, data] of metas) {
+        if (type === "freq") {
+          hasFrequency = true;
+          if (typeof data === "number") {
+            frequencies.set(expr, data);
+          } else if (typeof data === "string") {
+            const parsed = parseInt(data, 10);
+            if (!isNaN(parsed))
+              frequencies.set(expr, parsed);
+          } else if (data && typeof data === "object") {
+            const obj = data;
+            const val = (_c = obj.value) != null ? _c : obj.frequency;
+            if (typeof val === "number") {
+              frequencies.set(expr, val);
+            } else if (typeof val === "string") {
+              const parsed = parseInt(val, 10);
+              if (!isNaN(parsed))
+                frequencies.set(expr, parsed);
+            } else if (val && typeof val === "object" && val !== null) {
+              const inner = val;
+              const innerVal = (_d = inner.value) != null ? _d : inner.frequency;
+              if (typeof innerVal === "number") {
+                frequencies.set(expr, innerVal);
+              } else if (typeof innerVal === "string") {
+                const parsed = parseInt(innerVal, 10);
+                if (!isNaN(parsed))
+                  frequencies.set(expr, parsed);
+              }
+            }
+          }
+        } else if (type === "pitch") {
+          hasPitch = true;
+          pitches.set(expr, data);
+        }
+      }
+    }
+    const meta = {
+      title: index.title,
+      revision: index.revision,
+      format,
+      author: (_e = index.author) != null ? _e : "",
+      description: (_f = index.description) != null ? _f : "",
+      termCount: terms.length,
+      tagCount: tags.size,
+      hasFrequency,
+      hasPitch,
+      importedAt: Date.now()
+    };
+    progress(`Done: ${terms.length} terms, ${tags.size} tags loaded from "${index.title}"`);
+    return {
+      meta,
+      tags,
+      terms,
+      expressionIndex,
+      readingIndex,
+      frequencies,
+      pitches
+    };
+  }
+};
+
+// src/context/ContextEngine.ts
+var ContextEngine = class {
+  constructor(app, dictStore, collocationStore, surferBridge, xCorpus = null) {
+    /** Cache of file content for fast context lookups */
+    this.contentCache = /* @__PURE__ */ new Map();
+    this.cacheTimer = null;
+    this.app = app;
+    this.dictStore = dictStore;
+    this.collocationStore = collocationStore;
+    this.surferBridge = surferBridge;
+    this.xCorpus = xCorpus;
+    this.resolver = makeRelationsResolver(surferBridge);
+  }
+  // ── Main query: get full context for any term ──────────
+  async getContext(query) {
+    const card = {
+      query,
+      queryType: this.classifyQuery(query),
+      dictResults: [],
+      collocations: [],
+      surferEntries: [],
+      examples: [],
+      vaultOccurrences: [],
+      coPatterns: [],
+      bitRelations: [],
+      totalExamples: 0,
+      vaultNoteCount: 0,
+      patternCount: 0
+    };
+    card.dictResults = this.dictStore.lookup(query);
+    const allEntries = this.collocationStore.exportAll();
+    card.collocations = allEntries.filter(
+      (e) => e.headword === query || e.collocate === query || e.fullPhrase.includes(query)
+    );
+    card.surferEntries = this.surferBridge.searchByMarker(query);
+    for (const e of this.surferBridge.getAllEntries()) {
+      if (e.surface === query && !card.surferEntries.includes(e)) {
+        card.surferEntries.push(e);
+      }
+    }
+    card.vaultOccurrences = await this.searchVault(query);
+    card.vaultNoteCount = new Set(card.vaultOccurrences.map((o) => o.filePath)).size;
+    card.examples = this.collectExamples(query, card);
+    if (this.xCorpus && this.xCorpus.size() > 0) {
+      const seen = new Set(card.examples.map((e) => e.text));
+      const xq = { ...emptyQuery("", "Latest"), allTerms: [query] };
+      for (const tw of this.xCorpus.search(xq, 8)) {
+        if (seen.has(tw.text))
+          continue;
+        seen.add(tw.text);
+        card.examples.push({
+          text: tw.text,
+          source: "x",
+          sourceDetail: tw.url,
+          patterns: detectPatterns(tw.text),
+          relations: []
+        });
+      }
+    }
+    card.totalExamples = card.examples.length;
+    card.coPatterns = this.getCoPatterns(query);
+    card.patternCount = card.coPatterns.length;
+    card.bitRelations = this.getBitRelations(query);
+    return card;
+  }
+  // ── Pattern-specific context card ──────────────────────
+  async getPatternContext(patternId) {
+    var _a, _b;
+    const pattern = PATTERN_BY_ID.get(patternId);
+    if (!pattern)
+      return null;
+    const vaultOccurrences = await this.searchVault(pattern.surface);
+    const kwicResult = this.surferBridge.searchKWIC(patternId);
+    const kwicLines = kwicResult.records.map((r) => ({
+      left: r.left,
+      match: r.keyword,
+      right: r.right,
+      file: r.filePath
+    }));
+    const coPatterns = this.getCoPatterns(pattern.surface);
+    const examples = [];
+    for (const occ of vaultOccurrences) {
+      if (occ.context.length > 10) {
+        examples.push({
+          text: occ.context,
+          source: "vault",
+          sourceDetail: occ.filePath,
+          patterns: detectPatterns(occ.context),
+          relations: this.resolver(occ.context, { filePath: occ.filePath }).relations
+        });
+      }
+    }
+    return {
+      patternId,
+      surface: pattern.surface,
+      category: pattern.category,
+      categoryLabel: (_a = CATEGORY_LABELS[pattern.category]) != null ? _a : pattern.category,
+      categoryColor: (_b = CATEGORY_COLORS[pattern.category]) != null ? _b : "#95a5a6",
+      gloss: pattern.gloss,
+      glossEn: pattern.glossEn,
+      register: pattern.register,
+      frequencyTier: pattern.frequencyTier,
+      vaultOccurrences,
+      kwicLines,
+      coPatterns,
+      examples
+    };
+  }
+  // ── Vault-wide text search (performance-optimized) ─────
+  async searchVault(query) {
+    const occurrences = [];
+    const files = this.app.vault.getMarkdownFiles();
+    const maxTotal = 50;
+    const maxPerFile = 5;
+    let fileCount = 0;
+    for (const file of files) {
+      if (occurrences.length >= maxTotal)
+        break;
+      const stat = file.stat;
+      if (stat && stat.size > 1e5)
+        continue;
+      try {
+        const content = await this.getCachedContent(file);
+        if (!content.includes(query))
+          continue;
+        let start = 0;
+        let perFile = 0;
+        while (perFile < maxPerFile) {
+          const idx = content.indexOf(query, start);
+          if (idx === -1)
+            break;
+          const contextStart = Math.max(0, idx - 80);
+          const contextEnd = Math.min(content.length, idx + query.length + 80);
+          const context = content.slice(contextStart, contextEnd);
+          let nearbyPatterns = [];
+          if (perFile === 0) {
+            const paraStart = content.lastIndexOf("\n", idx) + 1;
+            const paraEnd = content.indexOf("\n", idx + query.length);
+            const paragraph = content.slice(paraStart, paraEnd === -1 ? void 0 : paraEnd);
+            nearbyPatterns = detectPatterns(paragraph).map((m) => m.pattern.id);
+          }
+          occurrences.push({
+            filePath: file.path,
+            fileName: file.basename,
+            context,
+            offset: idx,
+            nearbyPatterns,
+            indexedAt: Date.now()
+          });
+          start = idx + 1;
+          perFile++;
+        }
+        fileCount++;
+      } catch (e) {
+      }
+    }
+    return occurrences;
+  }
+  // ── Collect examples from all sources ──────────────────
+  collectExamples(query, card) {
+    var _a, _b;
+    const examples = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const e of card.collocations) {
+      for (const ex of e.exampleSentences) {
+        if (seen.has(ex))
+          continue;
+        seen.add(ex);
+        examples.push({
+          text: ex,
+          source: "collocation",
+          sourceDetail: e.id,
+          patterns: detectPatterns(ex),
+          relations: this.resolver(ex).relations
+        });
+      }
+    }
+    for (const e of card.surferEntries) {
+      for (const ex of (_a = e.exampleSentences) != null ? _a : []) {
+        if (seen.has(ex.text))
+          continue;
+        seen.add(ex.text);
+        examples.push({
+          text: ex.text,
+          source: "surfer",
+          sourceDetail: ex.source,
+          patterns: detectPatterns(ex.text),
+          relations: this.resolver(ex.text, { filePath: ex.source }).relations
+        });
+      }
+      for (const ctx of (_b = e._discourseContexts) != null ? _b : []) {
+        if (ctx.chunkText && !seen.has(ctx.chunkText)) {
+          seen.add(ctx.chunkText);
+          examples.push({
+            text: ctx.chunkText,
+            source: "surfer",
+            sourceDetail: ctx.sourceFile,
+            patterns: detectPatterns(ctx.chunkText),
+            relations: this.resolver(ctx.chunkText, { filePath: ctx.sourceFile }).relations
+          });
+        }
+      }
+    }
+    for (const occ of card.vaultOccurrences.slice(0, 20)) {
+      if (occ.context.length > 15 && !seen.has(occ.context)) {
+        seen.add(occ.context);
+        examples.push({
+          text: occ.context,
+          source: "vault",
+          sourceDetail: occ.filePath,
+          patterns: detectPatterns(occ.context),
+          relations: this.resolver(occ.context, { filePath: occ.filePath }).relations
+        });
+      }
+    }
+    return examples;
+  }
+  // ── Co-occurring patterns ──────────────────────────────
+  getCoPatterns(query) {
+    var _a;
+    const patternCounts = /* @__PURE__ */ new Map();
+    const indexedFiles = this.surferBridge.getIndexedFiles();
+    for (const fp of indexedFiles) {
+      const filePatterns = this.surferBridge.getFilePatterns(fp);
+      const kwic = this.surferBridge.searchKWICContext(query);
+      if (kwic.records.some((r) => r.filePath === fp)) {
+        for (const pid of filePatterns) {
+          patternCounts.set(pid, ((_a = patternCounts.get(pid)) != null ? _a : 0) + 1);
+        }
+      }
+    }
+    return [...patternCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15).map(([patternId, count]) => {
+      var _a2, _b;
+      const p = PATTERN_BY_ID.get(patternId);
+      return {
+        patternId,
+        surface: (_a2 = p == null ? void 0 : p.surface) != null ? _a2 : patternId,
+        category: (_b = p == null ? void 0 : p.category) != null ? _b : "?",
+        count
+      };
+    });
+  }
+  // ── Typed bit-relations (sidecar-backed) ───────────────
+  /**
+   * Surface typed directional pair relations from sidecar data. Empty when
+   * no sidecar covers any currently-indexed file containing the query.
+   * This is purely additive — `getCoPatterns` (surface PMI) continues to
+   * run alongside as the universal fallback.
+   */
+  getBitRelations(query) {
+    const index = this.surferBridge.getBitRelationIndex();
+    const hits = index.findPairsContainingSurface(query);
+    if (hits.length === 0)
+      return [];
+    const reconRank = {
+      locked: 0,
+      top_down_only: 1,
+      bottom_up_only: 2
+    };
+    const ranked = hits.slice().sort((a, b) => {
+      var _a, _b, _c, _d, _e, _f;
+      const ra = (_b = reconRank[(_a = a.pair.source.reconciliation) != null ? _a : ""]) != null ? _b : 9;
+      const rb = (_d = reconRank[(_c = b.pair.source.reconciliation) != null ? _c : ""]) != null ? _d : 9;
+      if (ra !== rb)
+        return ra - rb;
+      const ca = (_e = a.pair.source.confidence) != null ? _e : 0;
+      const cb = (_f = b.pair.source.confidence) != null ? _f : 0;
+      if (ca !== cb)
+        return cb - ca;
+      return a.pair.source.charStart - b.pair.source.charStart;
+    });
+    return ranked.slice(0, 20).map((h) => ({
+      pairId: h.pair.pairId,
+      label: h.pair.source.label,
+      matchedRole: h.matchedRole,
+      sourceSurface: h.sourceSurface,
+      targetSurface: h.targetSurface,
+      reconciliation: h.pair.source.reconciliation,
+      confidence: h.pair.source.confidence,
+      textHash: h.pair.textHash
+    }));
+  }
+  // ── File content caching ───────────────────────────────
+  async getCachedContent(file) {
+    if (this.contentCache.has(file.path)) {
+      return this.contentCache.get(file.path);
+    }
+    const content = await this.app.vault.cachedRead(file);
+    this.contentCache.set(file.path, content);
+    if (!this.cacheTimer) {
+      this.cacheTimer = setTimeout(() => {
+        this.contentCache.clear();
+        this.cacheTimer = null;
+      }, 3e4);
+    }
+    return content;
+  }
+  /** Get list of indexed files (delegate to surfer bridge) */
+  getIndexedFiles() {
+    return this.surferBridge.getIndexedFiles();
+  }
+  /** Get patterns for a file */
+  getFilePatterns(filePath) {
+    return this.surferBridge.getFilePatterns(filePath);
+  }
+  /** Get index stats */
+  getIndexStats() {
+    return this.surferBridge.getStats();
+  }
+  // ── Helpers ────────────────────────────────────────────
+  classifyQuery(query) {
+    if (PATTERN_BY_ID.get(query))
+      return "pattern";
+    const entries = this.collocationStore.exportAll();
+    if (entries.some((e) => e.fullPhrase === query))
+      return "collocation";
+    return "word";
+  }
+};
+
+// src/ui/DictionaryView.ts
+var JP_DICTIONARY_VIEW_TYPE = "jp-dictionary-view";
+var DictionaryView = class extends import_obsidian9.ItemView {
+  constructor(leaf, dictStore, onImport, onSaveEntry, contextEngine) {
+    super(leaf);
+    this.searchInput = null;
+    this.suggestionsEl = null;
+    this.resultsEl = null;
+    this.statsEl = null;
+    this.headerActionsEl = null;
+    this.breadcrumbEl = null;
+    this.debounceTimer = null;
+    this.currentQuery = "";
+    /** Lookup history for recursive navigation */
+    this.lookupHistory = [];
+    this.dictStore = dictStore;
+    this.onImport = onImport;
+    this.onSaveEntry = onSaveEntry != null ? onSaveEntry : () => {
+    };
+    this.contextEngine = contextEngine != null ? contextEngine : null;
+  }
+  getViewType() {
+    return JP_DICTIONARY_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "JP Dictionary";
+  }
+  getIcon() {
+    return "book-open";
+  }
+  async onOpen() {
+    this.buildUI();
+    this.renderHome();
+  }
+  async onClose() {
+    if (this.debounceTimer)
+      clearTimeout(this.debounceTimer);
+  }
+  refresh() {
+    if (this.currentQuery)
+      this.performLookup(this.currentQuery);
+    else
+      this.renderHome();
+  }
+  /** Public method for programmatic lookup (e.g. from editor selection command) */
+  lookupWord(word) {
+    if (this.searchInput)
+      this.searchInput.value = word;
+    this.currentQuery = word;
+    this.hideSuggestions();
+    this.performLookup(word);
+  }
+  /**
+   * Recursive lookup: push current query to history, then look up new word.
+   * Used when tapping on Japanese text inside definitions.
+   */
+  recursiveLookup(word) {
+    if (this.currentQuery && this.currentQuery !== word) {
+      this.lookupHistory.push(this.currentQuery);
+    }
+    this.lookupWord(word);
+    this.renderBreadcrumbs();
+  }
+  /** Navigate back in lookup history */
+  goBack() {
+    const prev = this.lookupHistory.pop();
+    if (prev) {
+      this.lookupWord(prev);
+      this.renderBreadcrumbs();
+    }
+  }
+  /** Render breadcrumb navigation for recursive lookups */
+  renderBreadcrumbs() {
+    if (!this.breadcrumbEl)
+      return;
+    this.breadcrumbEl.empty();
+    if (this.lookupHistory.length === 0) {
+      this.breadcrumbEl.style.display = "none";
+      return;
+    }
+    this.breadcrumbEl.style.display = "flex";
+    const backBtn = this.breadcrumbEl.createEl("button", {
+      text: "\u25C0 \u623B\u308B",
+      cls: "jp-dict-back-btn"
+    });
+    backBtn.addEventListener("click", () => this.goBack());
+    for (let i = 0; i < this.lookupHistory.length; i++) {
+      const crumb = this.breadcrumbEl.createEl("span", {
+        text: this.lookupHistory[i],
+        cls: "jp-dict-breadcrumb-item"
+      });
+      crumb.addEventListener("click", () => {
+        const target = this.lookupHistory[i];
+        this.lookupHistory = this.lookupHistory.slice(0, i);
+        this.lookupWord(target);
+        this.renderBreadcrumbs();
+      });
+      this.breadcrumbEl.createSpan({ text: " \u2192 ", cls: "jp-dict-breadcrumb-sep" });
+    }
+    this.breadcrumbEl.createEl("span", {
+      text: this.currentQuery,
+      cls: "jp-dict-breadcrumb-current"
+    });
+  }
+  /**
+   * Make text elements with Japanese content clickable for recursive lookup.
+   * This wraps runs of Japanese characters in <span> elements with click handlers.
+   */
+  makeJapaneseClickable(el) {
+    var _a, _b;
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+    const textNodes = [];
+    let node;
+    while (node = walker.nextNode()) {
+      if (node.textContent && /[\u3040-\u9fff\u30a0-\u30ff]/.test(node.textContent)) {
+        textNodes.push(node);
+      }
+    }
+    for (const textNode of textNodes) {
+      const text = (_a = textNode.textContent) != null ? _a : "";
+      const parts = text.split(/([\u3040-\u9fff\u30a0-\u30ff\u4e00-\u9faf]+)/g);
+      if (parts.length <= 1)
+        continue;
+      const frag = document.createDocumentFragment();
+      for (const part of parts) {
+        if (/^[\u3040-\u9fff\u30a0-\u30ff\u4e00-\u9faf]+$/.test(part)) {
+          const span = document.createElement("span");
+          span.textContent = part;
+          span.className = "jp-dict-clickable-word";
+          span.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.recursiveLookup(part);
+          });
+          frag.appendChild(span);
+        } else {
+          frag.appendChild(document.createTextNode(part));
+        }
+      }
+      (_b = textNode.parentNode) == null ? void 0 : _b.replaceChild(frag, textNode);
+    }
+  }
+  // ── Build UI ───────────────────────────────────────────────
+  buildUI() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-dict-view");
+    const header = container.createDiv("jp-dict-header");
+    const titleRow = header.createDiv("jp-dict-title-row");
+    titleRow.createEl("h4", { text: "\u8F9E\u66F8", cls: "jp-dict-title" });
+    this.headerActionsEl = titleRow.createDiv("jp-dict-header-actions");
+    const importBtn = this.headerActionsEl.createEl("button", {
+      text: "\uFF0B Import",
+      cls: "jp-dict-import-btn",
+      attr: { "aria-label": "Import Yomitan dictionary" }
+    });
+    importBtn.addEventListener("click", () => this.showImportDialog());
+    const manageBtn = this.headerActionsEl.createEl("button", {
+      text: "\u2699",
+      cls: "jp-dict-manage-btn",
+      attr: { "aria-label": "Manage dictionaries" }
+    });
+    manageBtn.addEventListener("click", () => this.showManageDialog());
+    const searchRow = header.createDiv("jp-dict-search-row");
+    this.searchInput = searchRow.createEl("input", {
+      type: "search",
+      placeholder: "\u691C\u7D22\u2026 (\u6F22\u5B57\u30FB\u3072\u3089\u304C\u306A\u30FB\u30AB\u30BF\u30AB\u30CA)",
+      cls: "jp-dict-search-input",
+      attr: {
+        autocomplete: "off",
+        autocapitalize: "off",
+        spellcheck: "false"
+      }
+    });
+    this.searchInput.addEventListener("input", () => this.onSearchInput());
+    this.searchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        this.searchInput.value = "";
+        this.currentQuery = "";
+        this.hideSuggestions();
+        this.renderHome();
+      }
+    });
+    const clearBtn = searchRow.createEl("button", {
+      text: "\u2715",
+      cls: "jp-dict-clear-btn",
+      attr: { "aria-label": "Clear search" }
+    });
+    clearBtn.addEventListener("click", () => {
+      var _a;
+      if (this.searchInput)
+        this.searchInput.value = "";
+      this.currentQuery = "";
+      this.hideSuggestions();
+      this.renderHome();
+      (_a = this.searchInput) == null ? void 0 : _a.focus();
+    });
+    this.breadcrumbEl = container.createDiv("jp-dict-breadcrumbs");
+    this.breadcrumbEl.style.display = "none";
+    this.suggestionsEl = container.createDiv("jp-dict-suggestions");
+    this.suggestionsEl.style.display = "none";
+    this.statsEl = container.createDiv("jp-dict-stats");
+    this.resultsEl = container.createDiv("jp-dict-results");
+  }
+  // ── Search flow ────────────────────────────────────────────
+  onSearchInput() {
+    var _a, _b;
+    if (this.debounceTimer)
+      clearTimeout(this.debounceTimer);
+    const query = (_b = (_a = this.searchInput) == null ? void 0 : _a.value.trim()) != null ? _b : "";
+    if (!query) {
+      this.currentQuery = "";
+      this.hideSuggestions();
+      this.renderHome();
+      return;
+    }
+    this.debounceTimer = setTimeout(() => {
+      this.currentQuery = query;
+      this.performLiveSearch(query);
+    }, 80);
+  }
+  /**
+   * Live search: show inline results as you type (no separate suggestions).
+   * Uses substringSearch to catch partial/contains matches.
+   */
+  performLiveSearch(query) {
+    this.hideSuggestions();
+    if (!this.resultsEl || !this.statsEl)
+      return;
+    const results = this.dictStore.substringSearch(query, 20);
+    const exactResults = this.dictStore.lookup(query);
+    const merged = [...exactResults];
+    const seen = new Set(exactResults.map((r) => `${r.term.expression}|${r.term.reading}|${r.dictionary}`));
+    for (const r of results) {
+      const key = `${r.term.expression}|${r.term.reading}|${r.dictionary}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(r);
+      }
+    }
+    this.statsEl.empty();
+    if (!this.dictStore.hasDictionaries()) {
+      this.statsEl.createSpan({ text: "No dictionaries imported yet", cls: "jp-dict-stat-text" });
+      this.renderEmpty('Import a Yomitan dictionary to get started. Tap "\uFF0B Import" above.');
+      return;
+    }
+    if (merged.length === 0) {
+      this.statsEl.createSpan({ text: `"${query}" \u2014 no results`, cls: "jp-dict-stat-text" });
+      this.renderEmpty(`"${query}" \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F`);
+      return;
+    }
+    const grouped = this.groupResults(merged);
+    this.statsEl.createSpan({
+      text: `${merged.length} entries for "${query}"`,
+      cls: "jp-dict-stat-text"
+    });
+    this.resultsEl.empty();
+    for (const group of grouped) {
+      this.renderEntryCard(this.resultsEl, group);
+    }
+  }
+  showSuggestions(prefix) {
+    if (!this.suggestionsEl)
+      return;
+    const suggestions = this.dictStore.prefixSearch(prefix, 8);
+    if (suggestions.length === 0) {
+      this.hideSuggestions();
+      return;
+    }
+    this.suggestionsEl.empty();
+    this.suggestionsEl.style.display = "block";
+    const seen = /* @__PURE__ */ new Set();
+    for (const s of suggestions) {
+      const key = s.term.expression;
+      if (seen.has(key))
+        continue;
+      seen.add(key);
+      const row = this.suggestionsEl.createDiv("jp-dict-suggest-row");
+      row.createSpan({ text: s.term.expression, cls: "jp-dict-suggest-expr" });
+      if (s.term.reading !== s.term.expression) {
+        row.createSpan({ text: s.term.reading, cls: "jp-dict-suggest-reading" });
+      }
+      if (s.frequency !== void 0) {
+        row.createSpan({ text: `${s.frequency}`, cls: "jp-dict-suggest-freq" });
+      }
+      row.addEventListener("click", () => {
+        if (this.searchInput)
+          this.searchInput.value = s.term.expression;
+        this.currentQuery = s.term.expression;
+        this.hideSuggestions();
+        this.performLookup(s.term.expression);
+      });
+    }
+  }
+  hideSuggestions() {
+    if (this.suggestionsEl) {
+      this.suggestionsEl.empty();
+      this.suggestionsEl.style.display = "none";
+    }
+  }
+  performLookup(query) {
+    this.hideSuggestions();
+    if (!this.resultsEl || !this.statsEl)
+      return;
+    const results = this.dictStore.lookup(query);
+    this.statsEl.empty();
+    if (!this.dictStore.hasDictionaries()) {
+      this.statsEl.createSpan({ text: "No dictionaries imported yet", cls: "jp-dict-stat-text" });
+      this.renderEmpty('Import a Yomitan dictionary to get started. Tap "\uFF0B Import" above.');
+      return;
+    }
+    if (results.length === 0) {
+      this.statsEl.createSpan({ text: `"${query}" \u2014 no results`, cls: "jp-dict-stat-text" });
+      this.renderEmpty(`"${query}" \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F`);
+      return;
+    }
+    const grouped = this.groupResults(results);
+    this.statsEl.createSpan({
+      text: `${results.length} entries for "${query}"`,
+      cls: "jp-dict-stat-text"
+    });
+    this.resultsEl.empty();
+    for (const group of grouped) {
+      this.renderEntryCard(this.resultsEl, group);
+    }
+  }
+  // ── Group results ──────────────────────────────────────────
+  groupResults(results) {
+    const groups = [];
+    const groupMap = /* @__PURE__ */ new Map();
+    for (const r of results) {
+      const key = `${r.term.expression}|${r.term.reading}|${r.term.sequence}|${r.dictionary}`;
+      if (!groupMap.has(key)) {
+        const group = [];
+        groupMap.set(key, group);
+        groups.push(group);
+      }
+      groupMap.get(key).push(r);
+    }
+    return groups;
+  }
+  // ── Render entry card ──────────────────────────────────────
+  renderEntryCard(parent, group) {
+    const primary = group[0];
+    const card = parent.createDiv("jp-dict-card");
+    const headerRow = card.createDiv("jp-dict-card-header");
+    const exprEl = headerRow.createSpan({
+      text: primary.term.expression,
+      cls: "jp-dict-card-expression"
+    });
+    if (primary.term.reading !== primary.term.expression) {
+      headerRow.createSpan({
+        text: primary.term.reading,
+        cls: "jp-dict-card-reading"
+      });
+    }
+    const metaRow = card.createDiv("jp-dict-card-meta");
+    if (primary.frequency !== void 0 && this.dictStore.settings.showFrequency) {
+      const freqBadge = metaRow.createSpan({ cls: "jp-dict-freq-badge" });
+      freqBadge.createSpan({ text: "\u26A1", cls: "jp-dict-freq-icon" });
+      freqBadge.createSpan({ text: `${primary.frequency}`, cls: "jp-dict-freq-value" });
+    }
+    for (const tag of primary.tags.slice(0, 5)) {
+      const pill = metaRow.createSpan({
+        text: tag.notes || tag.name,
+        cls: `jp-dict-tag jp-dict-tag--${tag.category || "default"}`,
+        attr: { title: `${tag.name}: ${tag.notes}` }
+      });
+    }
+    metaRow.createSpan({
+      text: primary.dictionary,
+      cls: "jp-dict-dict-badge"
+    });
+    if (primary.pitch && this.dictStore.settings.showPitch) {
+      this.renderPitchAccent(card, primary.pitch, primary.term.reading || primary.term.expression);
+    }
+    const defsSection = card.createDiv("jp-dict-defs");
+    let defIndex = 0;
+    for (const result of group) {
+      for (const def of result.term.definitions) {
+        defIndex++;
+        const defRow = defsSection.createDiv("jp-dict-def-row");
+        defRow.createSpan({ text: `${defIndex}.`, cls: "jp-dict-def-num" });
+        const defContent = defRow.createDiv("jp-dict-def-content");
+        this.renderDefinition(defContent, def);
+      }
+    }
+    this.makeJapaneseClickable(defsSection);
+    const actionsRow = card.createDiv("jp-dict-card-actions");
+    const copyBtn = actionsRow.createEl("button", { text: "Copy", cls: "jp-dict-action-btn" });
+    copyBtn.addEventListener("click", () => {
+      navigator.clipboard.writeText(primary.term.expression).then(() => {
+        new import_obsidian9.Notice(`Copied: ${primary.term.expression}`);
+      });
+    });
+    const insertBtn = actionsRow.createEl("button", { text: "Insert", cls: "jp-dict-action-btn" });
+    insertBtn.addEventListener("click", () => {
+      var _a;
+      const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
+      if (editor) {
+        editor.replaceSelection(primary.term.expression);
+        new import_obsidian9.Notice(`Inserted: ${primary.term.expression}`);
+      }
+    });
+    const saveBtn = actionsRow.createEl("button", { text: "\u{1F4BE} Save", cls: "jp-dict-action-btn jp-dict-save-btn" });
+    saveBtn.addEventListener("click", () => {
+      const exampleText = this.extractExampleFromDefs(group);
+      this.onSaveEntry(
+        primary.term.expression,
+        primary.term.reading || primary.term.expression,
+        exampleText
+      );
+      new import_obsidian9.Notice(`Saved: ${primary.term.expression}`);
+      saveBtn.textContent = "\u2713 Saved";
+      saveBtn.disabled = true;
+    });
+    if (this.contextEngine) {
+      this.renderContextPanel(card, primary.term.expression);
+    }
+  }
+  // ── Context Panel ──────────────────────────────────────────
+  renderContextPanel(card, expression) {
+    const toggle = card.createDiv("jp-dict-ctx-toggle");
+    toggle.createSpan({ text: "\u{1F517} Context", cls: "jp-dict-ctx-toggle-label" });
+    toggle.createSpan({ text: "\u25B8", cls: "jp-dict-ctx-toggle-arrow" });
+    let panelEl = null;
+    let loaded = false;
+    toggle.addEventListener("click", async () => {
+      if (panelEl) {
+        const visible = panelEl.style.display !== "none";
+        panelEl.style.display = visible ? "none" : "";
+        toggle.querySelector(".jp-dict-ctx-toggle-arrow").textContent = visible ? "\u25B8" : "\u25BE";
+        return;
+      }
+      if (loaded)
+        return;
+      loaded = true;
+      toggle.querySelector(".jp-dict-ctx-toggle-arrow").textContent = "\u25BE";
+      panelEl = card.createDiv("jp-dict-ctx-panel");
+      panelEl.createDiv({ text: "Loading\u2026", cls: "jp-dict-ctx-loading" });
+      try {
+        const ctx = await this.contextEngine.getContext(expression);
+        panelEl.empty();
+        this.fillContextPanel(panelEl, ctx, expression);
+      } catch (e) {
+        panelEl.empty();
+        panelEl.createDiv({ text: "Failed to load context", cls: "jp-dict-ctx-error" });
+      }
+    });
+  }
+  fillContextPanel(el, ctx, expression) {
+    var _a, _b, _c;
+    if (ctx.collocations.length > 0 || ctx.surferEntries.length > 0) {
+      const sec = el.createDiv("jp-dict-ctx-section");
+      sec.createDiv({ text: `\u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3 (${ctx.collocations.length + ctx.surferEntries.length})`, cls: "jp-dict-ctx-section-title" });
+      for (const c of ctx.collocations.slice(0, 6)) {
+        const row = sec.createDiv("jp-dict-ctx-colloc-row");
+        row.createSpan({ text: c.headword, cls: "jp-dict-ctx-hw" });
+        if (c.headwordReading)
+          row.createSpan({ text: c.headwordReading, cls: "jp-dict-ctx-rd" });
+        if (c.exampleSentences.length > 0) {
+          row.createDiv({ text: c.exampleSentences[0], cls: "jp-dict-ctx-example" });
+        }
+      }
+      for (const s of ctx.surferEntries.slice(0, 4)) {
+        const row = sec.createDiv("jp-dict-ctx-colloc-row");
+        row.createSpan({ text: s.surface, cls: "jp-dict-ctx-hw" });
+        if (s.exampleSentences && s.exampleSentences.length > 0) {
+          row.createDiv({ text: s.exampleSentences[0].text.slice(0, 100), cls: "jp-dict-ctx-example" });
+        }
+      }
+    }
+    if (ctx.vaultOccurrences.length > 0) {
+      const sec = el.createDiv("jp-dict-ctx-section");
+      sec.createDiv({ text: `Vault (${ctx.vaultNoteCount} notes)`, cls: "jp-dict-ctx-section-title" });
+      for (const occ of ctx.vaultOccurrences.slice(0, 5)) {
+        const row = sec.createDiv("jp-dict-ctx-vault-row");
+        const link = row.createEl("a", { text: occ.fileName, cls: "jp-dict-ctx-vault-link" });
+        link.addEventListener("click", (e) => {
+          e.preventDefault();
+          const file = this.app.vault.getAbstractFileByPath(occ.filePath);
+          if (file) {
+            this.app.workspace.openLinkText(occ.filePath, "", false);
+          }
+        });
+        if (occ.context) {
+          row.createDiv({ text: occ.context, cls: "jp-dict-ctx-snippet" });
+        }
+        if (occ.nearbyPatterns.length > 0) {
+          const pills = row.createDiv("jp-dict-ctx-pattern-pills");
+          for (const pid of occ.nearbyPatterns.slice(0, 3)) {
+            const pat = PATTERN_BY_ID.get(pid);
+            if (!pat)
+              continue;
+            const color = CATEGORY_COLORS[pat.category] || "#888";
+            const pill = pills.createSpan({ text: pat.surface, cls: "jp-dict-ctx-pattern-pill" });
+            pill.style.borderColor = color;
+            pill.style.color = color;
+          }
+        }
+      }
+    }
+    if (ctx.bitRelations.length > 0) {
+      const sec = el.createDiv("jp-dict-ctx-section");
+      sec.createDiv({
+        text: `\u2713 \u578B\u4ED8\u304D\u95A2\u4FC2 (${ctx.bitRelations.length}) \u30B5\u30A4\u30C9\u30AB\u30FC`,
+        cls: "jp-dict-ctx-section-title"
+      });
+      const list = sec.createDiv("jp-dict-ctx-bitrel-list");
+      for (const br of ctx.bitRelations.slice(0, 8)) {
+        const row = list.createDiv("jp-dict-ctx-bitrel-row");
+        row.dataset.reconciliation = (_a = br.reconciliation) != null ? _a : "unknown";
+        row.title = `${br.label.replace(/_/g, " ")} \xB7 reconciliation: ${(_b = br.reconciliation) != null ? _b : "n/a"} \xB7 conf ${((_c = br.confidence) != null ? _c : 0).toFixed(2)}`;
+        row.createSpan({ text: br.label.replace(/_/g, " "), cls: "jp-dict-ctx-bitrel-label" });
+        const pair = row.createDiv("jp-dict-ctx-bitrel-pair");
+        pair.createSpan({
+          text: br.sourceSurface,
+          cls: br.matchedRole === "source" ? "jp-dict-ctx-bitrel-endpoint jp-dict-ctx-bitrel-endpoint--matched" : "jp-dict-ctx-bitrel-endpoint"
+        });
+        pair.createSpan({ text: "\u2192", cls: "jp-dict-ctx-bitrel-arrow" });
+        pair.createSpan({
+          text: br.targetSurface,
+          cls: br.matchedRole === "target" ? "jp-dict-ctx-bitrel-endpoint jp-dict-ctx-bitrel-endpoint--matched" : "jp-dict-ctx-bitrel-endpoint"
+        });
+      }
+    }
+    if (ctx.coPatterns.length > 0) {
+      const sec = el.createDiv("jp-dict-ctx-section");
+      sec.createDiv({ text: `\u5171\u8D77\u30D1\u30BF\u30FC\u30F3 (${ctx.patternCount})`, cls: "jp-dict-ctx-section-title" });
+      const grid = sec.createDiv("jp-dict-ctx-copat-grid");
+      for (const cp of ctx.coPatterns.slice(0, 8)) {
+        const chip = grid.createDiv("jp-dict-ctx-copat-chip");
+        const color = CATEGORY_COLORS[cp.category] || "#888";
+        chip.style.borderLeft = `3px solid ${color}`;
+        chip.createSpan({ text: cp.surface, cls: "jp-dict-ctx-copat-surface" });
+        chip.createSpan({ text: `\xD7${cp.count}`, cls: "jp-dict-ctx-copat-count" });
+      }
+    }
+    const xExamples = ctx.examples.filter((e) => e.source === "x");
+    if (xExamples.length > 0) {
+      const sec = el.createDiv("jp-dict-ctx-section");
+      sec.createDiv({ text: `\u{1D54F} \u7528\u4F8B (${xExamples.length})`, cls: "jp-dict-ctx-section-title" });
+      for (const ex of xExamples.slice(0, 6)) {
+        const row = sec.createDiv("jp-dict-ctx-x-row");
+        row.createDiv({ text: ex.text.slice(0, 140), cls: "jp-dict-ctx-x-text" });
+        const meta = row.createDiv("jp-dict-ctx-x-meta");
+        if (ex.patterns.length > 0) {
+          const seen = /* @__PURE__ */ new Set();
+          for (const m of ex.patterns.slice(0, 4)) {
+            if (seen.has(m.pattern.id))
+              continue;
+            seen.add(m.pattern.id);
+            const color = CATEGORY_COLORS[m.pattern.category] || "#888";
+            const pill = meta.createSpan({ text: m.pattern.surface, cls: "jp-dict-ctx-pattern-pill" });
+            pill.style.borderColor = color;
+            pill.style.color = color;
+          }
+        }
+        const link = meta.createEl("a", { text: "\u2197 X", cls: "jp-dict-ctx-x-link" });
+        link.addEventListener("click", (e) => {
+          e.preventDefault();
+          if (ex.sourceDetail)
+            window.open(ex.sourceDetail, "_blank");
+        });
+      }
+    }
+    const navRow = el.createDiv("jp-dict-ctx-nav");
+    const lexBtn = navRow.createEl("button", { text: "\u{1F4D6} Open in Lexicon", cls: "jp-dict-action-btn jp-dict-ctx-lexicon-btn" });
+    lexBtn.addEventListener("click", () => {
+      this.navigateToLexicon(expression);
+    });
+  }
+  navigateToLexicon(query) {
+    const leaves = this.app.workspace.getLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
+    if (leaves.length > 0) {
+      this.app.workspace.revealLeaf(leaves[0]);
+      leaves[0].view.openContextCard(query);
+    } else {
+      const leaf = this.app.workspace.getRightLeaf(false);
+      if (leaf) {
+        leaf.setViewState({ type: JP_COLLOCATIONS_VIEW_TYPE, active: true }).then(() => {
+          this.app.workspace.revealLeaf(leaf);
+          setTimeout(() => {
+            leaf.view.openContextCard(query);
+          }, 200);
+        });
+      }
+    }
+  }
+  /** Try to extract an example sentence from structured definitions */
+  extractExampleFromDefs(group) {
+    for (const result of group) {
+      for (const def of result.term.definitions) {
+        const text = this.extractExampleFromContent(def);
+        if (text)
+          return text;
+      }
+    }
+    return void 0;
+  }
+  extractExampleFromContent(def) {
+    if (typeof def === "string")
+      return void 0;
+    if (Array.isArray(def))
+      return void 0;
+    if (def.type === "structured-content" && def.content) {
+      return this.findExampleInStructured(def.content);
+    }
+    return void 0;
+  }
+  findExampleInStructured(content) {
+    var _a, _b;
+    if (typeof content === "string") {
+      if (content.length > 10 && /[\u3040-\u309f]/.test(content) && /[。？！]/.test(content)) {
+        return content;
+      }
+      return void 0;
+    }
+    if (Array.isArray(content)) {
+      for (const child of content) {
+        const found = this.findExampleInStructured(child);
+        if (found)
+          return found;
+      }
+      return void 0;
+    }
+    const node = content;
+    if (((_a = node.data) == null ? void 0 : _a["content"]) === "example" || ((_b = node.data) == null ? void 0 : _b["sga-type"]) === "example") {
+      return this.collectText(node.content);
+    }
+    if (node.content) {
+      return this.findExampleInStructured(node.content);
+    }
+    return void 0;
+  }
+  collectText(content) {
+    if (!content)
+      return void 0;
+    if (typeof content === "string")
+      return content;
+    if (Array.isArray(content)) {
+      return content.map((c) => this.collectText(c)).filter(Boolean).join("");
+    }
+    if (content.content) {
+      return this.collectText(content.content);
+    }
+    return void 0;
+  }
+  // ── Render definition ──────────────────────────────────────
+  renderDefinition(parent, def) {
+    if (typeof def === "string") {
+      parent.createSpan({ text: def, cls: "jp-dict-def-text" });
+      return;
+    }
+    if (Array.isArray(def)) {
+      parent.createSpan({ text: `\u2192 ${def[0]}`, cls: "jp-dict-def-deinflect" });
+      if (def[1].length > 0) {
+        parent.createSpan({ text: ` (${def[1].join(" \u2192 ")})`, cls: "jp-dict-def-rules" });
+      }
+      return;
+    }
+    if (def.type === "text" && def.text) {
+      parent.createSpan({ text: def.text, cls: "jp-dict-def-text" });
+      return;
+    }
+    if (def.type === "structured-content" && def.content) {
+      this.renderStructuredContent(parent, def.content);
+      return;
+    }
+    if (def.type === "image") {
+      parent.createSpan({ text: "[image]", cls: "jp-dict-def-text jp-dict-def-image" });
+      return;
+    }
+    const text = DictionaryStore.definitionToText(def);
+    if (text)
+      parent.createSpan({ text, cls: "jp-dict-def-text" });
+  }
+  // ── Render structured content ──────────────────────────────
+  renderStructuredContent(parent, content) {
+    if (typeof content === "string") {
+      parent.appendText(content);
+      return;
+    }
+    if (Array.isArray(content)) {
+      for (const child of content) {
+        this.renderStructuredContent(parent, child);
+      }
+      return;
+    }
+    const node = content;
+    const { tag } = node;
+    if (tag === "br") {
+      parent.createEl("br");
+      return;
+    }
+    const safeTagMap = {
+      span: "span",
+      div: "div",
+      ol: "ol",
+      ul: "ul",
+      li: "li",
+      ruby: "ruby",
+      rt: "rt",
+      rp: "rp",
+      table: "table",
+      thead: "thead",
+      tbody: "tbody",
+      tfoot: "tfoot",
+      tr: "tr",
+      td: "td",
+      th: "th",
+      details: "details",
+      summary: "summary"
+    };
+    const htmlTag = safeTagMap[tag];
+    if (htmlTag) {
+      const el = parent.createEl(htmlTag, { cls: "jp-dict-sc" });
+      if (node.style) {
+        this.applyStyles(el, node.style);
+      }
+      if (node.title)
+        el.title = node.title;
+      if (node.data) {
+        for (const [k, v] of Object.entries(node.data)) {
+          el.dataset[k] = v;
+        }
+      }
+      if (node.content) {
+        this.renderStructuredContent(el, node.content);
+      }
+      return;
+    }
+    if (tag === "a" && node.href) {
+      if (node.href.startsWith("?")) {
+        const linkEl = parent.createEl("a", { cls: "jp-dict-internal-link" });
+        linkEl.textContent = "";
+        if (node.content)
+          this.renderStructuredContent(linkEl, node.content);
+        linkEl.addEventListener("click", (e) => {
+          e.preventDefault();
+          const target = node.href.slice(1);
+          const parts = new URLSearchParams(target);
+          const query = parts.get("query") || parts.get("term") || decodeURIComponent(target);
+          if (query) {
+            this.recursiveLookup(query);
+          }
+        });
+        return;
+      }
+      const span = parent.createSpan({ cls: "jp-dict-ext-link" });
+      if (node.content)
+        this.renderStructuredContent(span, node.content);
+      return;
+    }
+    if (tag === "img") {
+      parent.createSpan({ text: "[img]", cls: "jp-dict-def-image" });
+      return;
+    }
+    if (node.content) {
+      this.renderStructuredContent(parent, node.content);
+    }
+  }
+  applyStyles(el, style) {
+    const safe = {
+      fontStyle: "font-style",
+      fontWeight: "font-weight",
+      fontSize: "font-size",
+      color: "color",
+      backgroundColor: "background-color",
+      textDecorationLine: "text-decoration-line",
+      textDecorationStyle: "text-decoration-style",
+      verticalAlign: "vertical-align",
+      textAlign: "text-align",
+      listStyleType: "list-style-type"
+    };
+    for (const [key, cssName] of Object.entries(safe)) {
+      if (key in style) {
+        el.style.setProperty(cssName, String(style[key]));
+      }
+    }
+  }
+  // ── Pitch accent rendering ─────────────────────────────────
+  renderPitchAccent(parent, pitch, reading) {
+    const pitchContainer = parent.createDiv("jp-dict-pitch-container");
+    for (const p of pitch.pitches) {
+      const moraRow = pitchContainer.createDiv("jp-dict-pitch-row");
+      const morae = this.splitMorae(reading);
+      const position = typeof p.position === "number" ? p.position : -1;
+      for (let i = 0; i < morae.length; i++) {
+        const mora = morae[i];
+        const isHigh = this.isMoraHigh(i, position, morae.length);
+        const moraEl = moraRow.createSpan({
+          text: mora,
+          cls: `jp-dict-pitch-mora ${isHigh ? "jp-dict-pitch-high" : "jp-dict-pitch-low"}`
+        });
+        if (i < morae.length - 1) {
+          const nextHigh = this.isMoraHigh(i + 1, position, morae.length);
+          if (isHigh !== nextHigh) {
+            moraRow.createSpan({ cls: "jp-dict-pitch-drop" });
+          }
+        }
+      }
+      if (position === 0) {
+        moraRow.createSpan({ text: "(\u5E73\u677F)", cls: "jp-dict-pitch-label" });
+      } else if (position === 1) {
+        moraRow.createSpan({ text: "(\u982D\u9AD8)", cls: "jp-dict-pitch-label" });
+      } else if (position === morae.length) {
+        moraRow.createSpan({ text: "(\u5C3E\u9AD8)", cls: "jp-dict-pitch-label" });
+      } else if (position > 0) {
+        moraRow.createSpan({ text: "(\u4E2D\u9AD8)", cls: "jp-dict-pitch-label" });
+      }
+    }
+  }
+  isMoraHigh(index, downstep, totalMorae) {
+    if (downstep === 0) {
+      return index > 0;
+    }
+    if (downstep === 1) {
+      return index === 0;
+    }
+    return index > 0 && index < downstep;
+  }
+  splitMorae(text) {
+    const morae = [];
+    const small = new Set("\u3083\u3085\u3087\u30E3\u30E5\u30E7\u3041\u3043\u3045\u3047\u3049\u30A1\u30A3\u30A5\u30A7\u30A9\u3063\u30C3");
+    for (let i = 0; i < text.length; i++) {
+      if (i > 0 && small.has(text[i])) {
+        morae[morae.length - 1] += text[i];
+      } else {
+        morae.push(text[i]);
+      }
+    }
+    return morae;
+  }
+  // ── Home / empty states ────────────────────────────────────
+  renderHome() {
+    if (!this.resultsEl || !this.statsEl)
+      return;
+    this.statsEl.empty();
+    this.resultsEl.empty();
+    if (!this.dictStore.hasDictionaries()) {
+      this.statsEl.createSpan({ text: "No dictionaries loaded", cls: "jp-dict-stat-text" });
+      const empty = this.resultsEl.createDiv("jp-dict-empty-state");
+      empty.createDiv({ cls: "jp-dict-empty-icon", text: "\u{1F4DA}" });
+      empty.createEl("h5", { text: "Import a Yomitan Dictionary" });
+      empty.createEl("p", {
+        text: "Import .zip files exported from Yomitan/Yomichan (JMdict, JMnedict, KANJIDIC, etc.).",
+        cls: "jp-dict-empty-desc"
+      });
+      const importBtn = empty.createEl("button", {
+        text: "\uFF0B Import Dictionary",
+        cls: "jp-dict-import-btn jp-dict-import-btn--large"
+      });
+      importBtn.addEventListener("click", () => this.showImportDialog());
+      return;
+    }
+    const dicts = this.dictStore.getDictionaryList();
+    const total = this.dictStore.getTotalTermCount();
+    this.statsEl.createSpan({
+      text: `${dicts.length} dict${dicts.length !== 1 ? "s" : ""} \xB7 ${total.toLocaleString()} terms`,
+      cls: "jp-dict-stat-text"
+    });
+    const home = this.resultsEl.createDiv("jp-dict-home");
+    home.createEl("p", {
+      text: "Type to search across all imported dictionaries.",
+      cls: "jp-dict-home-hint"
+    });
+    for (const meta of dicts) {
+      const dictCard = home.createDiv("jp-dict-info-card");
+      const row = dictCard.createDiv("jp-dict-info-row");
+      row.createSpan({ text: "\u{1F4D6}", cls: "jp-dict-info-icon" });
+      const info = row.createDiv("jp-dict-info-text");
+      info.createEl("strong", { text: meta.title });
+      info.createSpan({ text: ` \xB7 ${meta.termCount.toLocaleString()} terms`, cls: "jp-dict-info-count" });
+      if (meta.description) {
+        dictCard.createEl("p", {
+          text: meta.description.slice(0, 120) + (meta.description.length > 120 ? "\u2026" : ""),
+          cls: "jp-dict-info-desc"
+        });
+      }
+      const badges = dictCard.createDiv("jp-dict-info-badges");
+      if (meta.hasFrequency)
+        badges.createSpan({ text: "\u26A1 Frequency", cls: "jp-dict-info-badge" });
+      if (meta.hasPitch)
+        badges.createSpan({ text: "\u{1F3B5} Pitch", cls: "jp-dict-info-badge" });
+      badges.createSpan({ text: `v${meta.revision}`, cls: "jp-dict-info-badge" });
+    }
+  }
+  renderEmpty(message) {
+    if (!this.resultsEl)
+      return;
+    this.resultsEl.empty();
+    this.resultsEl.createDiv({ text: message, cls: "jp-dict-empty" });
+  }
+  // ── Import dialog ──────────────────────────────────────────
+  showImportDialog() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".zip";
+    input.multiple = true;
+    input.onchange = async () => {
+      const files = input.files;
+      if (!files || files.length === 0)
+        return;
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        try {
+          new import_obsidian9.Notice(`Importing ${file.name}\u2026`, 0);
+          const buf = await file.arrayBuffer();
+          const importer = new YomitanImporter();
+          const data = await importer.import(buf, (msg) => {
+            new import_obsidian9.Notice(msg, 3e3);
+          });
+          this.dictStore.addDictionary(data);
+          await this.onImport();
+          new import_obsidian9.Notice(`\u2713 Imported "${data.meta.title}" (${data.meta.termCount.toLocaleString()} terms)`, 5e3);
+        } catch (err) {
+          console.error("Dictionary import error:", err);
+          new import_obsidian9.Notice(`Failed to import ${file.name}: ${err.message}`, 8e3);
+        }
+      }
+      this.renderHome();
+    };
+    input.click();
+  }
+  // ── Manage dialog ──────────────────────────────────────────
+  showManageDialog() {
+    new DictManageModal(this.app, this.dictStore, async () => {
+      await this.onImport();
+      this.renderHome();
+    }).open();
+  }
+};
+var DictManageModal = class extends import_obsidian9.Modal {
+  constructor(app, dictStore, onSave) {
+    super(app);
+    this.dictStore = dictStore;
+    this.onSave = onSave;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("jp-dict-manage-modal");
+    contentEl.createEl("h2", { text: "Manage Dictionaries" });
+    const dicts = this.dictStore.getDictionaryList();
+    if (dicts.length === 0) {
+      contentEl.createEl("p", { text: "No dictionaries imported.", cls: "jp-dict-empty" });
+      return;
+    }
+    for (const meta of dicts) {
+      const isEnabled = this.dictStore.settings.enabledDictionaries.includes(meta.title);
+      new import_obsidian9.Setting(contentEl).setName(meta.title).setDesc(`${meta.termCount.toLocaleString()} terms \xB7 v${meta.revision}`).addToggle((t) => t.setValue(isEnabled).onChange(async (v) => {
+        if (v) {
+          if (!this.dictStore.settings.enabledDictionaries.includes(meta.title)) {
+            this.dictStore.settings.enabledDictionaries.push(meta.title);
+          }
+        } else {
+          this.dictStore.settings.enabledDictionaries = this.dictStore.settings.enabledDictionaries.filter((t2) => t2 !== meta.title);
+        }
+        await this.onSave();
+      })).addButton((b) => b.setButtonText("Remove").setWarning().onClick(async () => {
+        this.dictStore.removeDictionary(meta.title);
+        await this.onSave();
+        this.onOpen();
+      }));
+    }
+    contentEl.createEl("h3", { text: "Display" });
+    new import_obsidian9.Setting(contentEl).setName("Show pitch accent").addToggle((t) => t.setValue(this.dictStore.settings.showPitch).onChange(async (v) => {
+      this.dictStore.settings.showPitch = v;
+      await this.onSave();
+    }));
+    new import_obsidian9.Setting(contentEl).setName("Show frequency").addToggle((t) => t.setValue(this.dictStore.settings.showFrequency).onChange(async (v) => {
+      this.dictStore.settings.showFrequency = v;
+      await this.onSave();
+    }));
+    new import_obsidian9.Setting(contentEl).setName("Max results").addSlider((s) => s.setLimits(10, 200, 10).setValue(this.dictStore.settings.maxResults).setDynamicTooltip().onChange(async (v) => {
+      this.dictStore.settings.maxResults = v;
+      await this.onSave();
+    }));
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+
+// src/x/XCorpusStore.ts
+var CORPUS_VERSION = 1;
+var XCorpusStore = class {
+  constructor(persistFn) {
+    this.tweets = /* @__PURE__ */ new Map();
+    /** id → NFKC-normalised text, for matching. Not serialised. */
+    this.normText = /* @__PURE__ */ new Map();
+    /** character-bigram → set of tweet ids. Not serialised. */
+    this.bigramIndex = /* @__PURE__ */ new Map();
+    this.saveTimer = null;
+    this.persistFn = persistFn;
+  }
+  // ── Load / Save ────────────────────────────────────────────
+  loadFromData(saved) {
+    if (!(saved == null ? void 0 : saved.tweets))
+      return;
+    for (const t of saved.tweets) {
+      this.tweets.set(t.id, t);
+      this.indexTweet(t);
+    }
+  }
+  serialize() {
+    return { version: CORPUS_VERSION, tweets: [...this.tweets.values()] };
+  }
+  /** Debounced persistence (matches the other stores' write pattern). */
+  scheduleSave() {
+    if (this.saveTimer)
+      clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      void this.persistFn(this.serialize());
+      this.saveTimer = null;
+    }, 600);
+  }
+  async save() {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+    await this.persistFn(this.serialize());
+  }
+  // ── Mutation ───────────────────────────────────────────────
+  /**
+   * Merge scraped tweets in. Returns the count of *newly added* tweets (ones
+   * not already in the corpus) so the UI can show "+N new".
+   */
+  addTweets(incoming) {
+    var _a, _b, _c;
+    let added = 0;
+    for (const t of incoming) {
+      const existing = this.tweets.get(t.id);
+      if (existing) {
+        existing.favoriteCount = t.favoriteCount;
+        existing.retweetCount = t.retweetCount;
+        existing.replyCount = t.replyCount;
+        existing.quoteCount = t.quoteCount;
+        existing.viewCount = (_a = t.viewCount) != null ? _a : existing.viewCount;
+        existing.queries = [.../* @__PURE__ */ new Set([...existing.queries, ...t.queries])];
+        if ((_b = t.matchedQueries) == null ? void 0 : _b.length) {
+          existing.matchedQueries = [
+            .../* @__PURE__ */ new Set([...(_c = existing.matchedQueries) != null ? _c : [], ...t.matchedQueries])
+          ];
+        }
+      } else {
+        this.tweets.set(t.id, t);
+        this.indexTweet(t);
+        added++;
+      }
+    }
+    if (incoming.length > 0)
+      this.scheduleSave();
+    return added;
+  }
+  clear() {
+    this.tweets.clear();
+    this.normText.clear();
+    this.bigramIndex.clear();
+    this.scheduleSave();
+  }
+  // ── Bundle JSONL interop ───────────────────────────────────
+  //
+  // The companion CLI (_tmp_pipeline/twitter) caches tweets as one JSON object
+  // per line: { id, createdAt(ISO), author, authorName, text, likeCount,
+  // retweetCount, replyCount, quoteCount, matchedQueries[], firstSeenAt, ... }.
+  // These let the plugin corpus and the CLI cache exchange data losslessly.
+  /** Import the CLI cache JSONL (or our own export). Returns newly added count. */
+  importJsonl(text) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
+    const incoming = [];
+    let parsed = 0;
+    for (const line of text.split(/\r?\n/)) {
+      const s = line.trim();
+      if (!s)
+        continue;
+      let rec;
+      try {
+        rec = JSON.parse(s);
+      } catch (e) {
+        continue;
+      }
+      if (!(rec == null ? void 0 : rec.id))
+        continue;
+      parsed++;
+      const id = String(rec.id);
+      const handle = String((_b = (_a = rec.author) != null ? _a : rec.authorHandle) != null ? _b : "").replace(/^@/, "");
+      const created = Date.parse((_d = (_c = rec.createdAt) != null ? _c : rec.created_at) != null ? _d : "");
+      const captured = Date.parse((_e = rec.firstSeenAt) != null ? _e : "") || Date.now();
+      incoming.push({
+        id,
+        url: rec.url || (handle ? `https://x.com/${handle}/status/${id}` : `https://x.com/i/status/${id}`),
+        text: String((_g = (_f = rec.text) != null ? _f : rec.rawText) != null ? _g : ""),
+        authorHandle: handle,
+        authorName: String((_h = rec.authorName) != null ? _h : handle),
+        createdAt: Number.isNaN(created) ? captured : created,
+        lang: String((_i = rec.lang) != null ? _i : "und"),
+        favoriteCount: Number((_k = (_j = rec.likeCount) != null ? _j : rec.favoriteCount) != null ? _k : 0) || 0,
+        retweetCount: Number((_l = rec.retweetCount) != null ? _l : 0) || 0,
+        replyCount: Number((_m = rec.replyCount) != null ? _m : 0) || 0,
+        quoteCount: Number((_n = rec.quoteCount) != null ? _n : 0) || 0,
+        hasMedia: !!rec.hasMedia,
+        capturedAt: captured,
+        queries: Array.isArray(rec.queries) ? rec.queries.map(String) : [],
+        matchedQueries: Array.isArray(rec.matchedQueries) ? rec.matchedQueries.map(String) : []
+      });
+    }
+    const added = this.addTweets(incoming);
+    return { added, parsed };
+  }
+  /** Export the corpus as bundle-compatible JSONL (one tweet per line). */
+  exportJsonl() {
+    var _a;
+    const lines = [];
+    for (const t of this.tweets.values()) {
+      lines.push(JSON.stringify({
+        id: t.id,
+        url: t.url,
+        createdAt: new Date(t.createdAt).toISOString(),
+        author: t.authorHandle,
+        authorName: t.authorName,
+        text: t.text,
+        lang: t.lang,
+        likeCount: t.favoriteCount,
+        retweetCount: t.retweetCount,
+        replyCount: t.replyCount,
+        quoteCount: t.quoteCount,
+        matchedQueries: (_a = t.matchedQueries) != null ? _a : [],
+        firstSeenAt: new Date(t.capturedAt).toISOString()
+      }));
+    }
+    return lines.join("\n") + (lines.length ? "\n" : "");
+  }
+  // ── Indexing ───────────────────────────────────────────────
+  indexTweet(t) {
+    const norm = normalizeJapanese(t.text);
+    this.normText.set(t.id, norm);
+    for (const bg of bigrams(norm)) {
+      let set = this.bigramIndex.get(bg);
+      if (!set) {
+        set = /* @__PURE__ */ new Set();
+        this.bigramIndex.set(bg, set);
+      }
+      set.add(t.id);
+    }
+  }
+  // ── Search ─────────────────────────────────────────────────
+  /**
+   * Offline search over the corpus, ordered newest-first. Honours the same
+   * fields as the live query: AND (allTerms), OR (anyTerms), exclude
+   * (noneTerms), plus lang / from / min_faves / min_retweets / since / until.
+   */
+  search(q, limit = 100) {
+    const candidates = this.candidateIds(q);
+    const out = [];
+    for (const id of candidates) {
+      const tweet = this.tweets.get(id);
+      if (tweet && this.matches(tweet, q))
+        out.push(tweet);
+    }
+    out.sort((a, b) => b.createdAt - a.createdAt);
+    return out.slice(0, limit);
+  }
+  /** Narrow to a candidate id set using the bigram index, else everything. */
+  candidateIds(q) {
+    let probe = "";
+    for (const t of q.allTerms) {
+      const n = normTerm(t);
+      if (n.length >= 2 && n.length > probe.length)
+        probe = n;
+    }
+    if (!probe)
+      return this.tweets.keys();
+    const grams = bigrams(probe);
+    if (grams.length === 0)
+      return this.tweets.keys();
+    let working = null;
+    const sorted = grams.map((g) => {
+      var _a;
+      return (_a = this.bigramIndex.get(g)) != null ? _a : /* @__PURE__ */ new Set();
+    }).sort((a, b) => a.size - b.size);
+    for (const set of sorted) {
+      if (set.size === 0)
+        return [];
+      if (working === null) {
+        working = new Set(set);
+      } else {
+        for (const id of working)
+          if (!set.has(id))
+            working.delete(id);
+      }
+      if (working.size === 0)
+        return [];
+    }
+    return working != null ? working : this.tweets.keys();
+  }
+  /** Full predicate match for one tweet against a query. */
+  matches(t, q) {
+    var _a;
+    const text = (_a = this.normText.get(t.id)) != null ? _a : normalizeJapanese(t.text);
+    for (const term of q.allTerms) {
+      if (!text.includes(normTerm(term)))
+        return false;
+    }
+    if (q.anyTerms.length > 0) {
+      const hit = q.anyTerms.some((term) => text.includes(normTerm(term)));
+      if (!hit)
+        return false;
+    }
+    for (const term of q.noneTerms) {
+      if (text.includes(normTerm(term)))
+        return false;
+    }
+    if (q.lang && t.lang && t.lang !== q.lang)
+      return false;
+    if (q.fromUser && t.authorHandle.toLowerCase() !== q.fromUser.replace(/^@/, "").toLowerCase()) {
+      return false;
+    }
+    if (q.minFaves > 0 && t.favoriteCount < q.minFaves)
+      return false;
+    if (q.minRetweets > 0 && t.retweetCount < q.minRetweets)
+      return false;
+    if (q.minReplies > 0 && t.replyCount < q.minReplies)
+      return false;
+    if (q.since) {
+      const lower = Date.parse(q.since + "T00:00:00Z");
+      if (!Number.isNaN(lower) && t.createdAt < lower)
+        return false;
+    }
+    if (q.until) {
+      const upper = Date.parse(q.until + "T00:00:00Z");
+      if (!Number.isNaN(upper) && t.createdAt >= upper)
+        return false;
+    }
+    return true;
+  }
+  // ── Saved-query provenance search ──────────────────────────
+  /**
+   * Tweets whose `matchedQueries` intersect `ids` in at least `minCount`
+   * distinct ids — newest first. minCount=2 yields cross-query co-occurrence
+   * (the bundle's ★ "multiple-phrase hit"). Empty `ids` matches any tagged id.
+   */
+  tweetsMatchingQueries(ids, minCount = 1) {
+    var _a;
+    const want = new Set(ids);
+    const out = [];
+    for (const t of this.tweets.values()) {
+      const tags = (_a = t.matchedQueries) != null ? _a : [];
+      if (tags.length === 0)
+        continue;
+      const hit = want.size === 0 ? new Set(tags).size : tags.filter((q) => want.has(q)).length;
+      if (hit >= minCount)
+        out.push(t);
+    }
+    out.sort((a, b) => b.createdAt - a.createdAt);
+    return out;
+  }
+  /** How many corpus tweets carry a given saved-query id. */
+  countByQuery(id) {
+    var _a;
+    let n = 0;
+    for (const t of this.tweets.values()) {
+      if ((_a = t.matchedQueries) == null ? void 0 : _a.includes(id))
+        n++;
+    }
+    return n;
+  }
+  // ── Stats / access ─────────────────────────────────────────
+  size() {
+    return this.tweets.size;
+  }
+  get(id) {
+    return this.tweets.get(id);
+  }
+  getAll() {
+    return [...this.tweets.values()];
+  }
+  /** Oldest / newest capture span and tweet-date span, for the home screen. */
+  stats() {
+    let oldest = null;
+    let newest = null;
+    for (const t of this.tweets.values()) {
+      if (oldest === null || t.createdAt < oldest)
+        oldest = t.createdAt;
+      if (newest === null || t.createdAt > newest)
+        newest = t.createdAt;
+    }
+    return { count: this.tweets.size, oldest, newest };
+  }
+};
+function bigrams(s) {
+  const out = [];
+  for (let i = 0; i < s.length - 1; i++)
+    out.push(s.slice(i, i + 2));
+  return out;
+}
+
+// src/x/XClient.ts
+var import_obsidian10 = require("obsidian");
+var XScrapeError = class extends Error {
+  constructor(message, status = 0) {
+    super(message);
+    this.name = "XScrapeError";
+    this.status = status;
+  }
+};
+var XClient = class {
+  constructor(getSettings) {
+    this.getSettings = getSettings;
+  }
+  /** True when the scraper has everything it needs to make a live request. */
+  isConfigured() {
+    const s = this.getSettings();
+    return !!(s.enabled && s.authToken.trim() && s.csrfToken.trim() && s.bearerToken.trim());
+  }
+  /** Human-readable reason the scraper can't run live, or null if it can. */
+  configIssue() {
+    const s = this.getSettings();
+    if (!s.enabled)
+      return "X scraping is disabled in settings.";
+    if (!s.authToken.trim())
+      return "Missing auth_token cookie (set it in settings).";
+    if (!s.csrfToken.trim())
+      return "Missing ct0 cookie (set it in settings).";
+    if (!s.bearerToken.trim())
+      return "Missing bearer token (set it in settings).";
+    return null;
+  }
+  /**
+   * Run one page of live search. Pass the previous page's cursor to paginate.
+   * Throws XScrapeError on auth/transport/parse failure.
+   */
+  async search(query, cursor) {
+    var _a;
+    const issue = this.configIssue();
+    if (issue)
+      throw new XScrapeError(issue);
+    const s = this.getSettings();
+    const rawQuery = buildRawQuery(query);
+    if (!rawQuery)
+      throw new XScrapeError("Empty query \u2014 nothing to search.");
+    const variables = {
+      rawQuery,
+      count: Math.max(10, Math.min(100, s.resultLimit || 40)),
+      querySource: "typed_query",
+      product: query.product
+    };
+    if (cursor)
+      variables.cursor = cursor;
+    let features;
+    try {
+      features = JSON.parse(s.featuresJson);
+    } catch (e) {
+      throw new XScrapeError("Features JSON in settings is not valid JSON.");
+    }
+    const url = `https://x.com/i/api/graphql/${encodeURIComponent(s.searchQueryId)}/SearchTimeline?variables=${encodeURIComponent(JSON.stringify(variables))}&features=${encodeURIComponent(JSON.stringify(features))}`;
+    const bearer = s.bearerToken.startsWith("Bearer ") ? s.bearerToken : `Bearer ${s.bearerToken}`;
+    const headers = {
+      authorization: bearer,
+      "x-csrf-token": s.csrfToken.trim(),
+      "x-twitter-auth-type": "OAuth2Session",
+      "x-twitter-active-user": "yes",
+      "x-twitter-client-language": s.defaultLang || "en",
+      "content-type": "application/json",
+      cookie: `auth_token=${s.authToken.trim()}; ct0=${s.csrfToken.trim()}`
+    };
+    let resp;
+    try {
+      resp = await (0, import_obsidian10.requestUrl)({ url, method: "GET", headers, throw: false });
+    } catch (e) {
+      throw new XScrapeError(`Network error contacting X: ${e.message}`);
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      throw new XScrapeError(
+        `X rejected the request (HTTP ${resp.status}). Your cookies likely expired \u2014 re-copy auth_token and ct0 from a logged-in x.com session.`,
+        resp.status
+      );
+    }
+    if (resp.status === 429) {
+      throw new XScrapeError("Rate limited by X (HTTP 429). Wait a bit before searching again.", 429);
+    }
+    if (resp.status === 404) {
+      const sentId = s.searchQueryId.trim() || "(empty)";
+      throw new XScrapeError(
+        `SearchTimeline returned HTTP 404 (queryId sent: ${sentId}). Either the operation id is stale \u2014 tap \u{1F511} \u2192 \u8A73\u7D30 \u2192 \u300CqueryId \u81EA\u52D5\u53D6\u5F97\u300D or paste a current id from a browser SearchTimeline request \u2014 or X is now enforcing its anti-bot request signature (x-client-transaction-id), which cookie-only clients cannot reproduce. If updating the id does not help, use \u{1F517} (add tweet by URL, no auth needed) or \u2913 (import a JSONL corpus) instead.`,
+        404
+      );
+    }
+    let json;
+    try {
+      json = resp.json;
+    } catch (e) {
+      throw new XScrapeError(`X returned a non-JSON response (HTTP ${resp.status}).`, resp.status);
+    }
+    if ((_a = json == null ? void 0 : json.errors) == null ? void 0 : _a.length) {
+      const msg = json.errors.map((e) => e == null ? void 0 : e.message).filter(Boolean).join("; ");
+      throw new XScrapeError(`X GraphQL error: ${msg || "unknown"}`, resp.status);
+    }
+    if (resp.status !== 200) {
+      throw new XScrapeError(`X returned HTTP ${resp.status} (queryId: ${s.searchQueryId.trim() || "(empty)"}).`, resp.status);
+    }
+    return this.parse(json, rawQuery);
+  }
+  /**
+   * Best-effort discovery of the current SearchTimeline operation id.
+   *
+   * X bakes its GraphQL operation ids into the web client's JS bundles. We load
+   * the logged-in homepage, find the referenced `client-web` bundles, and scan
+   * them for the `{queryId:"…",operationName:"SearchTimeline"}` record. Returns
+   * the id (caller persists it) or null if it couldn't be found.
+   */
+  async discoverSearchQueryId() {
+    var _a, _b, _c;
+    const s = this.getSettings();
+    const cookie = `auth_token=${s.authToken.trim()}; ct0=${s.csrfToken.trim()}`;
+    const browserHeaders = {
+      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "accept-language": "en-US,en;q=0.9"
+    };
+    let html = "";
+    try {
+      const resp = await (0, import_obsidian10.requestUrl)({
+        url: "https://x.com/",
+        method: "GET",
+        headers: { ...browserHeaders, cookie },
+        throw: false
+      });
+      html = (_a = resp.text) != null ? _a : "";
+    } catch (e) {
+      return null;
+    }
+    if (!html)
+      return null;
+    const urls = [...new Set(
+      (_b = html.match(/https:\/\/abs\.twimg\.com\/responsive-web\/client-web[^"')\s]+\.js/g)) != null ? _b : []
+    )];
+    if (urls.length === 0)
+      return null;
+    const score = (u) => (/\/(main|api|endpoints|shared|ondemand)[.~]/.test(u) ? 2 : 0) + (u.includes("SearchTimeline") ? 5 : 0);
+    const candidates = urls.sort((a, b) => score(b) - score(a)).slice(0, 24);
+    const patterns = [
+      /queryId:"([^"]+)",operationName:"SearchTimeline"/,
+      /operationName:"SearchTimeline",[^}]*?queryId:"([^"]+)"/,
+      /operationName:"SearchTimeline"[\s\S]{0,80}?queryId:"([^"]+)"/,
+      /queryId:"([^"]+)"[\s\S]{0,80}?operationName:"SearchTimeline"/
+    ];
+    for (const url of candidates) {
+      try {
+        const r = await (0, import_obsidian10.requestUrl)({ url, method: "GET", headers: browserHeaders, throw: false });
+        const js = (_c = r.text) != null ? _c : "";
+        if (!/SearchTimeline"/.test(js))
+          continue;
+        for (const re of patterns) {
+          const m = js.match(re);
+          if ((m == null ? void 0 : m[1]) && looksLikeQueryId(m[1]))
+            return m[1];
+        }
+      } catch (e) {
+      }
+    }
+    return null;
+  }
+  /**
+   * Fetch a single tweet by id via X's public syndication endpoint — no auth
+   * required, so this works as a capture path even without cookies. Used by the
+   * "add tweet by URL" flow. Returns null if the tweet can't be retrieved.
+   */
+  async fetchTweetById(id) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n;
+    const cleanId = id.replace(/\D/g, "");
+    if (!cleanId)
+      return null;
+    const token = (Number(cleanId) / 1e15 * Math.PI).toString(36).replace(/(0+|\.)/g, "") || "0";
+    const url = `https://cdn.syndication.twimg.com/tweet-result?id=${cleanId}&token=${token}&lang=en`;
+    let resp;
+    try {
+      resp = await (0, import_obsidian10.requestUrl)({ url, method: "GET", throw: false });
+    } catch (e) {
+      throw new XScrapeError(`Network error fetching tweet: ${e.message}`);
+    }
+    if (resp.status !== 200) {
+      throw new XScrapeError(`Could not fetch tweet (HTTP ${resp.status}).`, resp.status);
+    }
+    let j;
+    try {
+      j = resp.json;
+    } catch (e) {
+      throw new XScrapeError("Tweet endpoint returned non-JSON.");
+    }
+    if (!j || j.__typename === "TweetTombstone")
+      return null;
+    const handle = (_b = (_a = j == null ? void 0 : j.user) == null ? void 0 : _a.screen_name) != null ? _b : "";
+    const created = Date.parse((_c = j == null ? void 0 : j.created_at) != null ? _c : "");
+    const now = Date.now();
+    const media = (_e = (_d = j == null ? void 0 : j.mediaDetails) != null ? _d : j == null ? void 0 : j.photos) != null ? _e : [];
+    return {
+      id: String((_f = j.id_str) != null ? _f : cleanId),
+      url: `https://x.com/${handle || "i"}/status/${(_g = j.id_str) != null ? _g : cleanId}`,
+      text: unescapeEntities((_h = j == null ? void 0 : j.text) != null ? _h : ""),
+      authorHandle: handle,
+      authorName: (_j = (_i = j == null ? void 0 : j.user) == null ? void 0 : _i.name) != null ? _j : handle,
+      createdAt: Number.isNaN(created) ? now : created,
+      lang: (_k = j == null ? void 0 : j.lang) != null ? _k : "und",
+      favoriteCount: (_l = j == null ? void 0 : j.favorite_count) != null ? _l : 0,
+      retweetCount: (_m = j == null ? void 0 : j.conversation_count) != null ? _m : 0,
+      replyCount: (_n = j == null ? void 0 : j.conversation_count) != null ? _n : 0,
+      quoteCount: 0,
+      hasMedia: Array.isArray(media) && media.length > 0,
+      capturedAt: now,
+      queries: []
+    };
+  }
+  // ── Response parsing ───────────────────────────────────────
+  parse(json, rawQuery) {
+    var _a, _b, _c, _d, _e;
+    const instructions = (_e = (_d = (_c = (_b = (_a = json == null ? void 0 : json.data) == null ? void 0 : _a.search_by_raw_query) == null ? void 0 : _b.search_timeline) == null ? void 0 : _c.timeline) == null ? void 0 : _d.instructions) != null ? _e : [];
+    const tweets = [];
+    let cursor = null;
+    const now = Date.now();
+    const handleEntry = (entry2) => {
+      var _a2, _b2, _c2, _d2, _e2;
+      const content = entry2 == null ? void 0 : entry2.content;
+      if (!content)
+        return;
+      if (content.entryType === "TimelineTimelineCursor" || content.cursorType) {
+        if (content.cursorType === "Bottom" && content.value)
+          cursor = content.value;
+        return;
+      }
+      if (content.itemContent) {
+        const t = this.parseTweetResult((_b2 = (_a2 = content.itemContent) == null ? void 0 : _a2.tweet_results) == null ? void 0 : _b2.result, rawQuery, now);
+        if (t)
+          tweets.push(t);
+        return;
+      }
+      if (Array.isArray(content.items)) {
+        for (const it of content.items) {
+          const r = (_e2 = (_d2 = (_c2 = it == null ? void 0 : it.item) == null ? void 0 : _c2.itemContent) == null ? void 0 : _d2.tweet_results) == null ? void 0 : _e2.result;
+          const t = this.parseTweetResult(r, rawQuery, now);
+          if (t)
+            tweets.push(t);
+        }
+      }
+    };
+    for (const ins of instructions) {
+      if (Array.isArray(ins == null ? void 0 : ins.entries)) {
+        for (const entry2 of ins.entries)
+          handleEntry(entry2);
+      } else if (ins == null ? void 0 : ins.entry) {
+        handleEntry(ins.entry);
+      }
+    }
+    return { tweets, cursor };
+  }
+  parseTweetResult(resultRaw, rawQuery, capturedAt) {
+    var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x;
+    if (!resultRaw)
+      return null;
+    const result = resultRaw.__typename === "TweetWithVisibilityResults" ? resultRaw.tweet : resultRaw;
+    const legacy = result == null ? void 0 : result.legacy;
+    const id = (_a = result == null ? void 0 : result.rest_id) != null ? _a : legacy == null ? void 0 : legacy.id_str;
+    if (!legacy || !id)
+      return null;
+    const userResult = (_c = (_b = result == null ? void 0 : result.core) == null ? void 0 : _b.user_results) == null ? void 0 : _c.result;
+    const userLegacy = (_d = userResult == null ? void 0 : userResult.legacy) != null ? _d : {};
+    const userCore = (_e = userResult == null ? void 0 : userResult.core) != null ? _e : {};
+    const authorHandle = (_g = (_f = userCore.screen_name) != null ? _f : userLegacy.screen_name) != null ? _g : "";
+    const authorName = (_i = (_h = userCore.name) != null ? _h : userLegacy.name) != null ? _i : authorHandle;
+    const noteText = (_l = (_k = (_j = result == null ? void 0 : result.note_tweet) == null ? void 0 : _j.note_tweet_results) == null ? void 0 : _k.result) == null ? void 0 : _l.text;
+    const text = unescapeEntities((_m = noteText != null ? noteText : legacy.full_text) != null ? _m : "");
+    const created = Date.parse((_n = legacy.created_at) != null ? _n : "");
+    const media = (_r = (_q = (_o = legacy == null ? void 0 : legacy.extended_entities) == null ? void 0 : _o.media) != null ? _q : (_p = legacy == null ? void 0 : legacy.entities) == null ? void 0 : _p.media) != null ? _r : [];
+    const viewsRaw = (_s = result == null ? void 0 : result.views) == null ? void 0 : _s.count;
+    const viewCount = viewsRaw != null ? Number(viewsRaw) : void 0;
+    return {
+      id,
+      url: `https://x.com/${authorHandle || "i"}/status/${id}`,
+      text,
+      authorHandle,
+      authorName,
+      createdAt: Number.isNaN(created) ? capturedAt : created,
+      lang: (_t = legacy.lang) != null ? _t : "und",
+      favoriteCount: (_u = legacy.favorite_count) != null ? _u : 0,
+      retweetCount: (_v = legacy.retweet_count) != null ? _v : 0,
+      replyCount: (_w = legacy.reply_count) != null ? _w : 0,
+      quoteCount: (_x = legacy.quote_count) != null ? _x : 0,
+      viewCount: viewCount != null && !Number.isNaN(viewCount) ? viewCount : void 0,
+      hasMedia: Array.isArray(media) && media.length > 0,
+      capturedAt,
+      queries: [rawQuery]
+    };
+  }
+};
+function looksLikeQueryId(s) {
+  return /^[A-Za-z0-9_-]{16,32}$/.test(s);
+}
+function unescapeEntities(s) {
+  return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+}
+
+// src/ui/XSearchView.ts
+var import_obsidian12 = require("obsidian");
+
+// src/x/saved-queries.ts
+function extractTweetId(input) {
+  var _a;
+  const s = input.trim();
+  const m = (_a = s.match(/status(?:es)?\/(\d{6,25})/)) != null ? _a : s.match(/^(\d{6,25})$/);
+  return m ? m[1] : null;
+}
+async function runSavedQuery(client, corpus, sq, defaults) {
+  var _a;
+  const result = { queryId: sq.id, fetched: 0, added: 0, errors: [] };
+  for (const surface of sq.surfaceOr) {
+    const s = surface.trim();
+    if (!s)
+      continue;
+    const q = emptyQuery((_a = sq.lang) != null ? _a : defaults.lang, defaults.product);
+    q.allTerms = [s];
+    if (sq.minFaves)
+      q.minFaves = sq.minFaves;
+    try {
+      const { tweets } = await client.search(q);
+      for (const t of tweets)
+        t.matchedQueries = [sq.id];
+      result.fetched += tweets.length;
+      result.added += corpus.addTweets(tweets);
+    } catch (e) {
+      result.errors.push(`"${s}": ${e.message}`);
+    }
+  }
+  return result;
+}
+async function runAllSavedQueries(client, corpus, queries, defaults, onProgress) {
+  const out = [];
+  for (let i = 0; i < queries.length; i++) {
+    onProgress == null ? void 0 : onProgress(i, queries.length, queries[i].label);
+    out.push(await runSavedQuery(client, corpus, queries[i], defaults));
+  }
+  return out;
+}
+
+// src/x/export-notes.ts
+var import_obsidian11 = require("obsidian");
+function sanitize(s) {
+  return s.replace(/[\\/:*?"<>|#^[\]]/g, "_").replace(/\s+/g, "_").slice(0, 60);
+}
+function isoDate(ms) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+function yamlString(s) {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+function tweetToMarkdown(t) {
+  var _a;
+  const fm = ["---"];
+  fm.push(`tweet_id: ${yamlString(t.id)}`);
+  fm.push(`author: ${yamlString(t.authorHandle)}`);
+  fm.push(`authorName: ${yamlString(t.authorName)}`);
+  fm.push(`created_at: ${yamlString(new Date(t.createdAt).toISOString())}`);
+  fm.push(`url: ${yamlString(t.url)}`);
+  fm.push(`lang: ${yamlString(t.lang)}`);
+  fm.push(`like: ${t.favoriteCount}`);
+  fm.push(`retweet: ${t.retweetCount}`);
+  fm.push(`reply: ${t.replyCount}`);
+  if ((_a = t.matchedQueries) == null ? void 0 : _a.length) {
+    fm.push("matched_queries:");
+    for (const q of t.matchedQueries)
+      fm.push(`  - ${yamlString(q)}`);
+  }
+  fm.push("tags:");
+  fm.push("  - x/tweet");
+  fm.push("---");
+  return fm.join("\n") + "\n\n" + t.text + "\n";
+}
+async function exportTweetsToVault(app, tweets, folder) {
+  const base = (0, import_obsidian11.normalizePath)(folder.trim() || "X Tweets");
+  if (!await app.vault.adapter.exists(base)) {
+    try {
+      await app.vault.createFolder(base);
+    } catch (e) {
+    }
+  }
+  let written = 0;
+  let skipped = 0;
+  for (const t of tweets) {
+    const name = `${isoDate(t.createdAt)}_${sanitize(t.authorHandle || "unknown")}_${t.id}.md`;
+    const path = (0, import_obsidian11.normalizePath)(`${base}/${name}`);
+    if (await app.vault.adapter.exists(path)) {
+      skipped++;
+      continue;
+    }
+    try {
+      await app.vault.create(path, tweetToMarkdown(t));
+      written++;
+    } catch (e) {
+      skipped++;
+    }
+  }
+  return { written, skipped, folder: base };
+}
+
+// src/ui/XSearchView.ts
+var JP_X_VIEW_TYPE = "jp-x-search-view";
+var XSearchView = class extends import_obsidian12.ItemView {
+  constructor(leaf, deps) {
+    super(leaf);
+    this.mainInput = null;
+    this.chipsEl = null;
+    this.advancedEl = null;
+    this.advancedOpen = false;
+    this.statusEl = null;
+    this.resultsEl = null;
+    this.loadMoreEl = null;
+    this.debounceTimer = null;
+    this.liveCursor = null;
+    this.liveBusy = false;
+    this.sortMode = "latest";
+    /** When set, results come from saved-query co-occurrence rather than the term box. */
+    this.coocActive = false;
+    this.deps = deps;
+    const s = deps.getSettings();
+    this.query = emptyQuery(s.defaultLang, s.defaultProduct);
+  }
+  getViewType() {
+    return JP_X_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "X Search";
+  }
+  getIcon() {
+    return "search";
+  }
+  async onOpen() {
+    this.buildUI();
+    this.renderLocal();
+  }
+  async onClose() {
+    if (this.debounceTimer)
+      clearTimeout(this.debounceTimer);
+  }
+  /**
+   * Programmatic search (e.g. from the "search selection on X" command).
+   * `live` fires a live X scrape; pass false to show cached/just-ingested
+   * results only (the iOS co-occurrence round trip already has the tweets, and
+   * a live scrape would 404 on mobile).
+   */
+  searchFor(text, live = true) {
+    if (this.mainInput)
+      this.mainInput.value = text;
+    this.collectMainTerms();
+    this.renderChips();
+    this.renderLocal();
+    if (live)
+      void this.runLive(true);
+  }
+  // ── UI scaffold ────────────────────────────────────────────
+  buildUI() {
+    const container = this.containerEl.children[1];
+    container.empty();
+    container.addClass("jp-x-view");
+    const header = container.createDiv("jp-x-header");
+    const titleRow = header.createDiv("jp-x-title-row");
+    titleRow.createEl("h4", { text: "\u{1D54F} \u691C\u7D22\u8F9E\u66F8", cls: "jp-x-title" });
+    const actions = titleRow.createDiv("jp-x-header-actions");
+    const savedBtn = actions.createEl("button", {
+      text: "\u{1F4D1}",
+      cls: "jp-x-icon-btn",
+      attr: { "aria-label": "Saved queries" }
+    });
+    savedBtn.addEventListener("click", () => this.openSavedQueriesModal());
+    const urlBtn = actions.createEl("button", {
+      text: "\u{1F517}",
+      cls: "jp-x-icon-btn",
+      attr: { "aria-label": "Add tweet by URL" }
+    });
+    urlBtn.addEventListener("click", () => this.openAddByUrlModal());
+    const authBtn = actions.createEl("button", {
+      text: "\u{1F511}",
+      cls: "jp-x-icon-btn",
+      attr: { "aria-label": "X login cookies" }
+    });
+    authBtn.addEventListener("click", () => this.openAuthModal());
+    const importBtn = actions.createEl("button", {
+      text: "\u2913",
+      cls: "jp-x-icon-btn",
+      attr: { "aria-label": "Import / export corpus (JSONL)" }
+    });
+    importBtn.addEventListener("click", () => this.openCorpusModal());
+    const searchRow = header.createDiv("jp-x-search-row");
+    this.mainInput = searchRow.createEl("input", {
+      type: "search",
+      placeholder: "\u8A9E\u3092\u30B9\u30DA\u30FC\u30B9\u533A\u5207\u308A\u3067\uFF08AND\uFF09\u2026 \u4F8B: \u4EE5\u524D\u306E \u3067\u3055\u3048",
+      cls: "jp-x-search-input",
+      attr: { autocomplete: "off", autocapitalize: "off", spellcheck: "false", enterkeyhint: "search" }
+    });
+    this.mainInput.addEventListener("input", () => this.onInput());
+    this.mainInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this.collectMainTerms();
+        this.renderChips();
+        this.renderLocal();
+        void this.runLive(true);
+      } else if (e.key === "Escape") {
+        this.mainInput.value = "";
+        this.collectMainTerms();
+        this.renderChips();
+        this.renderLocal();
+      }
+    });
+    const goBtn = searchRow.createEl("button", { text: "\u691C\u7D22", cls: "jp-x-go-btn" });
+    goBtn.addEventListener("click", () => {
+      this.collectMainTerms();
+      this.renderChips();
+      this.renderLocal();
+      void this.runLive(true);
+    });
+    this.chipsEl = header.createDiv("jp-x-chips");
+    const sortRow = header.createDiv("jp-x-sortrow");
+    sortRow.createSpan({ text: "\u4E26\u3073\u66FF\u3048", cls: "jp-x-sort-label" });
+    const sorts = [
+      { id: "latest", label: "\u65B0\u7740" },
+      { id: "likes", label: "\u2764" },
+      { id: "retweets", label: "\u{1F501}" }
+    ];
+    for (const so of sorts) {
+      const b = sortRow.createEl("button", { text: so.label, cls: "jp-x-sort-btn" });
+      if (this.sortMode === so.id)
+        b.addClass("jp-x-sort-btn--active");
+      b.addEventListener("click", () => {
+        this.sortMode = so.id;
+        sortRow.querySelectorAll(".jp-x-sort-btn").forEach((el) => el.removeClass("jp-x-sort-btn--active"));
+        b.addClass("jp-x-sort-btn--active");
+        this.renderLocal();
+      });
+    }
+    const advToggle = header.createDiv("jp-x-adv-toggle");
+    advToggle.createSpan({ text: "\u8A73\u7D30\u691C\u7D22", cls: "jp-x-adv-toggle-label" });
+    const advArrow = advToggle.createSpan({ text: "\u25B8", cls: "jp-x-adv-arrow" });
+    this.advancedEl = header.createDiv("jp-x-advanced");
+    this.advancedEl.style.display = "none";
+    this.buildAdvancedPanel(this.advancedEl);
+    advToggle.addEventListener("click", () => {
+      this.advancedOpen = !this.advancedOpen;
+      this.advancedEl.style.display = this.advancedOpen ? "" : "none";
+      advArrow.textContent = this.advancedOpen ? "\u25BE" : "\u25B8";
+    });
+    this.statusEl = container.createDiv("jp-x-status");
+    this.resultsEl = container.createDiv("jp-x-results");
+    this.loadMoreEl = container.createDiv("jp-x-loadmore");
+  }
+  buildAdvancedPanel(panel) {
+    const tabRow = panel.createDiv("jp-x-tabrow");
+    const products = [
+      { id: "Latest", label: "\u6700\u65B0" },
+      { id: "Top", label: "\u8A71\u984C" },
+      { id: "Media", label: "\u30E1\u30C7\u30A3\u30A2" }
+    ];
+    const tabBtns = /* @__PURE__ */ new Map();
+    for (const p of products) {
+      const btn = tabRow.createEl("button", { text: p.label, cls: "jp-x-tab" });
+      if (this.query.product === p.id)
+        btn.addClass("jp-x-tab--active");
+      btn.addEventListener("click", () => {
+        this.query.product = p.id;
+        for (const [, b] of tabBtns)
+          b.removeClass("jp-x-tab--active");
+        btn.addClass("jp-x-tab--active");
+      });
+      tabBtns.set(p.id, btn);
+    }
+    const textField = (label, placeholder, get, set) => {
+      const row = panel.createDiv("jp-x-field");
+      row.createSpan({ text: label, cls: "jp-x-field-label" });
+      const input = row.createEl("input", {
+        type: "text",
+        cls: "jp-x-field-input",
+        attr: { placeholder, autocapitalize: "off", spellcheck: "false" }
+      });
+      input.value = get();
+      input.addEventListener("input", () => {
+        set(input.value.trim());
+        this.renderLocal();
+      });
+      return input;
+    };
+    textField(
+      "\u3044\u305A\u308C\u304B (OR)",
+      "\u30B9\u30DA\u30FC\u30B9\u533A\u5207\u308A",
+      () => this.query.anyTerms.join(" "),
+      (v) => {
+        this.query.anyTerms = parseTerms(v);
+      }
+    );
+    textField(
+      "\u9664\u5916 (NOT)",
+      "\u30B9\u30DA\u30FC\u30B9\u533A\u5207\u308A",
+      () => this.query.noneTerms.join(" "),
+      (v) => {
+        this.query.noneTerms = parseTerms(v);
+      }
+    );
+    textField("\u8A00\u8A9E", "ja / en / \u7A7A=\u5168", () => this.query.lang, (v) => {
+      this.query.lang = v;
+    });
+    textField("\u6295\u7A3F\u8005 from:", "@\u306A\u3057", () => this.query.fromUser, (v) => {
+      this.query.fromUser = v;
+    });
+    textField("\u5B9B\u5148 to:", "@\u306A\u3057", () => this.query.toUser, (v) => {
+      this.query.toUser = v;
+    });
+    const numField = (label, get, set) => {
+      const row = panel.createDiv("jp-x-field");
+      row.createSpan({ text: label, cls: "jp-x-field-label" });
+      const input = row.createEl("input", { type: "number", cls: "jp-x-field-input", attr: { min: "0", inputmode: "numeric" } });
+      input.value = String(get() || "");
+      input.addEventListener("input", () => {
+        set(Number(input.value) || 0);
+        this.renderLocal();
+      });
+    };
+    numField("\u6700\u5C0F\u3044\u3044\u306D", () => this.query.minFaves, (v) => {
+      this.query.minFaves = v;
+    });
+    numField("\u6700\u5C0FRT", () => this.query.minRetweets, (v) => {
+      this.query.minRetweets = v;
+    });
+    textField("\u671F\u9593 since:", "YYYY-MM-DD", () => this.query.since, (v) => {
+      this.query.since = v;
+    });
+    textField("\u671F\u9593 until:", "YYYY-MM-DD", () => this.query.until, (v) => {
+      this.query.until = v;
+    });
+  }
+  // ── Query collection ───────────────────────────────────────
+  collectMainTerms() {
+    var _a, _b;
+    this.query.allTerms = parseTerms((_b = (_a = this.mainInput) == null ? void 0 : _a.value) != null ? _b : "");
+  }
+  renderChips() {
+    if (!this.chipsEl)
+      return;
+    this.chipsEl.empty();
+    if (this.query.allTerms.length === 0) {
+      this.chipsEl.style.display = "none";
+      return;
+    }
+    this.chipsEl.style.display = "flex";
+    this.query.allTerms.forEach((term, i) => {
+      if (i > 0)
+        this.chipsEl.createSpan({ text: "AND", cls: "jp-x-chip-and" });
+      const chip = this.chipsEl.createSpan({ cls: "jp-x-chip" });
+      chip.createSpan({ text: term, cls: "jp-x-chip-text" });
+      const x = chip.createSpan({ text: "\xD7", cls: "jp-x-chip-x" });
+      x.addEventListener("click", () => {
+        this.query.allTerms.splice(i, 1);
+        if (this.mainInput) {
+          this.mainInput.value = this.query.allTerms.map((t) => /\s/.test(t) ? `"${t}"` : t).join(" ");
+        }
+        this.renderChips();
+        this.renderLocal();
+      });
+    });
+  }
+  // ── Local (offline corpus) search ──────────────────────────
+  onInput() {
+    this.coocActive = false;
+    if (this.debounceTimer)
+      clearTimeout(this.debounceTimer);
+    this.debounceTimer = setTimeout(() => {
+      this.collectMainTerms();
+      this.renderChips();
+      this.renderLocal();
+    }, 110);
+  }
+  applySort(rows) {
+    const sorted = [...rows];
+    if (this.sortMode === "likes")
+      sorted.sort((a, b) => b.favoriteCount - a.favoriteCount);
+    else if (this.sortMode === "retweets")
+      sorted.sort((a, b) => b.retweetCount - a.retweetCount);
+    else
+      sorted.sort((a, b) => b.createdAt - a.createdAt);
+    return sorted;
+  }
+  renderLocal() {
+    if (!this.resultsEl || !this.statusEl)
+      return;
+    const total = this.deps.corpus.size();
+    if (this.coocActive) {
+      this.renderCooccurrence();
+      return;
+    }
+    if (isEmptyQuery(this.query)) {
+      this.renderHome();
+      return;
+    }
+    const results = this.applySort(this.deps.corpus.search(this.query, 300));
+    const live = this.deps.client.isConfigured();
+    this.statusEl.empty();
+    this.statusEl.createSpan({
+      text: `\u30ED\u30FC\u30AB\u30EB ${results.length}\u4EF6 / \u30B3\u30FC\u30D1\u30B9 ${total}\u4EF6` + (live ? "" : "\u30FB\u30E9\u30A4\u30D6\u53D6\u5F97\u30AA\u30D5\uFF08\u{1F511}\u3067\u8A2D\u5B9A\uFF09"),
+      cls: "jp-x-status-text"
+    });
+    this.resultsEl.empty();
+    if (this.loadMoreEl)
+      this.loadMoreEl.empty();
+    if (results.length === 0) {
+      const empty = this.resultsEl.createDiv("jp-x-empty");
+      empty.createDiv({ cls: "jp-x-empty-icon", text: "\u{1F50D}" });
+      empty.createDiv({
+        text: total === 0 ? "\u30B3\u30FC\u30D1\u30B9\u306F\u7A7A\u3067\u3059\u3002\u691C\u7D22\u3059\u308B\u3068 X \u304B\u3089\u53D6\u5F97\u3057\u3066\u8CAF\u307E\u308A\u307E\u3059\u3002" : "\u30AD\u30E3\u30C3\u30B7\u30E5\u306B\u8A72\u5F53\u306A\u3057\u3002\u691C\u7D22\u3067\u30E9\u30A4\u30D6\u53D6\u5F97\u3057\u307E\u3059\u3002",
+        cls: "jp-x-empty-text"
+      });
+      return;
+    }
+    const terms = highlightTerms(this.query);
+    for (const t of results)
+      this.renderTweetCard(this.resultsEl, t, terms);
+  }
+  renderCooccurrence() {
+    if (!this.resultsEl || !this.statusEl)
+      return;
+    const ids = this.deps.getSettings().savedQueries.map((q) => q.id);
+    const rows = this.applySort(this.deps.corpus.tweetsMatchingQueries(ids, 2));
+    this.statusEl.empty();
+    this.statusEl.createSpan({
+      text: `\u2605 \u5171\u8D77\uFF08\u4FDD\u5B58\u691C\u7D22\u30922\u3064\u4EE5\u4E0A\u542B\u3080\uFF09${rows.length}\u4EF6`,
+      cls: "jp-x-status-text"
+    });
+    this.resultsEl.empty();
+    if (this.loadMoreEl)
+      this.loadMoreEl.empty();
+    if (rows.length === 0) {
+      const empty = this.resultsEl.createDiv("jp-x-empty");
+      empty.createDiv({ cls: "jp-x-empty-icon", text: "\u2605" });
+      empty.createDiv({
+        text: "\u8907\u6570\u306E\u4FDD\u5B58\u691C\u7D22\u306B\u540C\u6642\u30D2\u30C3\u30C8\u3057\u305F\u30C4\u30A4\u30FC\u30C8\u306F\u307E\u3060\u3042\u308A\u307E\u305B\u3093\u3002\u{1F4D1}\u304B\u3089\u4FDD\u5B58\u691C\u7D22\u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+        cls: "jp-x-empty-text"
+      });
+      return;
+    }
+    for (const t of rows)
+      this.renderTweetCard(this.resultsEl, t, []);
+  }
+  renderHome() {
+    if (!this.resultsEl || !this.statusEl)
+      return;
+    this.statusEl.empty();
+    this.resultsEl.empty();
+    if (this.loadMoreEl)
+      this.loadMoreEl.empty();
+    const stats = this.deps.corpus.stats();
+    this.statusEl.createSpan({ text: `\u30B3\u30FC\u30D1\u30B9 ${stats.count}\u4EF6`, cls: "jp-x-status-text" });
+    const home = this.resultsEl.createDiv("jp-x-home");
+    home.createDiv({ cls: "jp-x-home-icon", text: "\u{1D54F}" });
+    home.createEl("h5", { text: "X \u7528\u4F8B\u691C\u7D22\u8F9E\u66F8" });
+    home.createEl("p", {
+      text: "\u8A9E\u3092\u30B9\u30DA\u30FC\u30B9\u533A\u5207\u308A\u3067\u5165\u529B\u3059\u308B\u3068\u3001\u4E21\u65B9\u3092\u542B\u3080\u30C4\u30A4\u30FC\u30C8\u3092\u63A2\u3057\u307E\u3059\uFF08AND\uFF09\u3002\u4F8B: \u4EE5\u524D\u306E \u3067\u3055\u3048",
+      cls: "jp-x-home-hint"
+    });
+    if (!this.deps.client.isConfigured()) {
+      const warn = home.createDiv("jp-x-home-warn");
+      warn.createSpan({ text: "\u26A0 \u30E9\u30A4\u30D6\u53D6\u5F97\u306B\u306F X \u306E\u30ED\u30B0\u30A4\u30F3\u30AF\u30C3\u30AD\u30FC\u304C\u5FC5\u8981\u3067\u3059\u3002" });
+      const setup = warn.createEl("button", { text: "\u{1F511} \u30AF\u30C3\u30AD\u30FC\u8A2D\u5B9A", cls: "jp-x-go-btn jp-x-home-setup" });
+      setup.addEventListener("click", () => this.openAuthModal());
+    }
+    const noauth = home.createDiv("jp-x-home-hint jp-x-home-faint");
+    noauth.createSpan({ text: "\u30AF\u30C3\u30AD\u30FC\u4E0D\u8981\u3067\u8CAF\u3081\u308B: " });
+    const byUrl = noauth.createEl("a", { text: "\u{1F517} URL\u3067\u8FFD\u52A0", href: "#" });
+    byUrl.addEventListener("click", (e) => {
+      e.preventDefault();
+      new XAddByUrlModal(this.app, this.deps, () => this.renderLocal()).open();
+    });
+    noauth.createSpan({ text: "\u3000/\u3000" });
+    const imp = noauth.createEl("a", { text: "\u2913 JSONL\u53D6\u308A\u8FBC\u307F", href: "#" });
+    imp.addEventListener("click", (e) => {
+      e.preventDefault();
+      new XCorpusModal(this.app, this.deps, () => this.renderLocal()).open();
+    });
+    if (stats.count > 0 && stats.newest) {
+      home.createEl("p", {
+        text: `\u6700\u65B0\u30C4\u30A4\u30FC\u30C8: ${formatDate(stats.newest)}`,
+        cls: "jp-x-home-hint jp-x-home-faint"
+      });
+    }
+  }
+  // ── Live scrape ────────────────────────────────────────────
+  async runLive(reset, triedDiscovery = false) {
+    var _a;
+    if (isEmptyQuery(this.query))
+      return;
+    if (this.liveBusy)
+      return;
+    const issue = this.deps.client.configIssue();
+    if (issue) {
+      new import_obsidian12.Notice(`X: ${issue}`, 5e3);
+      return;
+    }
+    if (reset)
+      this.liveCursor = null;
+    this.liveBusy = true;
+    this.setLoading(true);
+    try {
+      const { tweets, cursor } = await this.deps.client.search(
+        this.query,
+        reset ? void 0 : (_a = this.liveCursor) != null ? _a : void 0
+      );
+      const added = this.deps.corpus.addTweets(tweets);
+      this.liveCursor = cursor;
+      new import_obsidian12.Notice(
+        `X: ${tweets.length}\u4EF6\u53D6\u5F97\uFF08\u65B0\u898F ${added}\u4EF6\uFF09` + (cursor ? "\u30FB\u7D9A\u304D\u3042\u308A" : ""),
+        4e3
+      );
+      this.renderLocal();
+      this.renderLoadMore();
+    } catch (e) {
+      if (e instanceof XScrapeError && e.status === 404 && !triedDiscovery) {
+        this.liveBusy = false;
+        this.setLoading(false);
+        const ok = await this.recoverQueryId();
+        if (ok) {
+          void this.runLive(reset, true);
+          return;
+        }
+      }
+      const msg = e instanceof XScrapeError ? e.message : e.message;
+      new import_obsidian12.Notice(`X \u53D6\u5F97\u30A8\u30E9\u30FC: ${msg}`, 8e3);
+    } finally {
+      this.liveBusy = false;
+      this.setLoading(false);
+    }
+  }
+  /** Discover + persist the current SearchTimeline queryId. Returns success. */
+  async recoverQueryId() {
+    new import_obsidian12.Notice("\u691C\u7D22ID\u304C\u53E4\u3044\u3088\u3046\u3067\u3059\u3002\u6700\u65B0ID\u3092\u81EA\u52D5\u53D6\u5F97\u4E2D\u2026", 4e3);
+    try {
+      const id = await this.deps.client.discoverSearchQueryId();
+      if (!id) {
+        new import_obsidian12.Notice("queryId \u3092\u81EA\u52D5\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u{1F511}\u2192\u8A73\u7D30\u3067\u624B\u52D5\u8A2D\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
+        return false;
+      }
+      this.deps.getSettings().searchQueryId = id;
+      await this.deps.saveSettings();
+      new import_obsidian12.Notice(`\u2713 \u691C\u7D22ID\u3092\u66F4\u65B0\u3057\u307E\u3057\u305F\uFF08${id}\uFF09\u3002\u518D\u691C\u7D22\u3057\u307E\u3059\u3002`, 4e3);
+      return true;
+    } catch (e) {
+      new import_obsidian12.Notice("queryId \u306E\u81EA\u52D5\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002", 6e3);
+      return false;
+    }
+  }
+  renderLoadMore() {
+    if (!this.loadMoreEl)
+      return;
+    this.loadMoreEl.empty();
+    if (!this.liveCursor)
+      return;
+    const btn = this.loadMoreEl.createEl("button", { text: "\u3082\u3063\u3068\u8AAD\u307F\u8FBC\u3080", cls: "jp-x-loadmore-btn" });
+    btn.addEventListener("click", () => void this.runLive(false));
+  }
+  setLoading(on) {
+    this.containerEl.toggleClass("jp-x-loading", on);
+  }
+  // ── Tweet card ─────────────────────────────────────────────
+  renderTweetCard(parent, t, terms) {
+    var _a, _b, _c, _d;
+    const card = parent.createDiv("jp-x-card");
+    const head = card.createDiv("jp-x-card-head");
+    const who = head.createDiv("jp-x-card-who");
+    who.createSpan({ text: t.authorName || t.authorHandle, cls: "jp-x-card-name" });
+    const handle = who.createSpan({ text: "@" + t.authorHandle, cls: "jp-x-card-handle" });
+    handle.addEventListener("click", () => {
+      this.coocActive = false;
+      this.query.fromUser = t.authorHandle;
+      this.renderLocal();
+      new import_obsidian12.Notice(`from:@${t.authorHandle} \u3067\u7D5E\u308A\u8FBC\u307F`);
+    });
+    if (((_b = (_a = t.matchedQueries) == null ? void 0 : _a.length) != null ? _b : 0) >= 2) {
+      head.createSpan({
+        text: `\u2605${t.matchedQueries.length}`,
+        cls: "jp-x-cooc-badge",
+        attr: { title: `\u4FDD\u5B58\u691C\u7D22 ${t.matchedQueries.join(", ")} \u306B\u540C\u6642\u30D2\u30C3\u30C8` }
+      });
+    }
+    head.createSpan({ text: formatDate(t.createdAt), cls: "jp-x-card-date" });
+    const body = card.createDiv("jp-x-card-body");
+    highlightInto(body, t.text, terms);
+    const patterns = detectPatterns(t.text);
+    if (patterns.length > 0) {
+      const pills = card.createDiv("jp-x-card-patterns");
+      const seen = /* @__PURE__ */ new Set();
+      for (const m of patterns) {
+        if (seen.has(m.pattern.id))
+          continue;
+        seen.add(m.pattern.id);
+        if (seen.size > 6)
+          break;
+        const cat = m.pattern.category;
+        const color = (_c = CATEGORY_COLORS[cat]) != null ? _c : "#888";
+        const pill = pills.createSpan({ text: m.pattern.surface, cls: "jp-x-pat-pill" });
+        pill.style.borderColor = color;
+        pill.style.color = color;
+        pill.title = `${(_d = CATEGORY_LABELS[cat]) != null ? _d : cat}`;
+      }
+    }
+    const metrics = card.createDiv("jp-x-card-metrics");
+    metrics.createSpan({ text: `\u2764 ${compact(t.favoriteCount)}`, cls: "jp-x-metric" });
+    metrics.createSpan({ text: `\u{1F501} ${compact(t.retweetCount)}`, cls: "jp-x-metric" });
+    metrics.createSpan({ text: `\u{1F4AC} ${compact(t.replyCount)}`, cls: "jp-x-metric" });
+    if (t.viewCount != null)
+      metrics.createSpan({ text: `\u{1F441} ${compact(t.viewCount)}`, cls: "jp-x-metric" });
+    if (t.lang && t.lang !== "und")
+      metrics.createSpan({ text: t.lang, cls: "jp-x-metric jp-x-metric-lang" });
+    const actions = card.createDiv("jp-x-card-actions");
+    this.actionBtn(actions, "\u{1F4BE} \u4FDD\u5B58", "\u3053\u306E\u7528\u4F8B\u3092\u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3\u3068\u3057\u3066\u4FDD\u5B58", () => {
+      const surface = terms.length ? terms.join("\u2026") : t.text.slice(0, 12);
+      this.deps.onSaveCollocation(surface, t.text, t.url);
+      new import_obsidian12.Notice(`\u4FDD\u5B58: ${surface}`);
+    });
+    this.actionBtn(actions, "\u29C9 \u30B3\u30D4\u30FC", "\u672C\u6587\u3092\u30B3\u30D4\u30FC", () => {
+      navigator.clipboard.writeText(t.text).then(() => new import_obsidian12.Notice("\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F"));
+    });
+    this.actionBtn(actions, "\u21A7 \u633F\u5165", "\u30A8\u30C7\u30A3\u30BF\u306B\u633F\u5165", () => {
+      var _a2;
+      const editor = (_a2 = this.app.workspace.activeEditor) == null ? void 0 : _a2.editor;
+      if (editor) {
+        editor.replaceSelection(t.text);
+        new import_obsidian12.Notice("\u633F\u5165\u3057\u307E\u3057\u305F");
+      } else
+        new import_obsidian12.Notice("\u30A2\u30AF\u30C6\u30A3\u30D6\u306A\u30A8\u30C7\u30A3\u30BF\u304C\u3042\u308A\u307E\u305B\u3093");
+    });
+    this.actionBtn(actions, "\u2192\u30CE\u30FC\u30C8", "Vault \u306B\u30CE\u30FC\u30C8\u3068\u3057\u3066\u4FDD\u5B58", async () => {
+      const folder = this.deps.getSettings().exportFolder;
+      const r = await exportTweetsToVault(this.app, [t], folder);
+      new import_obsidian12.Notice(r.written ? `\u30CE\u30FC\u30C8\u4F5C\u6210: ${r.folder}` : "\u3059\u3067\u306B\u5B58\u5728\u3057\u307E\u3059");
+    });
+    this.actionBtn(actions, "\u2197 X", "X \u3067\u958B\u304F", () => window.open(t.url, "_blank"));
+  }
+  actionBtn(parent, label, title, onClick) {
+    const btn = parent.createEl("button", { text: label, cls: "jp-x-action-btn", attr: { title } });
+    btn.addEventListener("click", onClick);
+  }
+  // ── Auth modal (quick cookie entry, mobile-friendly) ───────
+  openAuthModal() {
+    new XAuthModal(this.app, this.deps, () => {
+      this.renderLocal();
+    }).open();
+  }
+  openCorpusModal() {
+    new XCorpusModal(this.app, this.deps, () => {
+      this.renderLocal();
+    }).open();
+  }
+  openSavedQueriesModal() {
+    new XSavedQueriesModal(this.app, this.deps, (showCooc) => {
+      if (showCooc) {
+        this.coocActive = true;
+        this.renderLocal();
+      } else
+        this.renderLocal();
+    }).open();
+  }
+  openAddByUrlModal() {
+    new XAddByUrlModal(this.app, this.deps, () => {
+      this.renderLocal();
+    }).open();
+  }
+};
+function highlightInto(el, text, terms) {
+  const needles = terms.filter(Boolean);
+  if (needles.length === 0) {
+    el.appendText(text);
+    return;
+  }
+  const lc = text.toLowerCase();
+  const ranges = [];
+  for (const term of [...needles].sort((a, b) => b.length - a.length)) {
+    const needle = term.toLowerCase();
+    let i = 0;
+    while ((i = lc.indexOf(needle, i)) !== -1) {
+      ranges.push([i, i + term.length]);
+      i += term.length;
+    }
+  }
+  if (ranges.length === 0) {
+    el.appendText(text);
+    return;
+  }
+  ranges.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+  const merged = [];
+  for (const r of ranges) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= last[1])
+      last[1] = Math.max(last[1], r[1]);
+    else
+      merged.push([r[0], r[1]]);
+  }
+  let pos = 0;
+  for (const [s, e] of merged) {
+    if (s > pos)
+      el.appendText(text.slice(pos, s));
+    el.createSpan({ text: text.slice(s, e), cls: "jp-x-hl" });
+    pos = e;
+  }
+  if (pos < text.length)
+    el.appendText(text.slice(pos));
+}
+function formatDate(ms) {
+  const d = new Date(ms);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function compact(n) {
+  if (n >= 1e6)
+    return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1e3)
+    return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(n);
+}
+var XAuthModal = class extends import_obsidian12.Modal {
+  constructor(app, deps, onSaved) {
+    super(app);
+    this.deps = deps;
+    this.onSaved = onSaved;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("jp-x-modal");
+    contentEl.createEl("h2", { text: "X \u30ED\u30B0\u30A4\u30F3\u30AF\u30C3\u30AD\u30FC" });
+    contentEl.createEl("p", {
+      text: "x.com \u306B\u30ED\u30B0\u30A4\u30F3\u3057\u305F\u30D6\u30E9\u30A6\u30B6\u306E\u958B\u767A\u8005\u30C4\u30FC\u30EB \u2192 Application \u2192 Cookies \u304B\u3089 auth_token \u3068 ct0 \u3092\u30B3\u30D4\u30FC\u3057\u3066\u8CBC\u308A\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\u3002\u7AEF\u672B\u5185\u306B\u306E\u307F\u4FDD\u5B58\u3055\u308C\u307E\u3059\u3002",
+      cls: "jp-x-modal-desc"
+    });
+    const s = this.deps.getSettings();
+    new import_obsidian12.Setting(contentEl).setName("\u30E9\u30A4\u30D6\u53D6\u5F97\u3092\u6709\u52B9\u5316").setDesc("\u30AA\u30D5\u306B\u3059\u308B\u3068\u30AD\u30E3\u30C3\u30B7\u30E5\u306E\u307F\u3067\u691C\u7D22\u3057\u307E\u3059").addToggle((t) => t.setValue(s.enabled).onChange((v) => {
+      s.enabled = v;
+    }));
+    new import_obsidian12.Setting(contentEl).setName("auth_token").addText((t) => {
+      t.setValue(s.authToken).onChange((v) => {
+        s.authToken = v.trim();
+      });
+      t.inputEl.type = "password";
+      t.inputEl.style.width = "100%";
+    });
+    new import_obsidian12.Setting(contentEl).setName("ct0 (csrf)").addText((t) => {
+      t.setValue(s.csrfToken).onChange((v) => {
+        s.csrfToken = v.trim();
+      });
+      t.inputEl.type = "password";
+      t.inputEl.style.width = "100%";
+    });
+    const adv = contentEl.createEl("details", { cls: "jp-x-modal-adv" });
+    adv.createEl("summary", { text: "\u8A73\u7D30\uFF08\u901A\u5E38\u306F\u5909\u66F4\u4E0D\u8981\uFF09" });
+    let queryIdText = null;
+    new import_obsidian12.Setting(adv).setName("SearchTimeline queryId").setDesc("\u691C\u7D22\u304C 404 \u306B\u306A\u3063\u305F\u3089\u66F4\u65B0").addText((t) => {
+      queryIdText = t;
+      t.setValue(s.searchQueryId).onChange((v) => {
+        s.searchQueryId = v.trim();
+      });
+    }).addButton((b) => b.setButtonText("\u81EA\u52D5\u53D6\u5F97").onClick(async () => {
+      b.setDisabled(true);
+      b.setButtonText("\u53D6\u5F97\u4E2D\u2026");
+      await this.deps.saveSettings();
+      try {
+        const id = await this.deps.client.discoverSearchQueryId();
+        if (id) {
+          s.searchQueryId = id;
+          queryIdText == null ? void 0 : queryIdText.setValue(id);
+          await this.deps.saveSettings();
+          new import_obsidian12.Notice(`\u2713 queryId \u3092\u53D6\u5F97\u3057\u307E\u3057\u305F\uFF08${id}\uFF09`);
+        } else {
+          new import_obsidian12.Notice("queryId \u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u30AF\u30C3\u30AD\u30FC\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 7e3);
+        }
+      } catch (e) {
+        new import_obsidian12.Notice(`\u53D6\u5F97\u5931\u6557: ${e.message}`, 7e3);
+      } finally {
+        b.setDisabled(false);
+        b.setButtonText("\u81EA\u52D5\u53D6\u5F97");
+      }
+    }));
+    new import_obsidian12.Setting(adv).setName("Bearer token").addText((t) => t.setValue(s.bearerToken).onChange((v) => {
+      s.bearerToken = v.trim();
+    }));
+    const btnRow = contentEl.createDiv("jp-x-modal-btnrow");
+    const testBtn = btnRow.createEl("button", { text: "\u63A5\u7D9A\u30C6\u30B9\u30C8", cls: "jp-x-action-btn" });
+    const saveBtn = btnRow.createEl("button", { text: "\u4FDD\u5B58", cls: "jp-x-go-btn" });
+    testBtn.addEventListener("click", async () => {
+      await this.deps.saveSettings();
+      testBtn.disabled = true;
+      testBtn.textContent = "\u30C6\u30B9\u30C8\u4E2D\u2026";
+      const probe = () => this.deps.client.search(
+        { ...emptyQuery(s.defaultLang, "Latest"), allTerms: ["\u65E5\u672C\u8A9E"] }
+      );
+      try {
+        let r;
+        try {
+          r = await probe();
+        } catch (e) {
+          if (e instanceof XScrapeError && e.status === 404) {
+            testBtn.textContent = "queryId \u53D6\u5F97\u4E2D\u2026";
+            const id = await this.deps.client.discoverSearchQueryId();
+            if (id) {
+              s.searchQueryId = id;
+              queryIdText == null ? void 0 : queryIdText.setValue(id);
+              await this.deps.saveSettings();
+              r = await probe();
+              new import_obsidian12.Notice(`\u2713 queryId \u3092\u66F4\u65B0\u3057\u3066\u63A5\u7D9A\u6210\u529F\uFF08${id}\uFF09`);
+            } else {
+              throw e;
+            }
+          } else {
+            throw e;
+          }
+        }
+        if (r)
+          new import_obsidian12.Notice(`\u2713 \u63A5\u7D9A\u6210\u529F\uFF08${r.tweets.length}\u4EF6\u53D6\u5F97\uFF09`);
+      } catch (e) {
+        const msg = e instanceof XScrapeError ? e.message : e.message;
+        new import_obsidian12.Notice(`\u2717 ${msg}`, 8e3);
+      } finally {
+        testBtn.disabled = false;
+        testBtn.textContent = "\u63A5\u7D9A\u30C6\u30B9\u30C8";
+      }
+    });
+    saveBtn.addEventListener("click", async () => {
+      await this.deps.saveSettings();
+      new import_obsidian12.Notice("X \u8A2D\u5B9A\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F");
+      this.onSaved();
+      this.close();
+    });
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var XCorpusModal = class extends import_obsidian12.Modal {
+  constructor(app, deps, onChanged) {
+    super(app);
+    this.deps = deps;
+    this.onChanged = onChanged;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("jp-x-modal");
+    contentEl.createEl("h2", { text: "X \u30B3\u30FC\u30D1\u30B9" });
+    const stats = this.deps.corpus.stats();
+    contentEl.createEl("p", {
+      text: `\u4FDD\u5B58\u6E08\u307F ${stats.count}\u4EF6` + (stats.newest ? `\u30FB\u6700\u65B0 ${formatDate(stats.newest)}` : ""),
+      cls: "jp-x-modal-desc"
+    });
+    new import_obsidian12.Setting(contentEl).setName("JSONL \u3092\u53D6\u308A\u8FBC\u3080").setDesc("CLI \u306E tweets-YYYY-MM.jsonl \u306A\u3069\u3092\u7D71\u5408\uFF08\u91CD\u8907\u306F\u81EA\u52D5\u30DE\u30FC\u30B8\uFF09").addButton((b) => b.setButtonText("\u30D5\u30A1\u30A4\u30EB\u9078\u629E").onClick(() => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".jsonl,.json,.txt";
+      input.onchange = async () => {
+        var _a;
+        const file = (_a = input.files) == null ? void 0 : _a[0];
+        if (!file)
+          return;
+        const text = await file.text();
+        const { added, parsed } = this.deps.corpus.importJsonl(text);
+        await this.deps.corpus.save();
+        new import_obsidian12.Notice(`\u53D6\u308A\u8FBC\u307F: ${parsed}\u4EF6\u4E2D ${added}\u4EF6\u3092\u65B0\u898F\u8FFD\u52A0`);
+        this.onChanged();
+        this.onOpen();
+      };
+      input.click();
+    }));
+    new import_obsidian12.Setting(contentEl).setName("JSONL \u3092\u66F8\u304D\u51FA\u3059").setDesc("CLI \u4E92\u63DB\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8\u3067\u30B3\u30FC\u30D1\u30B9\u3092\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8").addButton((b) => b.setButtonText("\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8").onClick(() => {
+      const data = this.deps.corpus.exportJsonl();
+      const blob = new Blob([data], { type: "application/x-ndjson" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "x-corpus.jsonl";
+      a.click();
+      URL.revokeObjectURL(url);
+      new import_obsidian12.Notice("\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u3057\u307E\u3057\u305F");
+    }));
+    new import_obsidian12.Setting(contentEl).setName("Vault \u30CE\u30FC\u30C8\u306B\u66F8\u304D\u51FA\u3059").setDesc(`\u5168\u30C4\u30A4\u30FC\u30C8\u3092 ${this.deps.getSettings().exportFolder} \u306B\u30CE\u30FC\u30C8\u5316\uFF08\u30D7\u30E9\u30B0\u30A4\u30F3\u304C\u81EA\u52D5\u7D22\u5F15\uFF09`).addButton((b) => b.setButtonText("\u30CE\u30FC\u30C8\u5316").onClick(async () => {
+      const all = this.deps.corpus.getAll();
+      if (all.length === 0) {
+        new import_obsidian12.Notice("\u30B3\u30FC\u30D1\u30B9\u304C\u7A7A\u3067\u3059");
+        return;
+      }
+      const r = await exportTweetsToVault(this.app, all, this.deps.getSettings().exportFolder);
+      new import_obsidian12.Notice(`\u30CE\u30FC\u30C8 ${r.written}\u4EF6\u4F5C\u6210\uFF08${r.skipped}\u4EF6\u306F\u65E2\u5B58\uFF09\u2192 ${r.folder}`);
+    }));
+    new import_obsidian12.Setting(contentEl).setName("\u30B3\u30FC\u30D1\u30B9\u3092\u6D88\u53BB").setDesc("\u4FDD\u5B58\u6E08\u307F\u30C4\u30A4\u30FC\u30C8\u3092\u3059\u3079\u3066\u524A\u9664\u3057\u307E\u3059").addButton((b) => b.setButtonText("\u6D88\u53BB").setWarning().onClick(async () => {
+      this.deps.corpus.clear();
+      await this.deps.corpus.save();
+      new import_obsidian12.Notice("\u30B3\u30FC\u30D1\u30B9\u3092\u6D88\u53BB\u3057\u307E\u3057\u305F");
+      this.onChanged();
+      this.onOpen();
+    }));
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var XSavedQueriesModal = class extends import_obsidian12.Modal {
+  constructor(app, deps, onDone) {
+    super(app);
+    this.running = false;
+    this.deps = deps;
+    this.onDone = onDone;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("jp-x-modal");
+    contentEl.createEl("h2", { text: "\u4FDD\u5B58\u3057\u305F\u691C\u7D22\uFF08\u30D5\u30EC\u30FC\u30BA\u8F9E\u66F8\uFF09" });
+    contentEl.createEl("p", {
+      text: "\u6982\u5FF5\u3054\u3068\u306B\u8868\u8A18\u3086\u308C\uFF08surface_or\uFF09\u3092\u307E\u3068\u3081\u3066\u767B\u9332\u3057\u307E\u3059\u3002\u5B9F\u884C\u3059\u308B\u3068\u5404\u8868\u8A18\u3092\u500B\u5225\u306B\u691C\u7D22\u3057\u3001\u30D2\u30C3\u30C8\u3057\u305F\u30C4\u30A4\u30FC\u30C8\u306B\u3053\u306E\u691C\u7D22ID\u3092\u4ED8\u4E0E\u30022\u3064\u4EE5\u4E0A\u306E\u4FDD\u5B58\u691C\u7D22\u306B\u540C\u6642\u30D2\u30C3\u30C8\u3057\u305F\u30C4\u30A4\u30FC\u30C8\u304C\u300C\u2605\u5171\u8D77\u300D\u3067\u3059\u3002",
+      cls: "jp-x-modal-desc"
+    });
+    const s = this.deps.getSettings();
+    const list = contentEl.createDiv("jp-x-sq-list");
+    for (const sq of s.savedQueries) {
+      const row = new import_obsidian12.Setting(list).setName(`${sq.label} (${sq.id})`).setDesc(`${sq.surfaceOr.join(" / ")} \xB7 \u30B3\u30FC\u30D1\u30B9\u5185 ${this.deps.corpus.countByQuery(sq.id)}\u4EF6`);
+      row.addButton((b) => b.setButtonText("\u5B9F\u884C").onClick(async () => {
+        if (this.running)
+          return;
+        await this.runOne(sq);
+      }));
+      row.addButton((b) => b.setButtonText("\u7DE8\u96C6").onClick(() => this.openEditor(sq)));
+      row.addButton((b) => b.setButtonText("\u524A\u9664").setWarning().onClick(async () => {
+        s.savedQueries = s.savedQueries.filter((q) => q.id !== sq.id);
+        await this.deps.saveSettings();
+        this.onOpen();
+      }));
+    }
+    if (s.savedQueries.length === 0) {
+      list.createEl("p", { text: "\u307E\u3060\u4FDD\u5B58\u691C\u7D22\u304C\u3042\u308A\u307E\u305B\u3093\u3002", cls: "jp-x-modal-desc" });
+    }
+    const btnRow = contentEl.createDiv("jp-x-modal-btnrow");
+    const addBtn = btnRow.createEl("button", { text: "\uFF0B \u65B0\u898F", cls: "jp-x-action-btn" });
+    addBtn.addEventListener("click", () => this.openEditor(null));
+    if (s.savedQueries.length > 0) {
+      const runAllBtn = btnRow.createEl("button", { text: "\u5168\u5B9F\u884C", cls: "jp-x-action-btn" });
+      runAllBtn.addEventListener("click", () => this.runAll());
+      const coocBtn = btnRow.createEl("button", { text: "\u2605 \u5171\u8D77\u3092\u8868\u793A", cls: "jp-x-go-btn" });
+      coocBtn.addEventListener("click", () => {
+        this.onDone(true);
+        this.close();
+      });
+    }
+  }
+  async runOne(sq) {
+    const issue = this.deps.client.configIssue();
+    if (issue) {
+      new import_obsidian12.Notice(`X: ${issue}`, 5e3);
+      return;
+    }
+    this.running = true;
+    new import_obsidian12.Notice(`\u300C${sq.label}\u300D\u3092\u53D6\u5F97\u4E2D\u2026`);
+    const s = this.deps.getSettings();
+    const r = await runSavedQuery(this.deps.client, this.deps.corpus, sq, {
+      lang: s.defaultLang,
+      product: s.defaultProduct
+    });
+    await this.deps.corpus.save();
+    this.running = false;
+    new import_obsidian12.Notice(`\u300C${sq.label}\u300D: ${r.fetched}\u4EF6\u53D6\u5F97\uFF08\u65B0\u898F ${r.added}\uFF09` + (r.errors.length ? `\u30FB${r.errors.length}\u4EF6\u30A8\u30E9\u30FC` : ""));
+    this.onDone(false);
+    this.onOpen();
+  }
+  async runAll() {
+    const issue = this.deps.client.configIssue();
+    if (issue) {
+      new import_obsidian12.Notice(`X: ${issue}`, 5e3);
+      return;
+    }
+    this.running = true;
+    const s = this.deps.getSettings();
+    const results = await runAllSavedQueries(
+      this.deps.client,
+      this.deps.corpus,
+      s.savedQueries,
+      { lang: s.defaultLang, product: s.defaultProduct },
+      (done, total, cur) => new import_obsidian12.Notice(`(${done + 1}/${total}) ${cur}\u2026`, 1500)
+    );
+    await this.deps.corpus.save();
+    this.running = false;
+    const added = results.reduce((a, r) => a + r.added, 0);
+    new import_obsidian12.Notice(`\u5168\u5B9F\u884C\u5B8C\u4E86: \u65B0\u898F ${added}\u4EF6`);
+    this.onDone(false);
+    this.onOpen();
+  }
+  openEditor(existing) {
+    new XSavedQueryEditor(this.app, this.deps, existing, async () => {
+      await this.deps.saveSettings();
+      this.onOpen();
+    }).open();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var XSavedQueryEditor = class extends import_obsidian12.Modal {
+  constructor(app, deps, existing, onSaved) {
+    super(app);
+    this.deps = deps;
+    this.existing = existing;
+    this.onSaved = onSaved;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("jp-x-modal");
+    contentEl.createEl("h2", { text: this.existing ? "\u4FDD\u5B58\u691C\u7D22\u3092\u7DE8\u96C6" : "\u4FDD\u5B58\u691C\u7D22\u3092\u8FFD\u52A0" });
+    const draft = this.existing ? { ...this.existing, surfaceOr: [...this.existing.surfaceOr] } : { id: "", label: "", surfaceOr: [], minFaves: 0 };
+    new import_obsidian12.Setting(contentEl).setName("\u30E9\u30D9\u30EB").addText((t) => t.setValue(draft.label).onChange((v) => {
+      draft.label = v;
+    }));
+    new import_obsidian12.Setting(contentEl).setName("ID").setDesc("\u82F1\u6570\u5B57\u306E\u30E6\u30CB\u30FC\u30AFID\uFF08\u5171\u8D77\u306E\u8B58\u5225\u306B\u4F7F\u7528\uFF09").addText((t) => t.setValue(draft.id).onChange((v) => {
+      draft.id = v.trim();
+    }));
+    new import_obsidian12.Setting(contentEl).setName("\u8868\u8A18\u3086\u308C surface_or").setDesc("1\u884C\u306B1\u3064\u3002\u5404\u8868\u8A18\u3092\u500B\u5225\u306B\u691C\u7D22").addTextArea((t) => {
+      t.setValue(draft.surfaceOr.join("\n")).onChange((v) => {
+        draft.surfaceOr = v.split("\n").map((x) => x.trim()).filter(Boolean);
+      });
+      t.inputEl.rows = 4;
+      t.inputEl.style.width = "100%";
+    });
+    new import_obsidian12.Setting(contentEl).setName("\u6700\u5C0F\u3044\u3044\u306D").addText((t) => {
+      var _a;
+      t.inputEl.type = "number";
+      t.setValue(String((_a = draft.minFaves) != null ? _a : 0)).onChange((v) => {
+        draft.minFaves = Number(v) || 0;
+      });
+    });
+    const btnRow = contentEl.createDiv("jp-x-modal-btnrow");
+    btnRow.createEl("button", { text: "\u30AD\u30E3\u30F3\u30BB\u30EB", cls: "jp-x-action-btn" }).addEventListener("click", () => this.close());
+    btnRow.createEl("button", { text: "\u4FDD\u5B58", cls: "jp-x-go-btn" }).addEventListener("click", async () => {
+      if (!draft.id || !draft.label || draft.surfaceOr.length === 0) {
+        new import_obsidian12.Notice("\u30E9\u30D9\u30EB\u30FBID\u30FB\u8868\u8A18\u3086\u308C\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
+        return;
+      }
+      const s = this.deps.getSettings();
+      const idx = s.savedQueries.findIndex((q) => {
+        var _a, _b;
+        return q.id === ((_b = (_a = this.existing) == null ? void 0 : _a.id) != null ? _b : draft.id);
+      });
+      if (idx >= 0)
+        s.savedQueries[idx] = draft;
+      else
+        s.savedQueries.push(draft);
+      await this.onSaved();
+      this.close();
+    });
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+var XAddByUrlModal = class extends import_obsidian12.Modal {
+  constructor(app, deps, onChanged) {
+    super(app);
+    this.deps = deps;
+    this.onChanged = onChanged;
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass("jp-x-modal");
+    contentEl.createEl("h2", { text: "\u30C4\u30A4\u30FC\u30C8\u3092 URL \u3067\u8FFD\u52A0" });
+    contentEl.createEl("p", {
+      text: "\u30C4\u30A4\u30FC\u30C8\u306E URL \u304B ID \u3092\u8CBC\u308A\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\u3002\u516C\u958B\u30C4\u30A4\u30FC\u30C8\u306F\u30AF\u30C3\u30AD\u30FC\u4E0D\u8981\u3067\u53D6\u5F97\u3067\u304D\u307E\u3059\u3002",
+      cls: "jp-x-modal-desc"
+    });
+    let value = "";
+    new import_obsidian12.Setting(contentEl).setName("URL / ID").addText((t) => {
+      t.inputEl.style.width = "100%";
+      t.setPlaceholder("https://x.com/user/status/1234567890");
+      t.onChange((v) => {
+        value = v;
+      });
+    });
+    const btnRow = contentEl.createDiv("jp-x-modal-btnrow");
+    btnRow.createEl("button", { text: "\u30AD\u30E3\u30F3\u30BB\u30EB", cls: "jp-x-action-btn" }).addEventListener("click", () => this.close());
+    const addBtn = btnRow.createEl("button", { text: "\u53D6\u5F97\u3057\u3066\u8FFD\u52A0", cls: "jp-x-go-btn" });
+    addBtn.addEventListener("click", async () => {
+      const id = extractTweetId(value);
+      if (!id) {
+        new import_obsidian12.Notice("\u6709\u52B9\u306A\u30C4\u30A4\u30FC\u30C8 URL/ID \u3067\u306F\u3042\u308A\u307E\u305B\u3093");
+        return;
+      }
+      addBtn.disabled = true;
+      addBtn.textContent = "\u53D6\u5F97\u4E2D\u2026";
+      try {
+        const tweet = await this.deps.client.fetchTweetById(id);
+        if (!tweet) {
+          new import_obsidian12.Notice("\u30C4\u30A4\u30FC\u30C8\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+          return;
+        }
+        const added = this.deps.corpus.addTweets([tweet]);
+        await this.deps.corpus.save();
+        new import_obsidian12.Notice(added ? `\u8FFD\u52A0: @${tweet.authorHandle}` : "\u3059\u3067\u306B\u30B3\u30FC\u30D1\u30B9\u306B\u3042\u308A\u307E\u3059");
+        this.onChanged();
+        this.close();
+      } catch (e) {
+        new import_obsidian12.Notice(`\u53D6\u5F97\u30A8\u30E9\u30FC: ${e.message}`, 6e3);
+      } finally {
+        addBtn.disabled = false;
+        addBtn.textContent = "\u53D6\u5F97\u3057\u3066\u8FFD\u52A0";
+      }
+    });
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+};
+
+// src/ui/EditorDecorations.ts
+var import_view = require("@codemirror/view");
+var import_state = require("@codemirror/state");
+var editorContext = {
+  resolver: heuristicResolver,
+  getActiveFilePath: () => void 0
+};
+function setEditorContext(ctx) {
+  editorContext = ctx;
+}
+var toggleVisualization = import_state.StateEffect.define();
+var COLOR_MAP = {
+  "jp-rel-cause": { bg: "rgba(255,107,107,0.15)", border: "#ff6b6b", label: "\u56E0\u679C" },
+  "jp-rel-concession": { bg: "rgba(255,159,67,0.15)", border: "#ff9f43", label: "\u9006\u63A5" },
+  "jp-rel-conditional": { bg: "rgba(255,193,7,0.15)", border: "#ffc107", label: "\u6761\u4EF6" },
+  "jp-rel-temporal": { bg: "rgba(78,205,196,0.15)", border: "#4ecdc4", label: "\u7D99\u8D77" },
+  "jp-rel-purpose": { bg: "rgba(106,176,76,0.15)", border: "#6ab04c", label: "\u76EE\u7684" },
+  "jp-rel-means": { bg: "rgba(104,109,224,0.15)", border: "#686de0", label: "\u624B\u6BB5" },
+  "jp-rel-contrast": { bg: "rgba(255,71,87,0.15)", border: "#ff4757", label: "\u5BFE\u6BD4" },
+  "jp-rel-addition": { bg: "rgba(46,213,115,0.15)", border: "#2ed573", label: "\u4E26\u5217" },
+  "jp-rel-elaboration": { bg: "rgba(116,185,255,0.15)", border: "#74b9ff", label: "\u8A73\u8FF0" },
+  "jp-rel-example": { bg: "rgba(162,155,254,0.15)", border: "#a29bfe", label: "\u4F8B\u793A" },
+  "jp-rel-reference": { bg: "rgba(253,203,110,0.15)", border: "#fdcb6e", label: "\u7167\u5FDC" },
+  "jp-rel-repetition": { bg: "rgba(129,236,236,0.15)", border: "#81ecec", label: "\u53CD\u5FA9" },
+  "jp-rel-lexchain": { bg: "rgba(0,206,209,0.15)", border: "#00ced1", label: "\u8A9E\u5F59\u9396" },
+  "jp-rel-topic": { bg: "rgba(85,239,196,0.15)", border: "#55efc4", label: "\u4E3B\u984C" },
+  "jp-rel-scaffold": { bg: "rgba(9,132,227,0.15)", border: "#0984e3", label: "\u5217\u6319" },
+  "jp-rel-qa": { bg: "rgba(108,92,231,0.15)", border: "#6c5ce7", label: "Q&A" },
+  "jp-rel-agree": { bg: "rgba(0,184,148,0.15)", border: "#00b894", label: "\u540C\u610F" },
+  "jp-rel-disagree": { bg: "rgba(214,48,49,0.15)", border: "#d63031", label: "\u53CD\u8AD6" },
+  "jp-rel-tsukkomi": { bg: "rgba(225,112,85,0.15)", border: "#e17055", label: "\u30C4\u30C3\u30B3\u30DF" },
+  "jp-rel-reaction": { bg: "rgba(253,121,168,0.15)", border: "#fd79a8", label: "\u53CD\u5FDC" },
+  "jp-rel-repair": { bg: "rgba(99,110,114,0.15)", border: "#636e72", label: "\u4FEE\u5FA9" },
+  "jp-rel-shift": { bg: "rgba(162,155,254,0.15)", border: "#a29bfe", label: "\u8EE2\u63DB" },
+  "jp-rel-return": { bg: "rgba(116,185,255,0.15)", border: "#74b9ff", label: "\u5FA9\u5E30" },
+  "jp-rel-summary": { bg: "rgba(46,213,115,0.15)", border: "#2ed573", label: "\u8981\u7D04" },
+  "jp-rel-evidence": { bg: "rgba(255,234,167,0.15)", border: "#ffeaa7", label: "\u6839\u62E0" },
+  "jp-rel-counter": { bg: "rgba(214,48,49,0.15)", border: "#d63031", label: "\u53CD\u8A3C" },
+  "jp-rel-hedge": { bg: "rgba(178,190,195,0.15)", border: "#b2bec3", label: "\u30D8\u30C3\u30B8" },
+  "jp-rel-punchline": { bg: "rgba(225,112,85,0.15)", border: "#e17055", label: "\u30AA\u30C1" },
+  "jp-rel-offer": { bg: "rgba(85,239,196,0.15)", border: "#55efc4", label: "\u7533\u51FA" },
+  "jp-rel-decline": { bg: "rgba(214,48,49,0.15)", border: "#d63031", label: "\u8F9E\u9000" },
+  "jp-rel-complaint": { bg: "rgba(255,107,107,0.15)", border: "#ff6b6b", label: "\u4E0D\u6E80" },
+  // Sidecar bit-relations — distinct palette to make sidecar-authoritative
+  // markings visually identifiable next to heuristic ones.
+  "jp-rel-bit-locked": { bg: "rgba(46,204,113,0.18)", border: "#27ae60", label: "LOCK" },
+  "jp-rel-bit-td": { bg: "rgba(52,152,219,0.15)", border: "#3498db", label: "TD" },
+  "jp-rel-bit-bu": { bg: "rgba(241,196,15,0.15)", border: "#f1c40f", label: "BU" }
+};
+var visualizationActive = import_state.StateField.define({
+  create() {
+    return false;
+  },
+  update(value, tr) {
+    for (const e of tr.effects) {
+      if (e.is(toggleVisualization))
+        return e.value;
+    }
+    return value;
+  }
+});
+function buildDecorations(view) {
+  var _a;
+  const isActive = view.state.field(visualizationActive);
+  if (!isActive)
+    return import_view.Decoration.none;
+  const text = view.state.doc.toString();
+  if (!text.trim())
+    return import_view.Decoration.none;
+  const filePath = editorContext.getActiveFilePath();
+  const resolved = editorContext.resolver(text, { filePath });
+  const { relations, sentences, source: relSource } = resolved;
+  const sourceTag = relSource === "sidecar" ? "[sidecar]" : "[heuristic]";
+  const sourceClass = relSource === "sidecar" ? "jp-vis-relation--sidecar" : "jp-vis-relation--heuristic";
+  const builder = new import_state.RangeSetBuilder();
+  const decos = [];
+  for (const sent of sentences) {
+    for (const pm of sent.patterns) {
+      const from = sent.start + pm.offset;
+      const to = from + pm.matchedText.length;
+      if (from >= 0 && to <= text.length && from < to) {
+        const cat = pm.pattern.category;
+        decos.push({
+          from,
+          to,
+          deco: import_view.Decoration.mark({
+            class: `jp-vis-pattern jp-vis-cat-${cat}`,
+            attributes: {
+              "data-pattern-id": pm.pattern.id,
+              "data-pattern-gloss": pm.pattern.gloss,
+              title: `${pm.pattern.categoryLabel}\uFF1A${pm.pattern.gloss}
+${pm.pattern.glossEn}`
+            }
+          })
+        });
+      }
+    }
+  }
+  for (const rel of relations) {
+    const colorInfo = (_a = COLOR_MAP[rel.colorClass]) != null ? _a : { bg: "rgba(200,200,200,0.15)", border: "#ccc", label: rel.label };
+    const tooltip = `${sourceTag} ${rel.label} (${rel.labelEn})
+${rel.source.text.slice(0, 30)}\u2026 \u2192 ${rel.target.text.slice(0, 30)}\u2026`;
+    if (rel.source.start >= 0 && rel.source.end <= text.length && rel.source.start < rel.source.end) {
+      decos.push({
+        from: rel.source.start,
+        to: rel.source.end,
+        deco: import_view.Decoration.mark({
+          class: `jp-vis-relation-source ${sourceClass} ${rel.colorClass}`,
+          attributes: { title: `[\u6E90] ${tooltip}` }
+        })
+      });
+    }
+    if (rel.target.start >= 0 && rel.target.end <= text.length && rel.target.start < rel.target.end) {
+      decos.push({
+        from: rel.target.start,
+        to: rel.target.end,
+        deco: import_view.Decoration.mark({
+          class: `jp-vis-relation-target ${sourceClass} ${rel.colorClass}`,
+          attributes: { title: `[\u5148] ${tooltip}` }
+        })
+      });
+    }
+  }
+  decos.sort((a, b) => a.from - b.from || b.to - b.from - (a.to - a.from));
+  for (const d of decos) {
+    builder.add(d.from, d.to, d.deco);
+  }
+  return builder.finish();
+}
+var discourseDecorationPlugin = import_view.ViewPlugin.fromClass(
+  class {
+    constructor(view) {
+      this.decorations = buildDecorations(view);
+    }
+    update(update) {
+      if (update.docChanged || update.viewportChanged || update.transactions.some((t) => t.effects.some((e) => e.is(toggleVisualization)))) {
+        this.decorations = buildDecorations(update.view);
+      }
+    }
+  },
+  { decorations: (v) => v.decorations }
+);
+function getDiscourseExtensions() {
+  return [visualizationActive, discourseDecorationPlugin];
+}
+function toggleDiscourseVisualization(view) {
+  const current = view.state.field(visualizationActive);
+  view.dispatch({ effects: toggleVisualization.of(!current) });
+}
+
+// src/ui/ReadingModeHighlighter.ts
+var readingResolver = heuristicResolver;
+function setReadingResolver(r) {
+  readingResolver = r;
+}
+function getReadingModePostProcessor() {
+  return (el, ctx) => {
+    if (document.body.hasClass("jp-reading-hl-off"))
+      return;
+    const paragraphs = el.querySelectorAll("p, li, blockquote > p, td");
+    for (const p of Array.from(paragraphs)) {
+      highlightParagraph(p, ctx.sourcePath);
+    }
+  };
+}
+function highlightParagraph(el, sourcePath) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+  const textNodes = [];
+  while (walker.nextNode())
+    textNodes.push(walker.currentNode);
+  if (textNodes.length === 0)
+    return;
+  const fullText = textNodes.map((n) => n.textContent || "").join("");
+  if (fullText.length < 2)
+    return;
+  const marks = [];
+  const resolved = readingResolver(fullText, { filePath: sourcePath });
+  if (resolved.source === "sidecar") {
+    for (const rel of resolved.relations) {
+      pushRelationEndpoint(marks, rel, "source");
+      pushRelationEndpoint(marks, rel, "target");
+    }
+  }
+  const patternMatches = detectPatterns(fullText);
+  for (const m of patternMatches) {
+    const cat = m.pattern.category;
+    const color = CATEGORY_COLORS[cat] || "#888";
+    marks.push({
+      start: m.offset,
+      end: m.offset + m.matchedText.length,
+      className: "jp-reading-discourse-hl jp-reading-discourse-hl--heuristic",
+      borderColor: color,
+      title: `[heuristic] ${m.pattern.surface} \u2014 ${m.pattern.gloss} (${CATEGORY_LABELS[cat] || cat})`,
+      priority: 1
+    });
+  }
+  if (marks.length === 0)
+    return;
+  const kept = dedupeMarks(marks);
+  if (kept.length === 0)
+    return;
+  for (let i = kept.length - 1; i >= 0; i--) {
+    applyMark(el, kept[i]);
+  }
+}
+function pushRelationEndpoint(marks, rel, which) {
+  var _a;
+  const endpoint = rel[which];
+  if (endpoint.end <= endpoint.start)
+    return;
+  const role = which === "source" ? "src" : "tgt";
+  marks.push({
+    start: endpoint.start,
+    end: endpoint.end,
+    className: `jp-reading-discourse-hl jp-reading-discourse-hl--sidecar ${rel.colorClass} jp-reading-discourse-hl--${role}`,
+    title: `[sidecar] ${rel.labelEn || rel.label} (${role}) \u2014 conf ${((_a = rel.confidence) != null ? _a : 0).toFixed(2)}`,
+    priority: 2
+  });
+}
+function dedupeMarks(marks) {
+  marks.sort((a, b) => {
+    if (a.start !== b.start)
+      return a.start - b.start;
+    if (a.priority !== b.priority)
+      return b.priority - a.priority;
+    return b.end - b.start - (a.end - a.start);
+  });
+  const kept = [];
+  for (const m of marks) {
+    let conflict = false;
+    for (const k of kept) {
+      if (m.start < k.end && m.end > k.start) {
+        conflict = true;
+        break;
+      }
+    }
+    if (!conflict)
+      kept.push(m);
+  }
+  kept.sort((a, b) => a.start - b.start);
+  return kept;
+}
+function applyMark(el, mark) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+  let offset = 0;
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const len = (node.textContent || "").length;
+    const nodeStart = offset;
+    const nodeEnd = offset + len;
+    offset = nodeEnd;
+    if (mark.start < nodeStart || mark.start >= nodeEnd)
+      continue;
+    const localStart = mark.start - nodeStart;
+    const localEnd = mark.end - nodeStart;
+    if (localEnd > len)
+      return;
+    const text = node.textContent || "";
+    const before = text.slice(0, localStart);
+    const matched = text.slice(localStart, localEnd);
+    const after = text.slice(localEnd);
+    const parent = node.parentNode;
+    if (!parent)
+      return;
+    const span = document.createElement("span");
+    span.className = mark.className;
+    span.textContent = matched;
+    if (mark.borderColor)
+      span.style.borderBottomColor = mark.borderColor;
+    span.title = mark.title;
+    const frag = document.createDocumentFragment();
+    if (before)
+      frag.appendChild(document.createTextNode(before));
+    frag.appendChild(span);
+    if (after)
+      frag.appendChild(document.createTextNode(after));
+    parent.replaceChild(frag, node);
+    return;
+  }
+}
+
+// src/ui/SelectionModes.ts
+var import_obsidian13 = require("obsidian");
+var SELECTION_MODES = [
+  { id: "sentence", icon: "\u{1F4DD}", label: "\u6587", labelEn: "Sentence" },
+  { id: "clause", icon: "\u{1F517}", label: "\u7BC0", labelEn: "Clause" },
+  { id: "phrase", icon: "\u{1F3AF}", label: "\u53E5", labelEn: "Phrase" },
+  { id: "pattern", icon: "\u{1F3AD}", label: "\u6587\u6CD5", labelEn: "Pattern" },
+  { id: "blank", icon: "\u270F\uFE0F", label: "\u7A74\u57CB\u3081", labelEn: "Cloze" }
+];
+function expandSelection(text, cursorOffset, mode) {
+  switch (mode) {
+    case "sentence":
+      return selectSentence(text, cursorOffset);
+    case "clause":
+      return selectClause(text, cursorOffset);
+    case "phrase":
+      return selectPhrase(text, cursorOffset);
+    case "pattern":
+      return selectPattern(text, cursorOffset);
+    case "blank":
+      return selectPhrase(text, cursorOffset);
+    default:
+      return null;
+  }
+}
+function selectSentence(text, offset) {
+  const terminators = /[。！？\n]/g;
+  let sentStart = 0;
+  let sentEnd = text.length;
+  let m;
+  terminators.lastIndex = 0;
+  while ((m = terminators.exec(text)) !== null) {
+    if (m.index >= offset) {
+      sentEnd = m.index + 1;
+      break;
+    }
+    sentStart = m.index + 1;
+  }
+  if (sentEnd === text.length) {
+    const after = text.indexOf("\u3002", offset);
+    if (after >= 0)
+      sentEnd = after + 1;
+  }
+  const selected = text.slice(sentStart, sentEnd).trim();
+  if (!selected)
+    return null;
+  return { start: sentStart, end: sentEnd, selected };
+}
+function selectClause(text, offset) {
+  const connectors = /(?:て[、,]|で[、,]|けど|けれど|けれども|から|ので|のに|が[、,]|し[、,]|ば[、,]|たら|なら|ために|ように|[。！？\n])/g;
+  let clauseStart = 0;
+  let clauseEnd = text.length;
+  connectors.lastIndex = 0;
+  let m;
+  while ((m = connectors.exec(text)) !== null) {
+    const boundEnd = m.index + m[0].length;
+    if (boundEnd <= offset) {
+      clauseStart = boundEnd;
+    } else if (m.index >= offset) {
+      clauseEnd = boundEnd;
+      break;
+    }
+  }
+  const selected = text.slice(clauseStart, clauseEnd).trim();
+  if (!selected)
+    return null;
+  return { start: clauseStart, end: clauseEnd, selected };
+}
+function selectPhrase(text, offset) {
+  const collocations = extractCollocations(text);
+  let best = collocations.find((c) => c.start <= offset && c.end >= offset);
+  if (!best) {
+    let minDist = Infinity;
+    for (const c of collocations) {
+      const dist = Math.min(Math.abs(c.start - offset), Math.abs(c.end - offset));
+      if (dist < minDist && dist < 10) {
+        minDist = dist;
+        best = c;
+      }
+    }
+  }
+  if (best) {
+    return { start: best.start, end: best.end, selected: best.surface };
+  }
+  const wordRegex = /[\u4e00-\u9faf\u3400-\u4dbf\u3041-\u3096\u30a1-\u30f6ー]+/g;
+  let match2;
+  wordRegex.lastIndex = 0;
+  while ((match2 = wordRegex.exec(text)) !== null) {
+    if (match2.index <= offset && match2.index + match2[0].length >= offset) {
+      return { start: match2.index, end: match2.index + match2[0].length, selected: match2[0] };
+    }
+  }
+  return null;
+}
+function selectPattern(text, offset) {
+  const patterns = detectPatterns(text);
+  let best = null;
+  let minDist = Infinity;
+  for (const p of patterns) {
+    const pEnd = p.offset + p.matchedText.length;
+    if (p.offset <= offset && pEnd >= offset) {
+      return { start: p.offset, end: pEnd, selected: p.matchedText };
+    }
+    const dist = Math.min(Math.abs(p.offset - offset), Math.abs(pEnd - offset));
+    if (dist < minDist) {
+      minDist = dist;
+      best = p;
+    }
+  }
+  if (best && minDist < 15) {
+    return {
+      start: best.offset,
+      end: best.offset + best.matchedText.length,
+      selected: best.matchedText
+    };
+  }
+  return null;
+}
+function renderSelectionToolbar(container, currentMode, onModeChange) {
+  container.empty();
+  container.addClass("jp-sel-toolbar");
+  for (const mode of SELECTION_MODES) {
+    const btn = container.createEl("button", {
+      cls: `jp-sel-mode-btn ${mode.id === currentMode ? "jp-sel-mode-btn--active" : ""}`
+    });
+    btn.createSpan({ text: mode.icon, cls: "jp-sel-mode-icon" });
+    btn.createSpan({ text: mode.label, cls: "jp-sel-mode-label" });
+    btn.title = `${mode.label} (${mode.labelEn})`;
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      onModeChange(mode.id);
+    });
+  }
+  return () => container.empty();
+}
+
+// src/surfer-bridge.ts
+var import_obsidian14 = require("obsidian");
+
+// src/discourse/discourse-index.ts
+var DiscourseIndex = class _DiscourseIndex {
+  constructor(saved) {
+    this.data = saved != null ? saved : this.createEmpty();
+  }
+  createEmpty() {
+    return {
+      bySurface: {},
+      byCategory: {},
+      coOccurrences: {},
+      byCollocation: {},
+      byFile: {},
+      stats: {
+        totalOccurrences: 0,
+        uniquePatterns: 0,
+        filesIndexed: 0,
+        coOccurrencePairs: 0,
+        lastUpdated: Date.now()
+      }
+    };
+  }
+  // ── Index a file's patterns ────────────────────────────
+  /**
+   * Index all matches from a single file.
+   * Replaces any previous data for that file (incremental update).
+   */
+  indexFile(filePath, fileContent, matches) {
+    this.removeFile(filePath);
+    const patternIds = [];
+    for (const m of matches) {
+      const occ = {
+        patternId: m.pattern.id,
+        filePath,
+        offset: m.offset,
+        context: fileContent.slice(
+          Math.max(0, m.offset - 40),
+          Math.min(fileContent.length, m.offset + m.matchedText.length + 40)
+        ),
+        indexedAt: Date.now()
+      };
+      const surface = m.pattern.surface;
+      if (!this.data.bySurface[surface])
+        this.data.bySurface[surface] = [];
+      this.data.bySurface[surface].push(occ);
+      const cat = m.pattern.category;
+      if (!this.data.byCategory[cat])
+        this.data.byCategory[cat] = [];
+      this.data.byCategory[cat].push(m.pattern.id);
+      patternIds.push(m.pattern.id);
+    }
+    this.data.byFile[filePath] = patternIds;
+    const uniqueIds = [...new Set(patternIds)];
+    for (let i = 0; i < uniqueIds.length; i++) {
+      for (let j = i + 1; j < uniqueIds.length; j++) {
+        const [a, b] = [uniqueIds[i], uniqueIds[j]].sort();
+        const pairKey = `${a}|${b}`;
+        if (!this.data.coOccurrences[pairKey]) {
+          this.data.coOccurrences[pairKey] = {
+            pairKey,
+            patternId1: a,
+            patternId2: b,
+            count: 0,
+            filePaths: []
+          };
+        }
+        const pair = this.data.coOccurrences[pairKey];
+        pair.count++;
+        if (!pair.filePaths.includes(filePath)) {
+          pair.filePaths.push(filePath);
+        }
+      }
+    }
+    this.refreshStats();
+  }
+  /** Remove all index data for a file */
+  removeFile(filePath) {
+    for (const surface of Object.keys(this.data.bySurface)) {
+      this.data.bySurface[surface] = this.data.bySurface[surface].filter((o) => o.filePath !== filePath);
+      if (this.data.bySurface[surface].length === 0) {
+        delete this.data.bySurface[surface];
+      }
+    }
+    for (const key of Object.keys(this.data.coOccurrences)) {
+      const pair = this.data.coOccurrences[key];
+      pair.filePaths = pair.filePaths.filter((f) => f !== filePath);
+      if (pair.filePaths.length === 0) {
+        delete this.data.coOccurrences[key];
+      }
+    }
+    delete this.data.byFile[filePath];
+    this.refreshStats();
+  }
+  // ── Axis 4: collocation links ──────────────────────────
+  /**
+   * Link discourse patterns found in a collocation's example sentences.
+   */
+  linkCollocation(headword, patternIds) {
+    this.data.byCollocation[headword] = patternIds;
+  }
+  // ── Query methods ──────────────────────────────────────
+  /** Axis 1: get occurrences by surface form */
+  searchBySurface(surface) {
+    var _a;
+    return (_a = this.data.bySurface[surface]) != null ? _a : [];
+  }
+  /** Axis 2: get all pattern IDs in a category */
+  searchByCategory(category) {
+    var _a;
+    return (_a = this.data.byCategory[category]) != null ? _a : [];
+  }
+  /** Axis 3: get co-occurrence pairs involving a pattern */
+  getCoOccurrences(patternId) {
+    return Object.values(this.data.coOccurrences).filter((p) => p.patternId1 === patternId || p.patternId2 === patternId).sort((a, b) => b.count - a.count);
+  }
+  /** Axis 3: get top N co-occurrence pairs */
+  getTopCoOccurrences(limit = 20) {
+    return Object.values(this.data.coOccurrences).sort((a, b) => b.count - a.count).slice(0, limit);
+  }
+  /** Axis 3: search by specific pair */
+  searchByCoOccurrence(marker1, marker2) {
+    const [a, b] = [marker1, marker2].sort();
+    return this.data.coOccurrences[`${a}|${b}`];
+  }
+  /** Axis 4: get discourse patterns linked to a collocation */
+  getCollocationPatterns(headword) {
+    var _a;
+    return (_a = this.data.byCollocation[headword]) != null ? _a : [];
+  }
+  /** Axis 5: get all patterns found in a file */
+  getFilePatterns(filePath) {
+    var _a;
+    return (_a = this.data.byFile[filePath]) != null ? _a : [];
+  }
+  /** Axis 5: get all indexed files */
+  getIndexedFiles() {
+    return Object.keys(this.data.byFile);
+  }
+  /** Get marker frequency (total occurrences of a surface) */
+  getMarkerFrequency(surface) {
+    var _a;
+    return ((_a = this.data.bySurface[surface]) != null ? _a : []).length;
+  }
+  // ── Stats ──────────────────────────────────────────────
+  refreshStats() {
+    const allOccs = Object.values(this.data.bySurface).flat();
+    const uniquePatterns = new Set(allOccs.map((o) => o.patternId));
+    this.data.stats = {
+      totalOccurrences: allOccs.length,
+      uniquePatterns: uniquePatterns.size,
+      filesIndexed: Object.keys(this.data.byFile).length,
+      coOccurrencePairs: Object.keys(this.data.coOccurrences).length,
+      lastUpdated: Date.now()
+    };
+  }
+  getStats() {
+    return { ...this.data.stats };
+  }
+  // ── Persistence ────────────────────────────────────────
+  serialize() {
+    return this.data;
+  }
+  static deserialize(data) {
+    return new _DiscourseIndex(data);
+  }
+};
+
+// src/discourse/occurrence-index.ts
+var KWICIndex = class _KWICIndex {
+  /**
+   * @param contextWindow - Number of characters to capture on each side (default 60)
+   */
+  constructor(saved, contextWindow = 60) {
+    this.data = saved != null ? saved : { records: {}, totalRecords: 0 };
+    this.contextWindow = contextWindow;
+  }
+  // ── Indexing ───────────────────────────────────────────
+  /**
+   * Index all matches from a file, replacing any previous records for that file.
+   */
+  indexFile(filePath, fileContent, matches) {
+    this.removeFile(filePath);
+    const lineStarts = [0];
+    for (let i = 0; i < fileContent.length; i++) {
+      if (fileContent[i] === "\n")
+        lineStarts.push(i + 1);
+    }
+    for (const m of matches) {
+      let lineNumber = 1;
+      for (let i = 0; i < lineStarts.length; i++) {
+        if (lineStarts[i] > m.offset)
+          break;
+        lineNumber = i + 1;
+      }
+      const left = fileContent.slice(
+        Math.max(0, m.offset - this.contextWindow),
+        m.offset
+      );
+      const right = fileContent.slice(
+        m.offset + m.matchedText.length,
+        Math.min(fileContent.length, m.offset + m.matchedText.length + this.contextWindow)
+      );
+      const record = {
+        patternId: m.pattern.id,
+        surface: m.pattern.surface,
+        keyword: m.matchedText,
+        left: left.replace(/\n/g, " "),
+        right: right.replace(/\n/g, " "),
+        filePath,
+        lineNumber,
+        offset: m.offset,
+        indexedAt: Date.now()
+      };
+      if (!this.data.records[m.pattern.id]) {
+        this.data.records[m.pattern.id] = [];
+      }
+      this.data.records[m.pattern.id].push(record);
+      this.data.totalRecords++;
+    }
+  }
+  /** Remove all records from a specific file */
+  removeFile(filePath) {
+    for (const patternId of Object.keys(this.data.records)) {
+      const before = this.data.records[patternId].length;
+      this.data.records[patternId] = this.data.records[patternId].filter((r) => r.filePath !== filePath);
+      const removed = before - this.data.records[patternId].length;
+      this.data.totalRecords -= removed;
+      if (this.data.records[patternId].length === 0) {
+        delete this.data.records[patternId];
+      }
+    }
+  }
+  // ── Queries ────────────────────────────────────────────
+  /** Get all KWIC records for a pattern */
+  getByPattern(patternId) {
+    var _a;
+    const records = (_a = this.data.records[patternId]) != null ? _a : [];
+    const files = new Set(records.map((r) => r.filePath));
+    return { records, totalCount: records.length, fileCount: files.size };
+  }
+  /** Get all KWIC records for a surface form (may span multiple pattern IDs) */
+  getBySurface(surface) {
+    const allRecords = [];
+    for (const records of Object.values(this.data.records)) {
+      for (const r of records) {
+        if (r.surface === surface)
+          allRecords.push(r);
+      }
+    }
+    const files = new Set(allRecords.map((r) => r.filePath));
+    return { records: allRecords, totalCount: allRecords.length, fileCount: files.size };
+  }
+  /** Get all records from a specific file */
+  getByFile(filePath) {
+    const result = [];
+    for (const records of Object.values(this.data.records)) {
+      for (const r of records) {
+        if (r.filePath === filePath)
+          result.push(r);
+      }
+    }
+    return result.sort((a, b) => a.offset - b.offset);
+  }
+  /** Search KWIC records where left or right context contains a string */
+  searchContext(query) {
+    const results = [];
+    const lowerQuery = query.toLowerCase();
+    for (const records of Object.values(this.data.records)) {
+      for (const r of records) {
+        if (r.left.toLowerCase().includes(lowerQuery) || r.right.toLowerCase().includes(lowerQuery)) {
+          results.push(r);
+        }
+      }
+    }
+    return results;
+  }
+  /** Get the most frequent patterns across all records */
+  getTopPatterns(limit = 20) {
+    return Object.entries(this.data.records).map(([patternId, records]) => {
+      var _a, _b;
+      return {
+        patternId,
+        surface: (_b = (_a = records[0]) == null ? void 0 : _a.surface) != null ? _b : "",
+        count: records.length
+      };
+    }).sort((a, b) => b.count - a.count).slice(0, limit);
+  }
+  // ── Stats ──────────────────────────────────────────────
+  getTotalRecords() {
+    return this.data.totalRecords;
+  }
+  getUniquePatternCount() {
+    return Object.keys(this.data.records).length;
+  }
+  getFileCount() {
+    const files = /* @__PURE__ */ new Set();
+    for (const records of Object.values(this.data.records)) {
+      for (const r of records)
+        files.add(r.filePath);
+    }
+    return files.size;
+  }
+  // ── Persistence ────────────────────────────────────────
+  serialize() {
+    return this.data;
+  }
+  static deserialize(data, contextWindow) {
+    return new _KWICIndex(data, contextWindow);
+  }
+};
+
+// src/discourse/co-occurrence.ts
+function buildConstellation(utteranceMatches, windowSize = 200) {
+  var _a, _b, _c, _d, _e, _f, _g, _h, _i;
+  const freq = /* @__PURE__ */ new Map();
+  const pairCount = /* @__PURE__ */ new Map();
+  const pairDistance = /* @__PURE__ */ new Map();
+  const pairDirection = /* @__PURE__ */ new Map();
+  const totalUtterances = utteranceMatches.length;
+  for (const matches of utteranceMatches) {
+    const seen = /* @__PURE__ */ new Set();
+    for (const m of matches) {
+      if (!seen.has(m.pattern.id)) {
+        freq.set(m.pattern.id, ((_a = freq.get(m.pattern.id)) != null ? _a : 0) + 1);
+        seen.add(m.pattern.id);
+      }
+    }
+    for (let i = 0; i < matches.length; i++) {
+      for (let j = i + 1; j < matches.length; j++) {
+        const dist = Math.abs(matches[j].offset - matches[i].offset);
+        if (dist > windowSize)
+          continue;
+        const [a, b] = [matches[i].pattern.id, matches[j].pattern.id].sort();
+        const key = `${a}|${b}`;
+        pairCount.set(key, ((_b = pairCount.get(key)) != null ? _b : 0) + 1);
+        if (!pairDistance.has(key))
+          pairDistance.set(key, []);
+        pairDistance.get(key).push(dist);
+        if (!pairDirection.has(key))
+          pairDirection.set(key, { before: 0, after: 0 });
+        const dir = pairDirection.get(key);
+        if (matches[i].pattern.id === a) {
+          dir.after++;
+        } else {
+          dir.before++;
+        }
+      }
+    }
+  }
+  const nodes = /* @__PURE__ */ new Map();
+  for (const [id, count] of freq) {
+    const pat = PATTERN_BY_ID.get(id);
+    nodes.set(id, {
+      patternId: id,
+      surface: (_c = pat == null ? void 0 : pat.surface) != null ? _c : id,
+      frequency: count,
+      connections: []
+    });
+  }
+  for (const [key, count] of pairCount) {
+    const [aId, bId] = key.split("|");
+    const freqA = (_d = freq.get(aId)) != null ? _d : 0;
+    const freqB = (_e = freq.get(bId)) != null ? _e : 0;
+    if (freqA === 0 || freqB === 0 || totalUtterances === 0)
+      continue;
+    const pAB = count / totalUtterances;
+    const pA = freqA / totalUtterances;
+    const pB = freqB / totalUtterances;
+    const pmi = Math.log2(pAB / (pA * pB));
+    const distances = (_f = pairDistance.get(key)) != null ? _f : [];
+    const avgDist = distances.length > 0 ? distances.reduce((s, d) => s + d, 0) / distances.length : 0;
+    const dir = (_g = pairDirection.get(key)) != null ? _g : { before: 0, after: 0 };
+    const direction = dir.before > dir.after * 2 ? "before" : dir.after > dir.before * 2 ? "after" : "mixed";
+    const edge = {
+      targetId: bId,
+      count,
+      pmi,
+      avgDistance: avgDist,
+      direction
+    };
+    const edgeRev = {
+      targetId: aId,
+      count,
+      pmi,
+      avgDistance: avgDist,
+      direction: direction === "before" ? "after" : direction === "after" ? "before" : "mixed"
+    };
+    (_h = nodes.get(aId)) == null ? void 0 : _h.connections.push(edge);
+    (_i = nodes.get(bId)) == null ? void 0 : _i.connections.push(edgeRev);
+  }
+  for (const node of nodes.values()) {
+    node.connections.sort((a, b) => b.pmi - a.pmi);
+  }
+  const clusters = detectClusters(nodes);
+  return { nodes, totalUtterances, clusters };
+}
+function detectClusters(nodes) {
+  var _a, _b, _c;
+  const visited = /* @__PURE__ */ new Set();
+  const clusters = [];
+  const sorted = [...nodes.values()].sort((a, b) => b.frequency - a.frequency);
+  for (const node of sorted) {
+    if (visited.has(node.patternId))
+      continue;
+    const cluster = [];
+    const queue = [node.patternId];
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (visited.has(current))
+        continue;
+      visited.add(current);
+      cluster.push(current);
+      const currentNode = nodes.get(current);
+      if (!currentNode)
+        continue;
+      for (const edge of currentNode.connections) {
+        if (!visited.has(edge.targetId) && edge.pmi > 1) {
+          queue.push(edge.targetId);
+        }
+      }
+    }
+    if (cluster.length >= 2) {
+      const cats = /* @__PURE__ */ new Map();
+      for (const id of cluster) {
+        const pat = PATTERN_BY_ID.get(id);
+        if (pat) {
+          const cat = pat.categoryLabel;
+          cats.set(cat, ((_a = cats.get(cat)) != null ? _a : 0) + 1);
+        }
+      }
+      const label = (_c = (_b = [...cats.entries()].sort((a, b) => b[1] - a[1])[0]) == null ? void 0 : _b[0]) != null ? _c : "\u6DF7\u5408";
+      let pmiSum = 0;
+      let pmiCount = 0;
+      for (const id of cluster) {
+        const n = nodes.get(id);
+        if (!n)
+          continue;
+        for (const e of n.connections) {
+          if (cluster.includes(e.targetId)) {
+            pmiSum += e.pmi;
+            pmiCount++;
+          }
+        }
+      }
+      clusters.push({
+        members: cluster,
+        label,
+        cohesion: pmiCount > 0 ? pmiSum / pmiCount : 0
+      });
+    }
+  }
+  return clusters.sort((a, b) => b.cohesion - a.cohesion);
+}
+function getStrongestAssociations(constellation, patternId, limit = 5) {
+  const node = constellation.nodes.get(patternId);
+  if (!node)
+    return [];
+  return node.connections.slice(0, limit);
+}
+
+// src/discourse/sidecar-types.ts
+var MIN_SUPPORTED_PIPELINE_VERSION = "1.0.0";
+var SUPPORTED_SCHEMA_VERSION = 1;
+
+// src/discourse/bit-relation-index.ts
+function parseSemver(v) {
+  if (typeof v !== "string")
+    return null;
+  const m = /^(\d+)\.(\d+)\.(\d+)/.exec(v.trim());
+  if (!m)
+    return null;
+  return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+function semverGte(a, b) {
+  const pa = parseSemver(a);
+  const pb = parseSemver(b);
+  if (!pa || !pb)
+    return false;
+  for (let i = 0; i < 3; i++) {
+    if (pa[i] > pb[i])
+      return true;
+    if (pa[i] < pb[i])
+      return false;
+  }
+  return true;
+}
+function isValidAnnotation(a) {
+  if (!a || typeof a !== "object")
+    return false;
+  const o = a;
+  return typeof o.charStart === "number" && typeof o.charEnd === "number" && o.charEnd > o.charStart && o.charStart >= 0 && typeof o.kind === "string" && typeof o.label === "string";
+}
+var BitRelationIndex = class {
+  constructor() {
+    /** annotations by textHash → list (sorted by charStart asc, charEnd asc). */
+    this.byHash = /* @__PURE__ */ new Map();
+    /** pairId → resolved pair. */
+    this.pairs = /* @__PURE__ */ new Map();
+    /** Canonical NFC text per textHash. Required to slice annotation surfaces. */
+    this.nfcByHash = /* @__PURE__ */ new Map();
+  }
+  /**
+   * Load a sidecar for a given file. `expectedTextHash` must match the hash
+   * computed from the current NFC file content; mismatch returns
+   * { loaded: false, reason: 'text_hash_mismatch' } and the caller falls back
+   * to TS-native detection.
+   *
+   * `nfcText` is the canonicalized NFC text whose hash matches `expectedTextHash`.
+   * It is retained so consumers can resolve annotation `[charStart, charEnd)`
+   * back to surface forms without re-reading the file.
+   *
+   * Replaces any prior data for the same textHash.
+   */
+  loadSidecar(sidecar, expectedTextHash, nfcText) {
+    if (!sidecar || typeof sidecar !== "object") {
+      return { loaded: false, reason: "malformed" };
+    }
+    if (sidecar.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+      return { loaded: false, reason: "schema_version_mismatch" };
+    }
+    if (!semverGte(sidecar.pipelineVersion, MIN_SUPPORTED_PIPELINE_VERSION)) {
+      return { loaded: false, reason: "pipeline_version_too_old" };
+    }
+    if (typeof sidecar.textHash !== "string" || sidecar.textHash !== expectedTextHash) {
+      return { loaded: false, reason: "text_hash_mismatch" };
+    }
+    if (!Array.isArray(sidecar.annotations)) {
+      return { loaded: false, reason: "malformed" };
+    }
+    this.clearForHash(sidecar.textHash);
+    const valid = sidecar.annotations.filter(isValidAnnotation);
+    valid.sort((a, b) => a.charStart - b.charStart || a.charEnd - b.charEnd);
+    this.byHash.set(sidecar.textHash, valid);
+    this.nfcByHash.set(sidecar.textHash, nfcText);
+    const buckets = /* @__PURE__ */ new Map();
+    for (const ann of valid) {
+      if (!ann.pairId)
+        continue;
+      let b = buckets.get(ann.pairId);
+      if (!b) {
+        b = { conts: [] };
+        buckets.set(ann.pairId, b);
+      }
+      if (ann.role === "source" && !b.source)
+        b.source = ann;
+      else if (ann.role === "target" && !b.target)
+        b.target = ann;
+      else if (ann.role === "continuation")
+        b.conts.push(ann);
+      else if (!b.source)
+        b.source = ann;
+      else if (!b.target)
+        b.target = ann;
+      else
+        b.conts.push(ann);
+    }
+    let resolved = 0;
+    let orphans = 0;
+    for (const [pairId, b] of buckets) {
+      if (b.source && b.target) {
+        this.pairs.set(pairId, {
+          pairId,
+          source: b.source,
+          target: b.target,
+          continuations: b.conts,
+          textHash: sidecar.textHash
+        });
+        resolved++;
+      } else {
+        orphans++;
+      }
+    }
+    return {
+      loaded: true,
+      annotationCount: valid.length,
+      pairCount: resolved,
+      orphanPairCount: orphans
+    };
+  }
+  /** All annotations whose [charStart, charEnd) intersects [nfcStart, nfcEnd). */
+  getAnnotationsInRange(textHash, nfcStart, nfcEnd) {
+    const arr = this.byHash.get(textHash);
+    if (!arr || arr.length === 0)
+      return [];
+    const out = [];
+    for (const a of arr) {
+      if (a.charStart >= nfcEnd)
+        break;
+      if (a.charEnd > nfcStart)
+        out.push(a);
+    }
+    return out;
+  }
+  /** All annotations loaded for a given file hash (sorted by charStart). */
+  getAnnotationsForHash(textHash) {
+    var _a;
+    return (_a = this.byHash.get(textHash)) != null ? _a : [];
+  }
+  /** Canonical NFC text for a loaded hash, or undefined if not loaded. */
+  getNfcText(textHash) {
+    return this.nfcByHash.get(textHash);
+  }
+  /** Slice the NFC surface for a single annotation. Returns '' if hash unloaded. */
+  surfaceOf(annotation, textHash) {
+    const nfc = this.nfcByHash.get(textHash);
+    if (!nfc)
+      return "";
+    return nfc.slice(annotation.charStart, annotation.charEnd);
+  }
+  /**
+   * Find all bit-relation pairs whose source OR target NFC surface contains
+   * the given query (substring match against NFC-normalized text). Returns
+   * pairs grouped with which side matched, across all loaded sidecars.
+   *
+   * For typed-relation co-occurrence: when the user queries "あの", surface
+   * each pair where "あの" was a source or target, along with the paired
+   * endpoint's text and the relation label.
+   */
+  findPairsContainingSurface(query) {
+    if (!query)
+      return [];
+    const nfcQuery = query.normalize("NFC");
+    const out = [];
+    for (const pair of this.pairs.values()) {
+      const nfc = this.nfcByHash.get(pair.textHash);
+      if (!nfc)
+        continue;
+      const src = nfc.slice(pair.source.charStart, pair.source.charEnd);
+      const tgt = nfc.slice(pair.target.charStart, pair.target.charEnd);
+      if (src.includes(nfcQuery)) {
+        out.push({ pair, matchedRole: "source", sourceSurface: src, targetSurface: tgt });
+      } else if (tgt.includes(nfcQuery)) {
+        out.push({ pair, matchedRole: "target", sourceSurface: src, targetSurface: tgt });
+      }
+    }
+    return out;
+  }
+  /** Resolve a pairId to its source + target + continuations. */
+  getPair(pairId) {
+    return this.pairs.get(pairId);
+  }
+  /** True if a sidecar has been loaded for the given file hash. */
+  hasHash(textHash) {
+    return this.byHash.has(textHash);
+  }
+  /**
+   * Drop all data for a given textHash. Called when the active file's NFC
+   * hash changes (user edited the file → old sidecar is invalid).
+   */
+  clearForHash(textHash) {
+    this.byHash.delete(textHash);
+    this.nfcByHash.delete(textHash);
+    for (const [pairId, p] of this.pairs) {
+      if (p.textHash === textHash)
+        this.pairs.delete(pairId);
+    }
+  }
+  /** Drop everything. */
+  clear() {
+    this.byHash.clear();
+    this.nfcByHash.clear();
+    this.pairs.clear();
+  }
+  /** Total annotations across all loaded sidecars. */
+  size() {
+    let n = 0;
+    for (const arr of this.byHash.values())
+      n += arr.length;
+    return n;
+  }
+  /** Total resolved pairs. */
+  pairCount() {
+    return this.pairs.size;
+  }
+  /** Hashes with sidecar data loaded. */
+  loadedHashes() {
+    return Array.from(this.byHash.keys());
+  }
+};
+
+// src/discourse/sidecar-loader.ts
+var SIDECAR_DIR_REL = ".obsidian/plugins/jp-collocations/analysis";
+function canonicalizeForHash(rawText) {
+  return rawText.replace(/\r\n?/g, "\n").normalize("NFC");
+}
+async function computeTextHash(nfcText) {
+  const bytes = new TextEncoder().encode(nfcText);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const view = new Uint8Array(digest);
+  let out = "";
+  for (let i = 0; i < view.length; i++) {
+    out += view[i].toString(16).padStart(2, "0");
+  }
+  return out;
+}
+function sidecarPathFor(textHash) {
+  return `${SIDECAR_DIR_REL}/${textHash}.json`;
+}
+async function loadSidecarForFile(app, rawText, index) {
+  const nfc = canonicalizeForHash(rawText);
+  const textHash = await computeTextHash(nfc);
+  const path = sidecarPathFor(textHash);
+  const adapter = app.vault.adapter;
+  let exists = false;
+  try {
+    exists = await adapter.exists(path);
+  } catch (e) {
+    return { applied: false, textHash, reason: "read_error" };
+  }
+  if (!exists) {
+    return { applied: false, textHash, reason: "absent" };
+  }
+  let raw;
+  try {
+    raw = await adapter.read(path);
+  } catch (e) {
+    return { applied: false, textHash, reason: "read_error" };
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    return { applied: false, textHash, reason: "parse_error" };
+  }
+  const res = index.loadSidecar(parsed, textHash, nfc);
+  if (!res.loaded) {
+    return { applied: false, textHash, reason: res.reason };
+  }
+  return {
+    applied: true,
+    textHash,
+    annotationCount: res.annotationCount,
+    pairCount: res.pairCount,
+    orphanPairCount: res.orphanPairCount
+  };
+}
+
+// src/surfer-bridge.ts
+var SurferBridge = class {
+  constructor(persistFn, app) {
+    this.entries = /* @__PURE__ */ new Map();
+    this.saveTimer = null;
+    this.variationTrees = null;
+    this.constellation = null;
+    this._utteranceCache = [];
+    // Sidecar-backed typed-relation index. Populated lazily when files are
+    // indexed via indexFileWithSidecar(). When the active file has no sidecar,
+    // consumers fall back to surface-window PMI (graceful degradation).
+    this.bitRelationIndex = new BitRelationIndex();
+    // filePath → canonical NFC text hash. Lets consumers ask `getBitRelationsFor(file)`
+    // without re-hashing.
+    this.fileHashes = /* @__PURE__ */ new Map();
+    // filePath → raw file text as last indexed. Kept in-memory only (not persisted)
+    // so the relations resolver can substring-locate chunks within their source file
+    // when translating sidecar NFC offsets to chunk-local offsets.
+    this.rawTextByFile = /* @__PURE__ */ new Map();
+    // Most recent sidecar outcome per file (diagnostics / status bar).
+    this.lastSidecarOutcome = /* @__PURE__ */ new Map();
+    this.persistFn = persistFn;
+    this.app = app;
+    this.discourseIndex = new DiscourseIndex();
+    this.kwicIndex = new KWICIndex();
+  }
+  // ── Bootstrap ────────────────────────────────────────────
+  /** Restore all state from plugin.loadData() */
+  load(raw) {
+    this.entries.clear();
+    if (!raw)
+      return;
+    if (raw.entries) {
+      for (const [id, entry2] of Object.entries(raw.entries)) {
+        if (id && entry2 && typeof entry2.surface === "string") {
+          this.entries.set(id, entry2);
+        }
+      }
+    }
+    if (raw.discourseIndex) {
+      this.discourseIndex = DiscourseIndex.deserialize(raw.discourseIndex);
+    }
+    if (raw.kwicIndex) {
+      this.kwicIndex = KWICIndex.deserialize(raw.kwicIndex);
+    }
+  }
+  /** Return full state for plugin.saveData() */
+  serialize() {
+    const entries = {};
+    for (const [id, entry2] of this.entries) {
+      entries[id] = entry2;
+    }
+    return {
+      entries,
+      discourseIndex: this.discourseIndex.serialize(),
+      kwicIndex: this.kwicIndex.serialize()
+    };
+  }
+  // ══════════════════════════════════════════════════════════
+  // WRITE METHODS (auto-persist)
+  // ══════════════════════════════════════════════════════════
+  async addEntry(entry2) {
+    if (!entry2.id || !entry2.surface)
+      return;
+    this.entries.set(entry2.id, { ...entry2 });
+    new import_obsidian14.Notice(`Surfer \u2192 \u300C${entry2.surface}\u300D saved`);
+    await this.schedulePersist();
+  }
+  async addDiscourseContext(id, ctx) {
+    const entry2 = this.entries.get(id);
+    if (!entry2) {
+      new import_obsidian14.Notice(`Surfer bridge: entry ${id} not found`);
+      return;
+    }
+    if (!entry2._discourseContexts)
+      entry2._discourseContexts = [];
+    entry2._discourseContexts.push(ctx);
+    new import_obsidian14.Notice(`Discourse context added to \u300C${entry2.surface}\u300D`);
+    await this.schedulePersist();
+  }
+  async saveExampleSentence(id, text, source) {
+    const entry2 = this.entries.get(id);
+    if (!entry2) {
+      new import_obsidian14.Notice(`Surfer bridge: entry ${id} not found`);
+      return;
+    }
+    if (!entry2.exampleSentences)
+      entry2.exampleSentences = [];
+    if (entry2.exampleSentences.some((s) => s.text === text))
+      return;
+    entry2.exampleSentences.push({ text, source });
+    new import_obsidian14.Notice(`Example saved \u2192 \u300C${entry2.surface}\u300D`);
+    await this.schedulePersist();
+  }
+  // ══════════════════════════════════════════════════════════
+  // DISCOURSE ANALYSIS (the core new capabilities)
+  // ══════════════════════════════════════════════════════════
+  /**
+   * Full discourse analysis of a text passage.
+   * Called by surfer when user activates discourse mode on selected text.
+   */
+  analyzeText(text) {
+    const analysis = analyzeUtterance(text);
+    const templates = matchTemplates(analysis.patterns);
+    return {
+      patterns: analysis.patterns,
+      flows: analysis.flows.map((f) => ({
+        flowName: f.flow.name,
+        flowNameEn: f.flow.nameEn,
+        matchCount: f.matches.length
+      })),
+      templates: templates.map((t) => ({
+        templateName: t.template.name,
+        confidence: t.confidence
+      })),
+      register: analysis.estimatedRegister,
+      dominantFunctions: analysis.dominantFunctions,
+      categoryBreakdown: analysis.categoryBreakdown
+    };
+  }
+  /**
+   * Index a file's discourse patterns.
+   * Auto-detects transcript format and cleans timestamps/URLs before analysis.
+   * Called when a file is opened or modified (with debounce from main.ts).
+   */
+  indexFile(filePath, content) {
+    const cleanContent = isTranscriptFormat(content) ? cleanForAnalysis(content) : content;
+    this.rawTextByFile.set(filePath, cleanContent);
+    const matches = detectPatterns(cleanContent);
+    this.discourseIndex.indexFile(filePath, cleanContent, matches);
+    this.kwicIndex.indexFile(filePath, cleanContent, matches);
+    this._utteranceCache.push(matches);
+    this.constellation = null;
+    for (const entry2 of this.entries.values()) {
+      if (entry2.sourceFile === filePath) {
+        const patternIds = matches.map((m) => m.pattern.id);
+        this.discourseIndex.linkCollocation(entry2.surface, patternIds);
+      }
+    }
+    this.schedulePersist();
+  }
+  /** Remove a file from the index */
+  removeFileFromIndex(filePath) {
+    this.discourseIndex.removeFile(filePath);
+    this.kwicIndex.removeFile(filePath);
+    const prevHash = this.fileHashes.get(filePath);
+    if (prevHash) {
+      this.bitRelationIndex.clearForHash(prevHash);
+      this.fileHashes.delete(filePath);
+    }
+    this.rawTextByFile.delete(filePath);
+    this.lastSidecarOutcome.delete(filePath);
+    this.schedulePersist();
+  }
+  /**
+   * Sidecar-aware indexing. Performs the same work as `indexFile`, then
+   * attempts to load `<vault>/.obsidian/plugins/jp-collocations/analysis/<hash>.json`
+   * and populate the BitRelationIndex. Falls back silently when no sidecar is
+   * present or when the App reference was not supplied at construction time.
+   *
+   * Safe to call without awaiting — the sync `indexFile` work completes
+   * before the await suspends, so discourse/KWIC indexes are populated
+   * synchronously. The promise resolves once the sidecar attempt finishes.
+   */
+  async indexFileWithSidecar(filePath, content) {
+    this.indexFile(filePath, content);
+    if (!this.app)
+      return null;
+    const prevHash = this.fileHashes.get(filePath);
+    if (prevHash)
+      this.bitRelationIndex.clearForHash(prevHash);
+    const outcome = await loadSidecarForFile(this.app, content, this.bitRelationIndex);
+    this.fileHashes.set(filePath, outcome.textHash);
+    this.lastSidecarOutcome.set(filePath, outcome);
+    return outcome;
+  }
+  /** Access to the typed-relation index for downstream consumers (e.g. ContextEngine). */
+  getBitRelationIndex() {
+    return this.bitRelationIndex;
+  }
+  /** Canonical NFC text hash for a file we've indexed via the sidecar path. */
+  getTextHashForFile(filePath) {
+    return this.fileHashes.get(filePath);
+  }
+  /**
+   * Cleaned raw text for a file we've indexed. Returns undefined if not
+   * indexed. Used by the relations resolver to substring-locate chunks.
+   */
+  getRawTextForFile(filePath) {
+    return this.rawTextByFile.get(filePath);
+  }
+  /** Most recent sidecar load outcome for a file (for status-bar / diagnostics). */
+  getSidecarOutcome(filePath) {
+    return this.lastSidecarOutcome.get(filePath);
+  }
+  /**
+   * Aggregate sidecar coverage stats across all files indexed this session.
+   * Used by the status-bar indicator and the `sidecar-coverage` debug command.
+   *
+   * `indexed` is the count of files we have raw text cached for (i.e. seen via
+   * indexFile / indexFileWithSidecar). `applied` is the subset whose sidecar
+   * was successfully loaded into the BitRelationIndex. The remainder is broken
+   * out by `reason` so the user can see *why* coverage isn't 100%.
+   */
+  getCoverageStats() {
+    var _a, _b, _c;
+    const indexed = this.rawTextByFile.size;
+    let applied = 0;
+    const byReason = {};
+    for (const outcome of this.lastSidecarOutcome.values()) {
+      if (outcome.applied)
+        applied++;
+      else {
+        const r = (_a = outcome.reason) != null ? _a : "unknown";
+        byReason[r] = ((_b = byReason[r]) != null ? _b : 0) + 1;
+      }
+    }
+    const attemptedCount = this.lastSidecarOutcome.size;
+    if (indexed > attemptedCount) {
+      byReason["not-attempted"] = ((_c = byReason["not-attempted"]) != null ? _c : 0) + (indexed - attemptedCount);
+    }
+    return { indexed, applied, byReason };
+  }
+  /**
+   * Segment unsegmented text (like YT transcripts) at discourse boundaries.
+   */
+  segmentText(text) {
+    return segmentAtBoundaries(text);
+  }
+  // ══════════════════════════════════════════════════════════
+  // QUERY METHODS
+  // ══════════════════════════════════════════════════════════
+  // ── Entry queries ────────────────────────────────────────
+  findInText(text) {
+    const matches = [];
+    for (const entry2 of this.entries.values()) {
+      const surface = entry2.surface;
+      if (!surface)
+        continue;
+      let start = 0;
+      while (true) {
+        const idx = text.indexOf(surface, start);
+        if (idx === -1)
+          break;
+        matches.push({ entry: entry2, offset: idx, length: surface.length });
+        start = idx + 1;
+      }
+    }
+    return matches.sort((a, b) => a.offset - b.offset);
+  }
+  searchByMarker(surface) {
+    const results = [];
+    for (const entry2 of this.entries.values()) {
+      if (entry2.surface === surface) {
+        results.push(entry2);
+        continue;
+      }
+      if (entry2._discourseContexts) {
+        for (const ctx of entry2._discourseContexts) {
+          if (ctx.markers.some((m) => m.surface === surface)) {
+            results.push(entry2);
+            break;
+          }
+        }
+      }
+    }
+    return results;
+  }
+  searchByCategory(category) {
+    return [...this.entries.values()].filter(
+      (e) => e.discourseCategory === category
+    );
+  }
+  getAllEntries() {
+    return [...this.entries.values()];
+  }
+  getAllEntriesMap() {
+    return new Map(this.entries);
+  }
+  // ── KWIC queries ─────────────────────────────────────────
+  searchKWIC(patternId) {
+    return this.kwicIndex.getByPattern(patternId);
+  }
+  searchKWICBySurface(surface) {
+    return this.kwicIndex.getBySurface(surface);
+  }
+  searchKWICContext(query) {
+    const records = this.kwicIndex.searchContext(query);
+    const files = new Set(records.map((r) => r.filePath));
+    return { records, totalCount: records.length, fileCount: files.size };
+  }
+  // ── Variation tree queries ───────────────────────────────
+  getVariationTree(patternId) {
+    if (!this.variationTrees) {
+      this.variationTrees = buildVariationTrees();
+    }
+    const tree = getTreeForPattern(this.variationTrees, patternId);
+    if (!tree)
+      return null;
+    return {
+      stem: tree.stem,
+      conceptLabel: tree.conceptLabel,
+      conceptLabelEn: tree.conceptLabelEn,
+      variants: getRegisterProgression(tree).map((v) => ({
+        surface: v.surface,
+        register: v.register,
+        pragmaticFunction: v.pragmaticFunction,
+        frequencyTier: v.frequencyTier
+      }))
+    };
+  }
+  getAllVariationTrees() {
+    if (!this.variationTrees) {
+      this.variationTrees = buildVariationTrees();
+    }
+    return this.variationTrees.map((tree) => ({
+      stem: tree.stem,
+      conceptLabel: tree.conceptLabel,
+      conceptLabelEn: tree.conceptLabelEn,
+      variants: tree.variants.map((v) => ({
+        surface: v.surface,
+        register: v.register,
+        pragmaticFunction: v.pragmaticFunction,
+        frequencyTier: v.frequencyTier
+      }))
+    }));
+  }
+  // ── Co-occurrence / constellation queries ────────────────
+  getConstellationFor(patternId, limit = 5) {
+    this.ensureConstellation();
+    if (!this.constellation)
+      return null;
+    const node = this.constellation.nodes.get(patternId);
+    if (!node)
+      return null;
+    return {
+      patternId: node.patternId,
+      surface: node.surface,
+      frequency: node.frequency,
+      associations: getStrongestAssociations(this.constellation, patternId, limit)
+    };
+  }
+  ensureConstellation() {
+    if (this.constellation || this._utteranceCache.length === 0)
+      return;
+    this.constellation = buildConstellation(this._utteranceCache);
+  }
+  // ── Index queries ────────────────────────────────────────
+  searchIndexBySurface(surface) {
+    return this.discourseIndex.searchBySurface(surface);
+  }
+  searchIndexByCategory(category) {
+    return this.discourseIndex.searchByCategory(category);
+  }
+  getTopCoOccurrencePairs(limit = 20) {
+    return this.discourseIndex.getTopCoOccurrences(limit);
+  }
+  getFilePatterns(filePath) {
+    return this.discourseIndex.getFilePatterns(filePath);
+  }
+  getIndexedFiles() {
+    return this.discourseIndex.getIndexedFiles();
+  }
+  // ── Pattern database queries ─────────────────────────────
+  getPatternById(id) {
+    var _a;
+    return (_a = PATTERN_BY_ID.get(id)) != null ? _a : null;
+  }
+  searchPatterns(query) {
+    const lower = query.toLowerCase();
+    return ALL_PATTERNS.filter(
+      (p) => p.surface.includes(lower) || p.gloss.includes(query) || p.glossEn.toLowerCase().includes(lower) || p.subcategory.includes(query) || p.id.toLowerCase().includes(lower)
+    );
+  }
+  getPatternCount() {
+    return PATTERN_COUNT;
+  }
+  // ── Vault-wide profiling ─────────────────────────────────
+  buildVaultProfile(texts) {
+    const cleanTexts = texts.map(
+      (t) => isTranscriptFormat(t) ? cleanForAnalysis(t) : t
+    );
+    const profile = buildDiscourseProfile(cleanTexts);
+    return {
+      totalMatches: profile.totalMatches,
+      topPatterns: profile.topPatterns.map((p) => ({ surface: p.surface, count: p.count })),
+      registerDistribution: profile.registerDistribution,
+      formalityScore: profile.formalityScore,
+      hedgingRatio: profile.hedgingRatio,
+      flowCount: profile.flowCount
+    };
+  }
+  // ── Transcript analysis ──────────────────────────────────
+  /**
+   * Full transcript-aware analysis.
+   * Auto-detects transcript format, parses speakers, merges turns,
+   * and runs discourse analysis per-turn and per-speaker.
+   */
+  analyzeTranscriptText(text) {
+    const result = analyzeTranscript(text);
+    const agg = result.aggregateProfile;
+    const regEntries = Object.entries(agg.registerDistribution);
+    const topReg = regEntries.length > 0 ? regEntries.sort((a, b) => b[1] - a[1])[0][0] : "neutral";
+    return {
+      isTranscript: true,
+      cleanText: result.transcript.cleanText,
+      speakerCount: result.transcript.speakerCount,
+      durationSeconds: result.transcript.durationSeconds,
+      turns: result.turnAnalyses.map((ta) => {
+        var _a;
+        return {
+          speaker: ta.turn.speaker,
+          startTimestamp: ta.turn.startTimestamp,
+          text: ta.turn.text,
+          patternCount: ta.analysis.patterns.length,
+          dominantFunction: (_a = ta.analysis.dominantFunctions[0]) != null ? _a : "",
+          register: ta.analysis.estimatedRegister
+        };
+      }),
+      speakerProfiles: result.speakerProfiles.map((sp) => ({
+        speaker: sp.speaker,
+        turnCount: sp.turnCount,
+        charCount: sp.charCount,
+        topPatterns: sp.profile.topPatterns.slice(0, 5).map((p) => ({
+          surface: p.surface,
+          count: p.count
+        })),
+        formalityScore: sp.profile.formalityScore,
+        register: estimateRegisterLabel(sp.profile.formalityScore)
+      })),
+      totalPatterns: agg.totalMatches,
+      overallRegister: topReg,
+      extractedUrls: result.transcript.extractedUrls,
+      turnPairPatterns: result.turnPairPatterns
+    };
+  }
+  /**
+   * Smart analysis: auto-detects transcript vs plain text.
+   */
+  smartAnalyzeText(text) {
+    if (isTranscriptFormat(text)) {
+      return this.analyzeTranscriptText(text);
+    }
+    return this.analyzeText(text);
+  }
+  /**
+   * Clean a user selection that may contain timestamps.
+   */
+  cleanSelectionText(text) {
+    return cleanSelection(text);
+  }
+  /**
+   * Check if text is transcript format.
+   */
+  isTranscript(text) {
+    return isTranscriptFormat(text);
+  }
+  // ── Stats ────────────────────────────────────────────────
+  getStats() {
+    var _a, _b, _c, _d, _e;
+    const byCategory = {};
+    const byPosition = {};
+    const coOccurrenceCounts = /* @__PURE__ */ new Map();
+    for (const entry2 of this.entries.values()) {
+      if (entry2.discourseCategory) {
+        byCategory[entry2.discourseCategory] = ((_a = byCategory[entry2.discourseCategory]) != null ? _a : 0) + 1;
+      }
+      if (entry2.discoursePosition) {
+        byPosition[entry2.discoursePosition] = ((_b = byPosition[entry2.discoursePosition]) != null ? _b : 0) + 1;
+      }
+      if (entry2.coOccurrenceIds && entry2.coOccurrenceIds.length > 0) {
+        for (const coId of entry2.coOccurrenceIds) {
+          const pair = [entry2.id, coId].sort().join("|||");
+          coOccurrenceCounts.set(pair, ((_c = coOccurrenceCounts.get(pair)) != null ? _c : 0) + 1);
+        }
+      }
+    }
+    const sorted = [...coOccurrenceCounts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
+    const topCoOccurrences = sorted.map(([key, count]) => {
+      const [a, b] = key.split("|||");
+      return { pair: [a, b], count };
+    });
+    const indexStats = this.discourseIndex.getStats();
+    return {
+      totalEntries: this.entries.size,
+      byCategory,
+      byPosition,
+      topCoOccurrences,
+      indexStats,
+      kwicRecords: this.kwicIndex.getTotalRecords(),
+      variationTrees: (_e = (_d = this.variationTrees) == null ? void 0 : _d.length) != null ? _e : 0,
+      formalityScore: 0,
+      hedgingRatio: 0
+    };
+  }
+  // ── Persistence ──────────────────────────────────────────
+  async schedulePersist() {
+    if (this.saveTimer)
+      clearTimeout(this.saveTimer);
+    return new Promise((resolve) => {
+      this.saveTimer = setTimeout(async () => {
+        await this.persistFn(this.serialize());
+        resolve();
+      }, 300);
+    });
+  }
+};
+function estimateRegisterLabel(formalityScore) {
+  if (formalityScore < -0.5)
+    return "\u30AB\u30B8\u30E5\u30A2\u30EB";
+  if (formalityScore < 0)
+    return "\u666E\u901A\u4F53";
+  if (formalityScore < 0.3)
+    return "\u4E01\u5BE7\u4F53";
+  if (formalityScore < 0.7)
+    return "\u30D5\u30A9\u30FC\u30DE\u30EB";
+  return "\u656C\u8A9E";
+}
+
+// src/notes/local-matcher.ts
+function toReadingForm(s, readingOf) {
+  const norm = katakanaToHiragana(normalizeJapanese(s));
+  if (!readingOf)
+    return norm;
+  let out = "";
+  let run = "";
+  const flush = () => {
+    if (!run)
+      return;
+    const r = readingOf(run);
+    out += r != null ? katakanaToHiragana(r) : run;
+    run = "";
+  };
+  for (const ch of norm) {
+    if (isKanji(ch)) {
+      run += ch;
+    } else {
+      flush();
+      out += ch;
+    }
+  }
+  flush();
+  return out;
+}
+function bigrams2(s) {
+  var _a;
+  const m = /* @__PURE__ */ new Map();
+  for (let i = 0; i < s.length - 1; i++) {
+    const g = s.slice(i, i + 2);
+    m.set(g, ((_a = m.get(g)) != null ? _a : 0) + 1);
+  }
+  return m;
+}
+function diceBigram(a, b) {
+  if (a.length < 2 || b.length < 2)
+    return a === b ? 1 : 0;
+  const ma = bigrams2(a), mb = bigrams2(b);
+  let inter = 0;
+  for (const [g, ca] of ma) {
+    const cb = mb.get(g);
+    if (cb)
+      inter += Math.min(ca, cb);
+  }
+  const total = a.length - 1 + (b.length - 1);
+  return 2 * inter / total;
+}
+function editRatio(a, b) {
+  const d = levenshtein(a, b);
+  const m = Math.max(a.length, b.length) || 1;
+  return 1 - d / m;
+}
+function sim(a, b) {
+  return Math.max(diceBigram(a, b), editRatio(a, b));
+}
+function match(phrase, lines, readingOf, opts = {}) {
+  var _a, _b;
+  const topK = (_a = opts.topK) != null ? _a : 3;
+  const ctxN = (_b = opts.contextLines) != null ? _b : 2;
+  const noteNorm = normalizeJapanese(phrase).replace(/\s+/g, "");
+  const noteR = toReadingForm(phrase, readingOf);
+  let concat = "";
+  const charLine = [];
+  const lineNorm = lines.map((l) => normalizeJapanese(l.text).replace(/\s+/g, ""));
+  for (let i = 0; i < lines.length; i++) {
+    for (const ch of lineNorm[i]) {
+      concat += ch;
+      charLine.push(i);
+    }
+  }
+  if (!concat.length || !noteNorm.length) {
+    return { best: null, alternatives: [], contextBefore: [], contextAfter: [], corrections: [], confidence: 0 };
+  }
+  const W = noteNorm.length;
+  const minW = Math.max(2, Math.floor(W * 0.7));
+  const maxW = Math.min(concat.length, Math.ceil(W * 1.5));
+  const step = Math.max(1, Math.floor(W / 6));
+  const cands = [];
+  for (let start = 0; start <= concat.length - minW; start += step) {
+    let bestLen = minW, bestScore = -1;
+    for (let len = minW; len <= maxW && start + len <= concat.length; len += Math.max(1, Math.floor(W / 6))) {
+      const win = concat.slice(start, start + len);
+      const s = sim(win, noteNorm);
+      if (s > bestScore) {
+        bestScore = s;
+        bestLen = len;
+      }
+    }
+    cands.push({ start, end: start + bestLen, score: bestScore, text: concat.slice(start, start + bestLen) });
+  }
+  cands.sort((a, b) => b.score - a.score);
+  const kept = [];
+  for (const c of cands) {
+    if (kept.some((k) => c.start < k.end && c.end > k.start))
+      continue;
+    kept.push(c);
+    if (kept.length >= topK)
+      break;
+  }
+  if (!kept.length)
+    return { best: null, alternatives: [], contextBefore: [], contextAfter: [], corrections: [], confidence: 0 };
+  const toSpan = (c) => {
+    var _a2;
+    const startLine = charLine[c.start];
+    const endLine = charLine[Math.min(c.end - 1, charLine.length - 1)];
+    return { startLine, endLine, tStartSec: (_a2 = lines[startLine]) == null ? void 0 : _a2.tStartSec, text: c.text, score: c.score };
+  };
+  const best = toSpan(kept[0]);
+  const alternatives = kept.slice(1).map(toSpan);
+  const corrections = diffCorrections(phrase, best.text, readingOf);
+  const contextBefore = lines.slice(Math.max(0, best.startLine - ctxN), best.startLine).map((l) => l.text);
+  const contextAfter = lines.slice(best.endLine + 1, best.endLine + 1 + ctxN).map((l) => l.text);
+  const homoPenalty = corrections.some((c) => c.kind !== "homophone") ? 0.15 : 0;
+  const confidence = Math.max(0, Math.min(1, best.score - homoPenalty));
+  return { best, alternatives, contextBefore, contextAfter, corrections, confidence };
+}
+function diffCorrections(note, span, readingOf) {
+  const a = normalizeJapanese(note).replace(/\s+/g, "");
+  const b = normalizeJapanese(span).replace(/\s+/g, "");
+  const ops = backtrace(a, b);
+  const corrections = [];
+  const leadingKana = (s) => {
+    let k = "";
+    for (const ch of s) {
+      if (isKanji(ch))
+        break;
+      k += ch;
+    }
+    return k;
+  };
+  for (let i = 0; i < ops.length; i++) {
+    const op = ops[i];
+    if (op.kind !== "sub")
+      continue;
+    const nText = op.a, tText = op.b;
+    const next = ops[i + 1];
+    const oku = next && next.kind === "match" ? leadingKana(next.a) : "";
+    const nWord = nText + oku, tWord = tText + oku;
+    const nR = readingWord(nWord, readingOf);
+    const tR = readingWord(tWord, readingOf);
+    if (nR && tR && nR === tR) {
+      corrections.push({
+        noteText: nWord,
+        transcriptText: tWord,
+        kind: "homophone",
+        confidence: 0.9,
+        reason: `same reading \u300C${nR}\u300D \u2014 homophone/kanji-choice error`
+      });
+    } else if ([...nText].some(isKanji) && [...tText].some(isKanji)) {
+      corrections.push({
+        noteText: nText,
+        transcriptText: tText,
+        kind: "kanji-swap",
+        confidence: 0.5,
+        reason: readingOf ? `readings \u300C${nR != null ? nR : "?"}\u300D\u2260\u300C${tR != null ? tR : "?"}\u300D \u2014 needs review` : "kanji differ; no reading source \u2014 needs review"
+      });
+    } else {
+      corrections.push({ noteText: nText, transcriptText: tText, kind: "edit", confidence: 0.4, reason: "surface differs" });
+    }
+  }
+  return corrections;
+}
+function readingWord(word, readingOf) {
+  if (readingOf) {
+    const r = readingOf(word);
+    if (r != null)
+      return katakanaToHiragana(normalizeJapanese(r));
+  }
+  const kanaOnly = katakanaToHiragana(normalizeJapanese(word));
+  return [...kanaOnly].some(isKanji) ? null : kanaOnly;
+}
+function backtrace(a, b) {
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i2 = 0; i2 <= n; i2++)
+    dp[i2][0] = i2;
+  for (let j2 = 0; j2 <= m; j2++)
+    dp[0][j2] = j2;
+  for (let i2 = 1; i2 <= n; i2++)
+    for (let j2 = 1; j2 <= m; j2++)
+      dp[i2][j2] = a[i2 - 1] === b[j2 - 1] ? dp[i2 - 1][j2 - 1] : 1 + Math.min(dp[i2 - 1][j2 - 1], dp[i2 - 1][j2], dp[i2][j2 - 1]);
+  const raw = [];
+  let i = n, j = m;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      raw.push({ kind: "match", a: a[i - 1], b: b[j - 1] });
+      i--;
+      j--;
+    } else if (i > 0 && j > 0 && dp[i][j] === dp[i - 1][j - 1] + 1) {
+      raw.push({ kind: "sub", a: a[i - 1], b: b[j - 1] });
+      i--;
+      j--;
+    } else if (i > 0 && dp[i][j] === dp[i - 1][j] + 1) {
+      raw.push({ kind: "del", a: a[i - 1], b: "" });
+      i--;
+    } else {
+      raw.push({ kind: "ins", a: "", b: b[j - 1] });
+      j--;
+    }
+  }
+  raw.reverse();
+  const merged = [];
+  for (const op of raw) {
+    const last = merged[merged.length - 1];
+    if (last && last.kind === op.kind) {
+      last.a += op.a;
+      last.b += op.b;
+    } else
+      merged.push({ ...op });
+  }
+  return merged;
+}
+
+// src/notes/pipeline.ts
+var RECONCILE_THRESHOLD = 0.7;
+function parseTranscriptLines(md) {
+  const lines = [];
+  let idx = 0;
+  let sawStamp = false;
+  for (const rawLn of md.split("\n")) {
+    const m = rawLn.match(/\[(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\]\s*(.*)/);
+    if (m) {
+      sawStamp = true;
+      const h = m[1] ? +m[1] : 0;
+      const text = (m[4] || "").replace(/\[音楽\]/g, "").trim();
+      if (text)
+        lines.push({ index: idx++, tStartSec: h * 3600 + +m[2] * 60 + +m[3], text });
+    }
+  }
+  if (sawStamp)
+    return lines;
+  for (const rawLn of md.split("\n")) {
+    const t = rawLn.trim();
+    if (!t || t.startsWith("#") || t.startsWith("---"))
+      continue;
+    lines.push({ index: idx++, text: t });
+  }
+  return lines;
+}
+function frontmatterSource(md) {
+  const fm = md.match(/^---\n([\s\S]*?)\n---/);
+  if (!fm)
+    return null;
+  const m = fm[1].match(/^\s*source(?:_transcript)?:\s*(.+?)\s*$/m);
+  if (!m)
+    return null;
+  return m[1].replace(/^["'\[]+|["'\]]+$/g, "").trim() || null;
+}
+function extractNotePhrases(md) {
+  const body = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
+  const out = [];
+  for (const rawLn of body.split("\n")) {
+    let t = rawLn.trim();
+    if (!t || t.startsWith("#") || t.startsWith(">") || t.startsWith("---") || t.startsWith("```"))
+      continue;
+    t = t.replace(/^[-*+]\s+/, "").replace(/^\d+[.)]\s+/, "").replace(/^\[[ x]\]\s+/, "");
+    t = t.replace(/[*_`~]/g, "").trim();
+    if (t.length >= 2)
+      out.push(t);
+  }
+  return out;
+}
+function reconcile(notes, lines, readingOf) {
+  return notes.map((note) => {
+    var _a, _b, _c, _d;
+    const r = match(note, lines, readingOf);
+    const status = r.best && r.confidence >= RECONCILE_THRESHOLD ? "auto" : "needs-review";
+    return {
+      note,
+      best: r.best,
+      tStartSec: (_b = (_a = r.best) == null ? void 0 : _a.tStartSec) != null ? _b : null,
+      reconciled: (_d = (_c = r.best) == null ? void 0 : _c.text) != null ? _d : "",
+      confidence: r.confidence,
+      status,
+      corrections: r.corrections,
+      contextBefore: r.contextBefore,
+      contextAfter: r.contextAfter,
+      alternatives: r.alternatives
+    };
+  });
+}
+
+// src/notes/reading-resolver.ts
+function makeDictionaryReadingResolver(store) {
+  const cache = /* @__PURE__ */ new Map();
+  return (surface) => {
+    var _a;
+    const key = normalizeJapanese(surface);
+    const hit = cache.get(key);
+    if (hit !== void 0)
+      return hit;
+    let reading = null;
+    try {
+      const results = store.lookup(key);
+      if (results.length) {
+        const exact = results.find((r) => normalizeJapanese(r.term.expression) === key);
+        const pick = exact != null ? exact : results[0];
+        const raw = ((_a = pick.term.reading) == null ? void 0 : _a.trim()) || pick.term.expression;
+        reading = toHiragana(normalizeJapanese(raw));
+      }
+    } catch (e) {
+      reading = null;
+    }
+    cache.set(key, reading);
+    return reading;
+  };
+}
+
+// src/ui/LibraryView.ts
+var import_obsidian15 = require("obsidian");
+
+// src/notes/note-types.ts
+var NOTE_TYPES = {
+  serifu: { id: "serifu", label: "\u30BB\u30EA\u30D5", en: "serifu", emoji: "\u{1F7E1}", color: "#e0c341", callout: "serifu" },
+  collocation: { id: "collocation", label: "\u9023\u8A9E", en: "collocation", emoji: "\u{1F7E2}", color: "#5cb85c", callout: "collocation" },
+  rhet_collocation: { id: "rhet_collocation", label: "\u4FEE\u8F9E\u9023\u8A9E", en: "rhet-coll", emoji: "\u{1F535}", color: "#4a90d9", callout: "rhet-coll" },
+  rhet_construction: { id: "rhet_construction", label: "\u4FEE\u8F9E\u69CB\u6587", en: "rhet-constr", emoji: "\u{1FA75}", color: "#5bc8d8", callout: "rhet-constr" },
+  discourse: { id: "discourse", label: "\u8AC7\u8A71", en: "discourse", emoji: "\u{1F534}", color: "#d9534f", callout: "discourse" }
+};
+var NOTE_CLASSES = ["serifu", "collocation", "rhet_collocation", "rhet_construction", "discourse"];
+var DEFAULT_NOTE_CLASS = "serifu";
+var CALLOUT_TO_CLASS = Object.fromEntries(
+  NOTE_CLASSES.map((c) => [NOTE_TYPES[c].callout, c])
+);
+
+// src/ui/LibraryView.ts
+var JP_RECON_LIBRARY_VIEW_TYPE = "jp-recon-library-view";
+var LibraryView = class extends import_obsidian15.ItemView {
+  constructor(leaf, deps) {
+    super(leaf);
+    this.deps = deps;
+    this.filter = "all";
+  }
+  getViewType() {
+    return JP_RECON_LIBRARY_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "\u7167\u5408\u30E9\u30A4\u30D6\u30E9\u30EA";
+  }
+  getIcon() {
+    return "library";
+  }
+  async onOpen() {
+    this.render();
+  }
+  /** Called by the plugin after a reconciliation run to refresh. */
+  refresh() {
+    if (this.contentEl)
+      this.render();
+  }
+  matches(e) {
+    if (this.filter === "all")
+      return true;
+    if (this.filter === "needs-review")
+      return e.status === "needs-review";
+    return e.noteClass === this.filter;
+  }
+  render() {
+    const root = this.contentEl;
+    root.empty();
+    root.addClass("jp-recon-library");
+    const entries = this.deps.library.all();
+    const shown = entries.filter((e) => this.matches(e));
+    const header = root.createDiv({ cls: "jp-recon-header" });
+    header.createEl("div", { text: `\u7167\u5408\u30E9\u30A4\u30D6\u30E9\u30EA \u2014 ${entries.length}\u4EF6`, cls: "jp-recon-title" });
+    const chips = header.createDiv({ cls: "jp-recon-chips" });
+    const chip = (label, f, color) => {
+      const b = chips.createEl("button", { text: label });
+      b.style.cssText = `font-size:11px;padding:2px 8px;margin:2px;border-radius:10px;cursor:pointer;border:1px solid var(--background-modifier-border);${this.filter === f ? `background:${color != null ? color : "var(--interactive-accent)"};color:#fff;` : "background:transparent;"}`;
+      b.onclick = () => {
+        this.filter = f;
+        this.render();
+      };
+    };
+    chip(`\u3059\u3079\u3066 ${entries.length}`, "all");
+    for (const c of NOTE_CLASSES) {
+      const n = entries.filter((e) => e.noteClass === c).length;
+      chip(`${NOTE_TYPES[c].emoji} ${n}`, c, NOTE_TYPES[c].color);
+    }
+    const nr = entries.filter((e) => e.status === "needs-review").length;
+    chip(`\u{1F536} ${nr}`, "needs-review", "#d9832b");
+    if (!shown.length) {
+      root.createEl("p", { text: entries.length ? "\u8A72\u5F53\u306A\u3057" : "\u307E\u3060\u7167\u5408\u30CE\u30FC\u30C8\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u300CReconcile Notes Against Source Transcript\u300D\u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002", cls: "jp-recon-empty" });
+      return;
+    }
+    const list = root.createDiv({ cls: "jp-recon-list" });
+    for (const e of shown)
+      this.renderEntry(list, e);
+  }
+  renderEntry(parent, e) {
+    const def = NOTE_TYPES[e.noteClass];
+    const card = parent.createDiv({ cls: "jp-recon-card" });
+    card.style.cssText = `border:1px solid var(--background-modifier-border);border-left:3px solid ${def.color};border-radius:6px;margin:6px 0;padding:8px;`;
+    const top = card.createDiv();
+    top.style.cssText = "display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:4px;";
+    const select = top.createEl("select");
+    select.style.cssText = "font-size:11px;";
+    for (const c of NOTE_CLASSES) {
+      const opt = select.createEl("option", { text: `${NOTE_TYPES[c].emoji} ${NOTE_TYPES[c].label}`, value: c });
+      if (c === e.noteClass)
+        opt.selected = true;
+    }
+    select.onchange = async () => {
+      try {
+        await this.deps.onRetype(e, select.value);
+        this.render();
+      } catch (err) {
+        new import_obsidian15.Notice(`\u7A2E\u5225\u5909\u66F4\u306B\u5931\u6557: ${String(err)}`);
+      }
+    };
+    const ts = top.createSpan({ text: e.tStartSec != null ? `~${Math.floor(e.tStartSec / 60)}:${String(e.tStartSec % 60).padStart(2, "0")}` : "" });
+    ts.style.cssText = "font-size:11px;color:var(--text-muted);font-family:var(--font-monospace);";
+    if (e.status === "needs-review") {
+      const b = top.createSpan({ text: "\u{1F536}\u8981\u78BA\u8A8D" });
+      b.style.cssText = "font-size:10px;color:#d9832b;";
+    }
+    const open = top.createEl("button", { text: "\u21AA \u539F\u6587" });
+    open.style.cssText = "font-size:10px;margin-left:auto;cursor:pointer;";
+    open.onclick = () => this.deps.openBlock(e).catch((err) => new import_obsidian15.Notice(String(err)));
+    const embed = card.createDiv({ cls: "jp-recon-embed" });
+    void import_obsidian15.MarkdownRenderer.render(this.app, `![[${e.file}#^${e.blockId}]]`, embed, e.file, this);
+  }
+};
+
+// src/notes/recon-library.ts
+var ReconLibrary = class {
+  constructor(persist) {
+    this.persist = persist;
+    this.byId = /* @__PURE__ */ new Map();
+  }
+  loadFromData(data) {
+    var _a;
+    this.byId.clear();
+    for (const e of (_a = data == null ? void 0 : data.entries) != null ? _a : [])
+      this.byId.set(e.blockId, e);
+  }
+  toData() {
+    return { entries: this.all() };
+  }
+  /** Upsert entries from a (re)reconciliation of one file — preserves class already set. */
+  upsertMany(entries) {
+    for (const e of entries) {
+      const prev = this.byId.get(e.blockId);
+      this.byId.set(e.blockId, prev ? { ...e, noteClass: prev.noteClass } : e);
+    }
+    void this.persist();
+  }
+  /** Drop all entries anchored in a given file (before rewriting it). */
+  removeForFile(file) {
+    for (const [id, e] of this.byId)
+      if (e.file === file)
+        this.byId.delete(id);
+  }
+  setClass(blockId, cls) {
+    const e = this.byId.get(blockId);
+    if (!e)
+      return void 0;
+    e.noteClass = cls;
+    void this.persist();
+    return e;
+  }
+  get(blockId) {
+    return this.byId.get(blockId);
+  }
+  /** Prior class map for one file (feeds annotate so re-runs keep the class). */
+  classMapForFile(file) {
+    const m = /* @__PURE__ */ new Map();
+    for (const e of this.byId.values())
+      if (e.file === file)
+        m.set(e.blockId, e.noteClass);
+    return m;
+  }
+  all() {
+    return [...this.byId.values()].sort(
+      (a, b) => {
+        var _a, _b;
+        return a.file.localeCompare(b.file) || ((_a = a.tStartSec) != null ? _a : 0) - ((_b = b.tStartSec) != null ? _b : 0);
+      }
+    );
+  }
+  count() {
+    return this.byId.size;
+  }
+};
+
+// src/notes/annotate.ts
+function hashId(s) {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+function blockIdFor(r) {
+  var _a;
+  return "recon-" + hashId(`${r.note}|${r.reconciled}|${(_a = r.tStartSec) != null ? _a : ""}`);
+}
+var fmtTime = (s) => s == null ? "??:??" : `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+function renderCallout(r, cls, index) {
+  const def = NOTE_TYPES[cls];
+  const id = blockIdFor(r);
+  const fold = r.status === "needs-review" ? "+" : "-";
+  const flag = r.status === "needs-review" ? " \u{1F536}\u8981\u78BA\u8A8D" : "";
+  const head = `${def.emoji} ${index + 1}. ${r.reconciled || r.note} \xB7 ~${fmtTime(r.tStartSec)} \xB7 ${(r.confidence * 100).toFixed(0)}% \xB7 ${r.status}${flag}`;
+  const lines = [`> [!${def.callout}]${fold} ${head}`];
+  lines.push(`> **\u30E1\u30E2:** ${r.note}`);
+  if (r.best) {
+    if (r.contextBefore.length || r.contextAfter.length) {
+      const ctx = [...r.contextBefore.map((c) => `\u2026${c}`), `**${r.reconciled}**`, ...r.contextAfter.map((c) => `${c}\u2026`)].join(" / ");
+      lines.push(`> **\u6587\u8108:** ${ctx}`);
+    }
+    for (const c of r.corrections) {
+      const mark = c.kind === "homophone" ? "\u26A0\uFE0F \u540C\u97F3\u6821\u6B63" : c.kind === "kanji-swap" ? "\u26A0\uFE0F \u6F22\u5B57\u9055\u3044" : "\u26A0\uFE0F \u76F8\u9055";
+      lines.push(`> ${mark}: \u300C${c.noteText}\u300D\u2192\u300C${c.transcriptText}\u300D`);
+    }
+  } else {
+    lines.push("> \uFF08\u5BFE\u5FDC\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093 \u2014 \u8981\u78BA\u8A8D\uFF09");
+  }
+  lines.push(`^${id}`);
+  return lines.join("\n");
+}
+function renderAnchoredFile(results, opts = {}) {
+  var _a;
+  const prior = (_a = opts.priorClass) != null ? _a : /* @__PURE__ */ new Map();
+  const auto = results.filter((r) => r.status === "auto").length;
+  const out = ["---"];
+  if (opts.transcriptRef)
+    out.push(`source: ${opts.transcriptRef}`);
+  if (opts.sourceLabel)
+    out.push(`source_media: ${opts.sourceLabel}`);
+  out.push(`reconciled: ${results.length} notes \u2014 ${auto} auto, ${results.length - auto} needs-review`);
+  out.push("generated: jp-collocations reconciliation pipeline");
+  out.push("---", "");
+  out.push("# \u7167\u5408\u30CE\u30FC\u30C8\uFF08\u81EA\u52D5\u751F\u6210\u30FB\u578B\u4ED8\u304D\uFF09", "");
+  out.push("> \u5404\u30AB\u30E9\u30FC = \u30CE\u30FC\u30C8\u7A2E\u5225\uFF08\u{1F7E1}\u30BB\u30EA\u30D5 \u{1F7E2}\u9023\u8A9E \u{1F535}\u4FEE\u8F9E\u9023\u8A9E \u{1FA75}\u4FEE\u8F9E\u69CB\u6587 \u{1F534}\u8AC7\u8A71\uFF09\u3002\u30E9\u30A4\u30D6\u30E9\u30EA\u3067\u7A2E\u5225\u3092\u5909\u66F4\u3067\u304D\u307E\u3059\u3002", "");
+  results.forEach((r, i) => {
+    var _a2;
+    const cls = (_a2 = prior.get(blockIdFor(r))) != null ? _a2 : DEFAULT_NOTE_CLASS;
+    out.push(renderCallout(r, cls, i), "");
+  });
+  return out.join("\n");
+}
+function buildEntries(results, file, priorClass) {
+  const prior = priorClass != null ? priorClass : /* @__PURE__ */ new Map();
+  return results.map((r) => {
+    var _a;
+    const blockId = blockIdFor(r);
+    return {
+      blockId,
+      noteClass: (_a = prior.get(blockId)) != null ? _a : DEFAULT_NOTE_CLASS,
+      file,
+      note: r.note,
+      reconciled: r.reconciled,
+      tStartSec: r.tStartSec,
+      status: r.status,
+      confidence: r.confidence,
+      corrections: r.corrections.length
+    };
+  });
+}
+function retypeInMarkdown(md, blockId, newClass) {
+  const kw = NOTE_TYPES[newClass].callout;
+  const emoji = NOTE_TYPES[newClass].emoji;
+  const re = new RegExp(`(> \\[!)([a-z-]+)(\\][+-]? )(?:\u{1F7E1}|\u{1F7E2}|\u{1F535}|\u{1FA75}|\u{1F534}) ([\\s\\S]*?\\n\\^${blockId}\\b)`);
+  return md.replace(re, `$1${kw}$3${emoji} $4`);
+}
+
+// src/notes/audio-provider.ts
+function parseYouTubeId(s) {
+  if (!s)
+    return null;
+  const str = s.trim();
+  if (/^[A-Za-z0-9_-]{11}$/.test(str))
+    return str;
+  const m = str.match(
+    /(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/|\/live\/|\/v\/)([A-Za-z0-9_-]{11})/
+  );
+  return m ? m[1] : null;
+}
+function youtubeDeepLink(videoId, startSec) {
+  if (!videoId)
+    return null;
+  const t = startSec != null && startSec >= 0 ? `?t=${Math.floor(startSec)}` : "";
+  return `https://youtu.be/${videoId}${t}`;
+}
+function clipFileName(videoId, startSec) {
+  return `clip_${videoId}_${Math.floor(startSec)}.mp3`;
+}
+function deepLinkProvider(localExists) {
+  return {
+    resolve(videoId, startSec) {
+      if (videoId && localExists) {
+        const path = clipFileName(videoId, startSec != null ? startSec : 0);
+        if (localExists(path))
+          return { kind: "local", href: path, label: "\u{1F50A} \u97F3\u58F0\u30AF\u30EA\u30C3\u30D7" };
+      }
+      const link = youtubeDeepLink(videoId, startSec);
+      if (link)
+        return { kind: "deeplink", href: link, label: "\u25B6 YouTube" };
+      return { kind: "none", href: "", label: "" };
+    }
+  };
+}
+
+// src/notes/cards.ts
+var fmtClock = (s) => s == null ? "??:??" : `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+var BLANK = "\u3010\uFF3F\uFF3F\uFF3F\uFF3F\uFF3F\u3011";
+function renderAnchor(anchor, clip) {
+  const lines = ["", "---"];
+  lines.push(`\u23F1 **\u539F\u6587:** ![[${anchor.file}#^${anchor.blockId}]]`);
+  const deep = youtubeDeepLink(anchor.videoId, anchor.tStartSec);
+  if (deep)
+    lines.push(`\u25B6 **YouTube (${fmtClock(anchor.tStartSec)}):** ${deep}`);
+  if (clip.kind === "local")
+    lines.push(`${clip.label}: ![[${clip.href}]]`);
+  if (anchor.transcriptRef)
+    lines.push(`\u{1F4C4} ${anchor.transcriptRef}`);
+  return lines;
+}
+function buildReconCard(r, blockId, opts = {}) {
+  var _a, _b, _c, _d, _e, _f, _g;
+  const tagPrefix = (_a = opts.tagPrefix) != null ? _a : "flashcards/jp-recon";
+  const audio = (_b = opts.audio) != null ? _b : deepLinkProvider();
+  const noteClass = (_d = (_c = opts.classOf) == null ? void 0 : _c.call(opts, blockId)) != null ? _d : DEFAULT_NOTE_CLASS;
+  const def = NOTE_TYPES[noteClass];
+  const answer = r.reconciled || r.note;
+  const anchor = {
+    file: (_e = opts.anchoredFile) != null ? _e : "",
+    blockId,
+    videoId: (_f = opts.videoId) != null ? _f : null,
+    tStartSec: r.tStartSec,
+    transcriptRef: (_g = opts.transcriptRef) != null ? _g : null
+  };
+  const before = r.contextBefore.map((c) => `\u2026${c}`).join(" ");
+  const after = r.contextAfter.map((c) => `${c}\u2026`).join(" ");
+  const clozeLine = [before, BLANK, after].filter(Boolean).join(" ");
+  const frontLines = [
+    `${def.emoji} **${def.label}** \xB7 ~${fmtClock(r.tStartSec)}`,
+    "",
+    clozeLine || BLANK,
+    "",
+    `> \u30D2\u30F3\u30C8: \u3042\u306A\u305F\u306E\u30E1\u30E2\u300C${r.note}\u300D`
+  ];
+  const front = frontLines.join("\n");
+  const clip = audio.resolve(anchor.videoId, r.tStartSec);
+  const backLines = [`**${answer}**`, ""];
+  if (r.note && r.note !== answer)
+    backLines.push(`\u30E1\u30E2(raw): ~~${r.note}~~ \u2192 **${answer}**`);
+  for (const c of r.corrections) {
+    const mark = c.kind === "homophone" ? "\u26A0\uFE0F \u540C\u97F3\u6821\u6B63" : c.kind === "kanji-swap" ? "\u26A0\uFE0F \u6F22\u5B57\u9055\u3044" : "\u26A0\uFE0F \u76F8\u9055";
+    backLines.push(`${mark}: \u300C${c.noteText}\u300D\u2192\u300C${c.transcriptText}\u300D`);
+  }
+  backLines.push(...renderAnchor(anchor, clip));
+  const back = backLines.join("\n");
+  const tags = [tagPrefix, `${tagPrefix}/${def.callout}`];
+  if (r.status === "needs-review")
+    tags.push(`${tagPrefix}/needs-review`);
+  const tagLine = tags.map((t) => `#${t}`).join(" ");
+  const markdown = `${tagLine}
+${front}
+?
+${back}
+`;
+  return { id: `card-${blockId}`, blockId, noteClass, front, back, tags, markdown, anchor };
+}
+function buildReconCards(results, anchoredFile, blockIdFor2, opts = {}) {
+  const withFile = { ...opts, anchoredFile };
+  const out = [];
+  for (const r of results) {
+    if (r.status === "needs-review" && !opts.includeNeedsReview)
+      continue;
+    if (!r.best)
+      continue;
+    out.push(buildReconCard(r, blockIdFor2(r), withFile));
+  }
+  return out;
+}
+function renderCardsFile(cards, opts = {}) {
+  const out = ["---"];
+  if (opts.transcriptRef)
+    out.push(`source: ${opts.transcriptRef}`);
+  if (opts.sourceLabel)
+    out.push(`source_media: ${opts.sourceLabel}`);
+  out.push("tags: [flashcards/jp-recon]", "generated: jp-collocations reconciliation cards", "---", "");
+  out.push("# \u7167\u5408\u30D5\u30E9\u30C3\u30B7\u30E5\u30AB\u30FC\u30C9\uFF08\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7\u30FB\u30A2\u30F3\u30AB\u30FC\u4ED8\u304D\uFF09", "");
+  out.push("> \u5404\u30AB\u30FC\u30C9\u306F\u6587\u5B57\u8D77\u3053\u3057\u306E\u8A72\u5F53\u30D6\u30ED\u30C3\u30AF\u3078\u306E\u30D3\u30E5\u30FC\uFF08\u539F\u6587\u30EA\u30F3\u30AF\uFF0BYouTube \u6642\u523B\u30EA\u30F3\u30AF\uFF09\u3002\u65B0\u898F\u30CE\u30FC\u30C8\u306F\u4F5C\u308A\u307E\u305B\u3093\u3002", "");
+  for (const c of cards) {
+    out.push(c.markdown, "");
+  }
+  return out.join("\n");
+}
+
 // src/main.ts
-var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
+var JPCollocationsPlugin = class extends import_obsidian16.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULT_SETTINGS };
     this.scraper = null;
+    this.twcScraper = null;
+    /** Status-bar item showing sidecar coverage for the current session. */
+    this.sidecarStatusEl = null;
   }
   async onload() {
     await this.loadSettings();
+    this.surferBridge = new SurferBridge(async (data) => {
+      const existing = await this.loadData();
+      await this.saveData({ ...existing, _surferBridge: data });
+    }, this.app);
+    const stored = await this.loadData();
+    if (stored == null ? void 0 : stored._surferBridge) {
+      this.surferBridge.load(stored._surferBridge);
+    } else if (stored == null ? void 0 : stored._surferEntries) {
+      this.surferBridge.load({ entries: stored._surferEntries });
+    }
+    let indexTimer = null;
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", (leaf) => {
+        if (indexTimer)
+          clearTimeout(indexTimer);
+        indexTimer = setTimeout(() => {
+          if (!leaf)
+            return;
+          const file = this.app.workspace.getActiveFile();
+          if (!file || file.extension !== "md")
+            return;
+          this.app.vault.cachedRead(file).then((content) => {
+            void this.surferBridge.indexFileWithSidecar(file.path, content);
+          });
+        }, 200);
+      })
+    );
     const dataPath = `${this.app.vault.configDir}/plugins/jp-collocations/${this.settings.dataFilePath}`;
     this.store = new CollocationStore(this.app, dataPath);
     await this.store.load();
     this.engine = new SearchEngine(this.store);
+    this.dictStore = new DictionaryStore(this.app, async (data) => {
+      const existing = await this.loadData();
+      await this.saveData({ ...existing, _dictStore: data });
+    });
+    if (stored == null ? void 0 : stored._dictStore) {
+      this.dictStore.loadFromData(stored._dictStore);
+    }
+    this.reconLibrary = new ReconLibrary(async () => {
+      const existing = await this.loadData();
+      await this.saveData({ ...existing, _reconLibrary: this.reconLibrary.toData() });
+    });
+    if (stored == null ? void 0 : stored._reconLibrary)
+      this.reconLibrary.loadFromData(stored._reconLibrary);
+    this.xCorpus = new XCorpusStore(async (data) => {
+      const existing = await this.loadData();
+      await this.saveData({ ...existing, _xCorpus: data });
+    });
+    if (stored == null ? void 0 : stored._xCorpus)
+      this.xCorpus.loadFromData(stored._xCorpus);
+    this.xClient = new XClient(() => this.settings.x);
+    this.contextEngine = new ContextEngine(
+      this.app,
+      this.dictStore,
+      this.store,
+      this.surferBridge,
+      this.xCorpus
+    );
     this.registerView(
       JP_COLLOCATIONS_VIEW_TYPE,
-      (leaf) => new CollocationView(leaf, this.store, this.engine, this.settings)
+      (leaf) => new CollocationView(leaf, this.store, this.engine, this.settings, this.contextEngine, this.dictStore)
     );
+    this.registerView(
+      JP_DICTIONARY_VIEW_TYPE,
+      (leaf) => new DictionaryView(leaf, this.dictStore, async () => {
+        await this.dictStore.save();
+        this.refreshDictionaryViews();
+      }, (expression, reading, example) => {
+        this.saveEntryFromDict(expression, reading, example);
+      }, this.contextEngine)
+    );
+    this.registerView(JP_X_VIEW_TYPE, (leaf) => new XSearchView(leaf, this.makeXDeps()));
+    this.registerView(JP_RECON_LIBRARY_VIEW_TYPE, (leaf) => new LibraryView(leaf, {
+      library: this.reconLibrary,
+      onRetype: (entry2, cls) => this.retypeReconNote(entry2, cls),
+      openBlock: (entry2) => this.app.workspace.openLinkText(`${entry2.file}#^${entry2.blockId}`, "", false).then(() => void 0)
+    }));
     this.addSettingTab(new SettingsTab(
       this.app,
       this,
@@ -2613,7 +16789,7 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       editorCallback: (editor) => {
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian7.Notice("Select some Japanese text first!");
+          new import_obsidian16.Notice("Select some Japanese text first!");
           return;
         }
         const classifier = new TextClassifier();
@@ -2636,12 +16812,724 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       name: "Fetch from Hyogen",
       callback: () => this.fetchFromHyogen()
     });
+    this.addCommand({
+      id: "fetch-twc",
+      name: "Fetch Collocations from TWC (\u7B51\u6CE2\u30A6\u30A7\u30D6\u30B3\u30FC\u30D1\u30B9)",
+      editorCallback: (editor) => {
+        const selected = editor.getSelection().trim();
+        if (!selected) {
+          new import_obsidian16.Notice("\u691C\u7D22\u8A9E\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
+          return;
+        }
+        this.fetchFromTWC([selected]);
+      }
+    });
+    this.addCommand({
+      id: "fetch-twc-wordlist",
+      name: "Fetch TWC Collocations (Word List)",
+      callback: () => this.fetchFromTWCWordlist()
+    });
+    this.addCommand({
+      id: "generate-srs-from-selection",
+      name: "Generate SRS Cards from Selection",
+      editorCallback: (editor) => {
+        const selected = editor.getSelection();
+        if (!selected || selected.trim().length === 0) {
+          new import_obsidian16.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
+          return;
+        }
+        const file = this.app.workspace.getActiveFile();
+        new CardPreviewModal(
+          this.app,
+          selected,
+          [],
+          file == null ? void 0 : file.path,
+          this.settings.srs
+        ).open();
+      }
+    });
+    this.addCommand({
+      id: "generate-phrase-in-context",
+      name: "Phrase-in-Context Card from Selection (\u7A74\u57CB\u3081)",
+      editorCallback: async (editor) => {
+        const selected = editor.getSelection();
+        if (!selected || selected.trim().length === 0) {
+          new import_obsidian16.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
+          return;
+        }
+        const file = this.app.workspace.getActiveFile();
+        let fullText = selected;
+        let selStart = 0;
+        if (file) {
+          fullText = await this.app.vault.cachedRead(file);
+          const cursor = editor.getCursor("from");
+          selStart = editor.posToOffset(cursor);
+        }
+        const card = generatePhraseInContextCard(
+          selected,
+          fullText,
+          selStart,
+          file == null ? void 0 : file.path,
+          this.settings.srs
+        );
+        new CardPreviewModal(
+          this.app,
+          "",
+          [],
+          file == null ? void 0 : file.path,
+          this.settings.srs,
+          [card]
+        ).open();
+      }
+    });
+    this.addCommand({
+      id: "generate-srs-from-file",
+      name: "Generate SRS Cards from Current File",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) {
+          new import_obsidian16.Notice("\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
+          return;
+        }
+        const content = await this.app.vault.cachedRead(file);
+        new CardPreviewModal(
+          this.app,
+          content,
+          [],
+          file.path,
+          this.settings.srs
+        ).open();
+      }
+    });
+    this.addCommand({
+      id: "generate-srs-collocations",
+      name: "Generate SRS Cards from All Collocations",
+      callback: () => {
+        const entries = this.store.exportAll();
+        new CardPreviewModal(
+          this.app,
+          "",
+          entries,
+          void 0,
+          this.settings.srs
+        ).open();
+      }
+    });
+    this.addCommand({
+      id: "reconcile-notes-transcript",
+      name: "Reconcile Notes Against Source Transcript",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) {
+          new import_obsidian16.Notice("\u30CE\u30FC\u30C8\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
+          return;
+        }
+        const content = await this.app.vault.cachedRead(file);
+        const src = frontmatterSource(content);
+        if (!src) {
+          new import_obsidian16.Notice("frontmatter \u306B `source: [[transcript]]` \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044");
+          return;
+        }
+        const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
+        if (!tFile) {
+          new import_obsidian16.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${src}`);
+          return;
+        }
+        const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
+        if (!lines.length) {
+          new import_obsidian16.Notice("\u6587\u5B57\u8D77\u3053\u3057\u306B\u884C\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\uFF08\u5B57\u5E55\u306A\u3057\uFF1F\uFF09");
+          return;
+        }
+        const notes = extractNotePhrases(content);
+        if (!notes.length) {
+          new import_obsidian16.Notice("\u7167\u5408\u3059\u308B\u30E1\u30E2\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
+          return;
+        }
+        const readingOf = makeDictionaryReadingResolver(this.dictStore);
+        const results = reconcile(notes, lines, readingOf);
+        const outPath = file.path.replace(/\.md$/, "") + "-reconciled.md";
+        const priorClass = this.reconLibrary.classMapForFile(outPath);
+        const anchored = renderAnchoredFile(results, {
+          sourceLabel: tFile.basename,
+          transcriptRef: `[[${tFile.basename}]]`,
+          priorClass
+        });
+        const existing = this.app.vault.getAbstractFileByPath(outPath);
+        const outFile = existing instanceof import_obsidian16.TFile ? (await this.app.vault.modify(existing, anchored), existing) : await this.app.vault.create(outPath, anchored);
+        this.reconLibrary.removeForFile(outPath);
+        this.reconLibrary.upsertMany(buildEntries(results, outPath, priorClass));
+        this.refreshReconLibrary();
+        const auto = results.filter((r) => r.status === "auto").length;
+        new import_obsidian16.Notice(`\u7167\u5408\u5B8C\u4E86: ${results.length}\u4EF6\uFF08auto ${auto} / \u8981\u78BA\u8A8D ${results.length - auto}\uFF09\u2014 \u7167\u5408\u30E9\u30A4\u30D6\u30E9\u30EA\u306B\u8FFD\u52A0`);
+        await this.app.workspace.getLeaf(false).openFile(outFile);
+      }
+    });
+    this.addCommand({
+      id: "generate-recon-cards",
+      name: "Generate Timestamp-Anchored Cards from Notes",
+      callback: async () => {
+        var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+        const file = this.app.workspace.getActiveFile();
+        if (!file) {
+          new import_obsidian16.Notice("\u30CE\u30FC\u30C8\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
+          return;
+        }
+        const content = await this.app.vault.cachedRead(file);
+        const src = frontmatterSource(content);
+        if (!src) {
+          new import_obsidian16.Notice("frontmatter \u306B `source: [[transcript]]` \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044");
+          return;
+        }
+        const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
+        if (!tFile) {
+          new import_obsidian16.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${src}`);
+          return;
+        }
+        const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
+        if (!lines.length) {
+          new import_obsidian16.Notice("\u6587\u5B57\u8D77\u3053\u3057\u306B\u884C\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\uFF08\u5B57\u5E55\u306A\u3057\uFF1F\uFF09");
+          return;
+        }
+        const notes = extractNotePhrases(content);
+        if (!notes.length) {
+          new import_obsidian16.Notice("\u7167\u5408\u3059\u308B\u30E1\u30E2\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
+          return;
+        }
+        const results = reconcile(notes, lines, makeDictionaryReadingResolver(this.dictStore));
+        const fm = (_b = (_a = this.app.metadataCache.getFileCache(tFile)) == null ? void 0 : _a.frontmatter) != null ? _b : {};
+        const nfm = (_d = (_c = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _c.frontmatter) != null ? _d : {};
+        const idField = (_l = (_k = (_j = (_i = (_h = (_g = (_f = (_e = fm.videoId) != null ? _e : fm.video) != null ? _f : fm.youtube) != null ? _g : fm.url) != null ? _h : fm.source_url) != null ? _i : nfm.videoId) != null ? _j : nfm.video) != null ? _k : nfm.youtube) != null ? _l : nfm.url;
+        const videoId = parseYouTubeId(typeof idField === "string" ? idField : null);
+        const anchoredFile = file.path.replace(/\.md$/, "") + "-reconciled.md";
+        const classMap = this.reconLibrary.classMapForFile(anchoredFile);
+        const cards = buildReconCards(results, anchoredFile, blockIdFor, {
+          videoId,
+          transcriptRef: `[[${tFile.basename}]]`,
+          audio: deepLinkProvider((p) => !!this.app.vault.getAbstractFileByPath(p)),
+          classOf: (id) => classMap.get(id)
+        });
+        if (!cards.length) {
+          new import_obsidian16.Notice("\u30A2\u30F3\u30AB\u30FC\u53EF\u80FD\u306A\u7167\u5408\u30B9\u30D1\u30F3\u304C\u3042\u308A\u307E\u305B\u3093\uFF08\u8981\u78BA\u8A8D\u306E\u307F\uFF1F\uFF09");
+          return;
+        }
+        const out = renderCardsFile(cards, { transcriptRef: `[[${tFile.basename}]]`, sourceLabel: tFile.basename });
+        const outPath = file.path.replace(/\.md$/, "") + "-cards.md";
+        const existing = this.app.vault.getAbstractFileByPath(outPath);
+        const outFile = existing instanceof import_obsidian16.TFile ? (await this.app.vault.modify(existing, out), existing) : await this.app.vault.create(outPath, out);
+        new import_obsidian16.Notice(`\u30AB\u30FC\u30C9\u751F\u6210: ${cards.length}\u4EF6${videoId ? "\uFF08YouTube \u30EA\u30F3\u30AF\u4ED8\u304D\uFF09" : "\uFF08\u539F\u6587\u30EA\u30F3\u30AF\u306E\u307F\uFF09"}`);
+        await this.app.workspace.getLeaf(false).openFile(outFile);
+      }
+    });
+    this.addCommand({
+      id: "open-dictionary",
+      name: "Open Dictionary",
+      callback: () => this.openDictionaryView()
+    });
+    this.addCommand({
+      id: "dictionary-lookup",
+      name: "Look Up Selected Word in Dictionary",
+      editorCallback: (editor) => {
+        const selected = editor.getSelection().trim();
+        if (!selected) {
+          new import_obsidian16.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
+          return;
+        }
+        this.openDictionaryView(selected);
+      }
+    });
     this.addRibbonIcon("languages", "JP Collocations", () => this.openLexiconView());
+    this.addRibbonIcon("book-open", "JP Dictionary", () => this.openDictionaryView());
+    this.addRibbonIcon("search", "X Search", () => this.openXView());
+    this.addRibbonIcon("library", "\u7167\u5408\u30E9\u30A4\u30D6\u30E9\u30EA", () => this.openReconLibrary());
+    this.addCommand({
+      id: "open-x-search",
+      name: "Open X Search",
+      callback: () => this.openXView()
+    });
+    this.addCommand({
+      id: "x-search-selection",
+      name: "Search Selection on X",
+      editorCallback: (editor) => {
+        const sel = editor.getSelection().trim();
+        if (!sel) {
+          new import_obsidian16.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
+          return;
+        }
+        this.openXView(sel);
+      }
+    });
+    this.addCommand({
+      id: "x-cooc-mobile",
+      name: "X \u5171\u8D77\u30C1\u30A7\u30C3\u30AF\uFF08\u30E2\u30D0\u30A4\u30EB / Scriptable\uFF09",
+      callback: async () => {
+        var _a, _b, _c;
+        const editor = (_a = this.app.workspace.activeEditor) == null ? void 0 : _a.editor;
+        let raw = (_c = (_b = editor == null ? void 0 : editor.getSelection()) == null ? void 0 : _b.trim()) != null ? _c : "";
+        if (!raw) {
+          try {
+            raw = (await navigator.clipboard.readText()).trim();
+          } catch (e) {
+            raw = "";
+          }
+        }
+        await this.xCoocMobile(raw);
+      }
+    });
+    this.registerObsidianProtocolHandler(X_CAPTURE_ACTION, (params) => {
+      void this.handleXCapture(params);
+    });
+    let activeSelMode = "sentence";
+    const selToolbarEl = this.addStatusBarItem();
+    selToolbarEl.addClass("jp-sel-status-bar");
+    const updateToolbar = () => {
+      renderSelectionToolbar(selToolbarEl, activeSelMode, (mode) => {
+        activeSelMode = mode;
+        updateToolbar();
+      });
+    };
+    updateToolbar();
+    this.sidecarStatusEl = this.addStatusBarItem();
+    this.sidecarStatusEl.addClass("jp-status-bar-sidecar");
+    const updateSidecarStatus = () => {
+      if (!this.sidecarStatusEl)
+        return;
+      const s = this.surferBridge.getCoverageStats();
+      const ratio = s.indexed > 0 ? `${s.applied}/${s.indexed}` : "0/0";
+      this.sidecarStatusEl.setText(`\u{1F4CA} ${ratio} sidecars`);
+      const reasonLines = Object.entries(s.byReason).map(([k, v]) => `  ${k}: ${v}`).join("\n");
+      this.sidecarStatusEl.title = `Sidecars applied: ${ratio}` + (reasonLines ? `
+Unapplied breakdown:
+${reasonLines}` : "");
+    };
+    updateSidecarStatus();
+    this.registerInterval(window.setInterval(updateSidecarStatus, 5e3));
+    this.addCommand({
+      id: "sidecar-coverage",
+      name: "Show Sidecar Coverage Breakdown",
+      callback: () => {
+        const s = this.surferBridge.getCoverageStats();
+        const ratio = s.indexed > 0 ? `${s.applied}/${s.indexed}` : "0/0";
+        const reasonLines = Object.entries(s.byReason).map(([k, v]) => `  ${k}: ${v}`).join("\n");
+        new import_obsidian16.Notice(
+          `Sidecar coverage: ${ratio} applied` + (reasonLines ? `
+Unapplied:
+${reasonLines}` : "\n(all applied)"),
+          1e4
+        );
+      }
+    });
+    this.addCommand({
+      id: "cycle-selection-mode",
+      name: "Cycle Selection Mode (\u6587\u2194\u7BC0\u2194\u53E5\u2194\u6587\u6CD5\u2194\u7A74\u57CB\u3081)",
+      editorCallback: () => {
+        const modes = ["sentence", "clause", "phrase", "pattern", "blank"];
+        const idx = modes.indexOf(activeSelMode);
+        activeSelMode = modes[(idx + 1) % modes.length];
+        const cfg = SELECTION_MODES.find((m) => m.id === activeSelMode);
+        new import_obsidian16.Notice(`${cfg.icon} ${cfg.label} (${cfg.labelEn})`);
+        updateToolbar();
+      }
+    });
+    this.addCommand({
+      id: "smart-select",
+      name: "Smart Select at Cursor (uses active mode)",
+      editorCallback: (editor) => {
+        const cursorPos = editor.getCursor();
+        const offset = editor.posToOffset(cursorPos);
+        const text = editor.getValue();
+        const result = expandSelection(text, offset, activeSelMode);
+        if (result) {
+          const from = editor.offsetToPos(result.start);
+          const to = editor.offsetToPos(result.end);
+          editor.setSelection(from, to);
+          if (activeSelMode === "blank") {
+            const file = this.app.workspace.getActiveFile();
+            const card = generatePhraseInContextCard(
+              result.selected,
+              text,
+              result.start,
+              file == null ? void 0 : file.path,
+              this.settings.srs
+            );
+            new CardPreviewModal(
+              this.app,
+              "",
+              [],
+              file == null ? void 0 : file.path,
+              this.settings.srs,
+              [card]
+            ).open();
+          }
+        } else {
+          new import_obsidian16.Notice("\u9078\u629E\u5BFE\u8C61\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
+        }
+      }
+    });
+    {
+      const resolver = makeRelationsResolver(this.surferBridge);
+      this.relationsResolver = resolver;
+      setEditorContext({
+        resolver,
+        getActiveFilePath: () => {
+          var _a;
+          return (_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.path;
+        }
+      });
+      setCardGenResolver(resolver);
+      setGrammarSetResolver(resolver);
+      setReadingResolver(resolver);
+      setCollocationViewResolver(resolver);
+    }
+    this.registerEditorExtension(getDiscourseExtensions());
+    this.registerMarkdownPostProcessor(getReadingModePostProcessor());
+    this.addCommand({
+      id: "toggle-reading-mode-highlight",
+      name: "Toggle Reading Mode Discourse Highlight",
+      callback: () => {
+        this.settings.readingModeHighlight = !this.settings.readingModeHighlight;
+        this.saveSettings();
+        document.body.toggleClass("jp-reading-hl-off", !this.settings.readingModeHighlight);
+        new import_obsidian16.Notice(`\u8AAD\u66F8\u30E2\u30FC\u30C9\u30CF\u30A4\u30E9\u30A4\u30C8: ${this.settings.readingModeHighlight ? "ON" : "OFF"}`);
+      }
+    });
+    if (!this.settings.readingModeHighlight) {
+      document.body.addClass("jp-reading-hl-off");
+    }
+    if (this.settings.autoIndexOnStartup) {
+      this.app.workspace.onLayoutReady(() => {
+        this.backgroundIndexVault();
+      });
+    }
+    this.addCommand({
+      id: "toggle-discourse-visualization",
+      name: "Toggle Discourse Visualization",
+      editorCallback: (editor) => {
+        const cmView = editor.cm;
+        if (cmView) {
+          toggleDiscourseVisualization(cmView);
+          const active = cmView.state.field(
+            // re-import avoided by checking directly
+            cmView.state.field !== void 0
+          );
+          new import_obsidian16.Notice("\u8AC7\u8A71\u6587\u6CD5\u53EF\u8996\u5316\uFF1A" + (active ? "ON" : "OFF"));
+        }
+      }
+    });
+    this.addCommand({
+      id: "analyze-relations",
+      name: "Analyze Discourse Relations in Selection",
+      editorCallback: (editor) => {
+        var _a;
+        const text = editor.getSelection().trim() || editor.getValue();
+        const filePath = (_a = this.app.workspace.getActiveFile()) == null ? void 0 : _a.path;
+        const resolved = this.relationsResolver(text, { filePath });
+        const summary = summarizeRelations(resolved.relations);
+        const sourceTag = resolved.source === "sidecar" ? "[sidecar]" : "[heuristic]";
+        new import_obsidian16.Notice(
+          `${sourceTag} \u95A2\u4FC2\u691C\u51FA: ${resolved.relations.length}\u4EF6
+${summary}
+\u30C1\u30E3\u30F3\u30AF: ${resolved.chunks.length}`,
+          8e3
+        );
+      }
+    });
+    this.addCommand({
+      id: "open-dictionary-selection",
+      name: "Look Up Selection in Dictionary (Surfer Bridge)",
+      editorCallback: (editor) => {
+        const sel = editor.getSelection().trim();
+        if (sel)
+          this.openDictionaryView(sel);
+      }
+    });
+  }
+  // ── Surfer Bridge Public API ─────────────────────────────
+  // These methods are called by jp-sentence-surfer- via:
+  //   this.app.plugins.plugins['jp-collocations'].methodName(args)
+  // ── Dictionary lookup (called from surfer toolbar) ─────────
+  /** Open the dictionary view and look up a word */
+  lookupWord(term) {
+    this.openDictionaryView(term);
+  }
+  /** Look up in dictionary and return results directly */
+  dictionaryLookup(term) {
+    return this.dictStore.lookup(term);
+  }
+  /** Open the lexicon/collocations panel */
+  openLexicon() {
+    this.openLexiconView();
+  }
+  // ── Write methods ──────────────────────────────────────────
+  /** Add or update a discourse/collocation entry from Surfer */
+  async addEntryFromSurfer(entry2) {
+    await this.surferBridge.addEntry(entry2);
+  }
+  /** Append discourse context (markers, granularity, chunk) to an existing entry */
+  async addDiscourseContext(id, ctx) {
+    await this.surferBridge.addDiscourseContext(id, ctx);
+  }
+  /** Save an example sentence against an existing entry */
+  async saveExampleSentence(id, text, source) {
+    await this.surferBridge.saveExampleSentence(id, text, source);
+  }
+  /** Index a file's discourse markers (called on file open/edit) */
+  indexFileDiscourse(filePath, content) {
+    this.surferBridge.indexFile(filePath, content);
+  }
+  /** Save a dictionary word as a collocation entry */
+  saveEntryFromDict(expression, reading, example) {
+    const id = `dict-${expression}-${Date.now()}`;
+    const entry2 = {
+      id,
+      surface: expression,
+      reading,
+      capturedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      exampleSentences: example ? [{ text: example, source: "dictionary" }] : []
+    };
+    this.surferBridge.addEntry(entry2);
+  }
+  // ── Discourse analysis methods ─────────────────────────────
+  /** Full discourse analysis of text: patterns, flows, templates, register */
+  analyzeText(text) {
+    return this.surferBridge.analyzeText(text);
+  }
+  /** Segment unsegmented text (like YT transcripts) at discourse boundaries */
+  segmentText(text) {
+    return this.surferBridge.segmentText(text);
+  }
+  // ── Transcript methods ─────────────────────────────────────────
+  /** Full transcript analysis: speakers, turns, discourse patterns per speaker */
+  analyzeTranscript(text) {
+    return this.surferBridge.analyzeTranscriptText(text);
+  }
+  /** Smart analysis: auto-detects transcript vs plain text */
+  smartAnalyze(text) {
+    return this.surferBridge.smartAnalyzeText(text);
+  }
+  /** Analyze sentence-level relations (intra/cross sentence, cross-speaker) */
+  analyzeRelationsPublic(text, filePath) {
+    return this.relationsResolver(text, { filePath });
+  }
+  /** Clean a selection that may contain timestamps/URLs/formatting */
+  cleanSelection(text) {
+    return this.surferBridge.cleanSelectionText(text);
+  }
+  /** Check if text is transcript format */
+  isTranscriptFormat(text) {
+    return this.surferBridge.isTranscript(text);
+  }
+  // ── Query methods ──────────────────────────────────────────
+  /** Scan text for all known surfer collocation surfaces; returns matches with offsets */
+  findCollocationsInText(text) {
+    return this.surferBridge.findInText(text);
+  }
+  /** Find entries whose surface or discourse-context markers match a given surface */
+  searchByDiscourseMarker(surface) {
+    return this.surferBridge.searchByMarker(surface);
+  }
+  /** Return all entries matching a discourse category */
+  searchByCategory(category) {
+    return this.surferBridge.searchByCategory(category);
+  }
+  /** Return every surfer-originated entry */
+  getAllEntries() {
+    return this.surferBridge.getAllEntries();
+  }
+  /** Aggregate stats: totals by category, position, top co-occurrences */
+  getDiscourseStats() {
+    return this.surferBridge.getStats();
+  }
+  // ── KWIC methods ───────────────────────────────────────────
+  /** Get KWIC concordance records for a pattern ID */
+  searchKWIC(patternId) {
+    return this.surferBridge.searchKWIC(patternId);
+  }
+  /** Get KWIC records for a surface form */
+  searchKWICBySurface(surface) {
+    return this.surferBridge.searchKWICBySurface(surface);
+  }
+  /** Search KWIC left/right context for a string */
+  searchKWICContext(query) {
+    return this.surferBridge.searchKWICContext(query);
+  }
+  // ── Variation tree methods ─────────────────────────────────
+  /** Get the variation tree containing a given pattern */
+  getVariationTree(patternId) {
+    return this.surferBridge.getVariationTree(patternId);
+  }
+  /** Get all variation trees for the full pattern database */
+  getAllVariationTrees() {
+    return this.surferBridge.getAllVariationTrees();
+  }
+  // ── Co-occurrence / constellation methods ──────────────────
+  /** Get strongest co-occurrence associations for a pattern */
+  getConstellationFor(patternId, limit) {
+    return this.surferBridge.getConstellationFor(patternId, limit);
+  }
+  /** Get top co-occurrence pairs from the index */
+  getTopCoOccurrencePairs(limit) {
+    return this.surferBridge.getTopCoOccurrencePairs(limit);
+  }
+  // ── Pattern database methods ───────────────────────────────
+  /** Search the built-in discourse pattern database */
+  searchPatterns(query) {
+    return this.surferBridge.searchPatterns(query);
+  }
+  /** Get a specific pattern by ID */
+  getPatternById(id) {
+    return this.surferBridge.getPatternById(id);
+  }
+  /** Get total pattern count in the database */
+  getPatternCount() {
+    return this.surferBridge.getPatternCount();
+  }
+  // ── Vault-wide profiling ───────────────────────────────────
+  /** Build a discourse profile across provided texts */
+  buildVaultProfile(texts) {
+    return this.surferBridge.buildVaultProfile(texts);
+  }
+  // ── Card generation API (for surfer) ─────────────────────────
+  /** Generate a phrase-in-context cloze card from selected text */
+  generatePhraseCard(selection, fullText, selStart, sourceFile) {
+    return generatePhraseInContextCard(selection, fullText, selStart, sourceFile, this.settings.srs);
+  }
+  /** Generate relation-chunk cards for a block of text */
+  generateRelationCards(text, sourceFile) {
+    return generateRelationChunkCards(text, sourceFile, this.settings.srs);
+  }
+  /** Extract collocations from text */
+  extractCollocationsFromText(text) {
+    return extractCollocations(text);
+  }
+  /** Get available selection modes */
+  getSelectionModes() {
+    return SELECTION_MODES;
+  }
+  /** Expand selection at cursor position using a specific mode */
+  expandSelectionAt(text, offset, mode) {
+    return expandSelection(text, offset, mode);
+  }
+  /** Open card preview modal with provided cards */
+  openCardPreview(cards, sourceFile) {
+    new CardPreviewModal(
+      this.app,
+      "",
+      [],
+      sourceFile,
+      this.settings.srs,
+      cards
+    ).open();
   }
   async onunload() {
-    var _a;
+    var _a, _b;
     (_a = this.scraper) == null ? void 0 : _a.abort();
+    (_b = this.twcScraper) == null ? void 0 : _b.abort();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(JP_DICTIONARY_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(JP_X_VIEW_TYPE);
+    this.app.workspace.detachLeavesOfType(JP_RECON_LIBRARY_VIEW_TYPE);
+  }
+  // ── X Search wiring ──────────────────────────────────────────
+  /** Assemble the dependency bundle the X search view needs. */
+  makeXDeps() {
+    return {
+      corpus: this.xCorpus,
+      client: this.xClient,
+      getSettings: () => this.settings.x,
+      saveSettings: () => this.saveSettings(),
+      onSaveCollocation: (surface, example, sourceUrl) => {
+        const id = `x-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+        void this.addEntryFromSurfer({
+          id,
+          surface,
+          capturedAt: (/* @__PURE__ */ new Date()).toISOString(),
+          exampleSentences: [{ text: example, source: `x:${sourceUrl}` }]
+        });
+      }
+    };
+  }
+  /**
+   * iOS: launch a two-or-more-term co-occurrence lookup. `raw` is freeform
+   * ("今まで 勘案したら" / quoted phrases). Opens the x.com search in the
+   * default browser (Orion), where the JP-X-Cooc userscript scrapes the
+   * results and calls back into `handleXCapture`. (x.com's SPA won't run in an
+   * embedded WebView, so a real browser is required on iOS.)
+   */
+  async xCoocMobile(raw) {
+    const terms = parseTerms(raw);
+    if (terms.length < 2) {
+      new import_obsidian16.Notice("\u5171\u8D77\u30C1\u30A7\u30C3\u30AF\u306B\u306F2\u8A9E\u4EE5\u4E0A\u5FC5\u8981\u3067\u3059\uFF08\u4F8B: \u4ECA\u307E\u3067 \u52D8\u6848\u3057\u305F\u3089\uFF09\u3002\u8A9E\u3092\u9078\u629E\u3059\u308B\u304B\u30B3\u30D4\u30FC\u3057\u3066\u304B\u3089\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 7e3);
+      return;
+    }
+    const s = this.settings.x;
+    const query = emptyQuery(s.defaultLang, "Latest");
+    query.allTerms = terms;
+    const { url, rawQuery } = buildBrowserCaptureUrl({
+      query,
+      vaultName: this.app.vault.getName()
+    });
+    new import_obsidian16.Notice(`X \u5171\u8D77\u30C1\u30A7\u30C3\u30AF: ${rawQuery} \u2026\uFF08\u30D6\u30E9\u30A6\u30B6\u3067\u53D6\u5F97\u3057\u3066\u623B\u308A\u307E\u3059\uFF09`, 5e3);
+    try {
+      window.open(url, "_blank");
+    } catch (e) {
+      new import_obsidian16.Notice("\u30D6\u30E9\u30A6\u30B6\u3092\u958B\u3051\u307E\u305B\u3093\u3067\u3057\u305F\u3002", 6e3);
+    }
+  }
+  /** Receive the Scriptable capture callback: ingest tweets, then show the answer. */
+  async handleXCapture(params) {
+    var _a, _b, _c;
+    const n = parseInt((_a = params.n) != null ? _a : "0", 10) || 0;
+    const total = parseInt((_b = params.total) != null ? _b : "0", 10) || 0;
+    let added = 0;
+    if (params.data) {
+      try {
+        const jsonl = decodeCaptureData(params.data);
+        const res = this.xCorpus.importJsonl(jsonl);
+        added = res.added;
+        await this.xCorpus.save();
+      } catch (e) {
+        new import_obsidian16.Notice(`\u53D6\u308A\u8FBC\u307F\u30A8\u30E9\u30FC: ${e.message}`, 6e3);
+        return;
+      }
+    }
+    if (n === 0) {
+      new import_obsidian16.Notice(`\u5171\u8D77\u306A\u3057\uFF08${total}\u4EF6\u4E2D\u3067\u4E21\u65B9\u3092\u542B\u3080\u30C4\u30A4\u30FC\u30C8\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\uFF09`, 7e3);
+      return;
+    }
+    new import_obsidian16.Notice(`\u5171\u8D77 ${n}\u4EF6\uFF08\u65B0\u898F ${added}\u4EF6 / \u8D70\u67FB ${total}\u4EF6\uFF09`, 5e3);
+    const q = (_c = params.q) != null ? _c : "";
+    await this.openXView(q || void 0, false);
+  }
+  /** Open (or reveal) the X search view, optionally seeding a query. */
+  async openXView(query, live = true) {
+    var _a;
+    let leaf;
+    const existing = this.app.workspace.getLeavesOfType(JP_X_VIEW_TYPE);
+    if (existing.length > 0) {
+      leaf = existing[0];
+    } else {
+      leaf = (_a = this.app.workspace.getRightLeaf(false)) != null ? _a : void 0;
+      if (leaf)
+        await leaf.setViewState({ type: JP_X_VIEW_TYPE, active: true });
+    }
+    if (leaf) {
+      this.app.workspace.revealLeaf(leaf);
+      if (query) {
+        const target = leaf;
+        setTimeout(() => target.view.searchFor(query, live), 150);
+      }
+    }
+  }
+  // ── Surfer integration: call surfer commands from collocations ─
+  /** Get the jp-sentence-surfer plugin instance if available */
+  getSurferPlugin() {
+    var _a, _b;
+    const plugins = this.app.plugins;
+    return (_b = (_a = plugins == null ? void 0 : plugins.plugins) == null ? void 0 : _a["jp-sentence-surfer"]) != null ? _b : null;
+  }
+  /** Check if jp-sentence-surfer is available */
+  isSurferAvailable() {
+    return this.getSurferPlugin() !== null;
   }
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
@@ -2661,9 +17549,119 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       this.app.workspace.revealLeaf(leaf);
     }
   }
+  /**
+   * Background vault indexing — resilient, non-blocking, phone-friendly.
+   *
+   * Strategy:
+   *   - Batch 2 files at a time (tiny batches for mobile)
+   *   - requestIdleCallback-based scheduling (falls back to setTimeout)
+   *   - Skip already-indexed files
+   *   - Skip very large files (>50KB) to avoid jank
+   *   - Stop if plugin is unloading
+   */
+  backgroundIndexVault() {
+    const files = this.app.vault.getMarkdownFiles();
+    const indexed = new Set(this.surferBridge.getIndexedFiles());
+    const unindexed = files.filter((f) => !indexed.has(f.path));
+    if (unindexed.length === 0)
+      return;
+    let i = 0;
+    const batchSize = 2;
+    const maxFileSize = 5e4;
+    let stopped = false;
+    this.register(() => {
+      stopped = true;
+    });
+    const scheduleNext = () => {
+      if (stopped || i >= unindexed.length)
+        return;
+      const run = async () => {
+        if (stopped)
+          return;
+        const end = Math.min(i + batchSize, unindexed.length);
+        for (; i < end; i++) {
+          if (stopped)
+            return;
+          const file = unindexed[i];
+          try {
+            const stat = file.stat;
+            if (stat && stat.size > maxFileSize)
+              continue;
+            const content = await this.app.vault.cachedRead(file);
+            if (content.length > 10 && content.length <= maxFileSize) {
+              this.surferBridge.indexFile(file.path, content);
+            }
+          } catch (e) {
+          }
+        }
+        scheduleNext();
+      };
+      if (typeof window.requestIdleCallback === "function") {
+        window.requestIdleCallback(run, { timeout: 200 });
+      } else {
+        setTimeout(run, 80);
+      }
+    };
+    scheduleNext();
+  }
   refreshViews() {
     for (const leaf of this.app.workspace.getLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE)) {
       leaf.view.refresh();
+    }
+  }
+  refreshDictionaryViews() {
+    for (const leaf of this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE)) {
+      leaf.view.refresh();
+    }
+  }
+  async openReconLibrary() {
+    const existing = this.app.workspace.getLeavesOfType(JP_RECON_LIBRARY_VIEW_TYPE);
+    if (existing.length) {
+      this.app.workspace.revealLeaf(existing[0]);
+      return;
+    }
+    const leaf = this.app.workspace.getRightLeaf(false);
+    if (!leaf)
+      return;
+    await leaf.setViewState({ type: JP_RECON_LIBRARY_VIEW_TYPE, active: true });
+    this.app.workspace.revealLeaf(leaf);
+  }
+  refreshReconLibrary() {
+    for (const leaf of this.app.workspace.getLeavesOfType(JP_RECON_LIBRARY_VIEW_TYPE)) {
+      leaf.view.refresh();
+    }
+  }
+  /** Retype a note (Big-5 router): rewrite the callout class in the source file + persist. */
+  async retypeReconNote(entry2, cls) {
+    const f = this.app.vault.getAbstractFileByPath(entry2.file);
+    if (f instanceof import_obsidian16.TFile) {
+      const md = await this.app.vault.read(f);
+      const next = retypeInMarkdown(md, entry2.blockId, cls);
+      if (next !== md)
+        await this.app.vault.modify(f, next);
+    }
+    this.reconLibrary.setClass(entry2.blockId, cls);
+  }
+  async openDictionaryView(query) {
+    var _a;
+    let leaf;
+    const existing = this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE);
+    if (existing.length > 0) {
+      leaf = existing[0];
+    } else {
+      leaf = (_a = this.app.workspace.getRightLeaf(false)) != null ? _a : void 0;
+      if (leaf) {
+        await leaf.setViewState({ type: JP_DICTIONARY_VIEW_TYPE, active: true });
+      }
+    }
+    if (leaf) {
+      this.app.workspace.revealLeaf(leaf);
+      if (query) {
+        setTimeout(() => {
+          const view = leaf.view;
+          view.lookupWord(query);
+        }, 100);
+      }
     }
   }
   importData() {
@@ -2679,10 +17677,10 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
       try {
         const parsed = JSON.parse(text);
         const count = this.store.bulkImport(parsed);
-        new import_obsidian7.Notice(`Imported ${count} entries.`);
+        new import_obsidian16.Notice(`Imported ${count} entries.`);
         this.refreshViews();
       } catch (e) {
-        new import_obsidian7.Notice("Failed to parse JSON file.");
+        new import_obsidian16.Notice("Failed to parse JSON file.");
       }
     };
     input.click();
@@ -2696,31 +17694,61 @@ var JPCollocationsPlugin = class extends import_obsidian7.Plugin {
     a.download = "jp-collocations-export.json";
     a.click();
     URL.revokeObjectURL(url);
-    new import_obsidian7.Notice("Exported collocations.");
+    new import_obsidian16.Notice("Exported collocations.");
   }
   async fetchFromHyogen() {
     var _a;
     if (!this.settings.hyogenEnabled) {
-      new import_obsidian7.Notice("Hyogen scraping is disabled. Enable it in settings first.");
+      new import_obsidian16.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
     }
     if (this.settings.hyogenWordList.length === 0) {
-      new import_obsidian7.Notice("No words configured. Add words to the scrape list in settings.");
+      new import_obsidian16.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
     if ((_a = this.scraper) == null ? void 0 : _a.isRunning()) {
-      new import_obsidian7.Notice("Scraper is already running.");
+      new import_obsidian16.Notice("Scraper is already running.");
       return;
     }
     this.scraper = new HyogenScraper(this.app, this.store, {
       rateLimit: this.settings.hyogenRateLimit,
-      onProgress: (msg) => new import_obsidian7.Notice(msg, 3e3),
+      onProgress: (msg) => new import_obsidian16.Notice(msg, 3e3),
       onEntry: () => this.refreshViews()
     });
     this.scraper.enqueue(this.settings.hyogenWordList);
-    new import_obsidian7.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
+    new import_obsidian16.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
     const count = await this.scraper.run();
-    new import_obsidian7.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    new import_obsidian16.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
+  }
+  async fetchFromTWC(words) {
+    var _a;
+    if (!this.settings.twcEnabled) {
+      new import_obsidian16.Notice("TWC\u691C\u7D22\u306F\u7121\u52B9\u3067\u3059\u3002\u8A2D\u5B9A\u3067\u6709\u52B9\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+      return;
+    }
+    if ((_a = this.twcScraper) == null ? void 0 : _a.isRunning()) {
+      new import_obsidian16.Notice("TWC\u30B9\u30AF\u30EC\u30FC\u30D1\u30FC\u306F\u5B9F\u884C\u4E2D\u3067\u3059\u3002");
+      return;
+    }
+    this.twcScraper = new TsukubaWebCorpusScraper(this.app, this.store, {
+      rateLimit: this.settings.twcRateLimit,
+      onProgress: (msg) => new import_obsidian16.Notice(msg, 3e3),
+      onEntry: () => this.refreshViews()
+    });
+    this.twcScraper.enqueue(words);
+    new import_obsidian16.Notice(`TWC: ${words.length}\u8A9E\u306E\u5171\u8D77\u30D7\u30ED\u30D5\u30A1\u30A4\u30EB\u3092\u53D6\u5F97\u4E2D...`);
+    const count = await this.twcScraper.run();
+    new import_obsidian16.Notice(`TWC\u5B8C\u4E86: ${count}\u4EF6\u306E\u5171\u8D77\u30C7\u30FC\u30BF\u3092\u8FFD\u52A0\u3057\u307E\u3057\u305F\u3002`);
+    this.refreshViews();
+  }
+  async fetchFromTWCWordlist() {
+    const entries = this.store.exportAll();
+    const headwords = [...new Set(entries.map((e) => e.headword))].slice(0, 50);
+    if (headwords.length === 0) {
+      new import_obsidian16.Notice("\u8A9E\u5F59\u30C7\u30FC\u30BF\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u5148\u306B\u30A8\u30F3\u30C8\u30EA\u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+      return;
+    }
+    await this.fetchFromTWC(headwords);
   }
 };

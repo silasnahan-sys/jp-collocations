@@ -43,7 +43,9 @@ import { reconcile, parseTranscriptLines, frontmatterSource, extractNotePhrases 
 import { makeDictionaryReadingResolver } from "./notes/reading-resolver";
 import { LibraryView, JP_RECON_LIBRARY_VIEW_TYPE } from "./ui/LibraryView";
 import { ReconLibrary } from "./notes/recon-library";
-import { renderAnchoredFile, buildEntries, retypeInMarkdown, type LibraryEntry } from "./notes/annotate";
+import { renderAnchoredFile, buildEntries, retypeInMarkdown, blockIdFor, type LibraryEntry } from "./notes/annotate";
+import { buildReconCards, renderCardsFile } from "./notes/cards";
+import { parseYouTubeId, deepLinkProvider } from "./notes/audio-provider";
 import type { NoteClass } from "./notes/note-types";
 import type {
   SurferCollocationEntry,
@@ -390,6 +392,60 @@ export default class JPCollocationsPlugin extends Plugin {
 
         const auto = results.filter((r) => r.status === "auto").length;
         new Notice(`照合完了: ${results.length}件（auto ${auto} / 要確認 ${results.length - auto}）— 照合ライブラリに追加`);
+        await this.app.workspace.getLeaf(false).openFile(outFile);
+      },
+    });
+
+    // Cards + timestamp anchoring (DESIGN §11): turn reconciled spans into
+    // fade-in cloze cards that link back to the transcript block + YouTube moment.
+    this.addCommand({
+      id: "generate-recon-cards",
+      name: "Generate Timestamp-Anchored Cards from Notes",
+      callback: async () => {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) { new Notice("ノートファイルを開いてください"); return; }
+        const content = await this.app.vault.cachedRead(file);
+
+        const src = frontmatterSource(content);
+        if (!src) { new Notice("frontmatter に `source: [[transcript]]` を追加してください"); return; }
+
+        const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
+        if (!tFile) { new Notice(`文字起こしが見つかりません: ${src}`); return; }
+
+        const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
+        if (!lines.length) { new Notice("文字起こしに行が見つかりません（字幕なし？）"); return; }
+
+        const notes = extractNotePhrases(content);
+        if (!notes.length) { new Notice("照合するメモが見つかりません"); return; }
+
+        const results = reconcile(notes, lines, makeDictionaryReadingResolver(this.dictStore));
+
+        // Resolve the source media's YouTube id from the transcript (or notes) frontmatter.
+        const fm = this.app.metadataCache.getFileCache(tFile)?.frontmatter ?? {};
+        const nfm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+        const idField = fm.videoId ?? fm.video ?? fm.youtube ?? fm.url ?? fm.source_url
+          ?? nfm.videoId ?? nfm.video ?? nfm.youtube ?? nfm.url;
+        const videoId = parseYouTubeId(typeof idField === "string" ? idField : null);
+
+        // Cards view the anchored `-reconciled.md` blocks (block-link target).
+        const anchoredFile = file.path.replace(/\.md$/, "") + "-reconciled.md";
+        const classMap = this.reconLibrary.classMapForFile(anchoredFile);
+        const cards = buildReconCards(results, anchoredFile, blockIdFor, {
+          videoId,
+          transcriptRef: `[[${tFile.basename}]]`,
+          audio: deepLinkProvider((p) => !!this.app.vault.getAbstractFileByPath(p)),
+          classOf: (id) => classMap.get(id),
+        });
+        if (!cards.length) { new Notice("アンカー可能な照合スパンがありません（要確認のみ？）"); return; }
+
+        const out = renderCardsFile(cards, { transcriptRef: `[[${tFile.basename}]]`, sourceLabel: tFile.basename });
+        const outPath = file.path.replace(/\.md$/, "") + "-cards.md";
+        const existing = this.app.vault.getAbstractFileByPath(outPath);
+        const outFile = existing instanceof TFile
+          ? (await this.app.vault.modify(existing, out), existing)
+          : await this.app.vault.create(outPath, out);
+
+        new Notice(`カード生成: ${cards.length}件${videoId ? "（YouTube リンク付き）" : "（原文リンクのみ）"}`);
         await this.app.workspace.getLeaf(false).openFile(outFile);
       },
     });
