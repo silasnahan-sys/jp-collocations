@@ -39,7 +39,7 @@ import { SurferBridge } from "./surfer-bridge";
 import { makeRelationsResolver, type RelationsResolver } from "./discourse/relations-resolver";
 import { setGrammarSetResolver } from "./srs/grammar-set-engine";
 import { ContextEngine } from "./context/ContextEngine";
-import { reconcile, parseTranscriptLines, frontmatterSource, extractNotePhrases, type ReconciledResult } from "./notes/pipeline";
+import { reconcile, parseTranscriptLines, frontmatterSource, frontmatterAny, extractNotePhrases, type ReconciledResult } from "./notes/pipeline";
 import { makeDictionaryReadingResolver } from "./notes/reading-resolver";
 import { LibraryView, JP_RECON_LIBRARY_VIEW_TYPE } from "./ui/LibraryView";
 import { ReconLibrary } from "./notes/recon-library";
@@ -1141,16 +1141,24 @@ export default class JPCollocationsPlugin extends Plugin {
     if (!src) { new Notice("frontmatter に `source: [[transcript]]` を追加してください"); return null; }
     const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
     if (!tFile) { new Notice(`文字起こしが見つかりません: ${src}`); return null; }
-    const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
+    const tContent = await this.app.vault.cachedRead(tFile);
+    const lines = parseTranscriptLines(tContent);
     if (!lines.length) { new Notice("文字起こしに行が見つかりません（字幕なし？）"); return null; }
     const notes = extractNotePhrases(content);
     if (!notes.length) { new Notice("照合するメモが見つかりません"); return null; }
     const results = reconcile(notes, lines, makeDictionaryReadingResolver(this.dictStore));
-    return { file, tFile, videoId: this.resolveVideoId(file, tFile), results };
+    return { file, tFile, videoId: this.resolveVideoId(file, tFile, tContent, content), results };
   }
 
-  /** Resolve the source media's YouTube id from the transcript (or notes) frontmatter. */
-  private resolveVideoId(file: TFile, tFile: TFile): string | null {
+  /** Resolve the source media's YouTube id. Prefers the RAW frontmatter of the
+   *  transcript/notes we just read (robust to a stale metadataCache right after an
+   *  edit); falls back to the cache. Keys: video / videoId / youtube / url. */
+  private resolveVideoId(file: TFile, tFile: TFile, transcriptMd?: string, notesMd?: string): string | null {
+    const KEYS = ["video", "videoId", "youtube", "url", "source_url"];
+    const raw = (transcriptMd && frontmatterAny(transcriptMd, KEYS)) || (notesMd && frontmatterAny(notesMd, KEYS)) || null;
+    const fromRaw = parseYouTubeId(raw);
+    if (fromRaw) return fromRaw;
+    // Fallback: Obsidian's parsed frontmatter cache.
     const fm = this.app.metadataCache.getFileCache(tFile)?.frontmatter ?? {};
     const nfm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
     const idField = fm.videoId ?? fm.video ?? fm.youtube ?? fm.url ?? fm.source_url

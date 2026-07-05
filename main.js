@@ -16545,6 +16545,24 @@ function frontmatterSource(md) {
     return null;
   return m[1].replace(/^["'\[]+|["'\]]+$/g, "").trim() || null;
 }
+function frontmatterField(md, key) {
+  const fm = md.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/);
+  if (!fm)
+    return null;
+  const safeKey = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const m = fm[1].match(new RegExp(`^\\s*${safeKey}:\\s*(.+?)\\s*$`, "m"));
+  if (!m)
+    return null;
+  return m[1].replace(/^["'[]+|["'\]]+$/g, "").trim() || null;
+}
+function frontmatterAny(md, keys) {
+  for (const k of keys) {
+    const v = frontmatterField(md, k);
+    if (v)
+      return v;
+  }
+  return null;
+}
 function extractNotePhrases(md) {
   const body = md.replace(/^---\n[\s\S]*?\n---\n?/, "");
   const out = [];
@@ -17912,7 +17930,8 @@ ${summary}
       new import_obsidian16.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${src}`);
       return null;
     }
-    const lines = parseTranscriptLines(await this.app.vault.cachedRead(tFile));
+    const tContent = await this.app.vault.cachedRead(tFile);
+    const lines = parseTranscriptLines(tContent);
     if (!lines.length) {
       new import_obsidian16.Notice("\u6587\u5B57\u8D77\u3053\u3057\u306B\u884C\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\uFF08\u5B57\u5E55\u306A\u3057\uFF1F\uFF09");
       return null;
@@ -17923,11 +17942,18 @@ ${summary}
       return null;
     }
     const results = reconcile(notes, lines, makeDictionaryReadingResolver(this.dictStore));
-    return { file, tFile, videoId: this.resolveVideoId(file, tFile), results };
+    return { file, tFile, videoId: this.resolveVideoId(file, tFile, tContent, content), results };
   }
-  /** Resolve the source media's YouTube id from the transcript (or notes) frontmatter. */
-  resolveVideoId(file, tFile) {
+  /** Resolve the source media's YouTube id. Prefers the RAW frontmatter of the
+   *  transcript/notes we just read (robust to a stale metadataCache right after an
+   *  edit); falls back to the cache. Keys: video / videoId / youtube / url. */
+  resolveVideoId(file, tFile, transcriptMd, notesMd) {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l;
+    const KEYS = ["video", "videoId", "youtube", "url", "source_url"];
+    const raw = transcriptMd && frontmatterAny(transcriptMd, KEYS) || notesMd && frontmatterAny(notesMd, KEYS) || null;
+    const fromRaw = parseYouTubeId(raw);
+    if (fromRaw)
+      return fromRaw;
     const fm = (_b = (_a = this.app.metadataCache.getFileCache(tFile)) == null ? void 0 : _a.frontmatter) != null ? _b : {};
     const nfm = (_d = (_c = this.app.metadataCache.getFileCache(file)) == null ? void 0 : _c.frontmatter) != null ? _d : {};
     const idField = (_l = (_k = (_j = (_i = (_h = (_g = (_f = (_e = fm.videoId) != null ? _e : fm.video) != null ? _f : fm.youtube) != null ? _g : fm.url) != null ? _h : fm.source_url) != null ? _i : nfm.videoId) != null ? _j : nfm.video) != null ? _k : nfm.youtube) != null ? _l : nfm.url;

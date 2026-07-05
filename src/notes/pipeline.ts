@@ -59,6 +59,27 @@ export function frontmatterSource(md: string): string | null {
   return m[1].replace(/^["'\[]+|["'\]]+$/g, '').trim() || null;
 }
 
+/** Read a single scalar `key: value` from the leading YAML frontmatter block.
+ *  Parses the raw text (not Obsidian's metadataCache), so it works even when the
+ *  cache is stale right after an edit. Returns the unquoted value or null. */
+export function frontmatterField(md: string, key: string): string | null {
+  const fm = md.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/);
+  if (!fm) return null;
+  const safeKey = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m = fm[1].match(new RegExp(`^\\s*${safeKey}:\\s*(.+?)\\s*$`, 'm'));
+  if (!m) return null;
+  return m[1].replace(/^["'[]+|["'\]]+$/g, '').trim() || null;
+}
+
+/** First non-null frontmatter value among several candidate keys. */
+export function frontmatterAny(md: string, keys: string[]): string | null {
+  for (const k of keys) {
+    const v = frontmatterField(md, k);
+    if (v) return v;
+  }
+  return null;
+}
+
 /** Extract candidate note phrases from a notes file: plain text lines, list
  *  items, and callout bodies — skipping frontmatter, headings, and blockquotes. */
 export function extractNotePhrases(md: string): string[] {
