@@ -235,6 +235,112 @@ export function ffprobeFrom(ffmpegPath: string): string {
   return ffmpegPath.replace(/[\\/]$/, '') + sep + exe;
 }
 
+/** The ffmpeg binary path derived from an ffmpeg dir/binary setting. */
+export function ffmpegBinFrom(ffmpegPath: string): string {
+  if (!ffmpegPath) return 'ffmpeg';
+  if (/ffmpeg(\.exe)?$/i.test(ffmpegPath)) return ffmpegPath;
+  const sep = ffmpegPath.includes('\\') ? '\\' : '/';
+  const exe = ffmpegPath.includes('\\') ? 'ffmpeg.exe' : 'ffmpeg';
+  return ffmpegPath.replace(/[\\/]$/, '') + sep + exe;
+}
+
+// ── BATCH PATH: download full audio ONCE, cut clips locally (DESIGN §12) ───────
+// `--download-sections` makes yt-dlp seek into the video *per clip*, which is slow
+// and, for later timestamps in a long video, hangs. When several clips come from
+// the SAME video, download the audio stream once (one nsig solve, one connection)
+// and cut every clip locally with ffmpeg — instant and hang-proof.
+
+export interface FullAudioResult {
+  ok: boolean; srcPath: string; bytes: number; command: string; error?: string; stderrTail?: string;
+}
+
+/** yt-dlp args to fetch the whole audio-only stream (no sectioning). */
+export function buildFullAudioArgs(cfg: AudioExtractionConfig, videoId: string, outTemplate: string): string[] {
+  const args: string[] = [];
+  if (cfg.ffmpegPath) args.push('--ffmpeg-location', cfg.ffmpegPath);
+  if (cfg.jsRuntime) args.push('--js-runtimes', cfg.jsRuntime);
+  args.push(
+    '-f', '140/bestaudio[ext=m4a]/bestaudio',
+    '--no-playlist', '--no-part',
+    '--socket-timeout', '30', '--retries', '3', '--fragment-retries', '3',
+    '--no-progress', '--ignore-config',
+    '-o', outTemplate,
+    `https://youtu.be/${videoId}`,
+  );
+  return args;
+}
+
+function findByPrefix(dir: string, prefix: string): string | null {
+  try {
+    const fs = nodeReq<{ readdirSync(p: string): string[] }>('fs');
+    const path = nodeReq<{ join(...p: string[]): string }>('path');
+    for (const f of fs.readdirSync(dir)) if (f.startsWith(prefix) && !f.endsWith('.part')) return path.join(dir, f);
+  } catch { /* */ }
+  return null;
+}
+
+/** Download the full audio-only stream into `folderAbs` as `_srcaudio_<id>.<ext>`.
+ *  DESKTOP ONLY. Never throws. Generous timeout (audio for a long video is ~tens of MB). */
+export async function downloadFullAudio(cfg: AudioExtractionConfig, videoId: string, folderAbs: string): Promise<FullAudioResult> {
+  const bin = cfg.ytdlpPath || 'yt-dlp';
+  const prefix = `_srcaudio_${videoId}`;
+  const outTemplate = `${folderAbs}/${prefix}.%(ext)s`;
+  const args = buildFullAudioArgs(cfg, videoId, outTemplate);
+  const command = commandLine(bin, args);
+  const fs = nodeReq<{ existsSync(p: string): boolean; statSync(p: string): { size: number }; unlinkSync(p: string): void }>('fs');
+
+  const stale = findByPrefix(folderAbs, prefix);
+  if (stale) { try { fs.unlinkSync(stale); } catch { /* */ } }
+
+  let res: { code: number | null; stderr: string; stdout: string };
+  try {
+    res = await run(bin, args, 240_000);   // 4 min ceiling for the single full download
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const hint = /ENOENT/.test(msg) ? `yt-dlp が見つかりません（${bin}）。` : msg;
+    return { ok: false, srcPath: '', bytes: 0, command, error: hint };
+  }
+  const src = findByPrefix(folderAbs, prefix);
+  const bytes = src && fs.existsSync(src) ? fs.statSync(src).size : 0;
+  if (res.code !== 0 || !src || bytes < 1024) {
+    const jsHint = /No supported JavaScript runtime/i.test(res.stderr)
+      ? '\nJavaScript ランタイム（deno か node）が必要です。' : '';
+    return { ok: false, srcPath: '', bytes, command, error: `full-audio ダウンロード失敗 (exit ${res.code}, ${bytes}B)${jsHint}`, stderrTail: tail(res.stderr) };
+  }
+  return { ok: true, srcPath: src, bytes, command };
+}
+
+/** Cut one clip from a LOCAL audio file with ffmpeg (no network → never hangs). */
+export async function clipFromLocal(
+  cfg: AudioExtractionConfig, srcPath: string, startSec: number, endSec: number, outPath: string,
+): Promise<ExtractResult> {
+  const ff = ffmpegBinFrom(cfg.ffmpegPath);
+  const start = Math.max(0, Math.floor(startSec));
+  const dur = Math.max(1, Math.floor(endSec) - start);
+  // m4a source → stream-copy for m4a (instant, lossless); re-encode for mp3/opus.
+  const codec = cfg.audioFormat === 'mp3' ? ['-c:a', 'libmp3lame', '-q:a', '4']
+    : cfg.audioFormat === 'opus' ? ['-c:a', 'libopus', '-b:a', '96k']
+    : ['-c:a', 'copy'];
+  const args = ['-y', '-ss', String(start), '-i', srcPath, '-t', String(dur), '-vn', ...codec, outPath];
+  const command = commandLine(ff, args);
+  const baseR: ExtractResult = { ok: false, outPath: '', bytes: 0, durationSec: 0, command };
+
+  let res: { code: number | null; stderr: string; stdout: string };
+  try {
+    res = await run(ff, args, 60_000);
+  } catch (e) {
+    return { ...baseR, error: e instanceof Error ? e.message : String(e) };
+  }
+  const fs = nodeReq<{ existsSync(p: string): boolean; statSync(p: string): { size: number } }>('fs');
+  const exists = fs.existsSync(outPath);
+  const bytes = exists ? fs.statSync(outPath).size : 0;
+  if (res.code !== 0 || !exists || bytes < 512) {
+    return { ...baseR, error: `ffmpeg 切り出し失敗 (exit ${res.code}, ${bytes}B)`, stderrTail: tail(res.stderr) };
+  }
+  const durationSec = await probeDuration(ffprobeFrom(cfg.ffmpegPath), outPath);
+  return { ok: true, outPath, bytes, durationSec, command };
+}
+
 /**
  * Extract one clip. DESKTOP ONLY — the caller MUST guard with Platform.isDesktopApp.
  * Never throws; returns {ok:false, error, command} so callers can show the command

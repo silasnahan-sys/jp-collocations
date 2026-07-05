@@ -322,6 +322,104 @@ function ffprobeFrom(ffmpegPath) {
   const exe = ffmpegPath.includes("\\") ? "ffprobe.exe" : "ffprobe";
   return ffmpegPath.replace(/[\\/]$/, "") + sep + exe;
 }
+function ffmpegBinFrom(ffmpegPath) {
+  if (!ffmpegPath)
+    return "ffmpeg";
+  if (/ffmpeg(\.exe)?$/i.test(ffmpegPath))
+    return ffmpegPath;
+  const sep = ffmpegPath.includes("\\") ? "\\" : "/";
+  const exe = ffmpegPath.includes("\\") ? "ffmpeg.exe" : "ffmpeg";
+  return ffmpegPath.replace(/[\\/]$/, "") + sep + exe;
+}
+function buildFullAudioArgs(cfg, videoId, outTemplate) {
+  const args = [];
+  if (cfg.ffmpegPath)
+    args.push("--ffmpeg-location", cfg.ffmpegPath);
+  if (cfg.jsRuntime)
+    args.push("--js-runtimes", cfg.jsRuntime);
+  args.push(
+    "-f",
+    "140/bestaudio[ext=m4a]/bestaudio",
+    "--no-playlist",
+    "--no-part",
+    "--socket-timeout",
+    "30",
+    "--retries",
+    "3",
+    "--fragment-retries",
+    "3",
+    "--no-progress",
+    "--ignore-config",
+    "-o",
+    outTemplate,
+    `https://youtu.be/${videoId}`
+  );
+  return args;
+}
+function findByPrefix(dir, prefix) {
+  try {
+    const fs = nodeReq("fs");
+    const path = nodeReq("path");
+    for (const f of fs.readdirSync(dir))
+      if (f.startsWith(prefix) && !f.endsWith(".part"))
+        return path.join(dir, f);
+  } catch (e) {
+  }
+  return null;
+}
+async function downloadFullAudio(cfg, videoId, folderAbs) {
+  const bin = cfg.ytdlpPath || "yt-dlp";
+  const prefix = `_srcaudio_${videoId}`;
+  const outTemplate = `${folderAbs}/${prefix}.%(ext)s`;
+  const args = buildFullAudioArgs(cfg, videoId, outTemplate);
+  const command = commandLine(bin, args);
+  const fs = nodeReq("fs");
+  const stale = findByPrefix(folderAbs, prefix);
+  if (stale) {
+    try {
+      fs.unlinkSync(stale);
+    } catch (e) {
+    }
+  }
+  let res;
+  try {
+    res = await run(bin, args, 24e4);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const hint = /ENOENT/.test(msg) ? `yt-dlp \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\uFF08${bin}\uFF09\u3002` : msg;
+    return { ok: false, srcPath: "", bytes: 0, command, error: hint };
+  }
+  const src = findByPrefix(folderAbs, prefix);
+  const bytes = src && fs.existsSync(src) ? fs.statSync(src).size : 0;
+  if (res.code !== 0 || !src || bytes < 1024) {
+    const jsHint = /No supported JavaScript runtime/i.test(res.stderr) ? "\nJavaScript \u30E9\u30F3\u30BF\u30A4\u30E0\uFF08deno \u304B node\uFF09\u304C\u5FC5\u8981\u3067\u3059\u3002" : "";
+    return { ok: false, srcPath: "", bytes, command, error: `full-audio \u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5931\u6557 (exit ${res.code}, ${bytes}B)${jsHint}`, stderrTail: tail(res.stderr) };
+  }
+  return { ok: true, srcPath: src, bytes, command };
+}
+async function clipFromLocal(cfg, srcPath, startSec, endSec, outPath) {
+  const ff = ffmpegBinFrom(cfg.ffmpegPath);
+  const start = Math.max(0, Math.floor(startSec));
+  const dur = Math.max(1, Math.floor(endSec) - start);
+  const codec = cfg.audioFormat === "mp3" ? ["-c:a", "libmp3lame", "-q:a", "4"] : cfg.audioFormat === "opus" ? ["-c:a", "libopus", "-b:a", "96k"] : ["-c:a", "copy"];
+  const args = ["-y", "-ss", String(start), "-i", srcPath, "-t", String(dur), "-vn", ...codec, outPath];
+  const command = commandLine(ff, args);
+  const baseR = { ok: false, outPath: "", bytes: 0, durationSec: 0, command };
+  let res;
+  try {
+    res = await run(ff, args, 6e4);
+  } catch (e) {
+    return { ...baseR, error: e instanceof Error ? e.message : String(e) };
+  }
+  const fs = nodeReq("fs");
+  const exists = fs.existsSync(outPath);
+  const bytes = exists ? fs.statSync(outPath).size : 0;
+  if (res.code !== 0 || !exists || bytes < 512) {
+    return { ...baseR, error: `ffmpeg \u5207\u308A\u51FA\u3057\u5931\u6557 (exit ${res.code}, ${bytes}B)`, stderrTail: tail(res.stderr) };
+  }
+  const durationSec = await probeDuration(ffprobeFrom(cfg.ffmpegPath), outPath);
+  return { ok: true, outPath, bytes, durationSec, command };
+}
 async function extractClip(req, cfg, outPath) {
   const bin = cfg.ytdlpPath || "yt-dlp";
   const args = buildYtdlpArgs(req, cfg, outPath);
@@ -18126,7 +18224,7 @@ ${body.slice(0, 300)}`, 15e3);
    * — an empty/failed clip is reported, with the command for a manual run.
    */
   async downloadReconClips() {
-    var _a;
+    var _a, _b;
     if (!import_obsidian16.Platform.isDesktopApp) {
       new import_obsidian16.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u306E\u53D6\u5F97\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u306E\u307F\u5BFE\u5FDC\u3067\u3059\u3002");
       return;
@@ -18173,7 +18271,6 @@ ${body.slice(0, 300)}`, 15e3);
       }
     }
     const base = adapter.getBasePath();
-    const progress = new import_obsidian16.Notice(`\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u4E2D\u2026 0/${timed.length}`, 0);
     const present = /* @__PURE__ */ new Set();
     const log = [
       `# \u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97\u30ED\u30B0`,
@@ -18185,46 +18282,74 @@ ${body.slice(0, 300)}`, 15e3);
       `- detect: ${det.notes.join(" / ")}`,
       ``
     ];
-    let done = 0, skipped = 0, failed = 0;
-    for (let i = 0; i < timed.length; i++) {
-      const r2 = timed[i];
-      const name = clipNameFor({ videoId, startSec: r2.tStartSec }, active);
+    const logPath = `${folder}/_download-log.md`;
+    const writeLog = async () => {
       try {
-        if (this.app.metadataCache.getFirstLinkpathDest(name, "")) {
-          present.add(name);
-          skipped++;
-          log.push(`- \u23ED ${name} (\u65E2\u5B58)`);
-        } else {
-          const res = await extractClip({ videoId, startSec: r2.tStartSec }, active, `${base}/${folder}/${name}`);
+        const body = log.join("\n");
+        const ex = this.app.vault.getAbstractFileByPath(logPath);
+        if (ex instanceof import_obsidian16.TFile)
+          await this.app.vault.modify(ex, body);
+        else
+          await this.app.vault.create(logPath, body);
+      } catch (e) {
+        console.error("[jp-collocations] log write failed:", e);
+      }
+    };
+    const todo = timed.filter((r2) => {
+      const name = clipNameFor({ videoId, startSec: r2.tStartSec }, active);
+      if (this.app.metadataCache.getFirstLinkpathDest(name, "")) {
+        present.add(name);
+        return false;
+      }
+      return true;
+    });
+    const skipped = timed.length - todo.length;
+    let done = 0, failed = 0;
+    let srcVaultPath = null;
+    if (todo.length) {
+      const dl = new import_obsidian16.Notice(`\u97F3\u58F0\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E2D\u2026\uFF081\u56DE\u30FB${videoId}\uFF09`, 0);
+      const full = await downloadFullAudio(active, videoId, `${base}/${folder}`);
+      dl.hide();
+      if (!full.ok) {
+        log.push(`- \u274C \u97F3\u58F0\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5931\u6557: ${(_a = full.error) != null ? _a : ""}`, `  - cmd: \`${full.command}\``, ...full.stderrTail ? ["  - stderr:", "  ~~~", ...full.stderrTail.split("\n").map((l) => "  " + l), "  ~~~"] : []);
+        await writeLog();
+        new import_obsidian16.Notice(`\u97F3\u58F0\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002
+\u30ED\u30B0: ${logPath}`, 15e3);
+        return;
+      }
+      srcVaultPath = `${folder}/${full.srcPath.split(/[\\/]/).pop()}`;
+      log.push(`- \u2B07 \u97F3\u58F0\u53D6\u5F97: \`${full.srcPath.split(/[\\/]/).pop()}\` (${full.bytes}B)`, ``);
+      const progress = new import_obsidian16.Notice(`\u30AF\u30EA\u30C3\u30D7\u3092\u5207\u308A\u51FA\u3057\u4E2D\u2026 0/${todo.length}`, 0);
+      for (let i = 0; i < todo.length; i++) {
+        const r2 = todo[i];
+        const [s, e] = clipWindow({ videoId, startSec: r2.tStartSec }, active);
+        const name = clipNameFor({ videoId, startSec: r2.tStartSec }, active);
+        try {
+          const res = await clipFromLocal(active, full.srcPath, s, e, `${base}/${folder}/${name}`);
           if (res.ok) {
             present.add(name);
             done++;
             log.push(`- \u2705 ${name} (${res.bytes}B, ${res.durationSec.toFixed(1)}s)`);
           } else {
             failed++;
-            log.push(`- \u274C ${name}: ${(_a = res.error) != null ? _a : ""}`, `  - cmd: \`${res.command}\``, ...res.stderrTail ? ["  - stderr:", "  ~~~", ...res.stderrTail.split("\n").map((l) => "  " + l), "  ~~~"] : []);
+            log.push(`- \u274C ${name}: ${(_b = res.error) != null ? _b : ""}`, `  - cmd: \`${res.command}\``, ...res.stderrTail ? ["  - stderr:", "  ~~~", ...res.stderrTail.split("\n").map((l) => "  " + l), "  ~~~"] : []);
             console.error("[jp-collocations] clip failed:", res.command, "\n", res.error, "\n", res.stderrTail);
           }
+        } catch (err) {
+          failed++;
+          log.push(`- \u274C ${name}: \u4F8B\u5916 ${String(err)}`);
         }
-      } catch (e) {
-        failed++;
-        log.push(`- \u274C ${name}: \u4F8B\u5916 ${String(e)}`);
-        console.error("[jp-collocations] clip iteration threw:", e);
+        progress.setMessage(`\u30AF\u30EA\u30C3\u30D7\u3092\u5207\u308A\u51FA\u3057\u4E2D\u2026 ${i + 1}/${todo.length}\uFF08\u2713${done} \u5931\u6557${failed}\uFF09`);
       }
-      progress.setMessage(`\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u4E2D\u2026 ${i + 1}/${timed.length}\uFF08\u2713${done} \u5931\u6557${failed}\uFF09`);
+      progress.hide();
     }
-    progress.hide();
-    const logPath = `${folder}/_download-log.md`;
-    try {
-      const body = log.join("\n");
-      const existingLog = this.app.vault.getAbstractFileByPath(logPath);
-      if (existingLog instanceof import_obsidian16.TFile)
-        await this.app.vault.modify(existingLog, body);
-      else
-        await this.app.vault.create(logPath, body);
-    } catch (e) {
-      console.error("[jp-collocations] log write failed:", e);
+    if (srcVaultPath) {
+      try {
+        await adapter.remove(srcVaultPath);
+      } catch (e) {
+      }
     }
+    await writeLog();
     let written = null;
     try {
       written = await this.writeReconCards(file, tFile, videoId, prep.results, present);

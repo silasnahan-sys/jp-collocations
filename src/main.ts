@@ -46,7 +46,7 @@ import { ReconLibrary } from "./notes/recon-library";
 import { renderAnchoredFile, buildEntries, retypeInMarkdown, blockIdFor, type LibraryEntry } from "./notes/annotate";
 import { buildReconCards, renderCardsFile } from "./notes/cards";
 import { parseYouTubeId, deepLinkProvider } from "./notes/audio-provider";
-import { extractClip, detectTools, clipNameFor, nodeRuntimeAvailable, requireStrategy, probeBinary } from "./notes/audio-extractor";
+import { downloadFullAudio, clipFromLocal, clipWindow, detectTools, clipNameFor, nodeRuntimeAvailable, requireStrategy, probeBinary } from "./notes/audio-extractor";
 import type { NoteClass } from "./notes/note-types";
 import type {
   SurferCollocationEntry,
@@ -1285,7 +1285,6 @@ export default class JPCollocationsPlugin extends Plugin {
     if (!this.app.vault.getAbstractFileByPath(folder)) { try { await this.app.vault.createFolder(folder); } catch { /* exists */ } }
     const base = adapter.getBasePath();
 
-    const progress = new Notice(`音声クリップを取得中… 0/${timed.length}`, 0);
     const present = new Set<string>();          // clip basenames now on disk (fresh or pre-existing)
     const log: string[] = [
       `# 音声クリップ取得ログ`,
@@ -1297,15 +1296,49 @@ export default class JPCollocationsPlugin extends Plugin {
       `- detect: ${det.notes.join(" / ")}`,
       ``,
     ];
-    let done = 0, skipped = 0, failed = 0;
-    // Each iteration is fully guarded so one bad clip can never abort the batch.
-    for (let i = 0; i < timed.length; i++) {
-      const r = timed[i];
-      const name = clipNameFor({ videoId, startSec: r.tStartSec as number }, active);
+    const logPath = `${folder}/_download-log.md`;
+    const writeLog = async () => {
       try {
-        if (this.app.metadataCache.getFirstLinkpathDest(name, "")) { present.add(name); skipped++; log.push(`- ⏭ ${name} (既存)`); }
-        else {
-          const res = await extractClip({ videoId, startSec: r.tStartSec as number }, active, `${base}/${folder}/${name}`);
+        const body = log.join("\n");
+        const ex = this.app.vault.getAbstractFileByPath(logPath);
+        if (ex instanceof TFile) await this.app.vault.modify(ex, body);
+        else await this.app.vault.create(logPath, body);
+      } catch (e) { console.error("[jp-collocations] log write failed:", e); }
+    };
+
+    // Which spans still need a clip (skip ones already on disk).
+    const todo = timed.filter((r) => {
+      const name = clipNameFor({ videoId, startSec: r.tStartSec as number }, active);
+      if (this.app.metadataCache.getFirstLinkpathDest(name, "")) { present.add(name); return false; }
+      return true;
+    });
+    const skipped = timed.length - todo.length;
+    let done = 0, failed = 0;
+
+    // STEP 1 — download the audio ONCE (one nsig solve, one connection). Cutting
+    // per-section from the network is what hangs on long videos; this avoids it.
+    let srcVaultPath: string | null = null;
+    if (todo.length) {
+      const dl = new Notice(`音声をダウンロード中…（1回・${videoId}）`, 0);
+      const full = await downloadFullAudio(active, videoId, `${base}/${folder}`);
+      dl.hide();
+      if (!full.ok) {
+        log.push(`- ❌ 音声ダウンロード失敗: ${full.error ?? ""}`, `  - cmd: \`${full.command}\``, ...(full.stderrTail ? ["  - stderr:", "  ~~~", ...full.stderrTail.split("\n").map((l) => "  " + l), "  ~~~"] : []));
+        await writeLog();
+        new Notice(`音声ダウンロードに失敗しました。\nログ: ${logPath}`, 15000);
+        return;
+      }
+      srcVaultPath = `${folder}/${full.srcPath.split(/[\\/]/).pop()}`;
+      log.push(`- ⬇ 音声取得: \`${full.srcPath.split(/[\\/]/).pop()}\` (${full.bytes}B)`, ``);
+
+      // STEP 2 — cut every clip LOCALLY with ffmpeg (no network → cannot hang).
+      const progress = new Notice(`クリップを切り出し中… 0/${todo.length}`, 0);
+      for (let i = 0; i < todo.length; i++) {
+        const r = todo[i];
+        const [s, e] = clipWindow({ videoId, startSec: r.tStartSec as number }, active);
+        const name = clipNameFor({ videoId, startSec: r.tStartSec as number }, active);
+        try {
+          const res = await clipFromLocal(active, full.srcPath, s, e, `${base}/${folder}/${name}`);
           if (res.ok) {
             present.add(name); done++;
             log.push(`- ✅ ${name} (${res.bytes}B, ${res.durationSec.toFixed(1)}s)`);
@@ -1314,26 +1347,19 @@ export default class JPCollocationsPlugin extends Plugin {
             log.push(`- ❌ ${name}: ${res.error ?? ""}`, `  - cmd: \`${res.command}\``, ...(res.stderrTail ? ["  - stderr:", "  ~~~", ...res.stderrTail.split("\n").map((l) => "  " + l), "  ~~~"] : []));
             console.error("[jp-collocations] clip failed:", res.command, "\n", res.error, "\n", res.stderrTail);
           }
+        } catch (err) {
+          failed++;
+          log.push(`- ❌ ${name}: 例外 ${String(err)}`);
         }
-      } catch (e) {
-        failed++;
-        log.push(`- ❌ ${name}: 例外 ${String(e)}`);
-        console.error("[jp-collocations] clip iteration threw:", e);
+        progress.setMessage(`クリップを切り出し中… ${i + 1}/${todo.length}（✓${done} 失敗${failed}）`);
       }
-      progress.setMessage(`音声クリップを取得中… ${i + 1}/${timed.length}（✓${done} 失敗${failed}）`);
+      progress.hide();
     }
-    progress.hide();
 
-    // ALWAYS persist the log (success or failure) so there is always a record.
-    const logPath = `${folder}/_download-log.md`;
-    try {
-      const body = log.join("\n");
-      const existingLog = this.app.vault.getAbstractFileByPath(logPath);
-      if (existingLog instanceof TFile) await this.app.vault.modify(existingLog, body);
-      else await this.app.vault.create(logPath, body);
-    } catch (e) {
-      console.error("[jp-collocations] log write failed:", e);
-    }
+    // Remove the large temp source audio (clips are self-contained).
+    if (srcVaultPath) { try { await adapter.remove(srcVaultPath); } catch { /* leave it */ } }
+
+    await writeLog();
 
     // Auto-regenerate the cards so the just-downloaded clips embed immediately
     // (passing `present` sidesteps Obsidian's async file-index lag). Guarded so a
