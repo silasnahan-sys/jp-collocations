@@ -142,7 +142,7 @@ function getRequire(): (m: string) => unknown {
   return r as (m: string) => unknown;
 }
 
-function nodeReq<T = unknown>(mod: string): T {
+export function nodeReq<T = unknown>(mod: string): T {
   return getRequire()(mod) as T;
 }
 
@@ -185,7 +185,7 @@ const RUN_TIMEOUT_MS = 150_000;
 /** Run a binary, resolving with {code, stderr}. Rejects only on spawn failure.
  *  Ignores stdin (so the child can't block waiting for input) and self-kills on
  *  timeout (resolving with a synthetic failure code, never hanging). */
-function run(bin: string, args: string[], timeoutMs = RUN_TIMEOUT_MS): Promise<{ code: number | null; stderr: string; stdout: string }> {
+export function run(bin: string, args: string[], timeoutMs = RUN_TIMEOUT_MS): Promise<{ code: number | null; stderr: string; stdout: string }> {
   const cp = nodeReq<{ spawn(c: string, a: string[], o: unknown): SpawnedProc }>('child_process');
   return new Promise((resolve, reject) => {
     let stderr = '', stdout = '', settled = false;
@@ -209,7 +209,7 @@ function run(bin: string, args: string[], timeoutMs = RUN_TIMEOUT_MS): Promise<{
   });
 }
 
-const tail = (s: string, n = 6): string => s.trim().split(/\r?\n/).slice(-n).join('\n');
+export const tail = (s: string, n = 6): string => s.trim().split(/\r?\n/).slice(-n).join('\n');
 
 /** Probe a media file's duration (seconds) with ffprobe; 0 if unknown/missing. */
 async function probeDuration(ffprobeBin: string, file: string): Promise<number> {

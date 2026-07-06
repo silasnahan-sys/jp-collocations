@@ -70,6 +70,29 @@ export interface SearchResult {
 
 export type SpeakerFormat = 'icon' | 'letter' | 'number';
 
+/** Notes-reconciliation pipeline config: YouTube transcript fetch + history import
+ *  (DESIGN §8 Step 2 fragile adapters). Tool paths are shared with `audioExtraction`. */
+export interface NotesPipelineConfig {
+  /** Vault folder fetched transcripts are written into (each a frozen note). */
+  transcriptFolder: string;
+  /** Preferred caption language(s), comma-separated, best first. e.g. "ja". */
+  langPref: string;
+  /** Prefer a human-authored caption track over the auto (ASR) one. */
+  preferManual: boolean;
+  /** Desktop: fetch captions via yt-dlp (robust; solves YouTube's JS challenge). */
+  useYtdlpTranscripts: boolean;
+  /** Safety cap on how many videos one history import will fetch. */
+  maxHistoryVideos: number;
+}
+
+export const DEFAULT_NOTES_CONFIG: NotesPipelineConfig = {
+  transcriptFolder: 'Transcripts',
+  langPref: 'ja',
+  preferManual: true,
+  useYtdlpTranscripts: true,
+  maxHistoryVideos: 20,
+};
+
 export interface SRSSettings {
   tagPrefix: string;
   speakerFormat: SpeakerFormat;
@@ -99,6 +122,8 @@ export interface PluginSettings {
   x: XSettings;
   /** Desktop-only yt-dlp/ffmpeg audio clip extraction (DESIGN §12 Tier 1). */
   audioExtraction: AudioExtractionConfig;
+  /** YouTube transcript fetch + watch-history import (DESIGN §8 Step 2). */
+  notes: NotesPipelineConfig;
 }
 
 export const DEFAULT_SRS_SETTINGS: SRSSettings = {
@@ -129,6 +154,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   autoIndexOnStartup: true,
   x: { ...DEFAULT_X_SETTINGS },
   audioExtraction: { ...DEFAULT_AUDIO_EXTRACTION },
+  notes: { ...DEFAULT_NOTES_CONFIG },
 };
 
 export interface StoreStats {

@@ -1,4 +1,4 @@
-import { Plugin, WorkspaceLeaf, Notice, TFile, Platform, FileSystemAdapter, normalizePath } from "obsidian";
+import { Plugin, WorkspaceLeaf, Notice, TFile, Platform, FileSystemAdapter, normalizePath, requestUrl } from "obsidian";
 import type { PluginSettings } from "./types";
 import { DEFAULT_SETTINGS } from "./types";
 import { CollocationStore } from "./data/CollocationStore";
@@ -46,7 +46,10 @@ import { ReconLibrary } from "./notes/recon-library";
 import { renderAnchoredFile, buildEntries, retypeInMarkdown, blockIdFor, type LibraryEntry } from "./notes/annotate";
 import { buildReconCards, renderCardsFile } from "./notes/cards";
 import { parseYouTubeId, deepLinkProvider } from "./notes/audio-provider";
-import { downloadFullAudio, clipFromLocal, clipWindow, detectTools, clipNameFor, nodeRuntimeAvailable, requireStrategy, probeBinary } from "./notes/audio-extractor";
+import { downloadFullAudio, clipFromLocal, clipWindow, detectTools, clipNameFor, nodeRuntimeAvailable, requireStrategy, probeBinary, nodeReq } from "./notes/audio-extractor";
+import { YouTubeTranscriptAdapter, TranscriptError, type HttpClient, type Transcript, type TranscriptFetchConfig, type YtdlpTranscriptConfig } from "./notes/transcript";
+import { renderTranscriptFile, transcriptFileBaseName } from "./notes/transcript-assembly";
+import { parseHistory, type WatchedVideo } from "./notes/yt-history";
 import type { NoteClass } from "./notes/note-types";
 import type {
   SurferCollocationEntry,
@@ -425,6 +428,30 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "diagnose-audio-tools",
       name: "Diagnose Audio Tools (writes a report)",
       callback: () => this.diagnoseAudioTools(),
+    });
+
+    // ── YouTube transcript + history ingestion (DESIGN §8 Step 2) ──────────────
+    // Fetch the transcript of a video (id from selection / frontmatter / clipboard),
+    // freeze it as a note, and point the active notes file at it.
+    this.addCommand({
+      id: "fetch-yt-transcript",
+      name: "Fetch YouTube Transcript into a Note",
+      callback: () => this.fetchTranscriptCommand(),
+    });
+
+    // Ingest a watch-history export (Takeout JSON/HTML or pasted URLs) and fetch a
+    // frozen transcript for each video — the full history→transcripts pipeline.
+    this.addCommand({
+      id: "fetch-yt-history-transcripts",
+      name: "Fetch Transcripts from Watch History / URL List",
+      callback: () => this.fetchHistoryTranscriptsCommand(),
+    });
+
+    // Health check: ping each ingestion adapter, write a report (no silent failures).
+    this.addCommand({
+      id: "recon-health-check",
+      name: "Reconciliation Health Check (adapters)",
+      callback: () => this.reconHealthCheck(),
     });
 
     // Dictionary commands
@@ -1378,6 +1405,253 @@ export default class JPCollocationsPlugin extends Plugin {
       `\nログ: ${logPath}`,
       failed ? 15000 : 8000,
     );
+  }
+
+  // ── Transcript + history ingestion (DESIGN §4/§8 Step 2) ────────────────────
+
+  /** An Obsidian-requestUrl-backed HTTP client for the transcript adapter
+   *  (mobile-safe, bypasses CORS — same transport as XClient). */
+  private makeHttpClient(): HttpClient {
+    const call = async (url: string, method: "GET" | "POST", headers?: Record<string, string>, body?: string) => {
+      const r = await requestUrl({ url, method, headers, body, throw: false });
+      return { status: r.status, text: r.text ?? "" };
+    };
+    return {
+      get: (url, headers) => call(url, "GET", headers),
+      post: (url, body, headers) => call(url, "POST", headers, body),
+    };
+  }
+
+  /** OS temp dir for yt-dlp subtitle scratch files (desktop only; null otherwise). */
+  private desktopTmpDir(): string | null {
+    if (!Platform.isDesktopApp || !nodeRuntimeAvailable()) return null;
+    try { return nodeReq<{ tmpdir(): string }>("os").tmpdir(); } catch { return null; }
+  }
+
+  /** Build the transcript adapter from settings: HTTP tier always; yt-dlp tier on
+   *  desktop when enabled (reuses the audio tool paths, auto-detected if blank). */
+  private makeTranscriptAdapter(): YouTubeTranscriptAdapter {
+    const n = this.settings.notes;
+    const cfg: TranscriptFetchConfig = {
+      langPref: (n.langPref || "ja").split(",").map((s) => s.trim()).filter(Boolean),
+      preferManual: n.preferManual,
+    };
+    let ytdlp: YtdlpTranscriptConfig | null = null;
+    const tmp = this.desktopTmpDir();
+    if (n.useYtdlpTranscripts && tmp) {
+      const det = detectTools();
+      ytdlp = {
+        enabled: true,
+        ytdlpPath: this.settings.audioExtraction.ytdlpPath || det.ytdlp,
+        jsRuntime: this.settings.audioExtraction.jsRuntime || det.jsRuntime,
+        tmpDirAbs: tmp,
+      };
+    }
+    return new YouTubeTranscriptAdapter(this.makeHttpClient(), cfg, ytdlp);
+  }
+
+  /** Resolve a video id to fetch: editor selection → active-file frontmatter →
+   *  clipboard. Returns null with a Notice already shown if nothing resolves. */
+  private async resolveVideoIdToFetch(): Promise<string | null> {
+    const sel = this.app.workspace.activeEditor?.editor?.getSelection()?.trim();
+    const fromSel = parseYouTubeId(sel);
+    if (fromSel) return fromSel;
+
+    const file = this.app.workspace.getActiveFile();
+    if (file) {
+      const content = await this.app.vault.cachedRead(file);
+      const raw = frontmatterAny(content, ["video", "videoId", "youtube", "url", "source_url"]);
+      const fromFm = parseYouTubeId(raw);
+      if (fromFm) return fromFm;
+    }
+    try {
+      const clip = await navigator.clipboard.readText();
+      const fromClip = parseYouTubeId(clip?.trim());
+      if (fromClip) return fromClip;
+    } catch { /* clipboard blocked */ }
+
+    new Notice("YouTube の URL/ID を選択するか、メモの frontmatter に `video:` を入れるか、クリップボードにコピーしてください。", 8000);
+    return null;
+  }
+
+  /** Write a fetched transcript as a frozen note; returns the file (never re-fetches
+   *  an existing one — invariant #4). `overwrite` forces a rewrite. */
+  private async writeTranscriptFile(t: Transcript, overwrite = false): Promise<TFile> {
+    const folder = normalizePath(this.settings.notes.transcriptFolder || "Transcripts");
+    if (!this.app.vault.getAbstractFileByPath(folder)) { try { await this.app.vault.createFolder(folder); } catch { /* exists */ } }
+    const path = normalizePath(`${folder}/${transcriptFileBaseName(t)}.md`);
+    const body = renderTranscriptFile(t);
+    const existing = this.app.vault.getAbstractFileByPath(path);
+    if (existing instanceof TFile) {
+      if (overwrite) await this.app.vault.modify(existing, body);
+      return existing;
+    }
+    return await this.app.vault.create(path, body);
+  }
+
+  /** Stamp `source: [[basename]]` into a notes file's frontmatter if it has none,
+   *  so the reconcile command finds the transcript. Non-destructive otherwise. */
+  private async ensureSourceFrontmatter(file: TFile, basename: string): Promise<boolean> {
+    const content = await this.app.vault.read(file);
+    if (frontmatterSource(content)) return false;                 // already linked — leave it
+    let next: string;
+    const fm = content.match(/^(﻿?---\r?\n)([\s\S]*?)(\r?\n---\r?\n?)/);
+    if (fm) {
+      next = fm[1] + fm[2] + `\nsource: [[${basename}]]` + fm[3] + content.slice(fm[0].length);
+    } else {
+      next = `---\nsource: [[${basename}]]\n---\n\n` + content;
+    }
+    await this.app.vault.modify(file, next);
+    return true;
+  }
+
+  private async fetchTranscriptCommand(): Promise<void> {
+    const videoId = await this.resolveVideoIdToFetch();
+    if (!videoId) return;
+    const notesFile = this.app.workspace.getActiveFile();
+
+    const adapter = this.makeTranscriptAdapter();
+    const notice = new Notice(`文字起こしを取得中… (${videoId})`, 0);
+    let t: Transcript | null;
+    try {
+      t = await adapter.fetch(videoId);
+    } catch (e) {
+      notice.hide();
+      const msg = e instanceof TranscriptError ? e.message : String(e);
+      new Notice(`文字起こしの取得に失敗しました。\n${msg}\n\n手動の場合: 字幕テキストを ${this.settings.notes.transcriptFolder} に貼り付け、frontmatter に \`video: ${videoId}\` を追加してください。`, 20000);
+      return;
+    }
+    notice.hide();
+    if (!t) { new Notice(`この動画には字幕がありません (${videoId})。スキップしました。`, 10000); return; }
+
+    const outFile = await this.writeTranscriptFile(t, true);
+    let linked = false;
+    if (notesFile && notesFile.path !== outFile.path && notesFile.extension === "md") {
+      try { linked = await this.ensureSourceFrontmatter(notesFile, outFile.basename); } catch { /* */ }
+    }
+    new Notice(
+      `文字起こし取得: ${t.lines.length}行（${t.source} / ${t.lang}）→ ${outFile.basename}` +
+      (linked ? `\nメモに source: [[${outFile.basename}]] を設定しました。` : `\nメモの frontmatter に \`source: [[${outFile.basename}]]\` を追加して照合してください。`),
+      12000,
+    );
+    await this.app.workspace.getLeaf(false).openFile(outFile);
+  }
+
+  private async fetchHistoryTranscriptsCommand(): Promise<void> {
+    // Source text: the active file if it parses as history, else the clipboard.
+    let text = "";
+    const active = this.app.workspace.getActiveFile();
+    if (active) {
+      const c = await this.app.vault.cachedRead(active);
+      if (parseHistory(c).videos.length) text = c;
+    }
+    if (!text) { try { text = (await navigator.clipboard.readText()) ?? ""; } catch { /* */ } }
+    const { videos, source } = parseHistory(text);
+    if (!videos.length) {
+      new Notice("視聴履歴が見つかりません。Google Takeout の watch-history.json/html を開くか、YouTube の URL 一覧をクリップボードにコピーしてください。", 12000);
+      return;
+    }
+    const cap = Math.max(1, this.settings.notes.maxHistoryVideos || 20);
+    const list: WatchedVideo[] = videos.slice(0, cap);
+    const overflow = videos.length - list.length;
+
+    const adapter = this.makeTranscriptAdapter();
+    const log: string[] = [
+      `# 視聴履歴→文字起こし 取得ログ`,
+      ``,
+      `- source: \`${source}\` · 検出 ${videos.length}件 · 取得対象 ${list.length}件${overflow > 0 ? ` (上限で ${overflow}件スキップ — 設定 maxHistoryVideos)` : ""}`,
+      ``,
+    ];
+    let fetched = 0, noCaps = 0, failed = 0, existed = 0;
+    const folder = normalizePath(this.settings.notes.transcriptFolder || "Transcripts");
+    const progress = new Notice(`文字起こしを取得中… 0/${list.length}`, 0);
+
+    for (let i = 0; i < list.length; i++) {
+      const v = list[i];
+      progress.setMessage(`文字起こしを取得中… ${i + 1}/${list.length}（✓${fetched} 字幕なし${noCaps} 失敗${failed}）`);
+      // Freeze: if a transcript note already exists for this id, don't re-fetch.
+      const existingBase = this.app.vault.getMarkdownFiles().find(
+        (f) => f.path.startsWith(folder + "/") && (f.path.includes(`(${v.id})`) || f.basename === v.id),
+      );
+      if (existingBase) { existed++; log.push(`- ⏭ ${v.id} 既存: [[${existingBase.basename}]]`); continue; }
+      try {
+        const t = await adapter.fetch(v.id);
+        if (!t) { noCaps++; log.push(`- ⚪ ${v.id} 字幕なし — スキップ (${v.title})`); continue; }
+        if (!t.title || t.title === v.id) t.title = v.title || t.title;
+        const outFile = await this.writeTranscriptFile(t, false);
+        fetched++;
+        log.push(`- ✅ ${v.id} → [[${outFile.basename}]] (${t.lines.length}行 / ${t.source})`);
+      } catch (e) {
+        failed++;
+        const msg = e instanceof TranscriptError ? e.message : String(e);
+        log.push(`- ❌ ${v.id} 失敗: ${msg}`);
+      }
+    }
+    progress.hide();
+
+    if (!this.app.vault.getAbstractFileByPath(folder)) { try { await this.app.vault.createFolder(folder); } catch { /* */ } }
+    const logPath = normalizePath(`${folder}/_history-fetch-log.md`);
+    try {
+      const ex = this.app.vault.getAbstractFileByPath(logPath);
+      const outLog = log.join("\n");
+      const logFile = ex instanceof TFile ? (await this.app.vault.modify(ex, outLog), ex) : await this.app.vault.create(logPath, outLog);
+      await this.app.workspace.getLeaf(false).openFile(logFile);
+    } catch (e) { console.error("[jp-collocations] history log write failed:", e); }
+
+    new Notice(`履歴取得完了: ✓${fetched} / 既存${existed} / 字幕なし${noCaps} / 失敗${failed}\nログ: ${logPath}`, 15000);
+  }
+
+  /** Ping each ingestion adapter and write a health report (invariant #7). */
+  private async reconHealthCheck(): Promise<void> {
+    const n = this.settings.notes;
+    const L: string[] = ["# 照合パイプライン ヘルスチェック", "", `_${new Date().toISOString()}_`, ""];
+    L.push("## 環境");
+    L.push(`- Platform.isDesktopApp: **${Platform.isDesktopApp}**`);
+    L.push(`- nodeRuntimeAvailable: **${nodeRuntimeAvailable()}** (\`${requireStrategy()}\`)`);
+    L.push(`- transcriptFolder: \`${n.transcriptFolder}\` · langPref: \`${n.langPref}\` · preferManual: ${n.preferManual}`);
+    L.push(`- useYtdlpTranscripts: **${n.useYtdlpTranscripts}** · maxHistoryVideos: ${n.maxHistoryVideos}`);
+
+    // Tier A — yt-dlp subtitle fetch
+    L.push("", "## Tier A — yt-dlp 字幕取得（デスクトップ）");
+    const tmp = this.desktopTmpDir();
+    if (n.useYtdlpTranscripts && tmp) {
+      const det = detectTools();
+      const bin = this.settings.audioExtraction.ytdlpPath || det.ytdlp || "yt-dlp";
+      const v = await probeBinary(bin, ["--version"]);
+      L.push(`- yt-dlp (\`${bin}\`): ok=**${v.ok}** code=${v.code} version=\`${v.stdout}\` ${v.error ? "err=`" + v.error + "`" : ""}`);
+      L.push(`- JS runtime: \`${this.settings.audioExtraction.jsRuntime || det.jsRuntime || "(deno auto)"}\``);
+      L.push(`- tmp dir: \`${tmp}\``);
+    } else {
+      L.push(`- 無効またはデスクトップ外（HTTP tier のみ）。`);
+    }
+
+    // Tier B — HTTP timedtext reachability
+    L.push("", "## Tier B — HTTP timedtext（モバイル/フォールバック）");
+    try {
+      const http = this.makeHttpClient();
+      const r = await http.get("https://www.youtube.com/oembed?url=https://youtu.be/Zdfhde6iasg&format=json");
+      L.push(`- YouTube 到達性 (oembed): HTTP **${r.status}** ${r.status === 200 ? "✅" : "⚠"}`);
+      L.push("- 注意: timedtext は PO トークンゲートにより空を返すことがある（その場合は Tier A か手動貼り付け）。");
+    } catch (e) {
+      L.push(`- ❌ 到達不可: ${String(e)}`);
+    }
+
+    // Tier C — manual paste always available
+    L.push("", "## Tier C — 手動貼り付け", "- 常に利用可能（字幕テキストを貼り、frontmatter に `video:` を付ける）。");
+
+    const folder = normalizePath(n.transcriptFolder || "Transcripts");
+    if (!this.app.vault.getAbstractFileByPath(folder)) { try { await this.app.vault.createFolder(folder); } catch { /* */ } }
+    const path = normalizePath(`${folder}/_health-check.md`);
+    const body = L.join("\n");
+    try {
+      const ex = this.app.vault.getAbstractFileByPath(path);
+      const outFile = ex instanceof TFile ? (await this.app.vault.modify(ex, body), ex) : await this.app.vault.create(path, body);
+      await this.app.workspace.getLeaf(false).openFile(outFile);
+    } catch (e) {
+      new Notice(`ヘルスチェックの書き込みに失敗: ${String(e)}`, 12000);
+      return;
+    }
+    new Notice(`ヘルスチェックを書き出しました: ${path}`, 6000);
   }
 
   async openDictionaryView(query?: string): Promise<void> {

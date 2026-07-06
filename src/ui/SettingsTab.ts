@@ -328,6 +328,51 @@ export class SettingsTab extends PluginSettingTab {
         }
       }));
 
+    // ── Transcript + history ingestion (DESIGN §8 Step 2) ─────────
+    containerEl.createEl("h3", { text: "文字起こし取得（YouTube）" });
+    const notes = this.settings.notes;
+    const notesDesc = containerEl.createEl("p", { cls: "setting-item-description" });
+    notesDesc.innerHTML =
+      "動画の字幕を取得して「原文」ノートとして凍結し、メモを照合します。<br>" +
+      "<b>デスクトップ:</b> yt-dlp 経由が確実（YouTube の JS チャレンジを解いて字幕を取得）。" +
+      "<b>モバイル:</b> HTTP 直取得（PO トークンで空になる場合は手動貼り付けにフォールバック）。";
+
+    new Setting(containerEl)
+      .setName("保存フォルダ（文字起こし）")
+      .setDesc("取得した字幕ノートの出力先（vault 相対）。")
+      .addText(t => t.setValue(notes.transcriptFolder).setPlaceholder("Transcripts").onChange(async v => {
+        notes.transcriptFolder = v.trim() || "Transcripts";
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("字幕の言語（優先順）")
+      .setDesc("カンマ区切り。例: ja,en。最初に見つかった言語を使用。")
+      .addText(t => t.setValue(notes.langPref).setPlaceholder("ja").onChange(async v => {
+        notes.langPref = v.trim() || "ja";
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("手動字幕を優先")
+      .setDesc("人手の字幕があれば自動字幕(ASR)より優先。")
+      .addToggle(t => t.setValue(notes.preferManual).onChange(async v => {
+        notes.preferManual = v; await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("yt-dlp で字幕取得（推奨・デスクトップ）")
+      .setDesc("上の音声クリップ設定の yt-dlp/JS ランタイムのパスを共用します。")
+      .addToggle(t => t.setValue(notes.useYtdlpTranscripts).onChange(async v => {
+        notes.useYtdlpTranscripts = v; await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("履歴取得の上限（本）")
+      .setDesc("視聴履歴の一括取得で処理する最大動画数。")
+      .addSlider(s => s.setLimits(1, 100, 1).setValue(notes.maxHistoryVideos).setDynamicTooltip()
+        .onChange(async v => { notes.maxHistoryVideos = v; await this.onSettingsChange(); }));
+
     // ── Display ────────────────────────────────────────────────────
     containerEl.createEl("h3", { text: "Display" });
 
