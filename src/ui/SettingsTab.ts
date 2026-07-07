@@ -373,6 +373,40 @@ export class SettingsTab extends PluginSettingTab {
       .addSlider(s => s.setLimits(1, 100, 1).setValue(notes.maxHistoryVideos).setDynamicTooltip()
         .onChange(async v => { notes.maxHistoryVideos = v; await this.onSettingsChange(); }));
 
+    // ── Live watch history (cookie auth) ──────────────────────────
+    containerEl.createEl("h3", { text: "視聴履歴（Cookie）— 期間指定で取得" });
+    const hist = this.settings.ytHistory;
+    const histDesc = containerEl.createEl("p", { cls: "setting-item-description" });
+    histDesc.innerHTML =
+      "youtube.com のログイン Cookie を<b>一度だけ</b>貼り付けると、「視聴日の範囲」を指定してサーバー側の視聴履歴（全デバイス）を取得できます。X 機能と同じ方式。<br>" +
+      "<b>取得方法:</b> ブラウザで youtube.com にログイン → DevTools(F12) → Network → 任意の <code>youtubei</code> リクエスト → Request Headers の <code>cookie:</code> の値を丸ごとコピー。<br>" +
+      "貼り付け後、コマンド「Reconciliation Health Check」で接続を確認できます（失効時は再貼り付け）。";
+
+    new Setting(containerEl)
+      .setName("YouTube Cookie")
+      .setDesc("youtube.com の cookie ヘッダ全体（SAPISID を含む必要あり）。秘密情報として保存されます。")
+      .addTextArea(t => {
+        t.setValue(hist.cookie).setPlaceholder("SID=...; SAPISID=...; __Secure-3PAPISID=...; ...").onChange(async v => {
+          hist.cookie = v.trim(); await this.onSettingsChange();
+        });
+        t.inputEl.rows = 3;
+        t.inputEl.style.width = "100%";
+      });
+
+    new Setting(containerEl)
+      .setName("INNERTUBE API キー（上級）")
+      .setDesc("通常は既定のままで可。ローテートした場合のみ変更。")
+      .addText(t => t.setValue(hist.apiKey).setPlaceholder("AIza...").onChange(async v => {
+        hist.apiKey = v.trim() || "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"; await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("クライアントバージョン（上級）")
+      .setDesc("WEB クライアントのバージョン。空エラー時に更新。")
+      .addText(t => t.setValue(hist.clientVersion).setPlaceholder("2.2024xxxx.xx.xx").onChange(async v => {
+        hist.clientVersion = v.trim() || "2.20240726.00.00"; await this.onSettingsChange();
+      }));
+
     // ── Display ────────────────────────────────────────────────────
     containerEl.createEl("h3", { text: "Display" });
 

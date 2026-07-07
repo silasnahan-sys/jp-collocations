@@ -1,7 +1,9 @@
 import { DEFAULT_X_SETTINGS, type XSettings } from "./x/x-types.ts";
 import { DEFAULT_AUDIO_EXTRACTION, type AudioExtractionConfig } from "./notes/audio-extractor.ts";
+import { DEFAULT_YT_HISTORY_SETTINGS, type YtHistorySettings } from "./notes/yt-history-client.ts";
 export type { XSettings };
 export type { AudioExtractionConfig };
+export type { YtHistorySettings };
 
 export enum PartOfSpeech {
   Noun = "名詞",
@@ -124,6 +126,8 @@ export interface PluginSettings {
   audioExtraction: AudioExtractionConfig;
   /** YouTube transcript fetch + watch-history import (DESIGN §8 Step 2). */
   notes: NotesPipelineConfig;
+  /** Live watch-history scrape via cookie auth (DESIGN §4 YtHistoryAdapter). */
+  ytHistory: YtHistorySettings;
 }
 
 export const DEFAULT_SRS_SETTINGS: SRSSettings = {
@@ -155,6 +159,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   x: { ...DEFAULT_X_SETTINGS },
   audioExtraction: { ...DEFAULT_AUDIO_EXTRACTION },
   notes: { ...DEFAULT_NOTES_CONFIG },
+  ytHistory: { ...DEFAULT_YT_HISTORY_SETTINGS },
 };
 
 export interface StoreStats {

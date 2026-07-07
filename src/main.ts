@@ -50,6 +50,8 @@ import { downloadFullAudio, clipFromLocal, clipWindow, detectTools, clipNameFor,
 import { YouTubeTranscriptAdapter, TranscriptError, type HttpClient, type Transcript, type TranscriptFetchConfig, type YtdlpTranscriptConfig } from "./notes/transcript";
 import { renderTranscriptFile, transcriptFileBaseName } from "./notes/transcript-assembly";
 import { parseHistory, type WatchedVideo } from "./notes/yt-history";
+import { YtHistoryClient, YtHistoryError } from "./notes/yt-history-client";
+import { HistoryRangeModal } from "./ui/HistoryRangeModal";
 import type { NoteClass } from "./notes/note-types";
 import type {
   SurferCollocationEntry,
@@ -445,6 +447,14 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "fetch-yt-history-transcripts",
       name: "Fetch Transcripts from Watch History / URL List",
       callback: () => this.fetchHistoryTranscriptsCommand(),
+    });
+
+    // Live watch history (cookie auth): pick a date range, pull the videos you
+    // watched then — complete + cross-device, no copy-paste (DESIGN §4).
+    this.addCommand({
+      id: "fetch-yt-history-live",
+      name: "Fetch Watch History by Date Range (cookie)",
+      callback: () => this.fetchLiveHistoryCommand(),
     });
 
     // Health check: ping each ingestion adapter, write a report (no silent failures).
@@ -1601,6 +1611,76 @@ export default class JPCollocationsPlugin extends Plugin {
     new Notice(`履歴取得完了: ✓${fetched} / 既存${existed} / 字幕なし${noCaps} / 失敗${failed}\nログ: ${logPath}`, 15000);
   }
 
+  /** Live watch-history client (cookie auth over the Obsidian requestUrl transport). */
+  private makeHistoryClient(): YtHistoryClient {
+    return new YtHistoryClient(this.makeHttpClient(), () => this.settings.ytHistory);
+  }
+
+  private async fetchLiveHistoryCommand(): Promise<void> {
+    const client = this.makeHistoryClient();
+    const issue = client.configIssue();
+    if (issue) {
+      new Notice(`${issue}\n設定 →「視聴履歴（Cookie）」に youtube.com の Cookie を貼り付けてください。`, 14000);
+      return;
+    }
+    new HistoryRangeModal(this.app, { maxVideos: this.settings.notes.maxHistoryVideos || 50 }, async (range) => {
+      const progress = new Notice("視聴履歴を取得中… 0件", 0);
+      let res;
+      try {
+        res = await client.listWatched(range, {
+          maxVideos: range.maxVideos,
+          onProgress: (found, pages) => progress.setMessage(`視聴履歴を取得中… ${found}件（${pages}ページ）`),
+        });
+      } catch (e) {
+        progress.hide();
+        const msg = e instanceof YtHistoryError ? e.message : String(e);
+        new Notice(`視聴履歴の取得に失敗しました。\n${msg}\n\n代替: Google Takeout の watch-history.json を「履歴→文字起こし」で読み込めます。`, 20000);
+        return;
+      }
+      progress.hide();
+      if (!res.videos.length) {
+        new Notice(`この期間に視聴した動画が見つかりませんでした（${res.pages}ページ確認）。`, 12000);
+        return;
+      }
+      const noteFile = await this.writeHistoryNote(res.videos, range, res);
+      new Notice(
+        `視聴履歴: ${res.videos.length}件（${res.pages}ページ / ${res.stopped}）→ ${noteFile.basename}\n` +
+        `次: このノートで「Fetch Transcripts from Watch History / URL List」を実行すると文字起こしを取得します。`,
+        16000,
+      );
+      await this.app.workspace.getLeaf(false).openFile(noteFile);
+    }).open();
+  }
+
+  /** Write a watch-history range as a paste-parseable note (URLs → the transcript
+   *  fetch command re-ingests it). Idempotent per-range filename. */
+  private async writeHistoryNote(videos: WatchedVideo[], range: { since: number; until: number }, meta: { pages: number; stopped: string }): Promise<TFile> {
+    const folder = normalizePath(this.settings.notes.transcriptFolder || "Transcripts");
+    if (!this.app.vault.getAbstractFileByPath(folder)) { try { await this.app.vault.createFolder(folder); } catch { /* */ } }
+    const d = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+    const out: string[] = [
+      "---",
+      `watch_history: ${d(range.since)} … ${d(range.until)}`,
+      `count: ${videos.length}`,
+      `fetched_pages: ${meta.pages}`,
+      "---",
+      "",
+      `# 視聴履歴 ${d(range.since)} 〜 ${d(range.until)}`,
+      "",
+      `> ${videos.length}件（${meta.stopped}）。各行の URL は「Fetch Transcripts…」でそのまま文字起こしできます。`,
+      "",
+    ];
+    for (const v of videos) {
+      const when = v.watchedAt ? d(v.watchedAt) : "??";
+      out.push(`- [ ] ${when} — [${v.title.replace(/[[\]]/g, "")}](${v.url})`);
+    }
+    out.push("");
+    const path = normalizePath(`${folder}/_watch-history_${d(range.since)}_${d(range.until)}.md`);
+    const body = out.join("\n");
+    const ex = this.app.vault.getAbstractFileByPath(path);
+    return ex instanceof TFile ? (await this.app.vault.modify(ex, body), ex) : await this.app.vault.create(path, body);
+  }
+
   /** Ping each ingestion adapter and write a health report (invariant #7). */
   private async reconHealthCheck(): Promise<void> {
     const n = this.settings.notes;
@@ -1634,6 +1714,36 @@ export default class JPCollocationsPlugin extends Plugin {
       L.push("- 注意: timedtext は PO トークンゲートにより空を返すことがある（その場合は Tier A か手動貼り付け）。");
     } catch (e) {
       L.push(`- ❌ 到達不可: ${String(e)}`);
+    }
+
+    // Live watch history (cookie) — make the REAL call and report the outcome, and
+    // dump the raw first page so the parser can be confirmed/fixed against real data.
+    L.push("", "## 視聴履歴（Cookie / InnerTube）");
+    const hc = this.makeHistoryClient();
+    const hIssue = hc.configIssue();
+    if (hIssue) {
+      L.push(`- 未設定: ${hIssue}`);
+    } else {
+      try {
+        const raw = await hc.fetchRaw();
+        const { extractHistoryPage } = await import("./notes/yt-history-client");
+        const page = extractHistoryPage(raw, Date.now());
+        L.push(`- 接続: ✅ HTTP 200 · loggedOut=**${page.loggedOut}** · 先頭ページ動画数=**${page.videos.length}** · 次ページ=${page.continuation ? "あり" : "なし"}`);
+        if (page.videos.length) {
+          L.push("- サンプル:");
+          for (const v of page.videos.slice(0, 5)) L.push(`  - ${v.watchedAt ? new Date(v.watchedAt).toISOString().slice(0, 10) : "??"} · ${v.id} · ${v.title.slice(0, 40)}`);
+        }
+        // Raw dump (first ~200KB) so a parser mismatch can be diagnosed precisely.
+        try {
+          const dumpPath = normalizePath(`${normalizePath(n.transcriptFolder || "Transcripts")}/_history-raw.json`);
+          const dump = JSON.stringify(raw).slice(0, 200000);
+          const exd = this.app.vault.getAbstractFileByPath(dumpPath);
+          if (exd instanceof TFile) await this.app.vault.modify(exd, dump); else await this.app.vault.create(dumpPath, dump);
+          L.push(`- 生レスポンスを保存: \`${dumpPath}\`（解析不一致時の診断用）`);
+        } catch { /* */ }
+      } catch (e) {
+        L.push(`- ❌ ${e instanceof YtHistoryError ? e.message : String(e)}`);
+      }
     }
 
     // Tier C — manual paste always available
