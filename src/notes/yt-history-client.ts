@@ -61,10 +61,15 @@ const ORIGIN = 'https://www.youtube.com';
  * Non-cURL input is returned as-is so a raw paste still works.
  */
 export function normalizeCookieInput(input: string): string {
-  const s = (input || '').trim();
+  let s = (input || '').trim();
   if (!s) return '';
-  const looksCurl = /(^|\s)curl\s/i.test(s) || /\s-H\s/.test(s) || /(^|\s)(-b|--cookie)\s/.test(s);
+  const looksCurl = /(^|\s)curl[\s.]/i.test(s) || /\s-H\s/.test(s) || /(^|\s)(-b|--cookie)\s/.test(s);
   if (!looksCurl) return s;
+  // Windows "Copy as cURL (cmd)" uses `^` line-continuations and `^"` quoting.
+  // Unescape it back to plain quotes so the extractors below apply uniformly.
+  if (s.includes('^"') || /\^\r?\n/.test(s)) {
+    s = s.replace(/\^\r?\n/g, ' ').replace(/\^(.)/g, '$1');
+  }
   const unescape = (v: string) => v.replace(/\\(['"\\])/g, '$1').replace(/\\\r?\n/g, '').trim();
   // -H $'cookie: …' / -H "cookie: …" / -H 'cookie: …'
   const hdr = s.match(/-H\s+\$?(['"])\s*cookie:\s*([\s\S]*?)\1/i);

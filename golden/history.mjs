@@ -30,6 +30,12 @@ ok(C.normalizeCookieInput(`curl 'https://www.youtube.com/youtubei/v1/browse' -H 
 ok(C.normalizeCookieInput(`curl "https://x" -H "cookie: ${RAW}"`) === RAW, 'extracts from double-quoted -H');
 ok(C.normalizeCookieInput(`curl 'https://x' -b '${RAW}'`) === RAW, 'extracts from -b');
 ok(C.normalizeCookieInput(`curl 'https://x' --cookie '${RAW}'`) === RAW, 'extracts from --cookie');
+// Windows "Copy as cURL (cmd)": ^ continuations + ^" quoting
+const cmdCurl = `curl ^"https://www.youtube.com/youtubei/v1/browse^" ^\n  -H ^"cookie: ${RAW}^" ^\n  -H ^"content-type: application/json^"`;
+ok(C.normalizeCookieInput(cmdCurl) === RAW, 'extracts from Windows cmd cURL (^" quoting)', `(${JSON.stringify(C.normalizeCookieInput(cmdCurl))})`);
+// a cURL with NO cookie (the cached document-request trap) → returned as-is, no SAPISID
+const noCookieCurl = `curl ^"https://www.youtube.com/feed/history^" ^\n  -H ^"user-agent: X^" ^\n  -H ^"sec-ch-ua-mobile: ?0^"`;
+ok(!C.cookieValue(C.normalizeCookieInput(noCookieCurl), 'SAPISID'), 'cookie-less cURL yields no SAPISID (correctly rejected)');
 ok(C.normalizeCookieInput('') === '', 'empty → empty');
 
 // ── cookie + auth ──
