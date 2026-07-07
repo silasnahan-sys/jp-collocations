@@ -21,6 +21,17 @@ const C = await import(pathToFileURL(join(HERE, '..', 'src', 'notes', 'yt-histor
 let fail = 0, n = 0;
 const ok = (cond, msg, extra = '') => { n++; if (!cond) { fail++; console.log(`  ✗ ${msg} ${extra}`); } else console.log(`  ✓ ${msg}`); };
 
+// ── cookie normalization (raw string OR pasted cURL) ──
+console.log('\n══ normalizeCookieInput ══');
+const RAW = 'SID=x; SAPISID=ABC123def; HSID=y';
+ok(C.normalizeCookieInput(RAW) === RAW, 'raw cookie passes through');
+ok(C.normalizeCookieInput('  ' + RAW + '  ') === RAW, 'trims raw');
+ok(C.normalizeCookieInput(`curl 'https://www.youtube.com/youtubei/v1/browse' -H 'cookie: ${RAW}' -H 'accept: */*'`) === RAW, 'extracts from bash cURL -H cookie', `(${C.normalizeCookieInput(`curl 'x' -H 'cookie: ${RAW}'`)})`);
+ok(C.normalizeCookieInput(`curl "https://x" -H "cookie: ${RAW}"`) === RAW, 'extracts from double-quoted -H');
+ok(C.normalizeCookieInput(`curl 'https://x' -b '${RAW}'`) === RAW, 'extracts from -b');
+ok(C.normalizeCookieInput(`curl 'https://x' --cookie '${RAW}'`) === RAW, 'extracts from --cookie');
+ok(C.normalizeCookieInput('') === '', 'empty → empty');
+
 // ── cookie + auth ──
 console.log('\n══ cookie + SAPISIDHASH ══');
 const cookie = 'SID=x; SAPISID=ABC123def; __Secure-1PAPISID=ONEPEE; __Secure-3PAPISID=THREEPEE; HSID=y';

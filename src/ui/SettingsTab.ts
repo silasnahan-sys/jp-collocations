@@ -1,6 +1,7 @@
 import { PluginSettingTab, Setting, Notice, Platform } from "obsidian";
 import type { App } from "obsidian";
 import { detectTools } from "../notes/audio-extractor.ts";
+import { normalizeCookieInput, cookieValue } from "../notes/yt-history-client.ts";
 import { USERSCRIPT_SOURCE } from "../x/mobile-capture.ts";
 import type { Plugin } from "obsidian";
 import type { PluginSettings, SpeakerFormat } from "../types.ts";
@@ -379,19 +380,34 @@ export class SettingsTab extends PluginSettingTab {
     const histDesc = containerEl.createEl("p", { cls: "setting-item-description" });
     histDesc.innerHTML =
       "youtube.com のログイン Cookie を<b>一度だけ</b>貼り付けると、「視聴日の範囲」を指定してサーバー側の視聴履歴（全デバイス）を取得できます。X 機能と同じ方式。<br>" +
-      "<b>取得方法:</b> ブラウザで youtube.com にログイン → DevTools(F12) → Network → 任意の <code>youtubei</code> リクエスト → Request Headers の <code>cookie:</code> の値を丸ごとコピー。<br>" +
+      "<b>いちばん簡単:</b> youtube.com にログイン → DevTools(F12) → Network → 任意のリクエストを右クリック → <b>Copy → Copy as cURL</b> → その内容を丸ごと下に貼り付け（Cookie を自動抽出します）。<br>" +
       "貼り付け後、コマンド「Reconciliation Health Check」で接続を確認できます（失効時は再貼り付け）。";
 
+    const cookieStatus = containerEl.createEl("p", { cls: "setting-item-description" });
+    const renderCookieStatus = () => {
+      const norm = normalizeCookieInput(hist.cookie);
+      if (!norm) { cookieStatus.setText("未設定。"); return; }
+      const hasSap = !!(cookieValue(norm, "SAPISID") || cookieValue(norm, "__Secure-3PAPISID"));
+      const nCookies = norm.split(";").filter(s => s.includes("=")).length;
+      cookieStatus.setText(hasSap
+        ? `✅ Cookie を認識（${nCookies}個、SAPISID あり）。Health Check で接続確認できます。`
+        : `⚠ SAPISID が見つかりません（${nCookies}個検出）。フル Cookie か Copy as cURL を貼り付けてください。`);
+    };
+
     new Setting(containerEl)
-      .setName("YouTube Cookie")
-      .setDesc("youtube.com の cookie ヘッダ全体（SAPISID を含む必要あり）。秘密情報として保存されます。")
+      .setName("YouTube Cookie / cURL")
+      .setDesc("フル cookie ヘッダ、または『Copy as cURL』の内容を貼り付け。秘密情報として保存されます。")
       .addTextArea(t => {
-        t.setValue(hist.cookie).setPlaceholder("SID=...; SAPISID=...; __Secure-3PAPISID=...; ...").onChange(async v => {
-          hist.cookie = v.trim(); await this.onSettingsChange();
+        t.setValue(hist.cookie).setPlaceholder("curl 'https://www.youtube.com/...' -H 'cookie: ...'  （またはフル cookie 文字列）").onChange(async v => {
+          // Store the normalized cookie so the field reflects exactly what's used.
+          hist.cookie = normalizeCookieInput(v);
+          renderCookieStatus();
+          await this.onSettingsChange();
         });
-        t.inputEl.rows = 3;
+        t.inputEl.rows = 4;
         t.inputEl.style.width = "100%";
       });
+    renderCookieStatus();
 
     new Setting(containerEl)
       .setName("INNERTUBE API キー（上級）")

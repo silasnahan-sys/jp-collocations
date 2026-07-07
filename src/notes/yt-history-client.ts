@@ -53,6 +53,28 @@ const ORIGIN = 'https://www.youtube.com';
 
 // ── PURE: cookie + auth ─────────────────────────────────────────────────────────
 
+/**
+ * Accept EITHER a raw `name=value; …` cookie string OR a whole "Copy as cURL"
+ * blob and return just the cookie string. DevTools hides the Cookie line behind
+ * "provisional headers" for cached requests, so pasting the cURL (which always
+ * carries the cookie, via `-H 'cookie: …'` or `-b '…'`) is the reliable capture.
+ * Non-cURL input is returned as-is so a raw paste still works.
+ */
+export function normalizeCookieInput(input: string): string {
+  const s = (input || '').trim();
+  if (!s) return '';
+  const looksCurl = /(^|\s)curl\s/i.test(s) || /\s-H\s/.test(s) || /(^|\s)(-b|--cookie)\s/.test(s);
+  if (!looksCurl) return s;
+  const unescape = (v: string) => v.replace(/\\(['"\\])/g, '$1').replace(/\\\r?\n/g, '').trim();
+  // -H $'cookie: …' / -H "cookie: …" / -H 'cookie: …'
+  const hdr = s.match(/-H\s+\$?(['"])\s*cookie:\s*([\s\S]*?)\1/i);
+  if (hdr) return unescape(hdr[2]);
+  // -b '…' / --cookie '…'
+  const b = s.match(/(?:-b|--cookie)\s+\$?(['"])([\s\S]*?)\1/i);
+  if (b) return unescape(b[2]);
+  return s;   // looked like cURL but no cookie found — leave it so the user notices
+}
+
 /** Read one cookie value out of a Cookie header string. */
 export function cookieValue(cookie: string, name: string): string | null {
   const re = new RegExp('(?:^|;\\s*)' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]+)');
@@ -219,18 +241,24 @@ export class YtHistoryClient {
     this.getSettings = getSettings;
   }
 
+  /** The cookie header, normalized (accepts a raw string or a pasted cURL blob). */
+  private cookie(): string {
+    return normalizeCookieInput(this.getSettings().cookie);
+  }
+
   configIssue(): string | null {
-    const s = this.getSettings();
-    if (!s.cookie.trim()) return 'YouTube のログイン Cookie が未設定です（設定に貼り付けてください）。';
-    if (!cookieValue(s.cookie, 'SAPISID') && !cookieValue(s.cookie, '__Secure-3PAPISID'))
-      return 'Cookie に SAPISID がありません。youtube.com のフル Cookie ヘッダを貼り付けてください。';
+    const cookie = this.cookie();
+    if (!cookie) return 'YouTube のログイン Cookie が未設定です（設定に貼り付けてください）。';
+    if (!cookieValue(cookie, 'SAPISID') && !cookieValue(cookie, '__Secure-3PAPISID'))
+      return 'Cookie に SAPISID がありません。youtube.com のフル Cookie（または Copy as cURL）を貼り付けてください。';
     return null;
   }
 
   /** One raw browse call (first page when no continuation). Throws verbatim. */
   async fetchRaw(continuation?: string): Promise<unknown> {
     const s = this.getSettings();
-    const auth = await sapisidAuth(s.cookie, Math.floor(Date.now() / 1000));
+    const cookie = this.cookie();
+    const auth = await sapisidAuth(cookie, Math.floor(Date.now() / 1000));
     if (!auth) throw new YtHistoryError('Cookie に SAPISID がありません（フル Cookie を貼り付けてください）。');
 
     const url = `${ORIGIN}/youtubei/v1/browse?key=${encodeURIComponent(s.apiKey)}&prettyPrint=false`;
@@ -239,7 +267,7 @@ export class YtHistoryClient {
     const headers: Record<string, string> = {
       'content-type': 'application/json',
       authorization: auth,
-      cookie: s.cookie,
+      cookie,
       origin: ORIGIN,
       'x-origin': ORIGIN,
       'x-goog-authuser': '0',
