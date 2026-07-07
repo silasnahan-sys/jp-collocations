@@ -252,6 +252,10 @@ export function buildYtdlpSubsArgs(cfg: YtdlpTranscriptConfig, langPref: string[
     '--no-playlist',
     '--no-warnings',
     '--socket-timeout', '30', '--retries', '3',
+    // Be gentle: a small in-process delay + retry-on-429 reduces YouTube's rate
+    // limiting when many videos are fetched back-to-back (batch history sync).
+    '--sleep-requests', '1',
+    '--extractor-retries', '3',
     '--no-progress', '--ignore-config',
     '-o', outTemplate,
     `https://youtu.be/${videoId}`,

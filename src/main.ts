@@ -1585,6 +1585,10 @@ export default class JPCollocationsPlugin extends Plugin {
     ];
     let fetched = 0, noCaps = 0, failed = 0, existed = 0;
     const progress = new Notice(`文字起こしを取得中… 0/${list.length}`, 0);
+    const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+    const THROTTLE_MS = 3500;     // spacing between network fetches (avoid YouTube 429)
+    const MAX_RETRIES = 3;        // on 429, back off and retry this many times
+    let didNetFetch = false;
 
     for (let i = 0; i < list.length; i++) {
       const v = list[i];
@@ -1594,17 +1598,35 @@ export default class JPCollocationsPlugin extends Plugin {
         (f) => f.path.startsWith(folder + "/") && (f.path.includes(`(${v.id})`) || f.basename === v.id),
       );
       if (existingBase) { existed++; log.push(`- ⏭ ${v.id} 既存: [[${existingBase.basename}]]`); continue; }
-      try {
-        const t = await adapter.fetch(v.id);
-        if (!t) { noCaps++; log.push(`- ⚪ ${v.id} 字幕なし — スキップ (${v.title})`); continue; }
-        if (!t.title || t.title === v.id) t.title = v.title || t.title;
-        const outFile = await this.writeTranscriptFile(t, false);
-        fetched++;
-        log.push(`- ✅ ${v.id} → [[${outFile.basename}]] (${t.lines.length}行 / ${t.source})`);
-      } catch (e) {
-        failed++;
-        const msg = e instanceof TranscriptError ? e.message : String(e);
-        log.push(`- ❌ ${v.id} 失敗: ${msg}`);
+
+      // Space out real network fetches; YouTube 429s a rapid burst of timedtext pulls.
+      if (didNetFetch) await sleep(THROTTLE_MS);
+      didNetFetch = true;
+
+      let attempt = 0, settled = false;
+      while (!settled) {
+        try {
+          const t = await adapter.fetch(v.id);
+          if (!t) { noCaps++; log.push(`- ⚪ ${v.id} 字幕なし — スキップ (${v.title})`); settled = true; break; }
+          if (!t.title || t.title === v.id) t.title = v.title || t.title;
+          const outFile = await this.writeTranscriptFile(t, false);
+          fetched++;
+          log.push(`- ✅ ${v.id} → [[${outFile.basename}]] (${t.lines.length}行 / ${t.source})`);
+          settled = true;
+        } catch (e) {
+          const msg = e instanceof TranscriptError ? e.message : String(e);
+          const is429 = /\b429\b|Too Many Requests/i.test(msg);
+          if (is429 && attempt < MAX_RETRIES) {
+            attempt++;
+            const backoff = 20000 * attempt;   // 20s, 40s, 60s
+            progress.setMessage(`レート制限(429) — ${backoff / 1000}秒待って再試行 ${attempt}/${MAX_RETRIES}（${v.id}）`);
+            await sleep(backoff);
+            continue;                            // retry same video
+          }
+          failed++;
+          log.push(`- ❌ ${v.id} 失敗: ${msg}`);
+          settled = true;
+        }
       }
     }
     progress.hide();
