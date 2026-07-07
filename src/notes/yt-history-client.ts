@@ -60,9 +60,30 @@ const ORIGIN = 'https://www.youtube.com';
  * carries the cookie, via `-H 'cookie: …'` or `-b '…'`) is the reliable capture.
  * Non-cURL input is returned as-is so a raw paste still works.
  */
+/** Parse a Netscape `cookies.txt` (what "Get cookies.txt" extensions export) into
+ *  a `name=value; …` header. Handles the `#HttpOnly_` data-line prefix (those are
+ *  cookies, not comments) and tab- or whitespace-separated columns. '' if none. */
+export function parseNetscapeCookies(text: string): string {
+  const pairs: string[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    let line = rawLine;
+    if (line.startsWith('#HttpOnly_')) line = line.slice('#HttpOnly_'.length);
+    else if (!line.trim() || line.startsWith('#')) continue;
+    let cols = line.split('\t');
+    if (cols.length < 7) cols = line.trim().split(/\s+/);
+    if (cols.length >= 7 && cols[5]) pairs.push(`${cols[5]}=${cols.slice(6).join(' ')}`);
+  }
+  return pairs.join('; ');
+}
+
 export function normalizeCookieInput(input: string): string {
   let s = (input || '').trim();
   if (!s) return '';
+  // Netscape cookies.txt export (multi-line, tab-separated, mentions youtube).
+  if (/^#\s*(Netscape|HTTP Cookie)/i.test(s) || (/\n/.test(s) && /\t/.test(s) && /youtube/i.test(s))) {
+    const fromFile = parseNetscapeCookies(s);
+    if (fromFile) return fromFile;
+  }
   const looksCurl = /(^|\s)curl[\s.]/i.test(s) || /\s-H\s/.test(s) || /(^|\s)(-b|--cookie)\s/.test(s);
   if (!looksCurl) return s;
   // Windows "Copy as cURL (cmd)" uses `^` line-continuations and `^"` quoting.

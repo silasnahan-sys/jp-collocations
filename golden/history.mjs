@@ -36,6 +36,15 @@ ok(C.normalizeCookieInput(cmdCurl) === RAW, 'extracts from Windows cmd cURL (^" 
 // a cURL with NO cookie (the cached document-request trap) → returned as-is, no SAPISID
 const noCookieCurl = `curl ^"https://www.youtube.com/feed/history^" ^\n  -H ^"user-agent: X^" ^\n  -H ^"sec-ch-ua-mobile: ?0^"`;
 ok(!C.cookieValue(C.normalizeCookieInput(noCookieCurl), 'SAPISID'), 'cookie-less cURL yields no SAPISID (correctly rejected)');
+// Netscape cookies.txt (from "Get cookies.txt" extensions), incl. #HttpOnly_ lines
+const netscape = [
+  '# Netscape HTTP Cookie File',
+  '.youtube.com\tTRUE\t/\tFALSE\t0\tSID\tx',
+  '#HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t0\tSAPISID\tABC123def',
+  '.youtube.com\tTRUE\t/\tTRUE\t0\tHSID\ty',
+].join('\n');
+ok(C.parseNetscapeCookies(netscape) === RAW, 'parseNetscapeCookies → cookie string (handles #HttpOnly_)', `(${C.parseNetscapeCookies(netscape)})`);
+ok(!!C.cookieValue(C.normalizeCookieInput(netscape), 'SAPISID'), 'normalize detects cookies.txt → SAPISID present');
 ok(C.normalizeCookieInput('') === '', 'empty → empty');
 
 // ── cookie + auth ──
