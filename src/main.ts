@@ -1562,18 +1562,28 @@ export default class JPCollocationsPlugin extends Plugin {
       return;
     }
     const cap = Math.max(1, this.settings.notes.maxHistoryVideos || 20);
-    const list: WatchedVideo[] = videos.slice(0, cap);
-    const overflow = videos.length - list.length;
+    await this.fetchTranscriptsForVideos(videos.slice(0, cap), { source, detected: videos.length, openLog: true });
+  }
 
+  /**
+   * Fetch + freeze a transcript for each video (skipping ones already on disk and
+   * ones without captions), writing a run log. Shared by the history-note command
+   * and the live date-range command. Returns the tallies.
+   */
+  private async fetchTranscriptsForVideos(
+    list: WatchedVideo[],
+    opts: { source: string; detected: number; openLog?: boolean },
+  ): Promise<{ fetched: number; noCaps: number; failed: number; existed: number; logPath: string }> {
+    const overflow = opts.detected - list.length;
     const adapter = this.makeTranscriptAdapter();
+    const folder = normalizePath(this.settings.notes.transcriptFolder || "Transcripts");
     const log: string[] = [
       `# 視聴履歴→文字起こし 取得ログ`,
       ``,
-      `- source: \`${source}\` · 検出 ${videos.length}件 · 取得対象 ${list.length}件${overflow > 0 ? ` (上限で ${overflow}件スキップ — 設定 maxHistoryVideos)` : ""}`,
+      `- source: \`${opts.source}\` · 検出 ${opts.detected}件 · 取得対象 ${list.length}件${overflow > 0 ? ` (上限で ${overflow}件スキップ — 設定 maxHistoryVideos)` : ""}`,
       ``,
     ];
     let fetched = 0, noCaps = 0, failed = 0, existed = 0;
-    const folder = normalizePath(this.settings.notes.transcriptFolder || "Transcripts");
     const progress = new Notice(`文字起こしを取得中… 0/${list.length}`, 0);
 
     for (let i = 0; i < list.length; i++) {
@@ -1605,10 +1615,11 @@ export default class JPCollocationsPlugin extends Plugin {
       const ex = this.app.vault.getAbstractFileByPath(logPath);
       const outLog = log.join("\n");
       const logFile = ex instanceof TFile ? (await this.app.vault.modify(ex, outLog), ex) : await this.app.vault.create(logPath, outLog);
-      await this.app.workspace.getLeaf(false).openFile(logFile);
+      if (opts.openLog) await this.app.workspace.getLeaf(false).openFile(logFile);
     } catch (e) { console.error("[jp-collocations] history log write failed:", e); }
 
-    new Notice(`履歴取得完了: ✓${fetched} / 既存${existed} / 字幕なし${noCaps} / 失敗${failed}\nログ: ${logPath}`, 15000);
+    new Notice(`文字起こし: ✓${fetched} / 既存${existed} / 字幕なし${noCaps} / 失敗${failed}\nログ: ${logPath}`, 15000);
+    return { fetched, noCaps, failed, existed, logPath };
   }
 
   /** Live watch-history client (cookie auth over the Obsidian requestUrl transport). */
@@ -1643,12 +1654,18 @@ export default class JPCollocationsPlugin extends Plugin {
         return;
       }
       const noteFile = await this.writeHistoryNote(res.videos, range, res);
-      new Notice(
-        `視聴履歴: ${res.videos.length}件（${res.pages}ページ / ${res.stopped}）→ ${noteFile.basename}\n` +
-        `次: このノートで「Fetch Transcripts from Watch History / URL List」を実行すると文字起こしを取得します。`,
-        16000,
-      );
       await this.app.workspace.getLeaf(false).openFile(noteFile);
+
+      if (range.alsoTranscripts) {
+        // One step: go straight on to fetch a frozen transcript for each video.
+        await this.fetchTranscriptsForVideos(res.videos, { source: 'watch-history', detected: res.videos.length, openLog: false });
+      } else {
+        new Notice(
+          `視聴履歴: ${res.videos.length}件（${res.pages}ページ / ${res.stopped}）→ ${noteFile.basename}\n` +
+          `次: このノートで「Fetch Transcripts…」を実行すると文字起こしを取得します。`,
+          16000,
+        );
+      }
     }).open();
   }
 

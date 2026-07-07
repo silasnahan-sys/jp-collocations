@@ -5,7 +5,7 @@
  */
 import { App, Modal, Setting } from 'obsidian';
 
-export interface HistoryRange { since: number; until: number; maxVideos: number; }
+export interface HistoryRange { since: number; until: number; maxVideos: number; alsoTranscripts: boolean; }
 
 const DAY = 86_400_000;
 const startOfDay = (ms: number) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
@@ -17,6 +17,7 @@ export class HistoryRangeModal extends Modal {
   private since: number;
   private until: number;
   private maxVideos: number;
+  private alsoTranscripts = true;
   private sinceText!: HTMLInputElement;
   private untilText!: HTMLInputElement;
 
@@ -68,6 +69,11 @@ export class HistoryRangeModal extends Modal {
       .addSlider((s) => s.setLimits(5, 300, 5).setValue(this.maxVideos).setDynamicTooltip()
         .onChange((v) => { this.maxVideos = v; }));
 
+    new Setting(contentEl)
+      .setName('文字起こしも取得')
+      .setDesc('各動画の字幕を取得して「原文」ノートとして凍結します（オフなら一覧のみ）。')
+      .addToggle((t) => t.setValue(this.alsoTranscripts).onChange((v) => { this.alsoTranscripts = v; }));
+
     new Setting(contentEl).addButton((b) =>
       b.setButtonText('取得').setCta().onClick(() => {
         const s = Date.parse(this.sinceText.value);
@@ -76,7 +82,7 @@ export class HistoryRangeModal extends Modal {
         else { this.since = startOfDay(s); this.until = endOfDay(u); }
         if (this.since > this.until) { const t = this.since; this.since = startOfDay(this.until); this.until = endOfDay(t); }
         this.close();
-        this.onSubmit({ since: this.since, until: this.until, maxVideos: this.maxVideos });
+        this.onSubmit({ since: this.since, until: this.until, maxVideos: this.maxVideos, alsoTranscripts: this.alsoTranscripts });
       }),
     );
   }

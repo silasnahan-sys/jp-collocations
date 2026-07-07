@@ -102,6 +102,26 @@ ok(new Date(pi.videos[0].watchedAt).toISOString().slice(0, 10) === '2026-07-01',
 ok(new Date(pi.videos[2].watchedAt).toISOString().slice(0, 10) === '2026-06-30', 'Yesterday video dated');
 ok(pi.continuation === 'TOKEN_1', 'reads continuation token');
 
+// modern history uses lockupViewModel (view-model shape) not videoRenderer
+console.log('\n══ extractHistoryPage (lockupViewModel shape) ══');
+const lockupResp = {
+  responseContext: { mainAppWebResponseContext: { loggedOut: false } },
+  contents: { twoColumnBrowseResultsRenderer: { tabs: [{ tabRenderer: { content: { sectionListRenderer: {
+    contents: [{ itemSectionRenderer: {
+      header: { itemSectionHeaderRenderer: { title: { content: 'Jul 1, 2026' } } },
+      contents: [
+        { lockupViewModel: { contentId: 'qt-3WHpFRNc', metadata: { lockupMetadataViewModel: { title: { content: 'There’s a 99% chance you’re singing WRONG' } } } } },
+        { lockupViewModel: { contentId: 'IYGas8wJAuI', metadata: { lockupMetadataViewModel: { title: { content: '言語学オリンピック早解き対決' } } } } },
+      ],
+    } }],
+  } } } }] } },
+};
+const lp = C.extractHistoryPage(lockupResp, NOW);
+ok(lp.videos.length === 2, 'lockupViewModel: extracts videos', `(${lp.videos.length})`);
+ok(lp.videos[0].id === 'qt-3WHpFRNc' && lp.videos[0].title === 'There’s a 99% chance you’re singing WRONG', 'lockup title via {content}', `(${lp.videos[0].title})`);
+ok(lp.videos[1].title === '言語学オリンピック早解き対決', 'lockup JP title');
+ok(new Date(lp.videos[0].watchedAt).toISOString().slice(0, 10) === '2026-07-01', 'lockup section date (header {content})');
+
 // ── date-range walk over a mock HTTP client ──
 // listWatched uses the real Date.now() internally, so the fixture uses ABSOLUTE
 // date-section labels (clock-independent) rather than Today/Yesterday.

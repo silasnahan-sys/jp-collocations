@@ -169,10 +169,12 @@ export function parseSectionDate(label: string, nowMs: number): number | null {
 
 // ── PURE: response parsing ──────────────────────────────────────────────────────
 
-/** First text found in a renderer object (`simpleText` or joined `runs`). */
+/** First text found in a renderer OR view-model object (`content` for the newer
+ *  *ViewModel shapes, `simpleText`/`runs` for classic renderers). */
 function firstText(obj: unknown): string | null {
   if (!obj || typeof obj !== 'object') return null;
   const o = obj as Record<string, unknown>;
+  if (typeof o.content === 'string') return o.content;         // lockupMetadataViewModel.title.content
   if (typeof o.simpleText === 'string') return o.simpleText;
   if (Array.isArray(o.runs)) return (o.runs as { text?: string }[]).map((r) => r.text ?? '').join('');
   return null;
