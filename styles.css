@@ -345,3 +345,4763 @@
 .jp-col-results::-webkit-scrollbar-thumb:hover {
   background: var(--text-faint);
 }
+
+/* ── Tab Bar ──────────────────────────────────────────────── */
+.jp-col-tab-bar {
+  display: flex;
+  gap: 0;
+  padding: 0 12px;
+  border-bottom: 2px solid var(--background-modifier-border);
+}
+
+.jp-col-tab {
+  padding: 8px 16px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+
+.jp-col-tab:hover {
+  color: var(--text-normal);
+}
+
+.jp-col-tab--active {
+  color: var(--text-accent);
+  border-bottom-color: var(--text-accent);
+  font-weight: 600;
+}
+
+/* ── Discourse Analysis Tab ───────────────────────────────── */
+.jp-col-discourse-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 0 10px;
+}
+
+.jp-col-discourse-chip {
+  padding: 3px 10px;
+  font-size: 0.72rem;
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+  white-space: nowrap;
+}
+
+.jp-col-discourse-section {
+  margin-bottom: 14px;
+}
+
+.jp-col-section-title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-normal);
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+}
+
+.jp-col-discourse-match {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: var(--radius-s);
+  transition: background 0.1s;
+}
+
+.jp-col-discourse-match:hover {
+  background: var(--background-modifier-hover);
+}
+
+.jp-col-discourse-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #fff;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+
+.jp-col-discourse-surface {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-normal);
+  white-space: nowrap;
+}
+
+.jp-col-discourse-gloss {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jp-col-discourse-register {
+  font-size: 0.65rem;
+  color: var(--text-faint);
+  font-family: var(--font-monospace);
+  white-space: nowrap;
+}
+
+/* ── Logical Flow ─────────────────────────────────────────── */
+.jp-col-discourse-flow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  margin-bottom: 2px;
+}
+
+.jp-col-flow-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-normal);
+  white-space: nowrap;
+}
+
+.jp-col-flow-desc {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* ── Functions ────────────────────────────────────────────── */
+.jp-col-discourse-functions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.jp-col-fn-chip {
+  padding: 3px 10px;
+  font-size: 0.7rem;
+  border-radius: 12px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  white-space: nowrap;
+}
+
+/* ── CSJ Spoken Language Analysis ─────────────────────────── */
+.jp-col-csj-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.jp-col-csj-register,
+.jp-col-csj-speech-type,
+.jp-col-csj-filler-density {
+  padding: 3px 10px;
+  font-size: 0.72rem;
+  border-radius: 12px;
+  background: var(--background-secondary-alt);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.jp-col-csj-register {
+  border-left: 3px solid #e67e22;
+}
+
+.jp-col-csj-speech-type {
+  border-left: 3px solid #3498db;
+}
+
+.jp-col-csj-filler-density {
+  border-left: 3px solid #9b59b6;
+}
+
+.jp-col-csj-fillers h6,
+.jp-col-csj-variations h6 {
+  margin: 8px 0 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.jp-col-csj-filler-row,
+.jp-col-csj-variation-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+  font-size: 0.72rem;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.jp-col-csj-filler-surface,
+.jp-col-csj-variation-pair {
+  font-weight: 600;
+  color: var(--text-normal);
+  min-width: 70px;
+}
+
+.jp-col-csj-freq {
+  color: var(--text-accent);
+  font-size: 0.65rem;
+}
+
+.jp-col-csj-function,
+.jp-col-csj-variation-type {
+  padding: 1px 6px;
+  border-radius: 8px;
+  background: var(--background-modifier-border);
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.jp-col-csj-type {
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 0.62rem;
+  font-weight: 500;
+  background: var(--background-secondary);
+  color: var(--text-faint);
+}
+
+.jp-col-csj-rates {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.jp-col-csj-gloss {
+  font-size: 0.62rem;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* ── Pattern Database Tab ─────────────────────────────────── */
+.jp-col-pattern-section {
+  margin-bottom: 16px;
+}
+
+.jp-col-pattern-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.jp-col-pattern-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: var(--radius-s);
+  transition: background 0.1s;
+  flex-wrap: wrap;
+}
+
+.jp-col-pattern-row:hover {
+  background: var(--background-modifier-hover);
+}
+
+.jp-col-pattern-surface {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-normal);
+  white-space: nowrap;
+  min-width: 60px;
+}
+
+.jp-col-pattern-gloss {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.jp-col-pattern-gloss-en {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.jp-col-pattern-meta {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.jp-col-meta-register {
+  font-size: 0.6rem;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+
+.jp-col-meta-freq {
+  font-size: 0.6rem;
+  color: var(--text-faint);
+  font-family: var(--font-monospace);
+}
+
+.jp-col-pattern-more {
+  padding: 4px 10px;
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* ── Variation Trees ──────────────────────────────────────── */
+.jp-col-var-tree {
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  border-left: 3px solid var(--text-accent);
+  background: var(--background-secondary);
+  border-radius: 0 var(--radius-s) var(--radius-s) 0;
+}
+
+.jp-col-tree-stem {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-normal);
+  margin-right: 8px;
+}
+
+.jp-col-tree-concept {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.jp-col-tree-variants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.jp-col-tree-variant {
+  padding: 2px 8px;
+  font-size: 0.7rem;
+  border-radius: 10px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.jp-col-tree-more {
+  padding: 2px 8px;
+  font-size: 0.65rem;
+  color: var(--text-faint);
+}
+
+/* ── Mobile-first: iOS safe areas + touch targets ─────────── */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .jp-collocations-view {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .jp-col-tab-bar {
+    padding-left: calc(12px + env(safe-area-inset-left));
+    padding-right: calc(12px + env(safe-area-inset-right));
+  }
+}
+
+@media (max-width: 600px) {
+  /* Touch-friendly tap targets (48px minimum) */
+  .jp-col-tab {
+    padding: 12px 14px;
+    font-size: 0.85rem;
+    min-height: 44px;
+  }
+
+  .jp-col-search-input {
+    font-size: 16px; /* prevents iOS zoom on focus */
+    padding: 10px 12px;
+    min-height: 44px;
+  }
+
+  .jp-col-add-btn {
+    min-width: 44px;
+    min-height: 44px;
+    font-size: 1.4rem;
+  }
+
+  .jp-col-chip {
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .jp-col-action-btn {
+    padding: 6px 14px;
+    font-size: 0.78rem;
+    min-height: 44px;
+  }
+
+  .jp-col-card {
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+
+  .jp-col-headword {
+    font-size: 1.3rem;
+  }
+
+  .jp-col-results {
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 6px 24px;
+  }
+
+  /* Discourse: stack on mobile */
+  .jp-col-discourse-match {
+    flex-wrap: wrap;
+    padding: 8px;
+  }
+
+  .jp-col-pattern-row {
+    padding: 8px 10px;
+    gap: 4px;
+  }
+
+  .jp-col-pattern-surface {
+    font-size: 1.05rem;
+    min-width: auto;
+    width: 100%;
+  }
+
+  .jp-col-discourse-cats {
+    gap: 6px;
+    padding: 8px 0 12px;
+  }
+
+  .jp-col-discourse-chip {
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .jp-col-fn-chip {
+    padding: 6px 14px;
+    font-size: 0.76rem;
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .jp-col-var-tree {
+    padding: 10px 12px;
+  }
+
+  .jp-col-tree-stem {
+    font-size: 1.15rem;
+  }
+
+  .jp-col-tree-variant {
+    padding: 4px 10px;
+    font-size: 0.76rem;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+  }
+}
+
+/* ── SRS Card Preview Modal ───────────────────────────────── */
+.jp-srs-modal {
+  font-family: var(--font-interface), "Hiragino Kaku Gothic Pro", "Noto Sans JP", sans-serif;
+}
+
+.jp-srs-header {
+  padding: 8px 0 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 12px;
+}
+
+.jp-srs-title {
+  margin: 0 0 4px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-accent);
+}
+
+.jp-srs-stats {
+  display: flex;
+  gap: 8px;
+}
+
+.jp-srs-stat {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ── Card Container ───────────────────────────────────────── */
+.jp-srs-card-container {
+  padding: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  margin-bottom: 12px;
+  min-height: 120px;
+  overflow-y: auto;
+  max-height: 50vh;
+  -webkit-overflow-scrolling: touch;
+}
+
+.jp-srs-empty {
+  text-align: center;
+  padding: 32px 16px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* ── Type Badge + Difficulty ──────────────────────────────── */
+.jp-srs-type-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+
+.jp-srs-badge--discourse {
+  background: #6c5ce7;
+  color: #fff;
+}
+
+.jp-srs-badge--collocation {
+  background: #00b894;
+  color: #fff;
+}
+
+.jp-srs-difficulty {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 10px;
+}
+
+.jp-srs-diff-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--background-modifier-border);
+}
+
+.jp-srs-diff-dot--filled {
+  background: var(--text-accent);
+}
+
+/* ── Card Front / Back ────────────────────────────────────── */
+.jp-srs-card-front,
+.jp-srs-card-back {
+  padding: 10px 0;
+}
+
+.jp-srs-card-label {
+  margin: 0 0 6px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.jp-srs-line {
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--text-normal);
+  margin: 2px 0;
+}
+
+.jp-srs-line mark {
+  background: rgba(255, 230, 0, 0.3);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.jp-srs-line u {
+  text-decoration-color: var(--text-accent);
+  text-underline-offset: 3px;
+}
+
+/* ── Progressive Spoiler Blocks ───────────────────────────── */
+.jp-srs-spoiler {
+  padding: 8px 12px;
+  margin: 4px 0;
+  border-radius: var(--radius-s);
+  border-left: 3px solid var(--background-modifier-border);
+  transition: all 0.3s ease;
+}
+
+.jp-srs-spoiler--hidden {
+  background: var(--background-modifier-hover);
+  color: transparent;
+  cursor: pointer;
+  user-select: none;
+  letter-spacing: 2px;
+  font-size: 0.8rem;
+  border-left-color: var(--text-faint);
+}
+
+.jp-srs-spoiler--hidden:hover {
+  background: var(--background-modifier-border);
+}
+
+.jp-srs-spoiler--hidden:active {
+  transform: scale(0.98);
+}
+
+.jp-srs-spoiler--revealed {
+  background: var(--background-primary);
+  border-left-color: var(--text-accent);
+  animation: jp-srs-fade-in 0.4s ease-out;
+}
+
+@keyframes jp-srs-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.jp-srs-relation {
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  padding: 2px 0;
+}
+
+.jp-srs-quote {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  padding-left: 12px;
+  border-left: 2px solid var(--background-modifier-border);
+  margin: 4px 0;
+}
+
+.jp-srs-text {
+  margin: 4px 0;
+}
+
+/* ── Navigation ───────────────────────────────────────────── */
+.jp-srs-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 8px 0;
+}
+
+.jp-srs-nav-btn {
+  padding: 8px 16px;
+  font-size: 0.85rem;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  min-height: 44px;
+  min-width: 60px;
+  transition: background 0.12s;
+}
+
+.jp-srs-nav-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.jp-srs-counter {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-normal);
+  min-width: 60px;
+  text-align: center;
+}
+
+/* ── Reveal Button ────────────────────────────────────────── */
+.jp-srs-reveal-btn {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  font-size: 0.9rem;
+  border-radius: var(--radius-m);
+  border: 2px dashed var(--text-accent);
+  background: transparent;
+  color: var(--text-accent);
+  cursor: pointer;
+  margin-bottom: 12px;
+  min-height: 44px;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.jp-srs-reveal-btn:hover {
+  background: rgba(var(--text-accent-rgb, 0, 122, 204), 0.08);
+}
+
+.jp-srs-reveal-btn:active {
+  transform: scale(0.98);
+}
+
+/* ── Flip Button ──────────────────────────────────────────── */
+.jp-srs-flip-btn {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  font-size: 0.85rem;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  cursor: pointer;
+  margin: 8px 0;
+  min-height: 44px;
+  transition: background 0.12s;
+}
+
+.jp-srs-flip-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* ── Action Buttons ───────────────────────────────────────── */
+.jp-srs-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.jp-srs-action-btn {
+  padding: 8px 16px;
+  font-size: 0.82rem;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  min-height: 44px;
+  transition: background 0.12s, color 0.12s;
+}
+
+.jp-srs-action-btn:hover {
+  background: var(--background-modifier-hover);
+}
+
+.jp-srs-action-btn--primary {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+  font-weight: 600;
+}
+
+.jp-srs-action-btn--primary:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* ── Tags ─────────────────────────────────────────────────── */
+.jp-srs-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.jp-srs-tag {
+  padding: 2px 8px;
+  font-size: 0.65rem;
+  border-radius: 10px;
+  background: var(--background-modifier-hover);
+  color: var(--text-faint);
+}
+
+/* ── Options Section ──────────────────────────────────────── */
+.jp-srs-options {
+  padding: 8px 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.jp-srs-opt-title {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.jp-srs-options .setting-item {
+  padding: 4px 0;
+  border-bottom: none;
+}
+
+/* ── Generate SRS Button in Discourse Tab ─────────────────── */
+.jp-srs-generate-btn {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  min-height: 44px;
+  margin-top: 8px;
+  transition: background 0.15s;
+}
+
+.jp-srs-generate-btn:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* ── SRS Modal: Mobile-first iOS ──────────────────────────── */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .jp-srs-modal {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+@media (max-width: 600px) {
+  .jp-srs-card-container {
+    max-height: 40vh;
+    padding: 10px;
+  }
+
+  .jp-srs-nav-btn {
+    padding: 10px 20px;
+    font-size: 0.9rem;
+  }
+
+  .jp-srs-reveal-btn {
+    padding: 14px;
+    font-size: 0.95rem;
+  }
+
+  .jp-srs-action-btn {
+    flex: 1;
+    min-width: 0;
+    text-align: center;
+  }
+
+  .jp-srs-spoiler {
+    padding: 10px 14px;
+  }
+
+  .jp-srs-line {
+    font-size: 1rem;
+    line-height: 1.8;
+  }
+
+  .jp-srs-spoiler--hidden {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+  }
+
+  .jp-srs-flip-btn {
+    padding: 12px;
+    font-size: 0.9rem;
+  }
+
+  .jp-srs-options .setting-item {
+    padding: 6px 0;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   JP Dictionary — Built-in Yomitan Dictionary Viewer
+   Mobile-first, touch-friendly, iOS safe areas
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── View Layout ──────────────────────────────────────────── */
+.jp-dict-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-interface), "Hiragino Kaku Gothic Pro", "Noto Sans JP", sans-serif;
+  font-size: var(--font-ui-medium);
+}
+
+/* ── Header ───────────────────────────────────────────────── */
+.jp-dict-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.jp-dict-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.jp-dict-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-accent);
+}
+
+.jp-dict-header-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.jp-dict-import-btn,
+.jp-dict-manage-btn {
+  padding: 4px 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  min-height: 32px;
+}
+
+.jp-dict-import-btn:hover,
+.jp-dict-manage-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+.jp-dict-import-btn--large {
+  padding: 12px 24px;
+  font-size: 0.9rem;
+  min-height: 44px;
+  margin-top: 12px;
+  border: 2px dashed var(--text-accent);
+  background: transparent;
+  color: var(--text-accent);
+}
+
+.jp-dict-import-btn--large:hover {
+  background: rgba(var(--text-accent-rgb, 0, 122, 204), 0.08);
+  border-color: var(--text-accent);
+  color: var(--text-accent);
+}
+
+/* ── Search Bar ───────────────────────────────────────────── */
+.jp-dict-search-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.jp-dict-search-input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  min-height: 40px;
+}
+
+.jp-dict-search-input:focus {
+  border-color: var(--text-accent);
+  box-shadow: 0 0 0 2px rgba(var(--text-accent-rgb, 0, 122, 204), 0.15);
+}
+
+.jp-dict-clear-btn {
+  padding: 6px 10px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: 0.9rem;
+  min-width: 36px;
+  min-height: 40px;
+  transition: background 0.12s;
+}
+
+.jp-dict-clear-btn:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* ── Suggestions Dropdown ─────────────────────────────────── */
+.jp-dict-suggestions {
+  position: relative;
+  z-index: 100;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  margin: 0 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.jp-dict-suggest-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: background 0.08s;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.jp-dict-suggest-row:last-child {
+  border-bottom: none;
+}
+
+.jp-dict-suggest-row:hover,
+.jp-dict-suggest-row:active {
+  background: var(--background-modifier-hover);
+}
+
+.jp-dict-suggest-expr {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.jp-dict-suggest-reading {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.jp-dict-suggest-freq {
+  font-size: 0.65rem;
+  color: var(--text-faint);
+  margin-left: auto;
+  font-family: var(--font-monospace);
+}
+
+/* ── Stats Bar ────────────────────────────────────────────── */
+.jp-dict-stats {
+  padding: 4px 12px;
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+
+.jp-dict-stat-text {
+  font-size: 0.72rem;
+}
+
+/* ── Results ──────────────────────────────────────────────── */
+.jp-dict-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.jp-dict-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* ── Empty State ──────────────────────────────────────────── */
+.jp-dict-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.jp-dict-empty-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+}
+
+.jp-dict-empty-state h5 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: var(--text-normal);
+}
+
+.jp-dict-empty-desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  max-width: 280px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Home ─────────────────────────────────────────────────── */
+.jp-dict-home {
+  padding: 8px 0;
+}
+
+.jp-dict-home-hint {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 8px 0 16px;
+  margin: 0;
+}
+
+/* ── Dictionary Info Cards ────────────────────────────────── */
+.jp-dict-info-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 12px;
+  margin-bottom: 8px;
+  background: var(--background-secondary);
+}
+
+.jp-dict-info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.jp-dict-info-icon {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+.jp-dict-info-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.jp-dict-info-text strong {
+  font-size: 0.9rem;
+  color: var(--text-normal);
+}
+
+.jp-dict-info-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.jp-dict-info-desc {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+
+.jp-dict-info-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.jp-dict-info-badge {
+  padding: 2px 8px;
+  font-size: 0.62rem;
+  border-radius: 10px;
+  background: var(--background-modifier-hover);
+  color: var(--text-faint);
+}
+
+/* ── Entry Card ───────────────────────────────────────────── */
+.jp-dict-card {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 12px;
+  margin-bottom: 8px;
+  background: var(--background-primary);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.jp-dict-card:hover {
+  border-color: var(--text-accent);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.jp-dict-card-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+
+.jp-dict-card-expression {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-normal);
+  line-height: 1.2;
+}
+
+.jp-dict-card-reading {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+/* ── Meta Row ─────────────────────────────────────────────── */
+.jp-dict-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.jp-dict-freq-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 600;
+}
+
+.jp-dict-freq-icon {
+  font-size: 0.55rem;
+}
+
+.jp-dict-freq-value {
+  font-family: var(--font-monospace);
+}
+
+.jp-dict-tag {
+  padding: 1px 7px;
+  font-size: 0.58rem;
+  border-radius: 8px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+}
+
+.jp-dict-tag--partOfSpeech {
+  background: #3498db;
+  color: #fff;
+}
+
+.jp-dict-tag--misc {
+  background: var(--background-secondary-alt);
+  color: var(--text-faint);
+}
+
+.jp-dict-tag--name {
+  background: #9b59b6;
+  color: #fff;
+}
+
+.jp-dict-tag--popular {
+  background: #e74c3c;
+  color: #fff;
+}
+
+.jp-dict-tag--archaism,
+.jp-dict-tag--rare {
+  background: var(--background-modifier-border);
+  color: var(--text-faint);
+}
+
+.jp-dict-dict-badge {
+  padding: 1px 7px;
+  font-size: 0.55rem;
+  border-radius: 8px;
+  background: var(--text-accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+  margin-left: auto;
+  white-space: nowrap;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Pitch Accent ─────────────────────────────────────────── */
+.jp-dict-pitch-container {
+  margin: 6px 0 8px;
+  padding: 6px 10px;
+  background: var(--background-secondary);
+  border-radius: var(--radius-s);
+  border-left: 3px solid #e74c3c;
+}
+
+.jp-dict-pitch-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+}
+
+.jp-dict-pitch-mora {
+  position: relative;
+  padding: 0 3px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.jp-dict-pitch-high {
+  color: var(--text-normal);
+  border-top: 2px solid #e74c3c;
+  padding-top: 2px;
+}
+
+.jp-dict-pitch-low {
+  color: var(--text-muted);
+  border-bottom: 2px solid #3498db;
+  padding-bottom: 2px;
+}
+
+.jp-dict-pitch-drop {
+  width: 0;
+  height: 16px;
+  border-right: 2px dashed #e74c3c;
+  margin: 0 1px;
+  align-self: stretch;
+}
+
+.jp-dict-pitch-label {
+  font-size: 0.6rem;
+  color: var(--text-faint);
+  margin-left: 8px;
+  align-self: center;
+}
+
+/* ── Definitions ──────────────────────────────────────────── */
+.jp-dict-defs {
+  margin-top: 4px;
+}
+
+.jp-dict-def-row {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  align-items: flex-start;
+}
+
+.jp-dict-def-row:last-child {
+  border-bottom: none;
+}
+
+.jp-dict-def-num {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-accent);
+  min-width: 18px;
+  flex-shrink: 0;
+  padding-top: 2px;
+}
+
+.jp-dict-def-content {
+  flex: 1;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text-normal);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.jp-dict-def-text {
+  color: var(--text-normal);
+}
+
+.jp-dict-def-deinflect {
+  color: var(--text-accent);
+  font-weight: 500;
+}
+
+.jp-dict-def-rules {
+  color: var(--text-faint);
+  font-size: 0.75rem;
+}
+
+.jp-dict-def-image {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* ── Structured Content ───────────────────────────────────── */
+.jp-dict-sc {
+  /* Reset */
+}
+
+.jp-dict-def-content ruby {
+  ruby-position: over;
+}
+
+.jp-dict-def-content rt {
+  font-size: 0.55em;
+  color: var(--text-muted);
+}
+
+.jp-dict-def-content table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.78rem;
+  margin: 4px 0;
+}
+
+.jp-dict-def-content td,
+.jp-dict-def-content th {
+  border: 1px solid var(--background-modifier-border);
+  padding: 3px 6px;
+}
+
+.jp-dict-def-content th {
+  background: var(--background-secondary);
+  font-weight: 600;
+}
+
+.jp-dict-def-content ul,
+.jp-dict-def-content ol {
+  margin: 2px 0;
+  padding-left: 18px;
+}
+
+.jp-dict-def-content li {
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.jp-dict-def-content details {
+  margin: 4px 0;
+}
+
+.jp-dict-def-content summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--text-accent);
+}
+
+/* ── Internal links ───────────────────────────────────────── */
+.jp-dict-internal-link {
+  color: var(--text-accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 3px;
+  font-weight: 500;
+}
+
+.jp-dict-internal-link:hover {
+  text-decoration-style: solid;
+}
+
+.jp-dict-ext-link {
+  color: var(--text-faint);
+}
+
+/* ── Card Actions ─────────────────────────────────────────── */
+.jp-dict-card-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.jp-dict-action-btn {
+  padding: 4px 12px;
+  font-size: 0.72rem;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.jp-dict-action-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* ── Manage Modal ─────────────────────────────────────────── */
+.jp-dict-manage-modal h2 {
+  margin-bottom: 16px;
+  color: var(--text-normal);
+}
+
+.jp-dict-manage-modal h3 {
+  color: var(--text-accent);
+  margin-top: 16px;
+}
+
+/* ── Mobile-first: iOS safe areas + touch targets ─────────── */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .jp-dict-view {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .jp-dict-header {
+    padding-left: calc(12px + env(safe-area-inset-left));
+    padding-right: calc(12px + env(safe-area-inset-right));
+  }
+}
+
+@media (max-width: 600px) {
+  .jp-dict-search-input {
+    font-size: 16px;
+    padding: 12px 14px;
+    min-height: 48px;
+    border-radius: var(--radius-m);
+  }
+
+  .jp-dict-clear-btn {
+    min-width: 44px;
+    min-height: 48px;
+    font-size: 1rem;
+  }
+
+  .jp-dict-import-btn,
+  .jp-dict-manage-btn {
+    min-height: 44px;
+    padding: 8px 14px;
+    font-size: 0.82rem;
+  }
+
+  .jp-dict-suggest-row {
+    padding: 14px 16px;
+    min-height: 48px;
+  }
+
+  .jp-dict-suggest-expr {
+    font-size: 1.15rem;
+  }
+
+  .jp-dict-card {
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+
+  .jp-dict-card-expression {
+    font-size: 1.6rem;
+  }
+
+  .jp-dict-card-reading {
+    font-size: 1rem;
+  }
+
+  .jp-dict-tag {
+    padding: 3px 10px;
+    font-size: 0.68rem;
+    min-height: 28px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .jp-dict-freq-badge {
+    padding: 3px 10px;
+    font-size: 0.68rem;
+  }
+
+  .jp-dict-def-content {
+    font-size: 0.95rem;
+    line-height: 1.7;
+  }
+
+  .jp-dict-def-num {
+    font-size: 0.82rem;
+    min-width: 22px;
+  }
+
+  .jp-dict-action-btn {
+    padding: 8px 16px;
+    font-size: 0.82rem;
+    min-height: 44px;
+  }
+
+  .jp-dict-pitch-mora {
+    font-size: 1.05rem;
+    padding: 0 4px;
+  }
+
+  .jp-dict-results {
+    padding: 8px 6px 24px;
+  }
+
+  .jp-dict-info-card {
+    padding: 14px;
+  }
+
+  .jp-dict-home-hint {
+    font-size: 0.9rem;
+    padding: 12px 0 20px;
+  }
+}
+
+/* ── Scrollbar ────────────────────────────────────────────── */
+.jp-dict-results::-webkit-scrollbar {
+  width: 4px;
+}
+
+.jp-dict-results::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.jp-dict-results::-webkit-scrollbar-thumb {
+  background: var(--background-modifier-border);
+  border-radius: 2px;
+}
+
+.jp-dict-results::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DISCOURSE VISUALIZATION: Pattern + Relation underlines/highlights
+   ══════════════════════════════════════════════════════════════ */
+
+/* Pattern underlines (per-category color) */
+.jp-vis-pattern {
+  border-bottom: 2px solid currentColor;
+  border-radius: 0;
+  cursor: help;
+  transition: background-color 0.15s ease;
+}
+.jp-vis-pattern:hover {
+  background-color: rgba(255.255,255,0.08);
+}
+
+/* Category colors */
+.jp-vis-cat-A { border-bottom-color: #74b9ff; }
+.jp-vis-cat-B { border-bottom-color: #a29bfe; }
+.jp-vis-cat-C { border-bottom-color: #55efc4; }
+.jp-vis-cat-D { border-bottom-color: #ffeaa7; }
+.jp-vis-cat-E { border-bottom-color: #fd79a8; }
+.jp-vis-cat-F { border-bottom-color: #6c5ce7; }
+.jp-vis-cat-G { border-bottom-color: #e17055; }
+.jp-vis-cat-H { border-bottom-color: #00cec9; }
+.jp-vis-cat-I { border-bottom-color: #dfe6e9; }
+.jp-vis-cat-J { border-bottom-color: #ff6b6b; }
+.jp-vis-cat-K { border-bottom-color: #ff9f43; }
+.jp-vis-cat-L { border-bottom-color: #0984e3; }
+.jp-vis-cat-M { border-bottom-color: #00b894; }
+.jp-vis-cat-N { border-bottom-color: #fdcb6e; }
+
+/* Relation decorations */
+.jp-vis-relation-source {
+  border-bottom: 2px dashed;
+  cursor: help;
+}
+.jp-vis-relation-target {
+  border-bottom: 2px solid;
+  cursor: help;
+}
+
+/* Relation color classes */
+.jp-rel-cause { background-color: rgba(255,107,107,0.12); border-bottom-color: #ff6b6b; }
+.jp-rel-concession { background-color: rgba(255,159,67,0.12); border-bottom-color: #ff9f43; }
+.jp-rel-conditional { background-color: rgba(255,193,7,0.12); border-bottom-color: #ffc107; }
+.jp-rel-temporal { background-color: rgba(78,205,196,0.12); border-bottom-color: #4ecdc4; }
+.jp-rel-purpose { background-color: rgba(106,176,76,0.12); border-bottom-color: #6ab04c; }
+.jp-rel-means { background-color: rgba(104,109,224,0.12); border-bottom-color: #686de0; }
+.jp-rel-contrast { background-color: rgba(255,71,87,0.12); border-bottom-color: #ff4757; }
+.jp-rel-addition { background-color: rgba(46,213,115,0.12); border-bottom-color: #2ed573; }
+.jp-rel-elaboration { background-color: rgba(116,185,255,0.12); border-bottom-color: #74b9ff; }
+.jp-rel-example { background-color: rgba(162,155,254,0.12); border-bottom-color: #a29bfe; }
+.jp-rel-reference { background-color: rgba(253,203,110,0.12); border-bottom-color: #fdcb6e; }
+.jp-rel-repetition { background-color: rgba(129,236,236,0.12); border-bottom-color: #81ecec; }
+.jp-rel-lexchain { background-color: rgba(0,206,209,0.12); border-bottom-color: #00ced1; }
+.jp-rel-topic { background-color: rgba(85,239,196,0.12); border-bottom-color: #55efc4; }
+.jp-rel-scaffold { background-color: rgba(9,132,227,0.12); border-bottom-color: #0984e3; }
+.jp-rel-qa { background-color: rgba(108,92,231,0.12); border-bottom-color: #6c5ce7; }
+.jp-rel-agree { background-color: rgba(0,184,148,0.12); border-bottom-color: #00b894; }
+.jp-rel-disagree { background-color: rgba(214,48,49,0.12); border-bottom-color: #d63031; }
+.jp-rel-tsukkomi { background-color: rgba(225,112,85,0.12); border-bottom-color: #e17055; }
+.jp-rel-reaction { background-color: rgba(253,121,168,0.12); border-bottom-color: #fd79a8; }
+.jp-rel-repair { background-color: rgba(99,110,114,0.12); border-bottom-color: #636e72; }
+.jp-rel-shift { background-color: rgba(162,155,254,0.12); border-bottom-color: #a29bfe; }
+.jp-rel-return { background-color: rgba(116,185,255,0.12); border-bottom-color: #74b9ff; }
+.jp-rel-summary { background-color: rgba(46,213,115,0.12); border-bottom-color: #2ed573; }
+.jp-rel-evidence { background-color: rgba(255,234,167,0.12); border-bottom-color: #ffeaa7; }
+.jp-rel-counter { background-color: rgba(214,48,49,0.12); border-bottom-color: #d63031; }
+.jp-rel-hedge { background-color: rgba(178,190,195,0.12); border-bottom-color: #b2bec3; }
+.jp-rel-punchline { background-color: rgba(225,112,85,0.12); border-bottom-color: #e17055; }
+.jp-rel-offer { background-color: rgba(85,239,196,0.12); border-bottom-color: #55efc4; }
+.jp-rel-decline { background-color: rgba(214,48,49,0.12); border-bottom-color: #d63031; }
+.jp-rel-complaint { background-color: rgba(255,107,107,0.12); border-bottom-color: #ff6b6b; }
+
+/* ── Sidecar bit_relation buckets (authoritative typed-relations) ── */
+/* Distinct from heuristic palette so users can tell at a glance which
+   markings came from the validated pipeline vs the TS fallback. */
+.jp-rel-bit-locked {
+  background-color: rgba(46,204,113,0.18);
+  border-bottom-color: #27ae60;
+}
+.jp-rel-bit-td {
+  background-color: rgba(52,152,219,0.15);
+  border-bottom-color: #3498db;
+}
+.jp-rel-bit-bu {
+  background-color: rgba(241,196,15,0.15);
+  border-bottom-color: #f1c40f;
+}
+
+/* Source-tag modifier — sidecar markings get a small left accent so
+   they read as "validated", heuristic ones get a muted dotted underline
+   so they read as "best-guess". */
+.jp-vis-relation--sidecar {
+  box-shadow: inset 2px 0 0 currentColor;
+}
+.jp-vis-relation--heuristic {
+  border-bottom-style: dotted !important;
+  opacity: 0.85;
+}
+
+/* Touch-friendly tooltips on mobile */
+@media (hover: none) and (pointer: coarse) {
+  .jp-vis-pattern[title],
+  .jp-vis-relation-source[title],
+  .jp-vis-relation-target[title] {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* ── Recursive dictionary lookup ─────────────────────────── */
+
+.jp-dict-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 0.8em;
+  flex-wrap: wrap;
+  background: var(--background-secondary);
+  border-radius: 4px;
+  margin: 4px 0;
+}
+
+.jp-dict-back-btn {
+  padding: 2px 8px;
+  font-size: 0.85em;
+  border-radius: 4px;
+  cursor: pointer;
+  background: var(--interactive-normal);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+  margin-right: 4px;
+}
+
+.jp-dict-back-btn:hover {
+  background: var(--interactive-hover);
+}
+
+.jp-dict-breadcrumb-item {
+  color: var(--text-accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+
+.jp-dict-breadcrumb-item:hover {
+  text-decoration-style: solid;
+}
+
+.jp-dict-breadcrumb-sep {
+  color: var(--text-faint);
+}
+
+.jp-dict-breadcrumb-current {
+  color: var(--text-normal);
+  font-weight: 600;
+}
+
+.jp-dict-clickable-word {
+  cursor: pointer;
+  border-bottom: 1px dotted var(--text-accent);
+  transition: background-color 0.15s;
+}
+
+.jp-dict-clickable-word:hover {
+  background-color: var(--background-modifier-hover);
+  border-bottom-style: solid;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .jp-dict-clickable-word {
+    border-bottom-width: 2px;
+    padding-bottom: 1px;
+  }
+
+  .jp-dict-clickable-word:active {
+    background-color: var(--text-accent);
+    color: var(--text-on-accent);
+    border-radius: 2px;
+  }
+
+  .jp-dict-back-btn {
+    padding: 4px 12px;
+    font-size: 1em;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CONTEXT ENGINE — Integrated Hivemind UI
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── Back button ──────────────────────────────────────────── */
+.jp-col-back-btn {
+  padding: 4px 10px;
+  border-radius: var(--radius-s);
+  background: var(--interactive-normal);
+  border: 1px solid var(--background-modifier-border);
+  color: var(--text-accent);
+  cursor: pointer;
+  font-size: 0.8rem;
+  margin-right: 8px;
+}
+.jp-col-back-btn:hover { background: var(--interactive-hover); }
+
+/* ── Loading state ────────────────────────────────────────── */
+.jp-col-loading {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* ── Context card sections ────────────────────────────────── */
+.jp-ctx-section {
+  padding: 8px 12px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.jp-ctx-section-title {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-accent);
+}
+
+/* Dictionary rows */
+.jp-ctx-dict-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 4px 0;
+  cursor: pointer;
+  border-radius: var(--radius-s);
+  transition: background 0.12s;
+}
+.jp-ctx-dict-row:hover { background: var(--background-modifier-hover); }
+.jp-ctx-dict-expr { font-weight: 700; font-size: 1.05em; }
+.jp-ctx-dict-reading { color: var(--text-muted); font-size: 0.9em; }
+.jp-ctx-dict-def { color: var(--text-normal); font-size: 0.85em; flex: 1; }
+
+/* Collocation rows */
+.jp-ctx-collocation-row {
+  display: flex; gap: 6px; padding: 3px 0; align-items: center; flex-wrap: wrap;
+}
+.jp-ctx-coll-phrase { font-weight: 600; }
+.jp-ctx-coll-pos {
+  font-size: 0.7rem; padding: 1px 5px; border-radius: 8px;
+  background: var(--background-modifier-hover); color: var(--text-muted);
+}
+.jp-ctx-coll-pattern { font-size: 0.75rem; color: var(--text-accent); }
+
+/* Surfer rows */
+.jp-ctx-surfer-row { display: flex; gap: 6px; padding: 3px 0; flex-wrap: wrap; }
+.jp-ctx-surfer-surface { font-weight: 600; }
+.jp-ctx-surfer-cat, .jp-ctx-surfer-fn {
+  font-size: 0.72rem; padding: 1px 5px; border-radius: 8px;
+  background: var(--background-modifier-hover); color: var(--text-muted);
+}
+
+/* ── Vault occurrences ────────────────────────────────────── */
+.jp-ctx-vault-file { margin-bottom: 8px; }
+.jp-ctx-vault-file-header {
+  display: flex; gap: 6px; align-items: center;
+  cursor: pointer; padding: 4px 6px; border-radius: var(--radius-s);
+  transition: background 0.12s;
+}
+.jp-ctx-vault-file-header:hover { background: var(--background-modifier-hover); }
+.jp-ctx-vault-filename {
+  font-weight: 600; font-size: 0.85rem; color: var(--text-accent);
+  cursor: pointer;
+}
+.jp-ctx-vault-count { font-size: 0.75rem; color: var(--text-muted); }
+.jp-ctx-vault-occ {
+  padding: 4px 8px 4px 16px;
+  border-left: 2px solid var(--background-modifier-border);
+  margin: 2px 0;
+}
+.jp-ctx-vault-patterns { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.jp-ctx-pattern-pill {
+  font-size: 0.68rem; padding: 1px 5px; border-radius: 4px;
+  background: var(--background-modifier-hover); cursor: pointer;
+  border-left: 2px solid; transition: background 0.12s;
+}
+.jp-ctx-pattern-pill:hover { background: var(--interactive-accent); color: var(--text-on-accent); }
+
+/* ── Highlighted text ─────────────────────────────────────── */
+.jp-ctx-highlighted-text { font-size: 0.85rem; line-height: 1.5; }
+.jp-ctx-highlight-term {
+  background: var(--text-highlight-bg);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ── Co-patterns grid ─────────────────────────────────────── */
+.jp-ctx-copattern-grid {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.jp-ctx-copattern-chip {
+  display: flex; gap: 4px; align-items: center;
+  padding: 3px 8px; border-radius: 6px;
+  background: var(--background-modifier-hover);
+  cursor: pointer; transition: background 0.12s;
+  font-size: 0.8rem;
+}
+.jp-ctx-copattern-chip:hover { background: var(--interactive-accent); color: var(--text-on-accent); }
+.jp-ctx-copattern-count { font-size: 0.7rem; color: var(--text-muted); }
+
+/* ── Pattern context card ─────────────────────────────────── */
+.jp-ctx-pattern-header {
+  padding: 12px;
+  border-bottom: 2px solid var(--background-modifier-border);
+}
+.jp-ctx-pattern-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 4px;
+  color: white; font-size: 0.72rem; font-weight: 700;
+  margin-bottom: 4px;
+}
+.jp-ctx-pattern-title { margin: 4px 0; font-size: 1.3em; }
+.jp-ctx-pattern-meta {
+  display: flex; flex-wrap: wrap; gap: 6px; font-size: 0.8rem;
+  color: var(--text-muted);
+}
+.jp-ctx-pattern-gloss { font-weight: 600; color: var(--text-normal); }
+.jp-ctx-pattern-gloss-en { color: var(--text-muted); }
+.jp-ctx-pattern-register, .jp-ctx-pattern-freq {
+  padding: 0 4px; border-radius: 4px;
+  background: var(--background-modifier-hover);
+}
+
+/* ── KWIC display ─────────────────────────────────────────── */
+.jp-ctx-kwic-row {
+  display: flex; align-items: center;
+  font-family: var(--font-monospace);
+  font-size: 0.8rem; padding: 2px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.jp-ctx-kwic-left { text-align: right; flex: 1; color: var(--text-muted); overflow: hidden; }
+.jp-ctx-kwic-match {
+  font-weight: 700; color: var(--text-accent);
+  padding: 1px 4px; background: var(--text-highlight-bg);
+  border-radius: 2px; margin: 0 2px;
+}
+.jp-ctx-kwic-right { flex: 1; color: var(--text-muted); overflow: hidden; }
+.jp-ctx-kwic-file {
+  font-size: 0.7rem; color: var(--text-faint); cursor: pointer;
+  margin-left: 8px; white-space: nowrap;
+}
+.jp-ctx-kwic-file:hover { color: var(--text-accent); text-decoration: underline; }
+
+/* ── Examples with discourse styling ──────────────────────── */
+.jp-ctx-examples-section { }
+.jp-ctx-example {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 6px 8px; margin: 2px 0;
+  border-radius: var(--radius-s);
+  border-left: 3px solid var(--background-modifier-border);
+  transition: background 0.12s;
+}
+.jp-ctx-example--clickable { cursor: pointer; }
+.jp-ctx-example--clickable:hover { background: var(--background-modifier-hover); }
+.jp-ctx-example-source {
+  font-size: 0.75rem; cursor: help;
+}
+.jp-ctx-example-text {
+  flex: 1; font-size: 0.9rem; line-height: 1.6;
+  min-width: 0;
+}
+.jp-ctx-example-relations {
+  display: flex; flex-wrap: wrap; gap: 3px;
+  width: 100%;
+}
+.jp-ctx-rel-chip {
+  font-size: 0.65rem; padding: 1px 5px; border-radius: 3px;
+  background: var(--background-modifier-hover);
+}
+
+/* Inline pattern annotation inside example text */
+.jp-ctx-inline-pattern {
+  border-bottom: 2px solid;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.jp-ctx-inline-pattern:hover {
+  background: var(--text-highlight-bg);
+}
+
+/* Category colors for inline patterns */
+.jp-vis-cat-A { border-color: #e74c3c; }
+.jp-vis-cat-B { border-color: #3498db; }
+.jp-vis-cat-C { border-color: #2ecc71; }
+.jp-vis-cat-D { border-color: #f39c12; }
+.jp-vis-cat-E { border-color: #9b59b6; }
+.jp-vis-cat-F { border-color: #1abc9c; }
+.jp-vis-cat-G { border-color: #e67e22; }
+.jp-vis-cat-H { border-color: #34495e; }
+.jp-vis-cat-I { border-color: #fd79a8; }
+.jp-vis-cat-J { border-color: #00b894; }
+.jp-vis-cat-K { border-color: #636e72; }
+.jp-vis-cat-L { border-color: #d63031; }
+.jp-vis-cat-M { border-color: #0984e3; }
+.jp-vis-cat-N { border-color: #6c5ce7; }
+
+/* ── Relation connector colors ────────────────────────────── */
+.jp-rel-cause { border-left: 2px solid #e74c3c; }
+.jp-rel-concession { border-left: 2px solid #f39c12; }
+.jp-rel-conditional { border-left: 2px solid #3498db; }
+.jp-rel-temporal { border-left: 2px solid #2ecc71; }
+.jp-rel-purpose { border-left: 2px solid #9b59b6; }
+.jp-rel-means { border-left: 2px solid #1abc9c; }
+.jp-rel-contrast { border-left: 2px solid #e67e22; }
+.jp-rel-addition { border-left: 2px solid #00b894; }
+.jp-rel-elaboration { border-left: 2px solid #636e72; }
+.jp-rel-example { border-left: 2px solid #d63031; }
+.jp-rel-reference { border-left: 2px solid #0984e3; }
+.jp-rel-qa { border-left: 2px solid #6c5ce7; }
+
+/* Discourse analysis annotated text */
+.jp-ctx-annotated-body {
+  line-height: 1.8;
+  font-size: 1.05rem;
+  padding: 8px;
+  background: var(--background-secondary);
+  border-radius: var(--radius-s);
+}
+.jp-ctx-relation-row {
+  display: flex; gap: 4px; align-items: center;
+  padding: 3px 6px; margin: 2px 0;
+  font-size: 0.8rem; border-radius: var(--radius-s);
+}
+.jp-ctx-rel-arrow { color: var(--text-muted); font-weight: 700; }
+.jp-ctx-rel-confidence { color: var(--text-faint); font-size: 0.7rem; }
+
+/* ── Vault Index Tab ──────────────────────────────────────── */
+.jp-ctx-heat-grid { display: flex; flex-direction: column; gap: 4px; }
+.jp-ctx-heat-bar {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.8rem; height: 22px;
+}
+.jp-ctx-heat-cat {
+  width: 16px; font-weight: 700; text-align: center;
+  font-size: 0.75rem;
+}
+.jp-ctx-heat-fill {
+  height: 14px; border-radius: 3px;
+  min-width: 4px; transition: width 0.3s;
+}
+.jp-ctx-heat-count { font-size: 0.7rem; color: var(--text-muted); min-width: 24px; }
+.jp-ctx-heat-label { font-size: 0.72rem; color: var(--text-faint); }
+
+.jp-ctx-vault-file-row {
+  display: flex; gap: 8px; align-items: center;
+  padding: 4px 6px; border-radius: var(--radius-s);
+  transition: background 0.12s;
+}
+.jp-ctx-vault-file-row:hover { background: var(--background-modifier-hover); }
+.jp-ctx-vault-patcount { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
+
+.jp-ctx-mini-bar {
+  display: flex; flex: 1; height: 8px; border-radius: 4px;
+  overflow: hidden; background: var(--background-modifier-hover);
+}
+.jp-ctx-mini-bar-seg { height: 100%; min-width: 2px; }
+
+/* ── Pattern surface clickable ────────────────────────────── */
+.jp-col-pattern-surface--clickable {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.jp-col-pattern-surface--clickable:hover {
+  background: var(--text-highlight-bg);
+}
+
+/* ── Styled example in entry card ─────────────────────────── */
+.jp-col-example-styled {
+  padding: 4px 0;
+  line-height: 1.7;
+  font-size: 0.88rem;
+}
+
+.jp-col-details-summary {
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  padding: 2px 0;
+}
+
+.jp-col-pattern-label {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  padding: 0 4px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   CONTEXT-CHUNK SRS CARD — Fade-in Reveal System
+   "I know the words but not the script"
+   ══════════════════════════════════════════════════════════════ */
+
+/* Badge for context-chunk cards */
+.jp-srs-badge--context {
+  background: linear-gradient(135deg, #6c5ce7, #0984e3);
+  color: white;
+}
+
+/* Meta row at top of card */
+.jp-ctx-card-meta {
+  padding: 6px 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Provenance badge — shows whether relations came from the validated
+   pipeline sidecar or the unvalidated TS heuristic. */
+.jp-ctx-card-source-badge {
+  margin-left: 0.6em;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: help;
+}
+.jp-ctx-card-source-badge--sidecar {
+  background-color: rgba(46,204,113,0.18);
+  color: #27ae60;
+  border: 1px solid #27ae60;
+}
+.jp-ctx-card-source-badge--heuristic {
+  background-color: rgba(178,190,195,0.18);
+  color: var(--text-muted);
+  border: 1px dashed var(--text-muted);
+}
+
+/* Step indicator pills */
+.jp-ctx-step-bar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 0;
+  flex-wrap: wrap;
+}
+.jp-ctx-step-pill {
+  width: 24px;
+  height: 6px;
+  border-radius: 3px;
+  transition: background-color 0.4s ease;
+}
+.jp-ctx-step-pill--revealed {
+  box-shadow: 0 0 4px 1px rgba(var(--text-accent-hsl), 0.3);
+}
+
+/* The text body — contains all segments */
+.jp-ctx-card-text-body {
+  line-height: 2;
+  font-size: 1.1rem;
+  padding: 12px 8px;
+  background: var(--background-secondary);
+  border-radius: var(--radius-m, 8px);
+  min-height: 60px;
+  word-break: break-word;
+}
+
+/* ── Segment states ───────────────────────────────────────── */
+
+/* Hidden: blurred block characters */
+.jp-ctx-seg--hidden {
+  color: var(--background-modifier-border);
+  user-select: none;
+  letter-spacing: -1px;
+  font-size: 0.95em;
+}
+
+/* Revealed: visible with normal styling */
+.jp-ctx-seg--revealed {
+  color: var(--text-normal);
+}
+
+/* Pattern within revealed text: colored underline */
+.jp-ctx-seg--pattern {
+  border-bottom-width: 2px;
+  border-bottom-style: solid;
+  cursor: help;
+  transition: background 0.12s;
+}
+.jp-ctx-seg--pattern:hover {
+  background: var(--text-highlight-bg);
+}
+
+/* THE FADE-IN ANIMATION — words themselves fade in */
+@keyframes ctxFadeIn {
+  0% {
+    opacity: 0;
+    color: var(--text-accent);
+    transform: translateY(4px);
+    filter: blur(2px);
+  }
+  40% {
+    opacity: 0.7;
+    color: var(--text-accent);
+    transform: translateY(1px);
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    color: var(--text-normal);
+    transform: translateY(0);
+    filter: none;
+  }
+}
+
+.jp-ctx-seg--fade-in {
+  animation: ctxFadeIn 0.6s ease-out forwards;
+}
+
+/* Stagger animation for multiple segments in same reveal step */
+.jp-ctx-seg--fade-in:nth-child(2n) { animation-delay: 0.05s; }
+.jp-ctx-seg--fade-in:nth-child(3n) { animation-delay: 0.1s; }
+.jp-ctx-seg--fade-in:nth-child(4n) { animation-delay: 0.15s; }
+
+/* Patterns fade in with their category color first, then settle */
+@keyframes ctxPatternFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(3px);
+    border-bottom-width: 0;
+  }
+  30% {
+    opacity: 0.6;
+    transform: translateY(2px);
+    filter: blur(0);
+    border-bottom-width: 3px;
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: none;
+    border-bottom-width: 2px;
+  }
+}
+
+.jp-ctx-seg--fade-in.jp-ctx-seg--pattern {
+  animation: ctxPatternFadeIn 0.8s ease-out forwards;
+}
+
+/* ── Next set label ───────────────────────────────────────── */
+.jp-ctx-next-label {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 0 4px;
+  font-size: 0.82rem;
+}
+.jp-ctx-next-label-text {
+  color: var(--text-accent);
+  font-weight: 600;
+}
+.jp-ctx-next-reason {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+/* Done label */
+.jp-ctx-done-label {
+  padding: 8px 0;
+  font-size: 0.85rem;
+  color: var(--text-accent);
+  text-align: center;
+  font-weight: 600;
+}
+
+/* Revealed set chips below the text */
+.jp-ctx-revealed-sets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 0;
+}
+.jp-ctx-revealed-chip {
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--background-modifier-hover);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   MOBILE — Touch-first, 44px targets, momentum scroll
+   ══════════════════════════════════════════════════════════════ */
+
+@media (hover: none) and (pointer: coarse) {
+  /* Larger touch targets */
+  .jp-col-tab {
+    min-height: 44px;
+    font-size: 0.9rem;
+    padding: 8px 12px;
+  }
+
+  .jp-col-chip {
+    padding: 6px 10px;
+    font-size: 0.78rem;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+  }
+
+  .jp-col-search-input {
+    min-height: 44px;
+    font-size: 1rem;
+  }
+
+  .jp-col-add-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .jp-col-action-btn {
+    min-height: 40px;
+    min-width: 40px;
+    font-size: 1.1rem;
+    padding: 8px 10px;
+  }
+
+  /* Card entry cards */
+  .jp-col-card {
+    padding: 10px 12px;
+  }
+
+  .jp-col-headword {
+    font-size: 1.15rem;
+  }
+
+  /* Momentum scroll for results */
+  .jp-col-results {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Context card mobile adjustments */
+  .jp-ctx-card-text-body {
+    font-size: 1.15rem;
+    line-height: 2.2;
+    padding: 14px 10px;
+  }
+
+  .jp-ctx-step-pill {
+    width: 28px;
+    height: 8px;
+  }
+
+  /* SRS card modal — full screen on mobile */
+  .jp-srs-modal .modal-content {
+    max-width: 100vw;
+    max-height: 100vh;
+    width: 100vw;
+    height: 100vh;
+    border-radius: 0;
+  }
+
+  .jp-srs-reveal-btn {
+    min-height: 52px;
+    font-size: 1.05rem;
+  }
+
+  .jp-srs-flip-btn {
+    min-height: 48px;
+    font-size: 1rem;
+  }
+
+  .jp-srs-nav-btn {
+    min-height: 44px;
+    min-width: 44px;
+    font-size: 1rem;
+  }
+
+  /* Vault occurrences — bigger touch targets */
+  .jp-ctx-vault-file-header {
+    min-height: 44px;
+    padding: 8px;
+  }
+
+  .jp-ctx-vault-occ {
+    padding: 8px 12px 8px 16px;
+  }
+
+  /* Pattern rows — bigger touch targets */
+  .jp-col-pattern-row {
+    padding: 8px 6px;
+    min-height: 44px;
+  }
+
+  .jp-col-pattern-surface--clickable {
+    padding: 4px 2px;
+  }
+
+  /* Example rows */
+  .jp-ctx-example {
+    padding: 8px 10px;
+  }
+
+  /* Co-pattern chips */
+  .jp-ctx-copattern-chip {
+    padding: 6px 10px;
+    min-height: 36px;
+  }
+
+  /* KWIC rows */
+  .jp-ctx-kwic-row {
+    padding: 6px 0;
+    font-size: 0.85rem;
+  }
+
+  /* Discourse chip interactive */
+  .jp-col-discourse-chip {
+    padding: 6px 10px;
+    min-height: 36px;
+  }
+
+  .jp-col-discourse-match {
+    padding: 6px 0;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DICTIONARY VIEW — Context Panel
+   ══════════════════════════════════════════════════════════════ */
+
+.jp-dict-ctx-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 0 4px;
+  cursor: pointer;
+  user-select: none;
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 6px;
+  transition: background 0.12s;
+}
+.jp-dict-ctx-toggle:hover {
+  background: var(--background-modifier-hover);
+  border-radius: var(--radius-s);
+}
+.jp-dict-ctx-toggle-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-accent);
+}
+.jp-dict-ctx-toggle-arrow {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  transition: transform 0.15s;
+}
+
+.jp-dict-ctx-panel {
+  padding: 6px 0;
+}
+.jp-dict-ctx-loading {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 8px;
+  text-align: center;
+}
+.jp-dict-ctx-error {
+  font-size: 0.8rem;
+  color: var(--text-error);
+  padding: 8px;
+}
+
+.jp-dict-ctx-section {
+  margin-bottom: 8px;
+}
+.jp-dict-ctx-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 0 2px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 4px;
+}
+
+.jp-dict-ctx-colloc-row {
+  padding: 3px 4px;
+  border-radius: var(--radius-s);
+  transition: background 0.12s;
+}
+.jp-dict-ctx-colloc-row:hover {
+  background: var(--background-modifier-hover);
+}
+.jp-dict-ctx-hw {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.jp-dict-ctx-rd {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-left: 6px;
+}
+.jp-dict-ctx-example {
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  margin-top: 1px;
+  line-height: 1.5;
+}
+
+.jp-dict-ctx-vault-row {
+  padding: 3px 4px;
+  border-radius: var(--radius-s);
+  transition: background 0.12s;
+}
+.jp-dict-ctx-vault-row:hover {
+  background: var(--background-modifier-hover);
+}
+.jp-dict-ctx-vault-link {
+  font-size: 0.82rem;
+  color: var(--text-accent);
+  cursor: pointer;
+  text-decoration: none;
+}
+.jp-dict-ctx-vault-link:hover {
+  text-decoration: underline;
+}
+.jp-dict-ctx-snippet {
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  margin-top: 1px;
+  line-height: 1.4;
+  max-height: 2.8em;
+  overflow: hidden;
+}
+.jp-dict-ctx-pattern-pills {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+.jp-dict-ctx-pattern-pill {
+  font-size: 0.68rem;
+  padding: 0 5px;
+  border: 1px solid;
+  border-radius: 3px;
+  line-height: 1.5;
+}
+
+.jp-dict-ctx-copat-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0;
+}
+.jp-dict-ctx-copat-chip {
+  padding: 3px 8px;
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.jp-dict-ctx-copat-surface {
+  font-weight: 500;
+}
+.jp-dict-ctx-copat-count {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.jp-dict-ctx-nav {
+  padding: 6px 0;
+  display: flex;
+  justify-content: center;
+}
+.jp-dict-ctx-lexicon-btn {
+  background: linear-gradient(135deg, #00b894, #00cec9) !important;
+  color: white !important;
+  border: none !important;
+  border-radius: 6px !important;
+  padding: 6px 16px !important;
+  font-size: 0.82rem !important;
+  cursor: pointer;
+  font-weight: 600;
+}
+.jp-dict-ctx-lexicon-btn:hover {
+  filter: brightness(1.1);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   READING MODE — Discourse Pattern Highlighting
+   ══════════════════════════════════════════════════════════════ */
+
+.jp-reading-discourse-hl {
+  border-bottom: 2px solid;
+  border-bottom-color: var(--text-accent);
+  cursor: help;
+  transition: background 0.15s;
+  border-radius: 1px;
+}
+.jp-reading-discourse-hl:hover {
+  background: var(--text-highlight-bg);
+}
+
+/* When toggled off, hide all highlights */
+.jp-reading-hl-off .jp-reading-discourse-hl {
+  border-bottom: none;
+  cursor: default;
+}
+
+/* Sidecar bit_relations in reading mode: inset accent + slight tint to
+   read as "validated". Source endpoints get a left accent, targets a right
+   accent, so directionality is visible at a glance. */
+.jp-reading-discourse-hl--sidecar {
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  padding: 0 1px;
+  border-radius: 2px;
+}
+.jp-reading-discourse-hl--sidecar.jp-reading-discourse-hl--src {
+  box-shadow: inset 2px 0 0 currentColor;
+}
+.jp-reading-discourse-hl--sidecar.jp-reading-discourse-hl--tgt {
+  box-shadow: inset -2px 0 0 currentColor;
+}
+/* Heuristic gets a muted dotted underline so it reads as "best-guess". */
+.jp-reading-discourse-hl--heuristic {
+  border-bottom-style: dotted;
+  opacity: 0.85;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CARD TYPE 1: PHRASE-IN-CONTEXT (穴埋め)
+   ═══════════════════════════════════════════════════════════ */
+
+.jp-srs-badge--phrase {
+  background: linear-gradient(135deg, #f093fb, #f5576c);
+  color: white;
+}
+.jp-srs-badge--relation {
+  background: linear-gradient(135deg, #4facfe, #00f2fe);
+  color: white;
+}
+
+.jp-pic-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.jp-pic-hint-text {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.jp-pic-conf-badge {
+  font-size: 0.7em;
+  padding: 2px 6px;
+  border-radius: 8px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.jp-pic-text-body {
+  font-size: 1.15em;
+  line-height: 1.8;
+  padding: 16px;
+  background: var(--background-primary);
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+}
+.jp-pic-context {
+  color: var(--text-normal);
+}
+
+.jp-pic-blank {
+  display: inline;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-weight: 700;
+  transition: all 0.3s ease;
+}
+.jp-pic-blank--hidden {
+  background: var(--background-modifier-border);
+  color: var(--text-faint);
+  cursor: pointer;
+  letter-spacing: 2px;
+}
+.jp-pic-blank--hidden:hover {
+  background: var(--interactive-accent-hover);
+}
+.jp-pic-blank--hidden:active {
+  transform: scale(0.97);
+}
+.jp-pic-blank--revealed {
+  background: rgba(var(--interactive-accent-rgb, 70, 130, 240), 0.15);
+  color: var(--interactive-accent);
+  animation: jp-pic-reveal 0.4s ease-out;
+  border-bottom: 2px solid var(--interactive-accent);
+}
+@keyframes jp-pic-reveal {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.jp-pic-colloc-tag {
+  margin-top: 10px;
+  padding: 6px 10px;
+  background: var(--background-secondary);
+  border-radius: 6px;
+  font-size: 0.8em;
+}
+.jp-pic-colloc-text {
+  color: var(--text-accent);
+  font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   CARD TYPE 2: RELATION CHUNK (関係チャンク)
+   ═══════════════════════════════════════════════════════════ */
+
+.jp-rel-card-meta {
+  margin-bottom: 8px;
+}
+.jp-rel-meta-text {
+  font-size: 0.8em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.jp-rel-step-bar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.jp-rel-step-pill {
+  height: 6px;
+  flex: 1;
+  border-radius: 3px;
+  transition: background-color 0.3s ease;
+}
+.jp-rel-step-pill--revealed {
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.15);
+}
+
+.jp-rel-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.jp-rel-section {
+  padding: 10px 12px;
+  border-radius: 6px;
+  transition: all 0.35s ease;
+  background: var(--background-primary);
+}
+.jp-rel-section--revealed {
+  background: var(--background-primary);
+}
+.jp-rel-section--hidden {
+  background: var(--background-modifier-border);
+  opacity: 0.4;
+}
+.jp-rel-section--fade-in {
+  animation: jp-rel-fade 0.5s ease-out;
+}
+@keyframes jp-rel-fade {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.jp-rel-section-label {
+  margin-bottom: 4px;
+}
+.jp-rel-section-label-text {
+  font-size: 0.75em;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.jp-rel-section-bits {
+  font-size: 1.1em;
+  line-height: 1.7;
+}
+.jp-rel-bit {
+  display: inline;
+}
+.jp-rel-bit--pattern {
+  font-weight: 600;
+  padding-bottom: 1px;
+}
+
+.jp-rel-section-blocked {
+  font-family: monospace;
+  letter-spacing: -1px;
+  color: var(--text-faint);
+  font-size: 0.9em;
+}
+
+/* Relation arrows between sections */
+.jp-rel-arrows {
+  margin-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.jp-rel-arrow {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.7em;
+  font-weight: 600;
+  background: var(--background-secondary);
+  border-left: 3px solid;
+}
+.jp-rel-arrow-text {
+  color: var(--text-normal);
+}
+.jp-rel-arrow-text--target-hidden {
+  color: var(--text-faint);
+  font-style: italic;
+}
+
+/* Color classes for relation types */
+.jp-rel-cause { border-color: #e74c3c; color: #e74c3c; }
+.jp-rel-concession { border-color: #9b59b6; color: #9b59b6; }
+.jp-rel-conditional { border-color: #f39c12; color: #f39c12; }
+.jp-rel-temporal { border-color: #3498db; color: #3498db; }
+.jp-rel-purpose { border-color: #2ecc71; color: #2ecc71; }
+.jp-rel-means { border-color: #1abc9c; color: #1abc9c; }
+.jp-rel-contrast { border-color: #e67e22; color: #e67e22; }
+.jp-rel-addition { border-color: #16a085; color: #16a085; }
+.jp-rel-elaboration { border-color: #8e44ad; color: #8e44ad; }
+.jp-rel-example { border-color: #2980b9; color: #2980b9; }
+.jp-rel-reference { border-color: #7f8c8d; color: #7f8c8d; }
+.jp-rel-repetition { border-color: #95a5a6; color: #95a5a6; }
+.jp-rel-lexchain { border-color: #bdc3c7; color: #bdc3c7; }
+.jp-rel-topic { border-color: #34495e; color: #34495e; }
+.jp-rel-scaffold { border-color: #2c3e50; color: #2c3e50; }
+.jp-rel-qa { border-color: #e74c3c; color: #e74c3c; }
+.jp-rel-agree { border-color: #27ae60; color: #27ae60; }
+.jp-rel-disagree { border-color: #c0392b; color: #c0392b; }
+.jp-rel-offer { border-color: #f1c40f; color: #f1c40f; }
+.jp-rel-decline { border-color: #d35400; color: #d35400; }
+.jp-rel-complaint { border-color: #e74c3c; color: #e74c3c; }
+.jp-rel-tsukkomi { border-color: #fd79a8; color: #fd79a8; }
+.jp-rel-reaction { border-color: #6c5ce7; color: #6c5ce7; }
+.jp-rel-repair { border-color: #00cec9; color: #00cec9; }
+.jp-rel-shift { border-color: #fdcb6e; color: #fdcb6e; }
+.jp-rel-return { border-color: #81ecec; color: #81ecec; }
+.jp-rel-summary { border-color: #a29bfe; color: #a29bfe; }
+.jp-rel-evidence { border-color: #55efc4; color: #55efc4; }
+.jp-rel-counter { border-color: #fab1a0; color: #fab1a0; }
+.jp-rel-hedge { border-color: #dfe6e9; color: #636e72; }
+.jp-rel-punchline { border-color: #ff7675; color: #ff7675; }
+
+.jp-rel-next-label {
+  margin-top: 10px;
+  text-align: center;
+}
+.jp-rel-next-label-text {
+  font-size: 0.85em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.jp-rel-done-label {
+  margin-top: 10px;
+  text-align: center;
+  font-size: 0.9em;
+  color: var(--interactive-accent);
+  font-weight: 700;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE TOUCH ENHANCEMENTS
+   ═══════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .jp-pic-text-body {
+    font-size: 1.05em;
+    padding: 12px;
+  }
+  .jp-pic-blank {
+    padding: 4px 12px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .jp-rel-section {
+    padding: 12px 14px;
+    min-height: 44px;
+  }
+  .jp-rel-section-bits {
+    font-size: 1.0em;
+  }
+  .jp-rel-arrow {
+    padding: 4px 10px;
+    font-size: 0.75em;
+    min-height: 36px;
+    align-items: center;
+  }
+  .jp-srs-reveal-btn,
+  .jp-srs-flip-btn,
+  .jp-srs-nav-btn {
+    min-height: 44px;
+    font-size: 1em;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   SELECTION MODE TOOLBAR — Sentence Surfing
+   ═══════════════════════════════════════════════════════════ */
+
+/* Status bar wrapper for selection toolbar */
+.jp-sel-status-bar {
+  overflow: visible;
+}
+.jp-sel-status-bar .jp-sel-toolbar {
+  border-radius: 0;
+  padding: 2px 4px;
+  background: transparent;
+  gap: 2px;
+}
+.jp-sel-status-bar .jp-sel-mode-btn {
+  min-height: 22px;
+  min-width: 32px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.85em;
+}
+.jp-sel-status-bar .jp-sel-mode-icon {
+  font-size: 0.9em;
+}
+.jp-sel-status-bar .jp-sel-mode-label {
+  display: none;
+}
+
+/* Mobile: expand status bar toolbar */
+@media (hover: none) and (pointer: coarse) {
+  .jp-sel-status-bar .jp-sel-toolbar {
+    padding: 4px 6px;
+    gap: 4px;
+  }
+  .jp-sel-status-bar .jp-sel-mode-btn {
+    min-height: 36px;
+    min-width: 40px;
+    padding: 4px 8px;
+  }
+  .jp-sel-status-bar .jp-sel-mode-label {
+    display: block;
+    font-size: 0.55em;
+  }
+}
+
+.jp-sel-toolbar {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  background: var(--background-secondary);
+  border-radius: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.jp-sel-mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-height: 44px;
+  min-width: 52px;
+}
+.jp-sel-mode-btn:hover {
+  background: var(--background-modifier-hover);
+}
+.jp-sel-mode-btn--active {
+  background: var(--interactive-accent) !important;
+  color: var(--text-on-accent) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+.jp-sel-mode-icon {
+  font-size: 1.2em;
+}
+.jp-sel-mode-label {
+  font-size: 0.65em;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE: iPhone 17 / iPad Mini 7  — Full Surfing Feel
+   ═══════════════════════════════════════════════════════════ */
+
+@media (hover: none) and (pointer: coarse) {
+  /* Selection toolbar: sticky bottom, safe area */
+  .jp-sel-toolbar {
+    position: sticky;
+    bottom: 0;
+    z-index: 100;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
+    background: var(--background-primary);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  .jp-sel-mode-btn {
+    min-height: 48px;
+    min-width: 56px;
+    padding: 8px 14px;
+  }
+  .jp-sel-mode-icon {
+    font-size: 1.4em;
+  }
+
+  /* Card containers: edge-to-edge, larger text */
+  .jp-srs-card-container {
+    padding: 12px 6px;
+    border-radius: 12px;
+  }
+  .jp-srs-card-front,
+  .jp-srs-card-back {
+    padding: 14px;
+    font-size: 1.08em;
+    line-height: 1.9;
+  }
+
+  /* Phrase-in-context: larger blank, more tappable */
+  .jp-pic-text-body {
+    font-size: 1.15em;
+    line-height: 2.0;
+    padding: 16px 10px;
+  }
+  .jp-pic-blank {
+    padding: 6px 16px;
+    min-height: 48px;
+    display: inline-flex;
+    align-items: center;
+    font-size: 1.1em;
+  }
+
+  /* Relation sections: more spacious on mobile */
+  .jp-rel-section {
+    padding: 14px 16px;
+  }
+  .jp-rel-section-bits {
+    font-size: 1.1em;
+    line-height: 2.0;
+  }
+  .jp-rel-arrow {
+    min-height: 40px;
+    padding: 6px 12px;
+    font-size: 0.8em;
+  }
+
+  /* Swipe-friendly navigation */
+  .jp-srs-nav {
+    gap: 8px;
+    padding: 8px 0;
+  }
+  .jp-srs-nav-btn {
+    min-height: 48px;
+    min-width: 48px;
+    font-size: 1.1em;
+    border-radius: 12px;
+  }
+  .jp-srs-reveal-btn {
+    min-height: 56px;
+    font-size: 1.1em;
+    border-radius: 14px;
+    margin: 8px 0;
+  }
+  .jp-srs-flip-btn {
+    min-height: 52px;
+    font-size: 1.05em;
+    border-radius: 14px;
+  }
+
+  /* Dictionary: larger entries, touch-friendly */
+  .jp-dict-entry-card {
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+  .jp-dict-expression {
+    font-size: 1.5em;
+  }
+  .jp-dict-reading {
+    font-size: 1.05em;
+  }
+  .jp-dict-search-input {
+    min-height: 48px;
+    font-size: 1.1em;
+    border-radius: 12px;
+  }
+  .jp-dict-action-btn {
+    min-height: 44px;
+    min-width: 44px;
+    font-size: 1.1em;
+  }
+
+  /* Context: better spacing */
+  .jp-ctx-card-text-body {
+    font-size: 1.2em;
+    line-height: 2.3;
+  }
+  .jp-ctx-step-pill {
+    height: 10px;
+    border-radius: 5px;
+  }
+
+  /* Momentum scroll everywhere */
+  .jp-col-results,
+  .jp-dict-results,
+  .jp-rel-sections,
+  .jp-srs-card-container {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Smooth transitions for surfing feel */
+  .jp-srs-card-front *,
+  .jp-pic-blank,
+  .jp-rel-section {
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DICTIONARY LIVE SEARCH: slide-in results animation
+   ═══════════════════════════════════════════════════════════ */
+
+.jp-dict-card {
+  animation: jp-dict-slide-in 0.2s ease-out;
+}
+@keyframes jp-dict-slide-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.jp-dict-card:nth-child(2) { animation-delay: 0.03s; }
+.jp-dict-card:nth-child(3) { animation-delay: 0.06s; }
+.jp-dict-card:nth-child(4) { animation-delay: 0.09s; }
+.jp-dict-card:nth-child(5) { animation-delay: 0.12s; }
+
+/* Focus ring for search input */
+.jp-dict-search-input {
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.jp-dict-search-input:focus {
+  background: var(--background-primary);
+}
+
+
+/* -- Typed bit-relations (sidecar) � context view sections -- */
+/* These render the authoritative typed-pair channel that comes from the
+   validated sidecar pipeline. They sit ABOVE the heuristic coPatterns (PMI)
+   chips so the user can prefer them when both exist. */
+.jp-ctx-bitrel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.jp-ctx-bitrel-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  border-left: 3px solid #95a5a6;
+  background: var(--background-secondary);
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+.jp-ctx-bitrel-row[data-reconciliation="locked"] { border-left-color: #27ae60; }
+.jp-ctx-bitrel-row[data-reconciliation="td"]     { border-left-color: #2980b9; }
+.jp-ctx-bitrel-row[data-reconciliation="bu"]     { border-left-color: #f39c12; }
+.jp-ctx-bitrel-label {
+  font-weight: 600;
+  min-width: 120px;
+  color: var(--text-normal);
+}
+.jp-ctx-bitrel-pair {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.jp-ctx-bitrel-endpoint {
+  font-family: var(--font-monospace);
+  opacity: 0.85;
+}
+.jp-ctx-bitrel-endpoint--matched {
+  opacity: 1;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--text-accent);
+  text-underline-offset: 2px;
+}
+.jp-ctx-bitrel-arrow {
+  opacity: 0.6;
+  font-weight: bold;
+}
+
+/* DictionaryView compact variant */
+.jp-dict-ctx-bitrel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+}
+.jp-dict-ctx-bitrel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 6px;
+  border-left: 2px solid #95a5a6;
+  background: var(--background-secondary);
+  border-radius: 2px;
+  font-size: 0.8em;
+}
+.jp-dict-ctx-bitrel-row[data-reconciliation="locked"] { border-left-color: #27ae60; }
+.jp-dict-ctx-bitrel-row[data-reconciliation="td"]     { border-left-color: #2980b9; }
+.jp-dict-ctx-bitrel-row[data-reconciliation="bu"]     { border-left-color: #f39c12; }
+.jp-dict-ctx-bitrel-label {
+  font-weight: 600;
+  min-width: 90px;
+  color: var(--text-normal);
+}
+.jp-dict-ctx-bitrel-pair {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.jp-dict-ctx-bitrel-endpoint {
+  font-family: var(--font-monospace);
+  opacity: 0.85;
+}
+.jp-dict-ctx-bitrel-endpoint--matched {
+  opacity: 1;
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--text-accent);
+  text-underline-offset: 2px;
+}
+.jp-dict-ctx-bitrel-arrow {
+  opacity: 0.6;
+}
+
+/* Status-bar sidecar coverage indicator */
+.jp-status-bar-sidecar {
+  cursor: help;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   X (Twitter) Search Dictionary — monokakido-inspired, mobile-first
+   ═══════════════════════════════════════════════════════════════ */
+.jp-x-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-interface), "Hiragino Kaku Gothic Pro", "Noto Sans JP", sans-serif;
+  font-size: var(--font-ui-medium);
+}
+
+/* ── Header ─────────────────────────────────────────────────── */
+.jp-x-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex-shrink: 0;
+}
+.jp-x-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.jp-x-title {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-accent);
+  letter-spacing: 0.02em;
+}
+.jp-x-header-actions {
+  display: flex;
+  gap: 6px;
+}
+.jp-x-icon-btn {
+  min-width: 36px;
+  min-height: 32px;
+  padding: 4px 10px;
+  font-size: 0.95rem;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.jp-x-icon-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* ── Search bar ─────────────────────────────────────────────── */
+.jp-x-search-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.jp-x-search-input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  min-height: 40px;
+}
+.jp-x-search-input:focus {
+  border-color: var(--text-accent);
+  box-shadow: 0 0 0 2px rgba(var(--text-accent-rgb, 29, 155, 240), 0.15);
+}
+.jp-x-go-btn {
+  padding: 6px 16px;
+  min-height: 40px;
+  border-radius: var(--radius-m);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.jp-x-go-btn:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* ── Required-term chips (AND) ──────────────────────────────── */
+.jp-x-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+}
+.jp-x-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px 3px 10px;
+  border-radius: 14px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.jp-x-chip-x {
+  cursor: pointer;
+  opacity: 0.75;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0 2px;
+}
+.jp-x-chip-x:hover { opacity: 1; }
+.jp-x-chip-and {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--text-faint);
+  letter-spacing: 0.06em;
+}
+
+/* ── Advanced panel ─────────────────────────────────────────── */
+.jp-x-adv-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.jp-x-adv-toggle:hover { color: var(--text-normal); }
+.jp-x-adv-arrow { font-size: 0.7rem; }
+.jp-x-advanced {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.jp-x-tabrow {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 2px;
+}
+.jp-x-tab {
+  flex: 1;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.jp-x-tab--active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+  font-weight: 600;
+}
+.jp-x-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.jp-x-field-label {
+  flex: 0 0 84px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.jp-x-field-input {
+  flex: 1;
+  min-height: 32px;
+  padding: 4px 8px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 0.82rem;
+  outline: none;
+}
+.jp-x-field-input:focus { border-color: var(--text-accent); }
+
+/* ── Status ─────────────────────────────────────────────────── */
+.jp-x-status {
+  padding: 4px 12px;
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Results ────────────────────────────────────────────────── */
+.jp-x-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 8px 16px;
+}
+.jp-x-card {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+  transition: border-color 0.12s;
+}
+.jp-x-card:hover { border-color: var(--background-modifier-border-hover); }
+.jp-x-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+.jp-x-card-who {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.jp-x-card-name {
+  font-weight: 700;
+  font-size: 0.86rem;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 11em;
+}
+.jp-x-card-handle {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.jp-x-card-handle:hover { color: var(--text-accent); text-decoration: underline; }
+.jp-x-card-date {
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.jp-x-card-body {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--text-normal);
+  white-space: pre-wrap;
+  /* Traditional Japanese line-breaking (kinsoku): don't let lines start with
+     、。」etc. — word-break:break-word defeated it. Long URLs still wrap. */
+  word-break: normal;
+  overflow-wrap: anywhere;
+  line-break: strict;
+  /* Real text: selectable everywhere (Obsidian panes often inherit none). */
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+/* Long tweets start collapsed (~6 lines) with a fade-out. */
+.jp-x-card-body--clamped {
+  max-height: 9.9em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, #000 70%, transparent);
+  mask-image: linear-gradient(180deg, #000 70%, transparent);
+}
+.jp-x-expand-btn {
+  margin-top: 2px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-accent);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+}
+.jp-x-expand-btn:hover { text-decoration: underline; }
+.is-mobile .jp-x-expand-btn { min-height: 36px; }
+
+/* ── Media thumbnails on tweet cards ────────────────────────── */
+.jp-x-card-media {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 4px;
+  margin-top: 8px;
+}
+.jp-x-media {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+.jp-x-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.jp-x-media--video::after {
+  content: '▶';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 1.3rem;
+  background: rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+.jp-x-hl {
+  background: rgba(var(--text-accent-rgb, 29, 155, 240), 0.22);
+  color: var(--text-normal);
+  border-radius: 3px;
+  padding: 0 1px;
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 var(--text-accent);
+}
+.jp-x-card-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 7px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.jp-x-metric-lang {
+  margin-left: auto;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+.jp-x-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.jp-x-action-btn {
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: var(--radius-s);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.jp-x-action-btn:hover {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+
+/* ── Empty / home states ────────────────────────────────────── */
+.jp-x-empty, .jp-x-home {
+  text-align: center;
+  padding: 32px 20px;
+  color: var(--text-muted);
+}
+.jp-x-empty-icon, .jp-x-home-icon {
+  font-size: 2.4rem;
+  margin-bottom: 10px;
+  opacity: 0.8;
+}
+.jp-x-home-icon { font-size: 3rem; color: var(--text-accent); }
+.jp-x-empty-text, .jp-x-home-hint {
+  font-size: 0.84rem;
+  line-height: 1.6;
+  max-width: 32ch;
+  margin: 6px auto 0;
+}
+.jp-x-home-faint { color: var(--text-faint); font-size: 0.74rem; }
+.jp-x-home-warn {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px dashed var(--text-accent);
+  border-radius: var(--radius-m);
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+.jp-x-home-setup { margin-top: 10px; }
+
+/* ── Load more ──────────────────────────────────────────────── */
+.jp-x-loadmore {
+  padding: 0 12px;
+}
+.jp-x-loadmore:not(:empty) { padding-bottom: 16px; }
+.jp-x-loadmore-btn {
+  width: 100%;
+  min-height: 40px;
+  border-radius: var(--radius-m);
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-weight: 600;
+  cursor: pointer;
+}
+.jp-x-loadmore-btn:hover { background: var(--background-modifier-hover); }
+
+/* ── Loading shimmer on the whole view ──────────────────────── */
+.jp-x-loading .jp-x-status { opacity: 0.55; }
+.jp-x-loading .jp-x-go-btn { opacity: 0.6; pointer-events: none; }
+
+/* ── Modals (cookie entry, corpus import/export) ────────────── */
+.jp-x-modal-desc {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.jp-x-modal-adv { margin: 8px 0; }
+.jp-x-modal-adv summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  padding: 4px 0;
+}
+.jp-x-modal-btnrow {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+/* ── Mobile: safe areas + larger touch targets ──────────────── */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .jp-x-view {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .jp-x-header {
+    padding-left: calc(12px + env(safe-area-inset-left));
+    padding-right: calc(12px + env(safe-area-inset-right));
+  }
+}
+.is-mobile .jp-x-search-input,
+.is-mobile .jp-x-go-btn,
+.is-mobile .jp-x-loadmore-btn { min-height: 44px; }
+.is-mobile .jp-x-icon-btn { min-width: 44px; min-height: 44px; }
+.is-mobile .jp-x-action-btn,
+.is-mobile .jp-x-tab,
+.is-mobile .jp-x-field-input { min-height: 38px; }
+.is-mobile .jp-x-card-body { font-size: 1rem; }
+
+/* ── Sort row ───────────────────────────────────────────────── */
+.jp-x-sortrow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+.jp-x-sort-label {
+  font-size: 0.7rem;
+  color: var(--text-faint);
+  margin-right: 2px;
+}
+.jp-x-sort-btn {
+  min-height: 26px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+.jp-x-sort-btn--active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+  font-weight: 600;
+}
+
+/* ── Co-occurrence badge ────────────────────────────────────── */
+.jp-x-cooc-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #e5484d;
+  border: 1px solid #e5484d;
+  border-radius: 8px;
+  padding: 0 5px;
+  margin-left: auto;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+
+/* ── Discourse-pattern pills on tweet cards ─────────────────── */
+.jp-x-card-patterns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 7px;
+}
+.jp-x-pat-pill {
+  font-size: 0.68rem;
+  padding: 1px 7px;
+  border-radius: 10px;
+  border: 1px solid currentColor;
+  background: transparent;
+  white-space: nowrap;
+  opacity: 0.9;
+}
+
+/* ── Saved-queries modal list ───────────────────────────────── */
+.jp-x-sq-list {
+  margin: 8px 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+/* ── Save-collocation modal (selection parts) ───────────────── */
+.jp-x-save-text {
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  line-break: strict;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+  font-size: 0.95rem;
+  line-height: 1.7;
+  max-height: 38vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+  margin: 8px 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-secondary);
+}
+.jp-x-save-addrow {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.jp-x-save-addrow .jp-x-field-input { flex: 1; }
+.jp-x-parts { margin: 4px 0 10px; }
+.jp-x-part-gap {
+  color: var(--text-faint);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.jp-x-surface-row { margin-bottom: 4px; }
+
+/* ── Collection picker ──────────────────────────────────────── */
+.jp-x-collection-pin {
+  width: 100%;
+  margin: 6px 0 10px;
+  min-height: 40px;
+}
+.jp-x-collection-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 6px 0 10px;
+}
+.jp-x-collection-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 38px;
+  padding: 6px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  text-align: left;
+}
+.jp-x-collection-row:hover {
+  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+}
+.jp-x-collection-name { font-weight: 600; }
+.jp-x-collection-path {
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── [!x-tweet] callout (inserted / collected tweets) ───────── */
+.callout[data-callout="x-tweet"] {
+  --callout-color: 29, 155, 240;
+  --callout-icon: lucide-quote;
+}
+.callout[data-callout="x-tweet"] .callout-content {
+  white-space: normal;
+}
+.callout[data-callout="x-tweet"] img {
+  max-width: 220px;
+  border-radius: 8px;
+}
+
+/* ── Note-taxonomy callouts (reconciliation anchors, DESIGN §7 v2) ─────
+   🟡serifu 🔵collocation 🟢rhet-coll 💠kobun(phrase schema) 🟠skeletal 🔴discourse */
+.callout[data-callout="serifu"] {
+  --callout-color: 224, 195, 65;
+  --callout-icon: lucide-quote;
+}
+.callout[data-callout="collocation"] {
+  --callout-color: 74, 144, 217;
+  --callout-icon: lucide-link;
+}
+.callout[data-callout="rhet-coll"] {
+  --callout-color: 92, 184, 92;
+  --callout-icon: lucide-hand;
+}
+.callout[data-callout="kobun"] {
+  --callout-color: 3, 255, 177;
+  --callout-icon: lucide-puzzle;
+}
+.callout[data-callout="skeletal"],
+.callout[data-callout="rhet-constr"] { /* rhet-constr = legacy v1 keyword */
+  --callout-color: 243, 156, 18;
+  --callout-icon: lucide-network;
+}
+.callout[data-callout="discourse"] {
+  --callout-color: 217, 83, 79;
+  --callout-icon: lucide-messages-square;
+}
+
+/* ── jp-voicesync (speaker-synced clip playback) ───────────── */
+.jp-vs {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--background-secondary);
+}
+.jp-vs-missing { font-size: 0.85em; color: var(--text-muted); }
+.jp-vs-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+.jp-vs-play { font-size: 14px; width: 30px; cursor: pointer; }
+.jp-vs-name { font-size: 0.75em; color: var(--text-muted); font-family: var(--font-monospace); }
+.jp-vs-legend { display: flex; gap: 8px; margin-left: auto; }
+.jp-vs-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 0.75em; }
+.jp-vs-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.jp-vs-body { max-height: 260px; overflow-y: auto; }
+.jp-vs-seg {
+  border-left: 3px solid;
+  padding: 3px 8px;
+  margin: 4px 0;
+  line-height: 1.9;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  line-break: strict;
+}
+.jp-vs-who { font-size: 0.7em; font-weight: 600; margin-right: 6px; vertical-align: middle; }
+.jp-vs-overlap { background: color-mix(in srgb, var(--background-modifier-border) 35%, transparent); }
+.jp-vs-tok { cursor: pointer; border-radius: 3px; padding: 0 1px; }
+.jp-vs-tok:hover { background: var(--background-modifier-hover); }
+.jp-vs-cur { background: var(--text-highlight-bg, rgba(255, 208, 0, .45)); }
+.jp-vs-pill {
+  display: inline-block;
+  font-size: 0.7em;
+  color: var(--text-muted);
+  border: 1px dashed;
+  border-radius: 10px;
+  padding: 0 8px;
+  margin: 2px 6px;
+  cursor: pointer;
+}
+
+/* ── X usage examples inside the dictionary context panel ───── */
+.jp-dict-ctx-x-row {
+  padding: 6px 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+.jp-dict-ctx-x-text {
+  font-size: 0.84rem;
+  line-height: 1.5;
+  color: var(--text-normal);
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  line-break: strict;
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+.jp-dict-ctx-x-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+}
+.jp-dict-ctx-x-link {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--text-accent);
+  cursor: pointer;
+}
+
+/* ── Universal classify-capture modal (DESIGN §13) ──────────── */
+.jp-capture-modal { max-width: 560px; }
+.jp-capture-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  flex-wrap: wrap;
+}
+.jp-capture-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  min-width: 96px;
+}
+.jp-capture-input, .jp-capture-select, .jp-capture-textarea {
+  flex: 1;
+  min-width: 140px;
+  font-size: 0.9rem;
+}
+.jp-capture-textarea { width: 100%; resize: vertical; }
+.jp-capture-example {
+  font-size: 0.84rem;
+  background: var(--background-secondary);
+  border-left: 3px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  margin: 6px 0;
+  line-height: 1.5;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.jp-capture-example-label { color: var(--text-muted); font-size: 0.74rem; }
+.jp-capture-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 4px;
+}
+.jp-capture-chip {
+  font-size: 0.82rem;
+  padding: 5px 10px;
+  border-radius: 14px;
+  border: 1.5px solid var(--background-modifier-border);
+  background: transparent;
+  cursor: pointer;
+  min-height: 34px;
+}
+.jp-capture-chip--active {
+  border-color: var(--chip-color, var(--interactive-accent));
+  box-shadow: inset 0 0 0 1px var(--chip-color, var(--interactive-accent));
+  font-weight: 600;
+}
+.jp-capture-chip-suggest {
+  font-size: 0.68rem;
+  color: var(--text-accent);
+  margin-left: 3px;
+}
+.jp-capture-hint {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  margin: 2px 0 6px;
+  min-height: 1.2em;
+}
+.jp-capture-turns {
+  margin: 6px 0;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.jp-capture-turn {
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  border-bottom: 1px dashed var(--background-modifier-border);
+  line-height: 1.45;
+}
+.jp-capture-turn:last-child { border-bottom: none; }
+.jp-capture-turn--me {
+  background: var(--background-secondary);
+  font-weight: 600;
+}
+.jp-capture-turn--target {
+  border-left: 3px solid #d9534f;
+  background: rgba(217, 83, 79, 0.07);
+}
+.jp-capture-turn--after { opacity: 0.75; }
+.jp-capture-turn--none { font-size: 0.76rem; color: var(--text-muted); padding: 6px 8px; }
+.jp-capture-turn-idx {
+  font-family: var(--font-monospace);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.jp-capture-edge-target { font-size: 0.74rem; color: var(--text-muted); }
+.jp-capture-btnrow {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.jp-capture-btn {
+  font-size: 0.86rem;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-height: 38px;
+}
+.jp-capture-btn--cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+
+/* ── Dictionary deinflection badge ──────────────────────────── */
+.jp-dict-deinflect-badge {
+  font-size: 0.72rem;
+  color: var(--text-accent);
+  background: var(--background-secondary);
+  border-radius: 8px;
+  padding: 1px 7px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+/* ── SRS review view ────────────────────────────────────────── */
+.jp-srs-view { padding: 8px 10px; height: 100%; }
+.jp-srs-home { display: flex; flex-direction: column; align-items: center; gap: 14px; padding-top: 24px; }
+.jp-srs-home-title { margin: 0; font-size: 1.3rem; }
+.jp-srs-counts { display: flex; gap: 14px; }
+.jp-srs-count {
+  display: flex; flex-direction: column; align-items: center;
+  min-width: 64px; padding: 10px 8px; border-radius: 10px;
+  border: 1px solid var(--background-modifier-border);
+}
+.jp-srs-count-n { font-size: 1.5rem; font-weight: 700; font-family: var(--font-monospace); }
+.jp-srs-count-label { font-size: 0.72rem; color: var(--text-muted); }
+.jp-srs-count--learn .jp-srs-count-n { color: #d9832b; }
+.jp-srs-count--due .jp-srs-count-n { color: #4a90d9; }
+.jp-srs-count--new .jp-srs-count-n { color: #5cb85c; }
+.jp-srs-count--leech .jp-srs-count-n { color: #d9534f; }
+.jp-srs-count--leech { opacity: 0.85; }
+
+/* ── ContextWindow (DESIGN §20.2): the one attestation-context renderer ── */
+.jp-ctx { display: flex; flex-direction: column; gap: 2px; padding: 4px 0; }
+.jp-ctx-turn { display: flex; align-items: baseline; gap: 6px; font-size: 12.5px; line-height: 1.65; color: var(--text-muted); }
+.jp-ctx-turn--anchor { color: var(--text-normal); font-size: 13.5px; }
+.jp-ctx-speaker {
+  flex-shrink: 0; width: 16px; height: 16px; border-radius: 50%;
+  background: var(--background-modifier-border); color: var(--text-muted);
+  font-size: 9.5px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center;
+  transform: translateY(2px);
+}
+.jp-ctx-turn--anchor .jp-ctx-speaker { background: var(--interactive-accent); color: var(--text-on-accent); }
+.jp-ctx-text { flex: 1; min-width: 0; }
+.jp-ctx-hit { background: none; color: var(--text-normal); font-weight: 700; box-shadow: inset 0 -2px 0 var(--interactive-accent); padding: 0; }
+.jp-ctx-meta { flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; }
+.jp-ctx-time { font-size: 10px; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.jp-ctx-play, .jp-ctx-open {
+  font-size: 10px; padding: 0 5px; height: 18px; line-height: 16px;
+  background: transparent; border: 1px solid var(--background-modifier-border);
+  border-radius: 9px; color: var(--text-muted); cursor: pointer; box-shadow: none;
+}
+.jp-ctx-play:hover, .jp-ctx-open:hover { color: var(--text-normal); border-color: var(--interactive-accent); }
+.jp-ctx-quote-only { font-size: 12.5px; line-height: 1.6; }
+.jp-ctx-quote-text { color: var(--text-normal); }
+.jp-ctx-quote-why { display: block; font-size: 10px; color: var(--text-faint); margin-top: 2px; }
+
+/* ── §20.1 monokakido pass: the lexicon index + entry anatomy ── */
+.jp-lex-modes { display: inline-flex; gap: 2px; margin-left: 6px; }
+.jp-lex-mode {
+  font-size: 10.5px; padding: 2px 8px; border-radius: 10px; cursor: pointer;
+  background: transparent; border: 1px solid transparent; color: var(--text-faint); box-shadow: none;
+}
+.jp-lex-mode--active { color: var(--text-normal); border-color: var(--background-modifier-border); background: var(--background-secondary); }
+.jp-lex-listwrap { position: relative; flex: 1; min-height: 0; display: flex; }
+.jp-lex-listwrap .jp-lex-list { flex: 1; min-width: 0; overflow-y: auto; }
+/* dense headword rows: color RAIL, whitespace separation, no borders */
+.jp-lex-row {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 8px 6px 0; min-height: 44px; border: none; cursor: pointer;
+  border-radius: 6px;
+}
+.jp-lex-row:hover { background: var(--background-secondary); }
+.jp-lex-row-rail { flex-shrink: 0; width: 3px; align-self: stretch; border-radius: 2px; }
+.jp-lex-row-hw { font-size: 17px; font-weight: 650; line-height: 1.3; color: var(--text-normal); }
+.jp-lex-row-reading { font-size: 11px; color: var(--text-faint); margin-left: 6px; }
+.jp-lex-row-gloss { font-size: 12px; color: var(--text-muted); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jp-lex-row-ex { font-size: 11.5px; color: var(--text-faint); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* あかさたな scrubber rail */
+.jp-lex-rail {
+  flex-shrink: 0; width: 20px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 1px;
+  position: sticky; top: 0; align-self: flex-start; max-height: 100%;
+  user-select: none;
+}
+.jp-lex-rail-item { font-size: 10px; color: var(--text-muted); cursor: pointer; padding: 1px 4px; border-radius: 4px; }
+.jp-lex-rail-item:hover { background: var(--background-secondary); color: var(--text-normal); }
+.jp-lex-rail-item--empty { color: var(--text-faint); opacity: 0.4; cursor: default; }
+/* entry anatomy: big headword over a class accent bar; 用例 are the body */
+.jp-lex-detail-hw { font-size: 26px; font-weight: 700; line-height: 1.25; }
+.jp-lex-tappable { cursor: pointer; }
+.jp-lex-tappable:hover { text-decoration: underline; text-decoration-color: var(--text-faint); text-underline-offset: 3px; }
+.jp-lex-leaf-ctx { margin: 2px 0 6px 18px; padding-left: 8px; border-left: 2px solid var(--background-modifier-border); }
+/* Tier B assignments + 生成 scaffold */
+.jp-lex-assign { margin-top: 10px; }
+.jp-lex-assign-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.jp-lex-scaffold { margin-top: 10px; opacity: 0.9; }
+.jp-lex-scaffold-line { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; }
+/* ── §23.5 ergonomics: shortcut hints ── */
+.jp-capture-chip-key {
+  font-size: 8.5px; font-weight: 700; color: var(--text-faint);
+  border: 1px solid var(--background-modifier-border); border-radius: 3px;
+  padding: 0 3px; margin-right: 4px; transform: translateY(-1px); display: inline-block;
+}
+
+/* ── §22.7 語法プロフィール ── */
+.jp-lex-goho { margin-top: 10px; }
+.jp-lex-goho-chips { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
+.jp-lex-goho-chip { font-size: 11.5px; padding: 2px 9px; border-radius: 11px; cursor: pointer; }
+.jp-lex-goho-ex { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; }
+
+/* ── §22.8 収集トレイ ── */
+.jp-tray { display: flex; flex-direction: column; gap: 10px; padding: 8px; }
+.jp-tray-zone {
+  border: 2px dashed var(--background-modifier-border); border-radius: 12px;
+  padding: 14px 10px; text-align: center; transition: border-color 120ms ease, background 120ms ease;
+}
+.jp-tray-zone--over { border-color: var(--interactive-accent); background: var(--background-secondary); }
+.jp-tray-zone-icon { font-size: 22px; }
+.jp-tray-zone-label { font-weight: 650; margin-top: 2px; }
+.jp-tray-zone-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+.jp-tray-paste { font-size: 11px; margin-top: 8px; cursor: pointer; }
+.jp-tray-zone-btns { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+/* §25.7 読書セッション: shots of one sitting grouped under a quiet header */
+.jp-tray-session { border-radius: 12px; border: 1px solid var(--background-modifier-border); padding: 6px; display: flex; flex-direction: column; gap: 8px; }
+.jp-tray-session-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px; }
+.jp-tray-session-title { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.jp-tray-session-ocr { margin-left: auto; font-size: 11px; cursor: pointer; min-height: 32px; }
+/* §25.1 mark cards: where/when + the one-word seed */
+.jp-tray-mark { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.jp-tray-mark-stamp { font-size: 11px; font-family: var(--font-monospace); color: var(--text-muted); }
+.jp-tray-mark-seed { font-size: 15px; font-weight: 600; }
+.jp-tray-mark-seed--none { font-weight: 400; color: var(--text-faint); font-size: 12px; }
+
+/* ══ §25.2 鑑賞モード (FollowAlong) — glanceable, silent, co-viewing safe ══ */
+.jp-follow { display: flex; flex-direction: column; height: 100%; padding: 0 8px calc(8px + env(safe-area-inset-bottom)); position: relative; }
+.jp-follow-empty { font-size: 13px; color: var(--text-faint); text-align: center; padding: 32px 16px; line-height: 1.7; }
+.jp-follow-head { display: flex; align-items: center; gap: 10px; padding: 8px 4px 4px; flex-wrap: wrap; }
+.jp-follow-title { font-size: 14px; font-weight: 700; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jp-follow-chips { display: flex; align-items: center; gap: 8px; }
+.jp-follow-clock { font-size: 12px; font-family: var(--font-monospace); color: var(--text-muted); cursor: pointer; min-height: 32px; display: inline-flex; align-items: center; }
+.jp-follow-past { font-size: 11px; color: var(--text-accent); cursor: pointer; }
+.jp-follow-btn { font-size: 12px; cursor: pointer; min-height: 36px; }
+.jp-follow-btn--go { background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 700; }
+/* §25.4 Plex clock (b) chip: shows sync state / live session title (or a soft warning). */
+.jp-follow-plexchip { max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jp-follow-plexchip.is-on { background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 600; }
+.jp-follow-plexchip.is-warn { color: var(--text-warning, #c98a1b); }
+.jp-follow-warn { font-size: 11px; color: var(--text-warning, #c98a1b); padding: 2px 6px; }
+.jp-follow-list { flex: 1; overflow-y: auto; padding: 8px 2px 40vh; }
+.jp-follow-line { display: flex; align-items: baseline; gap: 8px; padding: 7px 10px; border-radius: 8px; cursor: pointer; line-height: 1.55; transition: background 120ms; min-height: 34px; }
+.jp-follow-line:active { background: var(--background-modifier-hover); }
+.jp-follow-stamp { font-size: 10px; font-family: var(--font-monospace); color: var(--text-faint); flex-shrink: 0; }
+.jp-follow-speaker { font-size: 11px; font-weight: 700; color: var(--text-accent); flex-shrink: 0; }
+.jp-follow-text { font-size: 15px; color: var(--text-muted); }
+.jp-follow-line--now { background: var(--background-secondary); }
+.jp-follow-line--now .jp-follow-text { font-size: 20px; font-weight: 600; color: var(--text-normal); }
+.jp-follow-line--focus { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }
+.jp-follow-nowpill { position: absolute; bottom: 88px; right: 16px; padding: 8px 14px; border-radius: 20px; background: var(--interactive-accent); color: var(--text-on-accent); font-size: 12px; font-weight: 700; cursor: pointer; opacity: 0; pointer-events: none; transition: opacity 150ms; z-index: 5; }
+.jp-follow-nowpill--show { opacity: 1; pointer-events: auto; }
+.jp-follow-seed { padding: 2px 0 2px 24px; }
+.jp-follow-seed-input { font-size: 13px; width: 12em; }
+.jp-follow-bar { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-top: 1px solid var(--background-modifier-border); flex-wrap: wrap; }
+.jp-follow-bar-hint { font-size: 11px; color: var(--text-faint); }
+.jp-follow-bar-info { display: flex; flex-direction: column; gap: 2px; }
+.jp-follow-bar-mode { font-size: 11px; color: var(--text-muted); }
+.jp-follow-bar-pts { font-size: 15px; font-weight: 700; }
+.jp-follow-big { font-size: 22px; min-width: 64px; min-height: 48px; border-radius: 12px; cursor: pointer; }
+.jp-follow-big--speak { background: var(--interactive-accent); }
+.jp-follow-config, .jp-follow-rating, .jp-follow-debrief { border: 1px solid var(--background-modifier-border); border-radius: 12px; padding: 10px; margin: 6px 0; }
+.jp-follow-config-title, .jp-follow-rating-title { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+.jp-follow-config-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0; }
+.jp-follow-config-label { font-size: 11px; color: var(--text-muted); }
+.jp-follow-chipbtn { font-size: 12px; min-height: 36px; border-radius: 18px; cursor: pointer; }
+.jp-follow-chipbtn.is-on { background: var(--interactive-accent); color: var(--text-on-accent); }
+.jp-follow-rating { width: 100%; }
+.jp-follow-rating-row { display: flex; align-items: center; gap: 4px; margin: 3px 0; }
+.jp-follow-rating-aspect { font-size: 12px; flex: 1; min-width: 7em; }
+.jp-follow-rate { font-size: 13px; min-width: 40px; min-height: 36px; cursor: pointer; border-radius: 8px; }
+.jp-follow-rate.is-on { background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 700; }
+.jp-follow-debrief { max-height: 45vh; overflow-y: auto; }
+.jp-follow-debrief-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.jp-follow-debrief-title { font-size: 12px; font-weight: 700; flex: 1; }
+.jp-follow-debrief-card { border-top: 1px solid var(--background-modifier-border); padding: 8px 2px; }
+.jp-follow-debrief-mhead { display: flex; align-items: baseline; gap: 8px; }
+.jp-follow-debrief-seed { font-weight: 700; }
+.jp-follow-debrief-line { font-size: 14px; margin: 4px 0; }
+.jp-follow-debrief-actual { background: var(--background-secondary); border-radius: 8px; padding: 6px 8px; margin: 4px 0; }
+.jp-follow-debrief-label { font-size: 10px; color: var(--text-faint); margin-bottom: 2px; }
+.jp-follow-debrief-actualline { font-size: 13px; display: flex; gap: 6px; }
+.jp-follow-debrief-actions { margin-top: 4px; }
+.jp-tray-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+.jp-tray-empty { font-size: 12px; color: var(--text-faint); text-align: center; padding: 16px 8px; line-height: 1.6; }
+.jp-tray-card { border-radius: 10px; background: var(--background-secondary); padding: 8px 10px; }
+.jp-tray-card-head { display: flex; align-items: center; gap: 6px; }
+.jp-tray-card-kind { font-size: 13px; }
+.jp-tray-card-origin { font-size: 10px; color: var(--text-faint); }
+.jp-tray-card-del { margin-left: auto; font-size: 11px; background: transparent; border: none; box-shadow: none; cursor: pointer; opacity: 0.5; }
+.jp-tray-card-del:hover { opacity: 1; }
+.jp-tray-card-body { margin-top: 4px; }
+.jp-tray-img { max-width: 100%; border-radius: 6px; cursor: pointer; display: block; }
+.jp-tray-imgwrap { position: relative; }
+.jp-tray-bbox {
+  position: absolute; border: 1.5px solid var(--interactive-accent);
+  border-radius: 3px; pointer-events: none; opacity: 0.55;
+}
+.jp-tray-card-note { font-size: 10px; color: var(--text-faint); margin-top: 3px; }
+.jp-tray-url { font-size: 12px; word-break: break-all; }
+.jp-tray-turn { display: flex; gap: 6px; align-items: baseline; padding: 3px 4px; border-radius: 6px; cursor: pointer; font-size: 13px; line-height: 1.6; }
+.jp-tray-turn:hover { background: var(--background-primary); }
+.jp-tray-speaker {
+  flex-shrink: 0; min-width: 16px; height: 16px; border-radius: 8px; padding: 0 4px;
+  background: var(--background-modifier-border); font-size: 9.5px; font-weight: 700;
+  display: inline-flex; align-items: center; justify-content: center; transform: translateY(2px);
+}
+.jp-tray-text { font-size: 13.5px; line-height: 1.7; }
+.jp-tray-card-actions { margin-top: 6px; }
+.jp-tray-classify { font-size: 11.5px; cursor: pointer; }
+
+/* ── §22.5 dictionary example capture ── */
+.jp-dict-ex-capture {
+  font-size: 10px; padding: 0 4px; margin-left: 6px; height: 18px;
+  background: transparent; border: 1px solid var(--background-modifier-border);
+  border-radius: 9px; cursor: pointer; opacity: 0.5; box-shadow: none; vertical-align: baseline;
+}
+.jp-dict-ex-capture:hover { opacity: 1; border-color: var(--interactive-accent); }
+
+/* ── §22.4 TokenCanvas: pills + marks (draw-then-snap) ── */
+.jp-canvas { margin: 6px 0; }
+.jp-canvas-row { display: flex; flex-wrap: wrap; gap: 3px 2px; line-height: 1; touch-action: none; user-select: none; }
+.jp-canvas-pill {
+  font-size: 15px; padding: 8px 5px; border-radius: 6px; cursor: pointer;
+  border: 1px solid transparent; min-height: 34px; display: inline-flex; align-items: center;
+  transition: background 120ms ease, box-shadow 120ms ease;
+}
+/* §22.4 pentimento: the machine's best guess, pre-drawn faintly — tap accepts */
+.jp-canvas-pill--faint { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--interactive-accent) 35%, transparent); background: color-mix(in srgb, var(--interactive-accent) 6%, transparent); }
+.jp-canvas-pill:hover { background: var(--background-secondary); }
+.jp-canvas-pill--punct { opacity: 0.45; cursor: default; padding: 7px 1px; }
+.jp-canvas-pill--spanning, .jp-canvas-pill--span { background: var(--background-secondary); box-shadow: inset 0 -2px 0 var(--interactive-accent); }
+.jp-canvas-pill--part { border-color: #f39c12; color: #f39c12; font-weight: 700; }
+.jp-canvas-pill--striking, .jp-canvas-pill--struck { text-decoration: line-through 2px; opacity: 0.55; }
+.jp-canvas-pill--circled { border: 2px solid #5cb85c; border-radius: 999px; font-weight: 700; }
+.jp-canvas-pill--halo { box-shadow: inset 0 -2px 0 #5cb85c; }
+.jp-canvas-sugs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.jp-canvas-sug { font-size: 11px; padding: 2px 8px; border-radius: 10px; opacity: 0.65; cursor: pointer; }
+.jp-canvas-sug:hover { opacity: 1; }
+.jp-canvas-clear { font-size: 10.5px; margin-top: 4px; background: transparent; border: none; box-shadow: none; color: var(--text-faint); cursor: pointer; }
+.jp-capture-canvaswrap { margin: 8px 0; }
+
+/* ── §22 written-medium prose context + importer ── */
+.jp-ctx-prose { padding: 4px 0; }
+.jp-ctx-para {
+  margin: 0 0 6px; font-size: 12.5px; line-height: 1.9; color: var(--text-muted);
+  text-indent: 1em; text-align: justify;
+}
+.jp-ctx-para--anchor { color: var(--text-normal); font-size: 13.5px; }
+.jp-ctx-prose-src { font-size: 10.5px; color: var(--text-faint); display: flex; gap: 8px; align-items: baseline; }
+.jp-ctx-door { font-size: 10.5px; }
+/* §22.2 manga: the panel IS the context */
+.jp-ctx-manga { display: flex; flex-direction: column; gap: 6px; }
+.jp-ctx-manga-frame { position: relative; max-width: 420px; }
+.jp-ctx-manga-img { display: block; width: 100%; border-radius: 6px; }
+.jp-ctx-manga-bbox { position: absolute; border: 2px solid var(--color-yellow, #e0ac00); border-radius: 4px; box-shadow: 0 0 0 200vmax rgba(0,0,0,0.18); pointer-events: none; transition: all 0.18s ease; }
+.jp-ctx-manga-frame { overflow: hidden; border-radius: 6px; }
+.jp-ctx-manga-cap { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.jp-ctx-manga-bubbles { display: flex; flex-wrap: wrap; gap: 6px; }
+.jp-ctx-manga-bubble { font-size: 11.5px; min-height: 34px; padding: 2px 10px; border-radius: 12px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); color: var(--text-muted); cursor: pointer; }
+.jp-ctx-manga-bubble--anchor { border-color: var(--color-yellow, #e0ac00); color: var(--text-normal); }
+/* §22.2 the ⚙ machine-heard badge */
+.jp-ctx-gen { font-size: 10.5px; color: var(--text-faint); padding: 2px 0 6px; }
+/* §23.5 DictionaryView keyboard hand */
+.jp-dict-ex--focus { outline: 2px solid var(--interactive-accent); outline-offset: -2px; border-radius: 4px; }
+/* §23.5 TrayView three hands */
+.jp-tray-keys { margin: 4px 8px; }
+.jp-tray-card--focus { outline: 2px solid var(--interactive-accent); outline-offset: -2px; }
+.jp-tray-card--dragging { opacity: 0.5; }
+.jp-lex--dropover { outline: 2px dashed var(--interactive-accent); outline-offset: -4px; }
+/* §23.5 LexiconPanel three hands */
+.jp-lex-keys { margin: 2px 0 4px; }
+.jp-lex-krow--focus { outline: 2px solid var(--interactive-accent); outline-offset: -2px; border-radius: 6px; }
+.jp-lex-leaf-cand { touch-action: pan-y; transition: background 0.12s ease; }
+.jp-lex-swipe-yes { background: rgba(92, 184, 92, 0.18); }
+.jp-lex-swipe-no { background: rgba(217, 87, 87, 0.18); }
+/* §22.5 example sentences as first-class rows inside dictionary entries.
+   §26.2: the example accent is the SHARED semantic-example token (blue) —
+   the same treatment the catalog gives its 用例, so an example reads the
+   same on every surface (one grammar, property 4). */
+.jp-dict-sc--example { display: block; margin: 4px 0 4px 0.4em; padding: 3px 10px; border-left: 2px solid var(--jpc-sem-example, var(--interactive-accent)); background: var(--background-secondary); border-radius: 0 6px 6px 0; line-height: 1.7; }
+.jp-dict-sc--example .jp-dict-sc--example { border-left: none; background: transparent; padding: 0; margin: 0; display: inline; }
+.jp-import-hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.jp-import-row { display: flex; gap: 8px; align-items: baseline; margin: 6px 0; }
+.jp-import-row label { font-size: 12px; color: var(--text-muted); min-width: 9em; }
+.jp-import-row input { flex: 1; }
+.jp-import-paste { width: 100%; font-family: var(--font-monospace); font-size: 11px; margin: 8px 0; }
+
+/* ── 💡 discovery modal (§21) ── */
+.jp-discovery-sub { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.jp-discovery-row { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-top: 1px solid var(--background-modifier-border); }
+.jp-discovery-main { flex: 1; min-width: 0; }
+.jp-discovery-surface { font-size: 16px; font-weight: 650; }
+.jp-discovery-count { font-size: 11px; color: var(--text-faint); margin-left: 8px; }
+.jp-discovery-ex { font-size: 12px; color: var(--text-muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jp-discovery-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.jp-discovery-actions button { font-size: 12px; cursor: pointer; }
+
+.jp-lex-gen-badge {
+  flex-shrink: 0; font-size: 9px; font-weight: 700; letter-spacing: 0.5px;
+  color: var(--text-on-accent); background: var(--text-faint);
+  padding: 1px 5px; border-radius: 3px; transform: translateY(-1px);
+}
+.jp-srs-breakdown { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.jp-srs-breakdown-label { font-size: 0.76rem; color: var(--text-muted); }
+.jp-srs-breakdown-chip {
+  font-size: 0.76rem; padding: 1px 7px; border-radius: 10px;
+  border: 1.5px solid var(--background-modifier-border);
+}
+.jp-srs-empty { color: var(--text-muted); text-align: center; max-width: 320px; line-height: 1.6; }
+
+.jp-srs-progress { height: 3px; background: var(--background-modifier-border); border-radius: 2px; margin-bottom: 8px; }
+.jp-srs-progress-fill { height: 100%; background: var(--interactive-accent); border-radius: 2px; transition: width 0.2s; }
+.jp-srs-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.jp-srs-drill {
+  font-size: 0.78rem; font-weight: 600; padding: 2px 9px; border-radius: 10px;
+  border: 1.5px solid var(--background-modifier-border);
+}
+.jp-srs-pos { font-size: 0.74rem; color: var(--text-muted); font-family: var(--font-monospace); }
+.jp-srs-end { margin-left: auto; font-size: 0.74rem; cursor: pointer; background: none; border: none; color: var(--text-muted); }
+
+.jp-srs-card {
+  border: 1px solid var(--background-modifier-border);
+  border-top: 3px solid var(--interactive-accent);
+  border-radius: 10px; padding: 18px 16px; outline: none;
+}
+.jp-srs-face { display: flex; flex-direction: column; gap: 8px; }
+.jp-srs-front { align-items: center; text-align: center; padding: 14px 0; }
+.jp-srs-line { font-size: 1.15rem; line-height: 1.7; }
+.jp-srs-audio-row { margin-top: 6px; }
+.jp-srs-audio-btn {
+  font-size: 0.86rem; padding: 5px 12px; border-radius: 8px; cursor: pointer;
+  background: var(--background-secondary);
+}
+.jp-srs-reveal { margin: 16px auto 0; display: block; }
+
+.jp-srs-back { border-top: 1px dashed var(--background-modifier-border); padding-top: 12px; margin-top: 6px; }
+.jp-srs-answer { font-size: 1.5rem; font-weight: 700; text-align: center; color: var(--text-accent); }
+.jp-srs-back-line { font-size: 0.92rem; line-height: 1.6; color: var(--text-normal); }
+.jp-srs-source-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.jp-srs-source-link { font-size: 0.78rem; cursor: pointer; color: var(--text-accent); }
+
+.jp-srs-grades { display: flex; gap: 8px; margin-top: 18px; }
+.jp-srs-grade {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 10px 4px; border-radius: 8px; cursor: pointer; border: 1px solid var(--background-modifier-border);
+  min-height: 48px;
+}
+.jp-srs-grade-label { font-size: 0.84rem; font-weight: 600; }
+.jp-srs-grade-ivl { font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-monospace); }
+.jp-srs-grade--again { border-color: #d9534f; }
+.jp-srs-grade--again .jp-srs-grade-label { color: #d9534f; }
+.jp-srs-grade--hard { border-color: #d9832b; }
+.jp-srs-grade--good { border-color: #4a90d9; }
+.jp-srs-grade--easy { border-color: #5cb85c; }
+.jp-srs-btn {
+  font-size: 0.92rem; padding: 9px 18px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--background-modifier-border); background: var(--background-secondary);
+}
+.jp-srs-btn--cta { background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 600; border: none; }
+
+/* phone: grades pin to the bottom of the scroll area, thumb-reachable */
+@media (max-width: 600px) {
+  .jp-srs-grades {
+    position: sticky; bottom: 0; margin-top: 14px;
+    background: var(--background-primary);
+    padding: 8px 0 calc(8px + env(safe-area-inset-bottom, 0px));
+  }
+  .jp-srs-grade { min-height: 58px; }
+  .jp-srs-grade-label { font-size: 0.92rem; }
+  .jp-srs-reveal { width: 100%; min-height: 52px; font-size: 1rem; }
+}
+
+/* ── Monokakido-style unified lexicon panel ─────────────────── */
+.jp-lex { display: flex; flex-direction: column; gap: 8px; }
+.jp-lex-searchrow { position: relative; }
+.jp-lex-search {
+  width: 100%; font-size: 1rem; padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--background-modifier-border); background: var(--background-primary);
+  min-height: 40px;
+}
+.jp-lex-ac {
+  position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 2px);
+  background: var(--background-primary); border: 1px solid var(--background-modifier-border);
+  border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.18); overflow: hidden; max-height: 320px; overflow-y: auto;
+}
+.jp-lex-ac-row { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; }
+.jp-lex-ac-row:hover { background: var(--background-modifier-hover); }
+.jp-lex-ac-hw { flex: 1; font-size: 0.94rem; }
+.jp-lex-ac-count { font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-monospace); }
+
+.jp-lex-facets { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.jp-lex-chip {
+  font-size: 0.78rem; padding: 3px 9px; border-radius: 12px; cursor: pointer;
+  border: 1px solid var(--background-modifier-border); background: transparent; min-height: 28px;
+}
+.jp-lex-chip--active { font-weight: 600; }
+.jp-lex-stats { font-size: 0.74rem; color: var(--text-muted); }
+
+.jp-lex-list { display: flex; flex-direction: column; }
+.jp-lex-row {
+  display: flex; align-items: center; gap: 9px; padding: 9px 6px; cursor: pointer;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.jp-lex-row:hover { background: var(--background-modifier-hover); }
+.jp-lex-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.jp-lex-row-legacy { font-size: 0.9rem; opacity: 0.6; }
+.jp-lex-row-main { flex: 1; min-width: 0; }
+.jp-lex-row-top { display: flex; align-items: baseline; gap: 7px; }
+.jp-lex-row-hw { font-size: 1.02rem; font-weight: 600; }
+.jp-lex-row-reading { font-size: 0.78rem; color: var(--text-muted); }
+.jp-lex-deinflect { font-size: 0.72rem; color: var(--text-accent); }
+.jp-lex-row-gloss { font-size: 0.8rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jp-lex-row-meta { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.jp-lex-row-src { font-size: 0.76rem; opacity: 0.75; }
+.jp-lex-row-count { font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-monospace); }
+.jp-lex-empty { color: var(--text-muted); text-align: center; padding: 24px 12px; line-height: 1.6; }
+.jp-lex-dictsec { margin-top: 10px; border-top: 2px solid var(--background-modifier-border); padding-top: 6px; }
+.jp-lex-dictsec-title { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px; }
+.jp-lex-dict-row { padding: 7px 6px; cursor: pointer; border-bottom: 1px solid var(--background-modifier-border); }
+.jp-lex-dict-row:hover { background: var(--background-modifier-hover); }
+
+/* detail */
+.jp-lex-back { font-size: 0.8rem; cursor: pointer; background: none; border: none; color: var(--text-accent); padding: 4px 0; align-self: flex-start; }
+.jp-lex-detail-head { border-left: 3px solid var(--interactive-accent); padding: 4px 0 8px 12px; }
+.jp-lex-detail-titlerow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.jp-lex-detail-hw { font-size: 1.3rem; font-weight: 700; }
+.jp-lex-detail-class { font-size: 0.78rem; margin-left: auto; }
+.jp-lex-detail-payload { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.jp-lex-detail-payload-line { font-size: 0.84rem; color: var(--text-muted); }
+.jp-lex-detail-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.jp-lex-act { font-size: 0.78rem; padding: 4px 10px; border-radius: 7px; cursor: pointer; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); }
+
+.jp-lex-tree { margin-top: 12px; }
+.jp-lex-tree-title { font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 4px; }
+.jp-lex-tree-group { border: 1px solid var(--background-modifier-border); border-radius: 8px; margin-bottom: 6px; overflow: hidden; }
+.jp-lex-tree-sum { display: flex; align-items: center; gap: 8px; padding: 7px 10px; cursor: pointer; background: var(--background-secondary); font-size: 0.84rem; }
+.jp-lex-tree-label { flex: 1; font-weight: 600; }
+.jp-lex-tree-count { font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-monospace); }
+.jp-lex-leaf { display: flex; align-items: flex-start; gap: 8px; padding: 7px 10px; border-top: 1px dashed var(--background-modifier-border); }
+.jp-lex-leaf-mark { font-size: 0.76rem; }
+.jp-lex-leaf-quote { flex: 1; font-size: 0.9rem; line-height: 1.55; user-select: text; -webkit-user-select: text; }
+.jp-lex-legacy-ex { display: block; padding: 6px 4px; border-bottom: 1px dashed var(--background-modifier-border); }
+.jp-lex-leaf-meta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.jp-lex-leaf-time { font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-monospace); }
+.jp-lex-leaf-btn { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 6px; cursor: pointer; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); padding: 0; }
+.jp-lex-leaf-btn svg { width: 15px; height: 15px; }
+
+/* embedded just-enough example under a row (context is meaning) */
+.jp-lex-row-ex { font-size: 0.78rem; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.5; }
+.jp-lex-row-merged { font-size: 0.72rem; }
+.jp-lex-legacy-block { border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
+.jp-lex-legacy-block .jp-lex-row-ex { white-space: normal; }
+
+/* 候補 — quarantined sweep suggestions (dashed = unratified) */
+.jp-lex-cand-group { border-style: dashed; }
+.jp-lex-cand-group > .jp-lex-tree-sum { background: transparent; color: var(--text-muted); }
+.jp-lex-leaf-cand .jp-lex-leaf-quote { color: var(--text-muted); }
+.jp-lex-cand-yes { color: var(--color-green); font-weight: 700; }
+.jp-lex-cand-no { color: var(--color-red); font-weight: 700; }
+
+.jp-lex-constellation { margin-top: 12px; }
+.jp-lex-con-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+.jp-lex-con-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 0.8rem; padding: 4px 9px; border-radius: 12px; cursor: pointer; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); }
+.jp-lex-con-count { font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-monospace); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   §26 THE MONOKAKIDO REALIZATION — semantic grammar (from _ref_monokakido/).
+   ONE color grammar, learned once, meaning the same thing on every surface
+   (§26.0 property 4). Nothing here is decoration — every value encodes a role
+   (test e). Theme-aware: all tokens resolve through Obsidian's own palette so
+   light/dark both read correctly.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.theme-light, .theme-dark {
+  /* the entry-article palette (f12, f40): headword accent, example blue,
+     idiom green, translation prose, warning red — the fixed five. */
+  --jpc-sem-example: var(--color-blue);
+  --jpc-sem-idiom: var(--color-green);
+  --jpc-sem-warn: var(--color-red);
+  /* the knowledge-box banner (ACE CROWN's red 似ている単語 / なぜ？ header). */
+  --jpc-box-banner: var(--color-red);
+  --jpc-box-banner-text: #fff;
+  /* per-role banner hues — distinguishable by ROLE, not variety (§26.2). */
+  --jpc-box-family: var(--color-red);      /* the crown discriminator */
+  --jpc-box-naze: var(--color-purple);     /* pedagogy / readings */
+  --jpc-box-goho: var(--color-cyan);       /* corpus 語法 (curated stratum) */
+  --jpc-box-warn: var(--color-orange);     /* the personal ❗ anti-error */
+  --jpc-box-gen: var(--text-faint);        /* 生成 quarantine (low emphasis) */
+}
+
+/* ── the entry-article headword block (§26.2, f12/f40 anatomy) ── */
+.jp-lex-detail-reading { font-size: 0.9rem; color: var(--text-muted); margin-top: 1px; padding-left: 2px; }
+.jp-lex-detail-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+/* shape-coded, boxed badge (ACE CROWN's 名/文型/A1 outline boxes) */
+.jp-lex-badge { font-size: 0.7rem; font-weight: 700; line-height: 1.4; padding: 1px 7px; border: 1.5px solid var(--text-muted); border-radius: 5px; color: var(--text-muted); letter-spacing: 0.02em; }
+
+/* ── §26.3 space-walking: neighbor pills in the thumb corners (f01) ── */
+.jp-lex-nbpills { display: flex; justify-content: space-between; gap: 8px; margin: 8px 0 2px; }
+.jp-lex-nbpill { display: inline-flex; align-items: center; max-width: 46%; padding: 7px 12px; min-height: 40px; border-radius: 20px; cursor: pointer; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); font-size: 0.82rem; color: var(--text-normal); transition: background 120ms, transform 90ms; }
+.jp-lex-nbpill:active { transform: scale(0.97); background: var(--background-modifier-hover); }
+.jp-lex-nbpill--next { margin-left: auto; }
+.jp-lex-nbpill-hw { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── §26.2 knowledge boxes: the named, banner-topped inline object ──
+   ONE structure for every pedagogical box; the tone is the left rail + the
+   banner tint. Density with strict hierarchy = never noise (f40). */
+.jp-kbox { margin: 12px 0; border: 1px solid var(--background-modifier-border); border-radius: 10px; overflow: hidden; border-left-width: 3px; }
+.jp-kbox-title { font-size: 0.8rem; font-weight: 700; padding: 6px 12px; color: var(--jpc-box-banner-text); letter-spacing: 0.01em; }
+.jp-kbox-body { padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+.jp-kbox--family { border-left-color: var(--jpc-box-family); }
+.jp-kbox--family > .jp-kbox-title { background: var(--jpc-box-family); }
+.jp-kbox--naze { border-left-color: var(--jpc-box-naze); }
+.jp-kbox--naze > .jp-kbox-title { background: var(--jpc-box-naze); }
+.jp-kbox--goho { border-left-color: var(--jpc-box-goho); }
+.jp-kbox--goho > .jp-kbox-title { background: var(--jpc-box-goho); }
+.jp-kbox--warn { border-left-color: var(--jpc-box-warn); }
+.jp-kbox--warn > .jp-kbox-title { background: var(--jpc-box-warn); }
+.jp-kbox--gen { border-left-color: var(--jpc-box-gen); }
+.jp-kbox--gen > .jp-kbox-title { background: var(--background-modifier-border); color: var(--text-muted); }
+
+/* 似ている表現 rows — the discrimination-by-image grid (f40); the self row
+   is quietly pinned so you see WHERE you are among the family. */
+.jp-kbox-family-row { display: flex; align-items: baseline; gap: 10px; padding: 4px 0; cursor: pointer; border-bottom: 1px dashed var(--background-modifier-border); }
+.jp-kbox-family-row:last-child { border-bottom: none; }
+.jp-kbox-family-row.is-self { cursor: default; background: var(--background-secondary); border-radius: 6px; padding: 4px 8px; margin: 0 -8px; }
+.jp-kbox-family-hw { font-weight: 700; font-size: 0.95rem; flex-shrink: 0; min-width: 4em; }
+.jp-kbox-family-desc { font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; }
+
+/* the personal ❗ box — ×-marked anti-readings (f40's ×コースト), from the
+   user's OWN ✕ record. */
+.jp-kbox-warn-row { display: flex; align-items: baseline; gap: 8px; }
+.jp-kbox-warn-x { color: var(--jpc-box-warn); font-weight: 800; flex-shrink: 0; }
+.jp-kbox-warn-quote { font-size: 0.86rem; color: var(--text-muted); text-decoration: line-through; text-decoration-color: var(--jpc-box-warn); text-decoration-thickness: 1px; }
+
+/* ── §26.3 hover peek: mouse/Pencil-hover dictionary preview (never touch) ── */
+.jp-lex-peek { position: fixed; z-index: 100; max-width: 300px; padding: 8px 12px; border-radius: 10px; background: var(--background-primary); border: 1px solid var(--background-modifier-border); box-shadow: 0 6px 24px rgba(0,0,0,0.22); pointer-events: none; animation: jp-lex-peek-in 90ms ease-out; }
+@keyframes jp-lex-peek-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+.jp-lex-peek-top { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.jp-lex-peek-hw { font-size: 1.02rem; font-weight: 700; }
+.jp-lex-peek-reading { font-size: 0.78rem; color: var(--text-muted); }
+.jp-lex-peek-def { font-size: 0.82rem; color: var(--text-muted); line-height: 1.5; margin-top: 3px; }
+
+/* ═══════════════ ⚡ キャプチャフロー (PipelineView, DESIGN §16) ═══════════════
+   The YT pipeline as one designed surface. Mobile-first: full-width touch
+   targets, iOS safe areas, no hover dependence. */
+.jp-flow { padding: 12px; max-width: 640px; margin: 0 auto; -webkit-overflow-scrolling: touch; }
+@supports (padding: env(safe-area-inset-bottom)) {
+  .jp-flow { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+}
+.jp-flow-stage { border: 1px solid var(--background-modifier-border); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; background: var(--background-primary); }
+.jp-flow-stage-head { display: flex; align-items: center; gap: 10px; margin-bottom: 2px; }
+.jp-flow-stage-num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: var(--interactive-accent); color: var(--text-on-accent); font-size: 0.8rem; font-weight: 700; flex-shrink: 0; }
+.jp-flow-stage-title { font-weight: 700; font-size: 1.02rem; }
+.jp-flow-stage-sub { color: var(--text-muted); font-size: 0.82rem; margin: 2px 0 10px 34px; overflow-wrap: anywhere; }
+.jp-flow-btnrow { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.jp-flow-big { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 16px; border-radius: 10px; font-size: 0.92rem; font-weight: 600; cursor: pointer; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); flex: 1 1 auto; justify-content: center; }
+.jp-flow-big:active { transform: scale(0.98); }
+.jp-flow-big-ic svg { width: 17px; height: 17px; }
+.jp-flow-mini { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border-radius: 10px; cursor: pointer; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); flex: 0 0 auto; }
+.jp-flow-urlrow { display: flex; gap: 8px; margin-top: 8px; }
+.jp-flow-url { flex: 1; min-height: 44px; border-radius: 10px; border: 1px solid var(--background-modifier-border); background: var(--background-primary); padding: 0 12px; font-size: 16px; /* 16px stops iOS zoom-on-focus */ }
+.jp-flow-urlgo { min-height: 44px; padding: 0 16px; border-radius: 10px; cursor: pointer; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); font-weight: 600; flex-shrink: 0; }
+.jp-flow-videos { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; max-height: 320px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+.jp-flow-video { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px; border-radius: 10px; cursor: pointer; border: 1px solid var(--background-modifier-border); }
+.jp-flow-video--sel { border-color: var(--interactive-accent); background: var(--background-secondary); }
+.jp-flow-video-title { flex: 1; font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jp-flow-video-marks { display: flex; gap: 3px; font-size: 0.8rem; flex-shrink: 0; }
+.jp-flow-empty { color: var(--text-muted); font-size: 0.85rem; padding: 10px 0; }
+.jp-flow-warn { color: var(--text-warning, #d80); font-size: 0.8rem; margin-top: 8px; }
+.jp-flow-run { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 52px; border-radius: 12px; font-size: 1.05rem; font-weight: 700; cursor: pointer; background: var(--interactive-accent); color: var(--text-on-accent); border: none; }
+.jp-flow-run:active { transform: scale(0.99); }
+.jp-flow-run--off { opacity: 0.45; }
+.jp-flow-run svg { width: 19px; height: 19px; }
+
+/* ═══════════════ 談話モード (DiscourseModeView, DESIGN §17) ═══════════════
+   Turns as manipulable bubbles. One gesture vocabulary, Pencil/finger-sized
+   targets, no precision aiming, no hover dependence. */
+.jp-dm { padding: 12px; max-width: 680px; margin: 0 auto; -webkit-overflow-scrolling: touch; }
+@supports (padding: env(safe-area-inset-bottom)) {
+  .jp-dm { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+}
+.jp-dm-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.jp-dm-back { min-width: 44px; min-height: 40px; border-radius: 10px; cursor: pointer; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); font-size: 1rem; }
+.jp-dm-title { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jp-dm-count { color: var(--text-muted); font-size: 0.78rem; font-family: var(--font-monospace); flex-shrink: 0; }
+.jp-dm-hint { color: var(--text-muted); font-size: 0.78rem; margin-bottom: 10px; line-height: 1.6; }
+.jp-dm-turns { display: flex; flex-direction: column; gap: 10px; }
+.jp-dm-turn { border: 1px solid var(--background-modifier-border); border-radius: 14px; padding: 8px 10px; border-left-width: 4px; }
+.jp-dm-turn--A { border-left-color: #4a90d9; }
+.jp-dm-turn--B { border-left-color: #5cb85c; margin-left: 24px; }
+.jp-dm-turn--C { border-left-color: #d9832b; }
+.jp-dm-turn--D { border-left-color: #b06fd8; margin-left: 24px; }
+.jp-dm-turn-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.jp-dm-speaker { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; font-weight: 800; font-size: 1rem; cursor: pointer; border: 2px solid var(--background-modifier-border); background: var(--background-secondary); }
+.jp-dm-speaker--A { color: #4a90d9; border-color: #4a90d9; }
+.jp-dm-speaker--B { color: #5cb85c; border-color: #5cb85c; }
+.jp-dm-speaker--C { color: #d9832b; border-color: #d9832b; }
+.jp-dm-speaker--D { color: #b06fd8; border-color: #b06fd8; }
+.jp-dm-time { color: var(--text-muted); font-size: 0.74rem; font-family: var(--font-monospace); flex: 1; }
+.jp-dm-cap { min-width: 40px; min-height: 40px; border-radius: 10px; cursor: pointer; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); font-size: 0.95rem; }
+.jp-dm-line { padding: 7px 8px; border-radius: 8px; cursor: pointer; line-height: 1.65; font-size: 0.95rem; }
+.jp-dm-line:active { background: var(--background-secondary); }
+.jp-dm-line + .jp-dm-line { border-top: 1px dashed transparent; }
+.jp-dm-line:not(.jp-dm-line--first) { border-top-color: var(--background-modifier-border); }
+.jp-dm-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.jp-dm-pill { font-size: 0.78rem; padding: 6px 12px; min-height: 34px; border-radius: 17px; cursor: pointer; background: var(--background-secondary); border: 1px dashed var(--background-modifier-border); color: var(--text-muted); }
+/* §23.5 keyboard hints — discoverability is part of the contract */
+.jp-dm-keys { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.jp-dm-key { display: inline-flex; align-items: center; gap: 3px; font-size: 0.7rem; color: var(--text-muted); }
+.jp-dm-key kbd { font-family: var(--font-monospace); font-size: 0.66rem; padding: 1px 5px; border: 1px solid var(--background-modifier-border); border-bottom-width: 2px; border-radius: 4px; background: var(--background-secondary); }
+.jp-dm-turn--focus { outline: 2px solid var(--interactive-accent); outline-offset: 1px; }
+/* component pills (§23 layer-2 suggestions): solid, kind-tinted, with ✕ */
+.jp-dm-comp { display: inline-flex; align-items: stretch; }
+.jp-dm-pill--comp { border-style: solid; border-radius: 17px 0 0 17px; color: var(--text-normal); }
+.jp-dm-comp--aizuchi .jp-dm-pill--comp, .jp-dm-comp--reaction .jp-dm-pill--comp { border-color: #5cb85c; }
+.jp-dm-comp--return .jp-dm-pill--comp { border-color: #4a90d9; }
+.jp-dm-comp--echo .jp-dm-pill--comp { border-color: #d9832b; }
+.jp-dm-comp--connective .jp-dm-pill--comp { border-color: #9b7ed9; }
+.jp-dm-comp--quotative .jp-dm-pill--comp { border-color: #c95d9a; }
+.jp-dm-pill-x { font-size: 0.72rem; min-height: 34px; min-width: 30px; padding: 0 8px; border-radius: 0 17px 17px 0; border: 1px solid var(--background-modifier-border); border-left: none; background: var(--background-secondary); color: var(--text-faint); cursor: pointer; }
+.jp-dm-line-cont { color: var(--text-faint); margin-right: 2px; }
+/* §23.4-5 layer-3 arrows */
+.jp-dm-relgrip { min-height: 34px; min-width: 38px; border-radius: 8px; border: 1px dashed var(--background-modifier-border); background: transparent; color: var(--text-muted); cursor: grab; touch-action: none; }
+.jp-dm-relgrip:active { cursor: grabbing; }
+.jp-dm-turn--rel-from { outline: 2px dashed var(--color-red, #d95757); outline-offset: 1px; }
+.jp-dm-turn--rel-over { outline: 2px solid var(--color-red, #d95757); outline-offset: 1px; }
+.jp-dm-rels { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+/* §23.4-6 layer-4 readings: plural lens chips */
+.jp-dm-eye { min-height: 34px; min-width: 38px; border-radius: 8px; border: 1px solid transparent; background: transparent; cursor: pointer; opacity: 0.7; }
+.jp-dm-eye:hover { opacity: 1; }
+.jp-dm-readings { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.jp-dm-reading { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; min-height: 30px; padding: 1px 4px 1px 8px; border-radius: 14px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); }
+.jp-dm-reading-lens { font-size: 9.5px; padding: 1px 5px; border-radius: 8px; color: var(--text-on-accent, #fff); }
+.jp-dm-reading--micro .jp-dm-reading-lens { background: #7a6ff0; }
+.jp-dm-reading--macro .jp-dm-reading-lens { background: #2f9e7d; }
+.jp-dm-reading--meta .jp-dm-reading-lens { background: #d9832b; }
+.jp-dm-reading--thought .jp-dm-reading-lens { background: #4a90d9; }
+.jp-dm-reading-x { border: none; background: transparent; color: var(--text-faint); cursor: pointer; min-height: 28px; min-width: 26px; }
+.jp-dm-reading-editor { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; align-items: center; }
+.jp-dm-reading-lensbtn { font-size: 11px; min-height: 34px; padding: 2px 10px; border-radius: 12px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); cursor: pointer; }
+.jp-dm-reading-lensbtn--on { border-color: var(--interactive-accent); color: var(--interactive-accent); font-weight: 600; }
+.jp-dm-reading-input { flex: 1; min-width: 150px; min-height: 34px; font-size: 12.5px; }
+.jp-dm-rel { display: inline-flex; }
+.jp-dm-pill--rel { border-color: var(--color-red, #d95757); color: var(--text-normal); border-radius: 17px 0 0 17px; }
+.jp-dm-picker { display: flex; flex-direction: column; gap: 6px; }
+.jp-dm-pick { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 8px 12px; border-radius: 10px; cursor: pointer; border: 1px solid var(--background-modifier-border); }
+.jp-dm-pick-title { flex: 1; font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jp-dm-pick-mark { color: var(--color-green); font-size: 0.72rem; flex-shrink: 0; }

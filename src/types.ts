@@ -1,6 +1,7 @@
 import { DEFAULT_X_SETTINGS, type XSettings } from "./x/x-types.ts";
 import { DEFAULT_AUDIO_EXTRACTION, type AudioExtractionConfig } from "./notes/audio-extractor.ts";
 import { DEFAULT_YT_HISTORY_SETTINGS, type YtHistorySettings } from "./notes/yt-history-client.ts";
+import { DEFAULT_VOICE_SYNC, type VoiceSyncSettings } from "./notes/voice-lab.ts";
 export type { XSettings };
 export type { AudioExtractionConfig };
 export type { YtHistorySettings };
@@ -85,6 +86,13 @@ export interface NotesPipelineConfig {
   useYtdlpTranscripts: boolean;
   /** Safety cap on how many videos one history import will fetch. */
   maxHistoryVideos: number;
+  /** ⚠ SECRET — Anthropic API key for the handwriting-OCR stage (stored in the
+   *  plugin-data blob exactly like the X cookies; never logged). '' = disabled. */
+  ocrApiKey: string;
+  /** Override the pinned OCR model ('' → Haiku default in claude-client.ts). */
+  ocrModel: string;
+  /** Override the escalation model ('' → Opus default in claude-client.ts). */
+  ocrEscalationModel: string;
 }
 
 export const DEFAULT_NOTES_CONFIG: NotesPipelineConfig = {
@@ -93,6 +101,9 @@ export const DEFAULT_NOTES_CONFIG: NotesPipelineConfig = {
   preferManual: true,
   useYtdlpTranscripts: true,
   maxHistoryVideos: 20,
+  ocrApiKey: '',
+  ocrModel: '',
+  ocrEscalationModel: '',
 };
 
 export interface SRSSettings {
@@ -105,6 +116,34 @@ export interface SRSSettings {
   maxBitsPerCard: number;
   outputFolder: string;
 }
+
+/** §25.5 発話セッション: the user's self-rating rubric — DATA, editable;
+ *  the practice may outgrow 0–4 and the schema must not entrench it. */
+export interface SpeakSettings {
+  aspects: string[];
+  goalPoints: number;
+}
+
+/** §25.4 Plex/TV co-viewing (HANDOFF item A): FollowAlong clock (b) syncs from
+ *  the server's session viewOffset, and marks cut clips from the Plex Part URL.
+ *  The TOKEN is a SECRET — scrubbed from the persisted blob to device-local
+ *  storage exactly like the X cookies. Empty baseUrl OR token = adapter dormant. */
+export interface PlexSettings {
+  /** e.g. http://192.168.1.20:32400 — reachable from this device on the LAN. */
+  baseUrl: string;
+  /** ⚠ SECRET — X-Plex-Token. '' = disabled (kept device-local, never synced). */
+  token: string;
+  /** seconds of lead-in / tail when cutting a clip at a mark. */
+  clipPreSec: number;
+  clipPostSec: number;
+}
+
+export const DEFAULT_PLEX_SETTINGS: PlexSettings = {
+  baseUrl: '',
+  token: '',
+  clipPreSec: 4,
+  clipPostSec: 4,
+};
 
 export interface PluginSettings {
   hyogenEnabled: boolean;
@@ -128,6 +167,13 @@ export interface PluginSettings {
   notes: NotesPipelineConfig;
   /** Live watch-history scrape via cookie auth (DESIGN §4 YtHistoryAdapter). */
   ytHistory: YtHistorySettings;
+  voiceSync: VoiceSyncSettings;
+  /** SRS: how many fresh (unseen) catalog cards to introduce per session. */
+  srsNewPerSession: number;
+  /** §25.5 発話セッション rubric. */
+  speak: SpeakSettings;
+  /** §25.4 Plex/TV co-viewing adapter (clock (b) + clip cutting). */
+  plex: PlexSettings;
 }
 
 export const DEFAULT_SRS_SETTINGS: SRSSettings = {
@@ -160,6 +206,13 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   audioExtraction: { ...DEFAULT_AUDIO_EXTRACTION },
   notes: { ...DEFAULT_NOTES_CONFIG },
   ytHistory: { ...DEFAULT_YT_HISTORY_SETTINGS },
+  voiceSync: { ...DEFAULT_VOICE_SYNC },
+  srsNewPerSession: 20,
+  speak: {
+    aspects: ['一貫性', '文脈適合', '独自の寄与', '簡潔さ', '正確さ', '一発で言えたか'],
+    goalPoints: 30,
+  },
+  plex: { ...DEFAULT_PLEX_SETTINGS },
 };
 
 export interface StoreStats {

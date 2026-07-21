@@ -1,7 +1,9 @@
-import { PluginSettingTab, Setting, Notice, Platform } from "obsidian";
+import { PluginSettingTab, Setting, Notice, Platform, requestUrl } from "obsidian";
 import type { App } from "obsidian";
 import { detectTools } from "../notes/audio-extractor.ts";
-import { normalizeCookieInput, cookieValue } from "../notes/yt-history-client.ts";
+import { parsePlexSessions, plexSessionsUrl } from "../notes/plex.ts";
+import { normalizeCookieInput, cookieValue, YtHistoryClient } from "../notes/yt-history-client.ts";
+import { detectSpeechTools } from "../notes/voice-lab.ts";
 import { USERSCRIPT_SOURCE } from "../x/mobile-capture.ts";
 import type { Plugin } from "obsidian";
 import type { PluginSettings, SpeakerFormat } from "../types.ts";
@@ -154,6 +156,14 @@ export class SettingsTab extends PluginSettingTab {
       .setDesc("ツイートをノート化する Vault フォルダ（プラグインが自動索引）")
       .addText(t => t.setValue(this.settings.x.exportFolder).onChange(async v => {
         this.settings.x.exportFolder = v.trim() || "X Tweets";
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("コレクションフォルダ")
+      .setDesc("📚 で追加する先。テーマ別ノート（哲学.md / 筋トレ.md …）を置く Vault フォルダ")
+      .addText(t => t.setValue(this.settings.x.collectionsFolder).onChange(async v => {
+        this.settings.x.collectionsFolder = v.trim() || "JP Collections";
         await this.onSettingsChange();
       }));
 
@@ -329,6 +339,54 @@ export class SettingsTab extends PluginSettingTab {
         }
       }));
 
+    // ── Plex / TV co-viewing (DESIGN §25.4 — clock (b) + clips) ───
+    containerEl.createEl("h3", { text: "Plex / TV 連携（鑑賞モード）" });
+    const plex = this.settings.plex;
+    const plexDesc = containerEl.createEl("p", { cls: "setting-item-description" });
+    plexDesc.innerHTML =
+      "鑑賞モードのトランスクリプトを Plex の再生位置に自動同期します（clock (b)）。<br>" +
+      "サーバーURL と X-Plex-Token を設定すると、鑑賞モードのヘッダーに「📺 Plex同期」が出ます。<br>" +
+      "デブリーフのマークの 🎬 で、その瞬間の音声クリップ＋静止画を Part から切り出します（ffmpeg、デスクトップ限定）。<br>" +
+      "<b>トークンは端末内のみ（同期される blob には保存されません）。</b>";
+
+    new Setting(containerEl)
+      .setName("サーバー URL")
+      .setDesc("例: http://192.168.1.20:32400 — この端末から LAN で到達できること。")
+      .addText(t => t.setValue(plex.baseUrl).setPlaceholder("http://…:32400").onChange(async v => {
+        plex.baseUrl = v.trim(); await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("X-Plex-Token")
+      .setDesc("秘密。端末内 localStorage に保存され、vault の blob には書き込まれません。")
+      .addText(t => {
+        t.setValue(plex.token).setPlaceholder("token").onChange(async v => {
+          plex.token = v.trim(); await this.onSettingsChange();
+        });
+        t.inputEl.type = "password";
+      });
+
+    new Setting(containerEl)
+      .setName("クリップの前後余白 (秒)")
+      .setDesc("マーク時刻の前後に何秒足して切り出すか。")
+      .addSlider(s => s.setLimits(0, 15, 1).setValue(plex.clipPreSec).setDynamicTooltip()
+        .onChange(async v => { plex.clipPreSec = v; plex.clipPostSec = v; await this.onSettingsChange(); }));
+
+    new Setting(containerEl)
+      .setName("接続テスト")
+      .setDesc("/status/sessions を叩いて、今 Plex で再生中の項目を表示します（フィールド名の実地確認に）。")
+      .addButton(b => b.setButtonText("テスト").onClick(async () => {
+        if (!plex.baseUrl.trim() || !plex.token.trim()) { new Notice("サーバーURL と トークンを入力してください。"); return; }
+        let resp;
+        try {
+          resp = await requestUrl({ url: plexSessionsUrl(plex.baseUrl, plex.token), method: "GET", headers: { Accept: "application/json" }, throw: false });
+        } catch (e) { new Notice(`Plex 接続失敗: ${(e as Error).message}`, 8000); return; }
+        const res = parsePlexSessions(resp.status, resp.text ?? "");
+        if (!res.ok) { new Notice(`Plex: ${res.error}`, 8000); return; }
+        if (!res.sessions.length) { new Notice("Plex: 接続OK — 再生中の項目はありません。", 6000); return; }
+        new Notice("Plex 接続OK:\n" + res.sessions.map(s => `${s.paused ? "⏸" : "▶"} ${s.title} @${Math.floor(s.viewOffsetSec)}s`).join("\n"), 9000);
+      }));
+
     // ── Transcript + history ingestion (DESIGN §8 Step 2) ─────────
     containerEl.createEl("h3", { text: "文字起こし取得（YouTube）" });
     const notes = this.settings.notes;
@@ -374,13 +432,100 @@ export class SettingsTab extends PluginSettingTab {
       .addSlider(s => s.setLimits(1, 100, 1).setValue(notes.maxHistoryVideos).setDynamicTooltip()
         .onChange(async v => { notes.maxHistoryVideos = v; await this.onSettingsChange(); }));
 
+    // ── VoiceSync (whisper + speaker diarization) ─────────────────
+    containerEl.createEl("h3", { text: "VoiceSync（話者同期・ローカル解析）" });
+    const vs = this.settings.voiceSync;
+    const vsDesc = containerEl.createEl("p", { cls: "setting-item-description" });
+    vsDesc.innerHTML =
+      "音声クリップをローカルで再解析: <b>whisper.cpp</b>（きれいな日本語＋トークン単位のタイムスタンプ）＋ <b>sherpa-onnx</b>（話者分離・相槌/割り込み検出）。" +
+      "カードに<b>話者カラーのカラオケ・プレーヤー</b>（単語ハイライト・クリックでシーク）が埋め込まれます。すべてオフライン・無料。<br>" +
+      "<b>必要ツール</b>（1回だけ配置。既定の場所: <code>%LOCALAPPDATA%\\jp-collocations\\speech-tools\\</code>）: " +
+      "whisper.cpp の <code>whisper-blas-bin-x64.zip</code> → <code>whisper/</code> に展開、モデル <code>models/ggml-small.bin</code>、" +
+      "sherpa-onnx の <code>win-x64-static-MT-Release-no-tts</code> ビルド、<code>sherpa-onnx-pyannote-segmentation-3-0/model.onnx</code>、<code>models/3dspeaker_embed.onnx</code>。";
+
+    new Setting(containerEl)
+      .setName("VoiceSync を有効化")
+      .setDesc("クリップ取得時に自動で解析し、カードに話者同期プレーヤーを埋め込みます（1クリップ ≈ 20秒 CPU）。")
+      .addToggle(t => t.setValue(vs.enabled).onChange(async v => {
+        vs.enabled = v; await this.onSettingsChange();
+      }));
+
+    for (const p of vs.profiles) {
+      new Setting(containerEl)
+        .setName(`🗣 ${p.name}`)
+        .setDesc(`登録済みの声（${p.durSec.toFixed(1)}s）— ${p.refWav}`)
+        .addButton(b => b.setButtonText("削除").setWarning().onClick(async () => {
+          vs.profiles = vs.profiles.filter(x => x.name !== p.name);
+          await this.onSettingsChange();
+          this.display();
+        }));
+    }
+
+    new Setting(containerEl)
+      .setName("話者分離の感度")
+      .setDesc("低いほど多くの声を検出（合体しにくいが分裂しやすい）。既定 0.55 — 別人の声の混入を優先的に防ぎます。")
+      .addSlider(s => s.setLimits(0.4, 0.9, 0.05).setValue(vs.clusterThreshold || 0.55).setDynamicTooltip()
+        .onChange(async v => { vs.clusterThreshold = v; await this.onSettingsChange(); }));
+
+    new Setting(containerEl)
+      .setName("ツールフォルダ")
+      .setDesc("空 = 既定（%LOCALAPPDATA%\\jp-collocations\\speech-tools）。")
+      .addText(t => t.setValue(vs.toolsDir).setPlaceholder("(既定)").onChange(async v => {
+        vs.toolsDir = v.trim(); await this.onSettingsChange();
+      }))
+      .addButton(b => b.setButtonText("ツール検出").onClick(() => {
+        const tools = detectSpeechTools(vs.toolsDir);
+        new Notice(tools.ready
+          ? "✅ すべてのツールを検出しました。"
+          : `未検出: ${[!tools.whisperCli && "whisper-cli", !tools.whisperModel && "whisper モデル", !tools.diarBin && "sherpa-onnx 話者分離", !tools.segModel && "segmentation モデル", !tools.embModel && "embedding モデル"].filter(Boolean).join(", ")}`, 10000);
+      }));
+
+    // ── Handwriting OCR (Claude vision) ───────────────────────────
+    containerEl.createEl("h3", { text: "手書きOCR（Claude API）" });
+    const ocrDesc = containerEl.createEl("p", { cls: "setting-item-description" });
+    ocrDesc.innerHTML =
+      "Apple Pencil などの手書きメモの<b>写真/スクリーンショット</b>をノートに埋め込み、コマンド「OCR Handwritten Note Images + Reconcile」を実行すると、" +
+      "Claude が語句を<b>書かれている通りに</b>抽出してノートに追記し、そのまま文字起こしと照合します（誤字の校正は照合側が行います）。<br>" +
+      "文字起こし本文が API に送られることはありません（画像とプロンプトのみ）。キーは X の Cookie と同様にプラグイン設定内に保存されます。" +
+      "キーの発行: <a href='https://console.anthropic.com/'>console.anthropic.com</a>";
+
+    new Setting(containerEl)
+      .setName("Anthropic API キー")
+      .setDesc("sk-ant-…（空 = OCR 無効）")
+      .addText(t => {
+        t.inputEl.type = "password";
+        t.setValue(notes.ocrApiKey).setPlaceholder("sk-ant-…").onChange(async v => {
+          notes.ocrApiKey = v.trim();
+          await this.onSettingsChange();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("OCR モデル（上書き）")
+      .setDesc("空 = 既定の Haiku（安価・1ページ ≈ 1,600 画像トークン）。")
+      .addText(t => t.setValue(notes.ocrModel).setPlaceholder("claude-haiku-4-5-20251001").onChange(async v => {
+        notes.ocrModel = v.trim();
+        await this.onSettingsChange();
+      }));
+
+    new Setting(containerEl)
+      .setName("エスカレーション モデル（上書き）")
+      .setDesc("低確信・解析失敗時に1回だけ使う上位モデル。空 = 既定の Opus。")
+      .addText(t => t.setValue(notes.ocrEscalationModel).setPlaceholder("claude-opus-4-8").onChange(async v => {
+        notes.ocrEscalationModel = v.trim();
+        await this.onSettingsChange();
+      }));
+
     // ── Live watch history (cookie auth) ──────────────────────────
     containerEl.createEl("h3", { text: "視聴履歴（Cookie）— 期間指定で取得" });
     const hist = this.settings.ytHistory;
     const histDesc = containerEl.createEl("p", { cls: "setting-item-description" });
     histDesc.innerHTML =
-      "youtube.com のログイン Cookie を<b>一度だけ</b>貼り付けると、「視聴日の範囲」を指定してサーバー側の視聴履歴（全デバイス）を取得できます。X 機能と同じ方式。<br>" +
+      "youtube.com のログイン Cookie を<b>一度だけ</b>貼り付けると、「視聴日の範囲」を指定してサーバー側の視聴履歴（全デバイス）を取得できます。X 機能と同じ方式。" +
+      "この Cookie は<b>音声クリップ取得・字幕取得</b>でも自動的に使われます（YouTube の「ロボットではないことを確認」壁を通過）。<br>" +
       "<b>いちばん簡単:</b> youtube.com にログイン → DevTools(F12) → Network → 任意のリクエストを右クリック → <b>Copy → Copy as cURL</b> → その内容を丸ごと下に貼り付け（Cookie を自動抽出します）。<br>" +
+      "<b>⚠ 長持ちさせるコツ:</b> 通常ウィンドウの Cookie はブラウザ側で頻繁にローテーションされ、貼り付けたものが数時間で失効することがあります。" +
+      "<b>シークレット/InPrivate ウィンドウ</b>で youtube.com にログイン → Cookie をコピー → <b>そのウィンドウを閉じる</b>と、ローテーションが止まり長く使えます（yt-dlp 公式の推奨手順）。<br>" +
       "貼り付け後、コマンド「Reconciliation Health Check」で接続を確認できます（失効時は再貼り付け）。";
 
     const cookieStatus = containerEl.createEl("p", { cls: "setting-item-description" });
@@ -408,6 +553,49 @@ export class SettingsTab extends PluginSettingTab {
         t.inputEl.style.width = "100%";
       });
     renderCookieStatus();
+
+    // ── channel picker: one Google login can carry several YouTube channels
+    //    (brand accounts), EACH with its own watch history ─────────────────
+    new Setting(containerEl)
+      .setName("チャンネル（ブランドアカウント）")
+      .setDesc(hist.pageId
+        ? `現在: ${hist.pageLabel || hist.pageId} — このチャンネルの視聴履歴を読みます。`
+        : "現在: メインチャンネル。JP用など別チャンネルで視聴している場合、履歴はチャンネルごとに別なので下から選択してください。")
+      .addButton(b => b.setButtonText("チャンネル一覧を取得").onClick(async () => {
+        b.setDisabled(true);
+        try {
+          const http = {
+            post: async (url: string, body: string, headers: Record<string, string>) => {
+              const r = await requestUrl({ url, method: "POST", body, headers, throw: false });
+              return { status: r.status, text: r.text ?? "" };
+            },
+            get: async () => ({ status: 500, text: "" }),
+          };
+          const client = new YtHistoryClient(http, () => hist);
+          const accounts = await client.listAccounts();
+          if (!accounts.length) { new Notice("チャンネルが見つかりませんでした（Cookie を確認）。"); return; }
+          channelListEl.empty();
+          for (const a of accounts) {
+            const current = hist.pageId === (a.pageId ?? "");
+            new Setting(channelListEl)
+              .setName(`${a.name} ${a.handle}`.trim())
+              .setDesc(a.pageId ? `pageId: ${a.pageId}` : "メイン（既定）")
+              .addButton(bb => bb
+                .setButtonText(current ? "✓ 選択中" : "このチャンネルを使う")
+                .setDisabled(current)
+                .onClick(async () => {
+                  hist.pageId = a.pageId ?? "";
+                  hist.pageLabel = `${a.name} ${a.handle}`.trim();
+                  await this.onSettingsChange();
+                  new Notice(`視聴履歴のチャンネル: ${hist.pageLabel}`);
+                  this.display();
+                }));
+          }
+        } catch (e) {
+          new Notice(`チャンネル一覧の取得に失敗: ${(e as Error).message ?? e}`, 10000);
+        } finally { b.setDisabled(false); }
+      }));
+    const channelListEl = containerEl.createDiv();
 
     new Setting(containerEl)
       .setName("INNERTUBE API キー（上級）")
@@ -520,6 +708,31 @@ export class SettingsTab extends PluginSettingTab {
         await this.store.clearAll();
         new Notice("All data cleared.");
       }));
+
+    // ── 発話セッション (§25.5) — the rubric is DATA, never entrenched ────
+    containerEl.createEl("h3", { text: "発話セッション（なりきりスピーキング）" });
+
+    new Setting(containerEl)
+      .setName("自己評価の観点")
+      .setDesc("🎤の後に0–4で評価する観点（読点・カンマ区切り）。練習の進化に合わせて自由に変更を。")
+      .addTextArea(t => t
+        .setValue(this.settings.speak.aspects.join("、"))
+        .onChange(async v => {
+          const aspects = v.split(/[、,]/).map(s => s.trim()).filter(Boolean);
+          if (aspects.length) this.settings.speak.aspects = aspects;
+          await this.onSettingsChange();
+        }));
+
+    new Setting(containerEl)
+      .setName("目標ポイント")
+      .setDesc("🔢カウンター制のセッション目標（評価点の合計がここへ向かう）")
+      .addText(t => t
+        .setValue(String(this.settings.speak.goalPoints))
+        .onChange(async v => {
+          const n = parseInt(v, 10);
+          if (Number.isFinite(n) && n > 0) this.settings.speak.goalPoints = n;
+          await this.onSettingsChange();
+        }));
 
     // ── SRS Card Generation ──────────────────────────────────────
     containerEl.createEl("h3", { text: "SRS Card Generation" });
