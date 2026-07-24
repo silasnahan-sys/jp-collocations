@@ -17,6 +17,7 @@ const suites = [
   'storage.mjs', 'mirror.mjs', 'context.mjs', 'scaffold.mjs', 'suggester.mjs', 'discovery.mjs', 'scene.mjs', 'canvas.mjs', 'inbox.mjs', 'follow.mjs', 'goho.mjs', 'podcast.mjs', 'components.mjs', 'turns.mjs',
   'run.mjs', 'cards.mjs', 'patternstore.mjs', 'discourse-gold.mjs', 'deinflect.mjs', 'srs.mjs', 'plex.mjs',
   'lexicon.mjs', 'sweep.mjs',
+  'scoreboard.mjs', 'calculus-turns.mjs', 'calculus-corpus.mjs', 'calculus-precision.mjs',
   'anchor.mjs', 'realformat.mjs', 'ocr.mjs',
   'voicesync.mjs', 'transcript.mjs', 'history.mjs', 'audio.mjs',
   'patterns.mjs', 'dictionary.mjs', 'x-transaction.mjs', 'x-format.mjs',

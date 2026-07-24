@@ -473,9 +473,15 @@ function snap(board, turn, r, prims) {
 //   turns: [{ speaker, text, tSec, grounding? }]
 //   recognize: (text) → span-event descriptor (moves.mjs#recognizeEvents)
 // ---------------------------------------------------------------------
-export function reduce(turns, recognize) {
+export function reduce(turns, recognize, onTurn) {
   const board = makeBoard();
-  for (const t of turns) applyTurn(board, t, recognize(t.text));
+  for (let i = 0; i < turns.length; i++) {
+    applyTurn(board, turns[i], recognize(turns[i].text));
+    // Optional observer for live consumers (FollowAlong board/drill): fires
+    // AFTER each turn folds, i.e. with the state the NEXT mover faces.
+    // Read-only by contract — the board object is live, copy what you keep.
+    onTurn?.(board, turns[i], i);
+  }
   return board;
 }
 

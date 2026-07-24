@@ -29,8 +29,37 @@ import {
 } from '../notes/speak-session.ts';
 import type { MarkRef } from '../notes/inbox.ts';
 import type { CaptureContext } from './CaptureModal.ts';
+// The discourse calculus (DISCOURSE-CALCULUS.md): pure fold → live board.
+// 🔴 study = next-move prediction on the affordance set (FABLE-BRIEF §4.3).
+import { reduce, affordances } from '../discourse/calculus/scoreboard.mjs';
+import { recognizeEvents } from '../discourse/calculus/moves.mjs';
+import { transcriptToTurns } from '../discourse/calculus/turns.mjs';
 
 export const JP_FOLLOW_VIEW_TYPE = 'jp-follow-view';
+
+// ── 🔴 談話ボード (the live scoreboard under the transcript) ────────────────
+
+const PRIM_JA: Record<string, string> = {
+  PROPOSE: '提案', ASSERT_AS_DERIVED: '導出主張', CONSCRIPT: '同意徴発',
+  PREFACE_CONTESTABLE: '異論前置き', RELATE_SUPPORT: '支持', RELATE_CONTRAST: '対抗',
+  SUBSTITUTE: '言い換え', RETRACT_OWN: '撤回', REJECT: '拒否', GRANT: '譲歩',
+  RATIFY: '受諾', ACKNOWLEDGE: '相槌', DENY_COMMITMENT: '線引き', RE_TYPE: '再類型化',
+  ADJUST_FORCE: '強度調整', PROJECT_CONSEQUENCE: '帰結投影', RAISE_QUD: '問い提起',
+  ANSWER_QUD: '応答', SHELVE_QUD: '棚上げ', RESUME_QUD: '再開',
+};
+/** Moves worth drilling — they change CG/Projected/QUD (not PROPOSE noise). */
+const DRILLABLE = new Set([
+  'CONSCRIPT', 'GRANT', 'REJECT', 'RATIFY', 'RELATE_CONTRAST', 'SUBSTITUTE',
+  'RETRACT_OWN', 'DENY_COMMITMENT', 'RE_TYPE', 'PROJECT_CONSEQUENCE',
+  'ASSERT_AS_DERIVED', 'SHELVE_QUD', 'RESUME_QUD',
+]);
+
+interface BoardSnap { tSec: number | null; cg: number; table: number; projected: string[]; qud: string[]; shelved: number; prims: string[] }
+interface BoardMove { tSec: number | null; speaker: string; prim: string; ref: string }
+interface DrillCase {
+  atSec: number; move: BoardMove; text: string; options: string[];
+  picked?: string; revealed?: boolean;
+}
 
 export interface FollowDeps {
   parse: (md: string) => MatcherLine[];
@@ -78,6 +107,16 @@ export class FollowAlongView extends ItemView {
   /** Part key of the session we're following — the door for clip cutting. */
   private plexPartKey: string | null = null;
 
+  // 🔴 談話ボード: computed lazily from the raw md on first toggle.
+  private rawMd = '';
+  private boardOn = false;
+  private snaps: BoardSnap[] = [];       // per-turn board snapshots (surface order)
+  private moves: BoardMove[] = [];       // full move log
+  private afford: Map<number, string[]> = new Map();  // turn idx → afforded prims for NEXT mover
+  private turnTexts: Array<{ tSec: number | null; speaker: string; text: string }> = [];
+  private drill: DrillCase | null = null;
+  private boardSnapIdx = -1;
+
   constructor(leaf: WorkspaceLeaf, private deps: FollowDeps) {
     super(leaf);
   }
@@ -123,9 +162,162 @@ export class FollowAlongView extends ItemView {
     if (!f) return;
     const md = await this.app.vault.cachedRead(f);
     this.lines = this.deps.parse(md);
+    this.rawMd = md;
+    this.boardOn = false;
+    this.snaps = [];
+    this.moves = [];
+    this.afford = new Map();
+    this.turnTexts = [];
+    this.drill = null;
+    this.boardSnapIdx = -1;
     const src = this.deps.mediumOf(f);
     this.medium = src.medium;
     this.sourceName = src.sourceName;
+  }
+
+  // ── 🔴 談話ボード ──────────────────────────────────────────────────────────
+
+  /** One pure fold of the whole transcript (evidence chain → reducer).
+   *  Deterministic, no LLM; ~O(file) once, then the playhead just indexes. */
+  private computeBoard(): void {
+    if (this.snaps.length || !this.rawMd) return;
+    try {
+      const { turns } = transcriptToTurns(this.rawMd);
+      this.turnTexts = turns.map((t: { tSec: number | null; speaker: string; text: string }) =>
+        ({ tSec: t.tSec ?? null, speaker: t.speaker, text: t.text }));
+      const afford = this.afford;
+      const board = reduce(turns, recognizeEvents, (b: unknown, _t: unknown, i: number) => {
+        // state AFTER turn i = what the mover of turn i+1 faces
+        const next = turns[i + 1];
+        if (next) afford.set(i + 1, affordances(b, next.speaker).map((a: { prim: string }) => a.prim));
+      });
+      this.snaps = board.turns.map((s: BoardSnap & { prims: string[] }) => ({
+        tSec: s.tSec ?? null, cg: s.cg, table: s.table,
+        projected: [...s.projected], qud: [...s.qud],
+        shelved: 0, prims: [...s.prims],
+      }));
+      // shelved count is not in snapshots; derive a running count from the log
+      let shelf = 0; let si = 0;
+      const log: BoardMove[] = board.log.map((l: BoardMove) => ({ tSec: l.tSec ?? null, speaker: l.speaker, prim: l.prim, ref: l.ref }));
+      for (const m of log) {
+        if (m.prim === 'SHELVE_QUD') shelf++;
+        if (m.prim === 'RESUME_QUD') shelf = Math.max(0, shelf - 1);
+        while (si < this.snaps.length && (this.snaps[si].tSec ?? -1) <= (m.tSec ?? -1)) { this.snaps[si].shelved = shelf; si++; }
+      }
+      for (; si < this.snaps.length; si++) this.snaps[si].shelved = shelf;
+      this.moves = log;
+    } catch (e) {
+      console.error('[jp-collocations] board fold failed', e);
+      new Notice('談話ボードの構築に失敗しました');
+    }
+  }
+
+  /** Last snapshot at/before the playhead (linear scan cached by index). */
+  private snapAt(pos: number): number {
+    if (!this.snaps.length) return -1;
+    let i = Math.max(0, this.boardSnapIdx);
+    if ((this.snaps[i]?.tSec ?? Infinity) > pos) i = 0;
+    while (i + 1 < this.snaps.length && (this.snaps[i + 1].tSec ?? Infinity) <= pos) i++;
+    return (this.snaps[i].tSec ?? Infinity) <= pos ? i : -1;
+  }
+
+  private toggleBoard(): void {
+    this.boardOn = !this.boardOn;
+    if (this.boardOn) this.computeBoard();
+    this.render();
+  }
+
+  /** Freeze here → the next drillable move is the answer; afforded prims are
+   *  the distractors. This IS 🔴 responsivity, operationally: stimulus =
+   *  board state, response = the primitive (FABLE-BRIEF §4.3). */
+  private makeDrill(): void {
+    const pos = clockPosition(this.clock, Date.now()) ?? (this.focusIdx >= 0 ? this.lines[this.focusIdx]?.tStartSec ?? 0 : 0);
+    const next = this.moves.find((m) => (m.tSec ?? -1) > pos && DRILLABLE.has(m.prim));
+    if (!next) { new Notice('この先にドリル対象の手がありません'); return; }
+    const ti = this.turnTexts.findIndex((t) => t.tSec === next.tSec && t.speaker === next.speaker);
+    const aff = (ti >= 0 ? this.afford.get(ti) : null) ?? [];
+    const options = new Set<string>([next.prim]);
+    for (const p of aff) { if (options.size >= 4) break; if (DRILLABLE.has(p)) options.add(p); }
+    for (const p of DRILLABLE) { if (options.size >= 4) break; options.add(p); }
+    this.drill = {
+      atSec: pos, move: next,
+      text: ti >= 0 ? this.turnTexts[ti].text : next.ref,
+      options: [...options].sort(),      // canonical order — position leaks nothing
+    };
+    this.render();
+  }
+
+  private renderBoardPanel(root: HTMLElement): void {
+    const box = root.createDiv('jp-follow-board');
+    const head = box.createDiv('jp-follow-board-head');
+    head.createSpan({ text: '🔴 談話ボード', cls: 'jp-follow-board-title' });
+    const drillBtn = head.createEl('button', { text: '予測', cls: 'jp-follow-btn' });
+    drillBtn.onclick = () => this.makeDrill();
+
+    const pos = clockPosition(this.clock, Date.now());
+    const si = pos != null ? this.snapAt(pos) : this.snaps.length - 1;
+    const state = box.createDiv('jp-follow-board-state');
+    if (si < 0) {
+      state.setText(this.snaps.length ? '同期すると盤面が動きます' : '盤面なし');
+    } else {
+      const s = this.snaps[si];
+      const bits = [`CG ${s.cg}`, `議題 ${s.table}`, `帰結 ${s.projected.length}`];
+      if (s.shelved) bits.push(`保留 ${s.shelved}`);
+      state.createSpan({ text: bits.join(' · '), cls: 'jp-follow-board-counts' });
+      if (s.qud.length) state.createDiv({ text: `Q: ${s.qud[s.qud.length - 1]}`, cls: 'jp-follow-board-qud' });
+      const recent = this.moves.filter((m) => (m.tSec ?? -1) <= (pos ?? Infinity) && m.prim !== 'PROPOSE' && m.prim !== 'ACKNOWLEDGE').slice(-3);
+      if (recent.length) {
+        state.createDiv({
+          cls: 'jp-follow-board-recent',
+          text: '直近: ' + recent.map((m) => `${PRIM_JA[m.prim] ?? m.prim}`).join(' → '),
+        });
+      }
+    }
+
+    if (this.drill) this.renderDrill(box, this.drill);
+  }
+
+  private renderDrill(host: HTMLElement, d: DrillCase): void {
+    const box = host.createDiv('jp-follow-drill');
+    box.createDiv({
+      text: `次の一手 — ${fmtStamp(d.atSec)} で凍結。${d.move.speaker || '話者'} の次の手は？`,
+      cls: 'jp-follow-drill-q',
+    });
+    const row = box.createDiv('jp-follow-drill-opts');
+    for (const p of d.options) {
+      const b = row.createEl('button', {
+        text: `${PRIM_JA[p] ?? p}`,
+        cls: 'jp-follow-chipbtn' +
+          (d.revealed ? (p === d.move.prim ? ' is-on' : (p === d.picked ? ' is-bad' : '')) : ''),
+      });
+      b.title = p;
+      b.onclick = () => {
+        if (d.revealed) return;
+        d.picked = p; d.revealed = true;
+        this.render();
+      };
+    }
+    if (d.revealed) {
+      const ok = d.picked === d.move.prim;
+      const r = box.createDiv('jp-follow-drill-reveal');
+      r.createSpan({ text: ok ? '○ ' : '× ', cls: ok ? 'jp-follow-drill-ok' : 'jp-follow-drill-ng' });
+      r.createSpan({
+        text: `${d.move.tSec != null ? fmtStamp(d.move.tSec) : ''} ${PRIM_JA[d.move.prim] ?? d.move.prim}（${d.move.prim}）`,
+      });
+      box.createDiv({ text: d.text.slice(0, 120), cls: 'jp-follow-drill-line' });
+      const acts = box.createDiv('jp-follow-drill-acts');
+      const again = acts.createEl('button', { text: 'もう一問', cls: 'jp-follow-btn' });
+      again.onclick = () => {
+        // continue from just past this move so the next case advances
+        this.clock = this.clock ?? (d.move.tSec != null ? syncClock(d.move.tSec, Date.now()) : null);
+        this.drill = null;
+        const save = clockPosition(this.clock, Date.now());
+        if (d.move.tSec != null && (save == null || save <= d.move.tSec)) this.clock = syncClock(d.move.tSec + 1, Date.now());
+        this.makeDrill();
+      };
+      const close = acts.createEl('button', { text: '閉じる', cls: 'jp-follow-btn' });
+      close.onclick = () => { this.drill = null; this.render(); };
+    }
   }
 
   private hasStamps(): boolean {
@@ -137,6 +329,20 @@ export class FollowAlongView extends ItemView {
   private tick(): void {
     const pos = clockPosition(this.clock, Date.now());
     if (pos == null) return;
+    // 🔴 board follows the playhead (cheap: index into precomputed snaps);
+    // frozen while a drill is open so the question can't shift underfoot.
+    if (this.boardOn && this.snaps.length && !this.drill) {
+      const si = this.snapAt(pos);
+      if (si !== this.boardSnapIdx) {
+        this.boardSnapIdx = si;
+        const panel = this.contentEl.querySelector<HTMLElement>('.jp-follow-board');
+        if (panel) {
+          const fresh = createDiv();
+          this.renderBoardPanel(fresh as HTMLElement);
+          panel.replaceWith(fresh.firstChild as HTMLElement);
+        }
+      }
+    }
     const idx = currentLineIndex(this.lines, pos);
     if (idx === this.nowIdx) return;
     const prev = this.contentEl.querySelector('.jp-follow-line--now');
@@ -310,6 +516,14 @@ export class FollowAlongView extends ItemView {
       this.clock = this.clock.pausedAtTSec != null ? resumeClock(this.clock, Date.now()) : pauseClock(this.clock, Date.now());
       this.updateClockChip();
     };
+    // 🔴 談話ボード: the live common-ground scoreboard under the transcript.
+    if (this.hasStamps()) {
+      const boardChip = chips.createEl('button', {
+        cls: 'jp-follow-btn' + (this.boardOn ? ' is-on' : ''),
+        text: this.boardOn ? '🔴 ボード中' : '🔴 ボード',
+      });
+      boardChip.onclick = () => this.toggleBoard();
+    }
     // §25.4 Plex clock (b): follow the server instead of a manual tap.
     if (this.deps.plexEnabled?.()) {
       const plexChip = chips.createEl('button', {
@@ -344,6 +558,7 @@ export class FollowAlongView extends ItemView {
       chip.createSpan({ text: label });
     }
 
+    if (this.boardOn) this.renderBoardPanel(root);
     if (this.showConfig && !this.session) this.renderConfig(root);
     if (this.debrief) this.renderDebrief(root, this.debrief);
 

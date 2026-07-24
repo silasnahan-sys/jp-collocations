@@ -5105,3 +5105,21 @@
 .jp-dm-pick { display: flex; align-items: center; gap: 8px; min-height: 46px; padding: 8px 12px; border-radius: 10px; cursor: pointer; border: 1px solid var(--background-modifier-border); }
 .jp-dm-pick-title { flex: 1; font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jp-dm-pick-mark { color: var(--color-green); font-size: 0.72rem; flex-shrink: 0; }
+
+/* ── 🔴 談話ボード (FollowAlong live scoreboard + next-move drill) ───────── */
+.jp-follow-board { border: 1px solid var(--background-modifier-border); border-left: 3px solid #e0245e; border-radius: 12px; padding: 8px 10px; margin: 6px 0; }
+.jp-follow-board-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.jp-follow-board-title { font-size: 12px; font-weight: 700; }
+.jp-follow-board-state { margin-top: 4px; }
+.jp-follow-board-counts { font-size: 12px; font-variant-numeric: tabular-nums; }
+.jp-follow-board-qud { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+.jp-follow-board-recent { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+.jp-follow-drill { border-top: 1px dashed var(--background-modifier-border); margin-top: 8px; padding-top: 8px; }
+.jp-follow-drill-q { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+.jp-follow-drill-opts { display: flex; gap: 6px; flex-wrap: wrap; }
+.jp-follow-chipbtn.is-bad { background: var(--background-modifier-error); }
+.jp-follow-drill-reveal { font-size: 13px; margin-top: 6px; }
+.jp-follow-drill-ok { color: var(--color-green, #2e7d32); font-weight: 700; }
+.jp-follow-drill-ng { color: var(--color-red, #c62828); font-weight: 700; }
+.jp-follow-drill-line { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.jp-follow-drill-acts { display: flex; gap: 6px; margin-top: 6px; }
