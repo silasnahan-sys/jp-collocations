@@ -113,6 +113,9 @@ function isAfterPredicate(text, offset) {
   if (/(?:る|た|だ|です|ます|ました|でした|ない|なかった|ある|あった|いる|いた|なる|なった|来る|来た|行く|行った|する|した|思う|思った|言う|言った|聞く|聞いた|見る|見た|書く|書いた|食べる|読む)$/.test(slice)) return true;
   // i-adjective final い (preceded by kana/kanji that isn't a particle).
   if (/[一-龥々ぁ-ん][いし]$/.test(slice) && !/[をにがはもでとへやかし]$/.test(slice)) {
+    // 〜しい adjectives (忙しい/難しい/楽しい…): the し is the stem, not the
+    // particle し — without this, 忙しいから never counted as after-predicate.
+    if (/[一-龥々ぁ-ん]しい$/.test(slice)) return true;
     // exclude particle-final cases
     const beforePrev = text[offset - 2] || '';
     if (!/[をにがはもでとへやかしね]/.test(beforePrev)) return true;

@@ -626,6 +626,9 @@ export const OPERATORS = [
       { surface: 'でしょ',   scope: 'sentence-final' },
       { surface: 'よね',     scope: 'sentence-final' },
       { surface: 'だよね',   scope: 'sentence-final' },
+      // 裸の ね: 述語直後 + 節末 (行くね、/ですます形の後) のみ。それ以外は棄権。
+      // ですね/だね は AGREE-MARK が長一致で勝つ。
+      { surface: 'ね', scope: 'clause-final', requires_after_predicate: true, not_after: ['です', 'だ'] },
     ],
   },
   {
@@ -635,8 +638,9 @@ export const OPERATORS = [
     gloss_en: 'agree-mark',
     cognitive_effect: '聞き手として同意・共有を示す',
     triggers: [
-      { surface: 'ですね', scope: 'sentence-final' },
-      { surface: 'だね',   scope: 'sentence-final' },
+      // clause-final: 文末に加え「そうですね、でも…」の節末同調も拾う。
+      { surface: 'ですね', scope: 'clause-final' },
+      { surface: 'だね',   scope: 'clause-final' },
       { surface: 'もんね', scope: 'sentence-final' },
     ],
   },
@@ -981,7 +985,9 @@ export const OPERATORS = [
     triggers: [
       { surface: 'みたいな',   scope: 'after-noun' },
       { surface: 'っぽい',     scope: 'sentence-final' },
-      { surface: '的な',       scope: 'after-noun' },
+      // 口語近似の「的な」は かな/引用閉じ の直後のみ (帰りたい的な/」的な)。
+      // 漢語連体形 (個人的な/基本的な = 漢字直前) は修辞ジェスチャーではない。
+      { surface: '的な',       scope: 'after-noun', requires_preceding: '[ぁ-ん」』]' },
       { surface: 'みたいなの', scope: 'after-noun' },
       { surface: 'みたいの',   scope: 'after-noun' },
       { surface: 'って感じ',   scope: 'sentence-final' },
