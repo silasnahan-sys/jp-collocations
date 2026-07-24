@@ -21,7 +21,7 @@
 // Event kinds (offset-sorted):
 //   place:conscript | place:derived | place:preface   — how the focal prop enters
 //   question                                          — raises a QUD instead
-//   uptake(grade) | reject | concede                  — consume the PRIOR turn (initial-position only)
+//   uptake(grade) | reject | concede | contrast       — consume the PRIOR turn (initial-position only)
 //   repair | substitute                               — replace speaker's own prior
 //   deny | retype                                     — stance/scope control (the two ex-blind-spots)
 //   project                                           — attributable downstream inference
@@ -81,13 +81,38 @@ const SHELVE_RE = /一旦.{0,6}?(?:置い|おい)|それはそうと|棚上げ|�
 // and left the real [1:37:38] resume empty-handed. Corpus-found, rule-fixed.
 const RESUME_RE = /(?:話|疑問|質問|議論|さっき|それ)(?:を|に)?戻(?:す|る|そ|り|っ)|戻っていい|元の(?:話|質問|疑問)に戻/;
 
-// initial-position prefixes (offset-0 events even when the lexicon misses them)
-const INITIAL_REJECT_RE = /^(?:あ、?)?(?:いや+|いえ|違う|ちがう|そうじゃなくて)/;
-const INITIAL_CONCEDE_RE = /^(?:あ、?)?(?:でも|けど|しかし|ただ|とはいえ)/;
+// ── responsivity anchors (Amendment V: precision-first GRANT/REJECT) ──
+// The precision sample (golden/precision/, 2026-07-22) measured suggested-
+// precision REJECT 0/7 and GRANT 7/24. The ✕ rows are systematic, not noise:
+//   • bare いや is a filler / agreement-preface / exclamative (いや、そう。
+//     僕もそう思う = AGREEMENT), almost never rejection;
+//   • bare initial でも/けど is adversative continuation, a new counterpoint
+//     (あ、でも…), or an ASR clause-split (けど…-initial soup) — while every
+//     suggested-✓ GRANT had an ASSENT HEAD before the adversative:
+//     ま、でも / まあでも / そうでも / とはいえ / 面白いけど.
+//   • しかし matched INSIDE もしかしたら (substring, nenko:1422).
+// So: REJECT needs a correction anchor; GRANT needs an assent head; a bare
+// initial adversative is CONTRAST — it contests the other's live prop
+// (blocking tacit CG) but writes nothing into CG/Projected.
+
+// REJECT — strong correction anchors only. いや alone NEVER fires.
+//   Guards from the sample's innocents: 違うんかい (quoted self-report),
+//   違うない/違うのかな (self-doubt), 違う+noun (lexical "different").
+const REJECT_ANCHOR_RE = /^(?:(?:あ|え)、?\s*)?(?:いや+ー?、?\s*)?(?:そうじゃなく(?:て|で)?|そうではなく(?:て)?|じゃなく(?:て|で)|違う(?:よ|って|んじゃなく)?(?=[、。！!？?\s]|$)|違います(?=[、。！!\s]|$)|ちゃうちゃう)/;
+
+// GRANT — assent head + initial-window adversative, or a directly
+// concessive conjunction. The ま、でも / あ、でも minimal pair is the rule:
+// ま(あ) accepts then pivots; あ、 flags a NEW counterpoint (✕ in sample).
+const GRANT_DIRECT_RE = /^(?:あ、?)?とはいえ/;
+const ASSENT_HEAD_RE = /^(?:あ、?)?(?:ま+ー?あ?、?|そう+(?:です(?:よ)?ね?|だね|ね)?、?。?|確かに、?|たしかに、?|それはそう(?:です)?(?:ね)?、?|なるほど、?|面白い(?:です)?(?:ね)?、?|分かる(?:よ)?、?|わかる(?:よ)?、?|一理ある、?)$/;
+const ADVERSATIVE_RE = /でも|けども|けど/; // searched in the initial window only
+
 // そう must not be the determiner/proform そういう・そうする・そうすると —
 // under-anchored ^そう mis-fired RATIFY on そういう意味で/そういうのって
 // (precision sample nenko:715/901, judged ✕: mechanical, not judgment).
-const INITIAL_UPTAKE_RE = /^(?:あ、?)?(?:そう(?!いう|いえ|す(?:る|れ|ると)|し(?:て|た|よう))(?:そう)*(?:です(?:ね|よね)?|か|なんです)?|分かる(?:よ)?|わかる(?:よ)?|なるほど|確かに|たしかに)/;
+// いや-prelude allowed: agreement-preface いや (いや、そう/いや、なるほど)
+// is UPTAKE — its board effect is the opposite of the reject it used to fire.
+const INITIAL_UPTAKE_RE = /^(?:あ、?)?(?:いや+ー?、?\s*)?(?:そう(?!いう|いえ|す(?:る|れ|ると)|し(?:て|た|よう)|じゃ|では)(?:そう)*(?:です(?:ね|よね)?|か|なんです)?|分かる(?:よ)?|わかる(?:よ)?|なるほど|確かに|たしかに)/;
 
 const stripLen = (t) => t.replace(/[、。．，,.\s「」『』！!？?ー~〜…]/g, '').length;
 
@@ -116,8 +141,9 @@ export function recognizeEvents(text) {
     else if (PREFACE_OPS.has(h.opId)) push('place:preface', h.offset, h.surface, h.opId);
     else if (SUBSTITUTE_OPS.has(h.opId)) push('substitute', h.offset, h.surface, h.opId);
     else if (REPAIR_OPS.has(h.opId)) push('repair', h.offset, h.surface, h.opId);
-    else if (REJECT_OPS.has(h.opId)) push('reject', h.offset, h.surface, h.opId);
-    else if (CONCEDE_OPS.has(h.opId)) push('concede', h.offset, h.surface, h.opId);
+    // REJECT_OPS / CONCEDE_OPS hits are NOT trusted as moves (Amendment V —
+    // measured 0/7 and 7/24 suggested-precision): the head analysis below
+    // decides reject/concede/contrast from anchors, not from bare triggers.
     else if (RATIFY_OPS.has(h.opId)) push('uptake', h.offset, h.surface, h.opId, { grade: 'accept' });
   }
 
@@ -133,22 +159,48 @@ export function recognizeEvents(text) {
   rx(SHELVE_RE, 'shelve', 'SHELVE-DETECT');
   rx(RESUME_RE, 'resume', 'RESUME-DETECT');
 
-  // (3) initial-position prefixes (position IS the disambiguator: only an
-  //     utterance-initial concessive consumes the PRIOR turn; a medial けど
-  //     contrasts within the speaker's own flow and must not GRANT)
+  // (3) head analysis (position IS the disambiguator: only an utterance-
+  //     initial responsive consumes the PRIOR turn; a medial けど contrasts
+  //     within the speaker's own flow and must not GRANT). Amendment V:
+  //     reject/concede fire ONLY from anchors; a bare initial adversative
+  //     is 'contrast' (RELATE_CONTRAST — contests, writes nothing).
   const head = t.trimStart();
   const headOff = t.length - head.length;
-  if (INITIAL_REJECT_RE.test(head) && !events.some(e => e.kind === 'reject' && e.offset <= headOff + 2))
-    push('reject', headOff, head.slice(0, 3), 'INITIAL-REJECT');
-  if (INITIAL_CONCEDE_RE.test(head) && !events.some(e => e.kind === 'concede' && e.offset <= headOff + 2))
-    push('concede', headOff, head.slice(0, 3), 'INITIAL-CONCEDE');
-  if (INITIAL_UPTAKE_RE.test(head) && stripLen(t) > 8 && !events.some(e => e.kind === 'uptake' && e.offset <= headOff + 2))
-    push('uptake', headOff, head.slice(0, 4), 'INITIAL-UPTAKE', { grade: 'accept' });
-
-  // Position gating for relational consumers of the PRIOR turn:
-  // concede/reject/uptake act on the previous speaker's contribution only
-  // from utterance-initial position (allowing a short filler prefix).
   const INITIAL_WINDOW = 6;
+
+  if (REJECT_ANCHOR_RE.test(head)) {
+    push('reject', headOff, head.slice(0, 6), 'REJECT-ANCHOR');
+  } else if (INITIAL_UPTAKE_RE.test(head) && stripLen(t) > 8 &&
+             !events.some(e => e.kind === 'uptake' && e.offset <= headOff + 2)) {
+    push('uptake', headOff, head.slice(0, 4), 'INITIAL-UPTAKE', { grade: 'accept' });
+  }
+
+  if (GRANT_DIRECT_RE.test(head)) {
+    push('concede', headOff, 'とはいえ', 'GRANT-ANCHOR');
+  } else {
+    const adv = ADVERSATIVE_RE.exec(head.slice(0, INITIAL_WINDOW + 4));
+    if (adv) {
+      const pre = head.slice(0, adv.index);
+      if (ASSENT_HEAD_RE.test(pre)) {
+        push('concede', headOff + adv.index, pre + adv[0], 'GRANT-ANCHOR');
+      } else if (adv[0] === 'でも' && (adv.index === 0 || /^(?:[あえ]+、?|ん、?)$/.test(pre) || /[、。]$/.test(pre))) {
+        // TURN-INITIAL でも (bare or after a filler): counterpoint or
+        // あ、でも new-point — contests the live prop, concedes nothing.
+        // NOT: でも after a content pre = the particle でも (ラジオでも
+        // "also on the radio", 読んでもらって — labeling pass false hits);
+        // NOT: stranded けど(も)-initial = an ASR clause-split whose けど
+        // belongs to the PREVIOUS clause (imiron rows 3151/5026/6587…) —
+        // it continues the speaker's own flow and contests nothing.
+        push('contrast', headOff + adv.index, adv[0], 'CONTRAST-INITIAL');
+      }
+      // stranded けど / content-pre でも / deeper adversative: no board move
+    } else if (/^しかし[、\s]/.test(head)) {
+      push('contrast', headOff, 'しかし', 'CONTRAST-INITIAL');
+    }
+  }
+
+  // Medial demotion for any remaining relational strays (lexicon uptake
+  // hits beyond the head window act within the speaker's own flow).
   for (const e of events) {
     if ((e.kind === 'concede' || e.kind === 'reject' || e.kind === 'uptake') && e.offset > headOff + INITIAL_WINDOW) {
       e.kind = e.kind === 'concede' ? 'contrast-medial' : 'agree-medial';

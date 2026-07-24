@@ -91,7 +91,14 @@ console.log('\n══ the fence (project → deny, intra-utterance, verbatim) �
 
 // ── 4. Concede-pivot, repair, re-type on real surface ──
 console.log('\n══ concede / repair / re-type ══');
-ok(primsAt(479).includes('GRANT'), 'でも… (initial) → GRANT (concede before pivot)');
+// Amendment V (constitutional change, 2026-07-24): bare initial でも is
+// CONTRAST, not GRANT — the precision sample measured GRANT 7/24 suggested-✓
+// and every ✓ had an assent head (ま、でも/そうでも/とはいえ). Here [07:59]
+// でもぶっちゃけ… follows the speaker's OWN fence — there is no other-prop
+// to concede, and the old GRANT only "worked" via the (removed) fallback
+// that let a speaker grant their own claim to themselves.
+ok(primsAt(479).includes('RELATE_CONTRAST'), 'でもぶっちゃけ… (bare initial) → RELATE_CONTRAST, not GRANT (Amendment V)');
+ok(!primsAt(479).includes('GRANT'), 'bare initial でも no longer GRANTs (assent head required)');
 ok(primsAt(511).includes('RETRACT_OWN'), 'というか… → RETRACT_OWN (repair own prior)');
 const repair = logHas('RETRACT_OWN')[0];
 ok(repair && /⇒/.test(repair.ref), 'repair replaces the retracted prop', `(${repair?.ref.slice(0, 40)}…)`);

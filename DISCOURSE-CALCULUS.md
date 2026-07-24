@@ -223,6 +223,37 @@ This completes the project's ratified pattern: **auto chain = recall,
 hand marks = truth** — a human ✕ on a turn boundary or speaker corrects the
 input at its source, and the reducer consumes either channel unchanged.
 
+### Amendment V — responsivity anchors (2026-07-24, Fable)
+*Falsified by:* the precision sampling protocol (`golden/precision/`,
+2026-07-22 run): suggested-precision **REJECT 0/7, GRANT 7/24**. The ✕ rows
+were systematic: bare いや is a filler / agreement-preface / exclamative
+(いや、そう。僕もそう思う = agreement — the board *deleted* the prop the
+speaker was agreeing with); bare initial でも/けど is adversative
+continuation, a new counterpoint (あ、でも), or an ASR clause-split; しかし
+matched inside もしかしたら. Every suggested-✓ GRANT had an **assent head**
+before the adversative (ま、でも / まあでも / そうでも / とはいえ / 面白いけど)
+— the ま、でも vs あ、でも minimal pair carries the whole distinction.
+*Amendment (three parts):*
+1. **Recognition** (`moves.mjs`): REJECT fires only on a correction anchor
+   (そうじゃなくて/じゃなくて/predicative 違う — quoted 違うんかい, self-doubt
+   違うのかな, lexical 違う+N are guarded out); いや alone never fires, and
+   いや + agreement head is UPTAKE (its real function). GRANT fires only on
+   assent-head + adversative or とはいえ. A bare initial adversative emits
+   `contrast`.
+2. **RELATE_CONTRAST realized** (`scoreboard.mjs`): the declared-but-never-
+   fired relation now marks the other's live prop `contested` (keeps it on
+   the Table, refreshes attention, writes nothing into CG/Projected) — and a
+   contested conscription may NOT slide into CG tacitly (settle() lapses it
+   instead): default acceptance holds only absent objection.
+3. **GRANT own-prop fallback removed**: a speaker cannot unilaterally move
+   their own proposal into CG (that is what conscription+uptake is for). The
+   golden's [07:59] でもぶっちゃけ GRANT only "worked" through this fallback;
+   it is now RELATE_CONTRAST, per this amendment, loudly.
+*Verification:* replayed against the judged sample rows — all 21 ✕ rows and
+all 7 REJECT rows stop firing, 5/7 ✓ GRANT rows keep firing (the two lost
+are bare-でも concessives, now logged as contrast: a precision-first trade,
+same policy as IV.b's anchor choice). Pinned in `golden/calculus-precision.mjs`.
+
 ### What the board is FOR (clarification, not amendment)
 The board's product for a production tool is the **affordance set** —
 `affordances(board, speaker)`: which primitives' preconditions are satisfiable

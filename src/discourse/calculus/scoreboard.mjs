@@ -134,11 +134,29 @@ const P = {
   },
 
   GRANT(board, s, sp) {
-    const q = mostRecentTable(board, sp, 'other') || mostRecentTable(board, sp, 'any');
+    // Amendment V: no fallback to own props — a speaker cannot unilaterally
+    // move their own proposal into CG (that is what conscription+uptake is
+    // for). The old 'any' fallback let a bare でも grant the speaker's own
+    // claim to themselves.
+    const q = mostRecentTable(board, sp, 'other');
     if (!q) return '(nothing to grant)';
     removeFromTable(board, q);
     toCG(board, q.id);
     dropProjected(board, q.id);
+    return glossOf(board, q.id);
+  },
+
+  // Amendment V: the declared-but-never-fired relation, made real. A bare
+  // initial adversative (でも/けど/しかし) CONTESTS the other's live prop:
+  // it stays on the Table (still arguable) but is marked, and a contested
+  // conscription may NOT slide into CG tacitly (settle() checks the flag) —
+  // Stalnaker default acceptance holds only absent objection.
+  RELATE_CONTRAST(board, s, sp) {
+    const q = mostRecentTable(board, sp, 'other');
+    if (!q) return '(nothing to contest)';
+    q.lastActive = board.turnIdx;
+    const pr = board.props.get(q.id);
+    if (pr) pr.flags.contested = true;
     return glossOf(board, q.id);
   },
 
@@ -287,6 +305,7 @@ export function affordances(board, speaker) {
     add('GRANT', `live other-prop: ${glossOf(board, oth.id)}`);
     add('REJECT', `live other-prop: ${glossOf(board, oth.id)}`);
     add('RATIFY', `live other-prop: ${glossOf(board, oth.id)}`);
+    add('RELATE_CONTRAST', `live other-prop: ${glossOf(board, oth.id)}`);
     add('ACKNOWLEDGE', 'other holds the floor');
   }
   const own = mostRecentTable(board, speaker, 'self');
@@ -347,6 +366,7 @@ function applyTurn(board, turn, r) {
       case 'uptake': fire('RATIFY'); break;
       case 'reject': fire('REJECT'); break;
       case 'concede': fire('GRANT'); break;
+      case 'contrast': fire('RELATE_CONTRAST'); break;
       case 'repair': if (focal) fire('RETRACT_OWN', { p: focal }); else pendingRepair = true; break;
       case 'substitute': if (focal) fire('SUBSTITUTE', { p: focal }); else pendingSubstitute = true; break;
       case 'deny': fire('DENY_COMMITMENT'); break;
@@ -414,8 +434,14 @@ function settle(board, tSec) {
     const age = now - it.turnIdx;
     if (it.kind === 'conscription' && age > WINDOWS.CONSCRIPT_TACIT) {
       board.projected.splice(i, 1);
-      toCG(board, it.id);
-      dyn(board, tSec, 'TACIT_CG', it.gloss);
+      // Amendment V: a CONTESTED conscription does not slide into CG —
+      // default acceptance holds only absent objection. It lapses instead.
+      if (board.props.get(it.id)?.flags.contested) {
+        dyn(board, tSec, 'LAPSE', it.gloss);
+      } else {
+        toCG(board, it.id);
+        dyn(board, tSec, 'TACIT_CG', it.gloss);
+      }
     } else if (it.kind === 'consequence' && age > WINDOWS.PROJECT_LAPSE) {
       board.projected.splice(i, 1);
       dyn(board, tSec, 'LAPSE', it.gloss);

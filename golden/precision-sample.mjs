@@ -38,6 +38,8 @@ export const FILES = [
 export const SPEC = [
   { prim: 'CONSCRIPT', cap: 12 },
   { prim: 'GRANT', cap: 12 },
+  { prim: 'RELATE_CONTRAST', cap: 10 }, // Amendment V: contest-marks block tacit CG
+
   { prim: 'RATIFY', cap: 10 },
   { prim: 'REJECT', cap: 8 },
   { prim: 'SUBSTITUTE', cap: 8 },
@@ -49,7 +51,7 @@ export const SPEC = [
   { prim: 'RESUME_QUD', cap: 8 },
 ];
 const KIND_FOR = {
-  CONSCRIPT: 'place:conscript', GRANT: 'concede', RATIFY: 'uptake', REJECT: 'reject',
+  CONSCRIPT: 'place:conscript', GRANT: 'concede', RELATE_CONTRAST: 'contrast', RATIFY: 'uptake', REJECT: 'reject',
   SUBSTITUTE: 'substitute', PROJECT_CONSEQUENCE: 'project', DENY_COMMITMENT: 'deny',
   RE_TYPE: 'retype', SHELVE_QUD: 'shelve', RESUME_QUD: 'resume', RETRACT_OWN: 'repair',
 };
