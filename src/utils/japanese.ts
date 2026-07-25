@@ -140,3 +140,124 @@ export function similarity(a: string, b: string): number {
   if (maxLen === 0) return 1;
   return 1 - levenshtein(a, b) / maxLen;
 }
+
+// ── NFC offset map (sidecar wire ↔ editor display) ─────────────────────────
+//
+// Python sidecars emit char offsets in NFC-normalized text. Obsidian's
+// CodeMirror displays the raw file bytes, which may be NFD (macOS imports),
+// mixed halfwidth dakuten, or other forms. Painting a decoration at an NFC
+// offset against a raw view would visibly drift on any composing sequence
+// (が = か+゙, ガ = ｶ+ﾞ, etc.).
+//
+// buildNfcOffsetMap walks raw text once, producing two integer arrays that
+// translate offsets in either direction. Sidecar offsets are NFC; the plugin
+// translates to raw via rawFromNfc before each paint call.
+//
+// Convention: arrays have length N+1 so that end-exclusive ranges work
+// directly. rawFromNfc[i] / nfcFromRaw[j] are both monotonically
+// non-decreasing. For an offset strictly inside a composing block, the map
+// returns the chunk's end boundary (conservative; sidecar annotations from
+// MeCab edges always land on grapheme boundaries, so this case is rare).
+
+export interface NfcOffsetMap {
+  /** NFC-normalized text. Sidecar charStart/charEnd index into this. */
+  nfcText: string;
+  /** rawFromNfc[i] = raw index for NFC position i, for i in [0, nfcText.length]. */
+  rawFromNfc: Int32Array;
+  /** nfcFromRaw[j] = NFC index for raw position j, for j in [0, rawText.length]. */
+  nfcFromRaw: Int32Array;
+}
+
+export function buildNfcOffsetMap(rawText: string): NfcOffsetMap {
+  const nfcText = rawText.normalize("NFC");
+  const rawFromNfc = new Int32Array(nfcText.length + 1);
+  const nfcFromRaw = new Int32Array(rawText.length + 1);
+
+  // Fast path: text is already NFC-stable and same length → identity.
+  if (rawText === nfcText) {
+    for (let i = 0; i <= nfcText.length; i++) {
+      rawFromNfc[i] = i;
+      nfcFromRaw[i] = i;
+    }
+    return { nfcText, rawFromNfc, nfcFromRaw };
+  }
+
+  let rawIdx = 0;
+  let nfcIdx = 0;
+
+  while (rawIdx < rawText.length && nfcIdx < nfcText.length) {
+    // Greedily grow the raw chunk until extending it would change the NFC
+    // prefix we've already matched (i.e. composition has stabilized).
+    let rawChunkLen = 1;
+    let normChunk = rawText.slice(rawIdx, rawIdx + rawChunkLen).normalize("NFC");
+
+    while (rawIdx + rawChunkLen < rawText.length) {
+      const extendedRaw = rawText.slice(rawIdx, rawIdx + rawChunkLen + 1);
+      const extendedNorm = extendedRaw.normalize("NFC");
+      // If the existing normChunk is no longer a prefix of extendedNorm,
+      // the next raw char composed with the current chunk. Extend.
+      if (extendedNorm.slice(0, normChunk.length) !== normChunk) {
+        rawChunkLen++;
+        normChunk = extendedNorm;
+      } else {
+        break;
+      }
+    }
+
+    const nfcChunkLen = normChunk.length;
+
+    // Sanity: the chunk's NFC must match the next slice of nfcText.
+    // If not, fall back to consuming the rest as one block (defensive; should
+    // not happen for valid Unicode input).
+    if (nfcText.slice(nfcIdx, nfcIdx + nfcChunkLen) !== normChunk) {
+      const remRaw = rawText.length - rawIdx;
+      const remNfc = nfcText.length - nfcIdx;
+      for (let i = 1; i <= remRaw; i++) nfcFromRaw[rawIdx + i] = nfcIdx + remNfc;
+      for (let i = 1; i <= remNfc; i++) rawFromNfc[nfcIdx + i] = rawIdx + remRaw;
+      rawIdx += remRaw;
+      nfcIdx += remNfc;
+      break;
+    }
+
+    // Map all interior + end positions of this chunk to the chunk's end.
+    // Chunk-start positions are already set by the previous iteration (or
+    // the zero-initialized arrays for the first chunk).
+    for (let i = 1; i <= rawChunkLen; i++) {
+      nfcFromRaw[rawIdx + i] = nfcIdx + nfcChunkLen;
+    }
+    for (let i = 1; i <= nfcChunkLen; i++) {
+      rawFromNfc[nfcIdx + i] = rawIdx + rawChunkLen;
+    }
+
+    rawIdx += rawChunkLen;
+    nfcIdx += nfcChunkLen;
+  }
+
+  // Pin tails in case lengths mismatch (defensive).
+  if (rawIdx < rawText.length) nfcFromRaw[rawText.length] = nfcText.length;
+  if (nfcIdx < nfcText.length) rawFromNfc[nfcText.length] = rawText.length;
+
+  return { nfcText, rawFromNfc, nfcFromRaw };
+}
+
+/**
+ * Translate a sidecar [nfcStart, nfcEnd) range to raw editor coordinates.
+ * Returns null if the range is out of bounds.
+ */
+export function nfcRangeToRaw(
+  map: NfcOffsetMap,
+  nfcStart: number,
+  nfcEnd: number,
+): { rawStart: number; rawEnd: number } | null {
+  if (
+    nfcStart < 0 ||
+    nfcEnd < nfcStart ||
+    nfcEnd > map.nfcText.length
+  ) {
+    return null;
+  }
+  return {
+    rawStart: map.rawFromNfc[nfcStart],
+    rawEnd: map.rawFromNfc[nfcEnd],
+  };
+}

@@ -30,6 +30,12 @@ export interface YtHistorySettings {
   clientVersion: string;
   hl: string;
   gl: string;
+  /** Brand-account (channel) page id. One Google login can carry several
+   *  YouTube channels, EACH WITH ITS OWN watch history — the cookie alone
+   *  selects only the primary. '' = primary channel. */
+  pageId: string;
+  /** Display name of the selected channel (UI only). */
+  pageLabel: string;
 }
 
 export const DEFAULT_YT_HISTORY_SETTINGS: YtHistorySettings = {
@@ -38,7 +44,42 @@ export const DEFAULT_YT_HISTORY_SETTINGS: YtHistorySettings = {
   clientVersion: '2.20240726.00.00',
   hl: 'en',
   gl: 'US',
+  pageId: '',
+  pageLabel: '',
 };
+
+// ── channel switcher (brand accounts) ───────────────────────────────────────────
+
+export interface YtAccount {
+  name: string;
+  handle: string;
+  /** null = the primary channel (no X-Goog-PageId needed). */
+  pageId: string | null;
+  selected: boolean;
+}
+
+/** Parse an `account/accounts_list` (CHANNEL_SWITCHER) response (PURE). */
+export function extractAccounts(resp: unknown): YtAccount[] {
+  const out: YtAccount[] = [];
+  const walk = (n: unknown): void => {
+    if (!n || typeof n !== 'object') return;
+    if (Array.isArray(n)) { n.forEach(walk); return; }
+    const rec = n as Record<string, any>;
+    const a = rec.accountItemRenderer;
+    if (a) {
+      const name = a.accountName?.simpleText ?? a.accountName?.runs?.map((r: any) => r.text).join('') ?? '';
+      const handle = a.channelHandle?.simpleText ?? '';
+      let pageId: string | null = null;
+      for (const t of a.serviceEndpoint?.selectActiveIdentityEndpoint?.supportedTokens ?? []) {
+        if (t?.pageIdToken?.pageId) pageId = t.pageIdToken.pageId;
+      }
+      if (name) out.push({ name, handle, pageId, selected: a.isSelected === true });
+    }
+    for (const v of Object.values(rec)) walk(v);
+  };
+  walk(resp);
+  return out;
+}
 
 export class YtHistoryError extends Error {
   status: number;
@@ -258,6 +299,10 @@ export interface HistoryFetchResult {
   videos: WatchedVideo[];
   pages: number;
   stopped: 'reached-since' | 'max-videos' | 'max-pages' | 'no-more';
+  /** Newest watch date seen in the FEED itself (ms), regardless of the range.
+   *  When this predates the requested range, the range isn't wrong — YouTube
+   *  simply has no entries there (history paused / watched signed-out). */
+  feedNewestMs: number;
 }
 
 export class YtHistoryClient {
@@ -302,6 +347,8 @@ export class YtHistoryClient {
       'x-youtube-client-name': '1',
       'x-youtube-client-version': s.clientVersion,
     };
+    // Brand accounts: one login, several channels, EACH with its own history.
+    if (s.pageId) headers['x-goog-pageid'] = s.pageId;
 
     let resp: { status: number; text: string };
     try {
@@ -317,6 +364,24 @@ export class YtHistoryClient {
     if (json?.error) throw new YtHistoryError(`YouTube API エラー: ${json.error?.message ?? 'unknown'}`, resp.status);
     if (resp.status !== 200) throw new YtHistoryError(`YouTube が HTTP ${resp.status} を返しました。`, resp.status);
     return json;
+  }
+
+  /** The channels (accounts) behind the cookie — for the settings picker. */
+  async listAccounts(): Promise<YtAccount[]> {
+    const s = this.getSettings();
+    const cookie = this.cookie();
+    const auth = await sapisidAuth(cookie, Math.floor(Date.now() / 1000));
+    if (!auth) throw new YtHistoryError('Cookie に SAPISID がありません。');
+    const url = `${ORIGIN}/youtubei/v1/account/accounts_list?key=${encodeURIComponent(s.apiKey)}&prettyPrint=false`;
+    const context = { client: { clientName: 'WEB', clientVersion: s.clientVersion, hl: s.hl, gl: s.gl } };
+    const body = JSON.stringify({ context, requestType: 'ACCOUNTS_LIST_REQUEST_TYPE_CHANNEL_SWITCHER' });
+    const resp = await this.http.post(url, body, {
+      'content-type': 'application/json', authorization: auth, cookie, origin: ORIGIN, 'x-origin': ORIGIN,
+      'x-goog-authuser': '0', 'x-youtube-client-name': '1', 'x-youtube-client-version': s.clientVersion,
+    });
+    if (resp.status !== 200) throw new YtHistoryError(`アカウント一覧の取得に失敗 (HTTP ${resp.status})。`, resp.status);
+    try { return extractAccounts(JSON.parse(resp.text)); }
+    catch { throw new YtHistoryError('アカウント一覧の応答を解析できませんでした。'); }
   }
 
   /**
@@ -337,12 +402,14 @@ export class YtHistoryClient {
     let continuation: string | undefined;
     let pages = 0;
     let stopped: HistoryFetchResult['stopped'] = 'no-more';
+    let feedNewestMs = 0;
 
     while (pages < maxPages) {
       const resp = await this.fetchRaw(continuation);
       pages++;
       const page = extractHistoryPage(resp, nowMs);
       if (pages === 1 && page.loggedOut) throw new YtHistoryError('Cookie が無効/失効しています（loggedOut）。youtube.com から再取得して貼り付けてください。');
+      for (const v of page.videos) if (v.watchedAt > feedNewestMs) feedNewestMs = v.watchedAt;
 
       let reachedSince = false;
       for (const v of page.videos) {
@@ -359,6 +426,6 @@ export class YtHistoryClient {
       continuation = page.continuation;
       if (pages >= maxPages) { stopped = 'max-pages'; break; }
     }
-    return { videos: acc.slice(0, opts.maxVideos), pages, stopped };
+    return { videos: acc.slice(0, opts.maxVideos), pages, stopped, feedNewestMs };
   }
 }

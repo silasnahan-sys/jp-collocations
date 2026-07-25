@@ -26,7 +26,7 @@
  * `pickTrack`) take no I/O so the golden harness exercises them on real fixtures.
  */
 
-import { run, nodeReq, tail } from './audio-extractor.ts';
+import { run, nodeReq, tail, ensureCookieJar, removeCookiesFile } from './audio-extractor.ts';
 
 // ── data model (DESIGN §3) ─────────────────────────────────────────────────────
 
@@ -96,6 +96,12 @@ export interface YtdlpTranscriptConfig {
   jsRuntime: string;   // '' → auto (deno/node on PATH)
   /** Absolute path to a writable temp dir for the subtitle file. */
   tmpDirAbs: string;
+  /** youtube.com Cookie header (from the history settings) — passes YouTube's
+   *  "confirm you're not a bot" wall when it appears. Optional. */
+  cookieHeader?: string;
+  /** Stable path for the persistent cookie jar (shared with the audio tier —
+   *  YouTube rotates tokens per authenticated run; see ensureCookieJar). */
+  cookieJarAbs?: string;
 }
 
 // ── PURE parsers ────────────────────────────────────────────────────────────────
@@ -240,10 +246,11 @@ async function fetchTrackLines(http: HttpClient, track: CaptionTrack): Promise<T
 
 /** Build the yt-dlp arg vector for a subtitles-only fetch (PURE; verified recipe).
  *  Writes `<template>.<lang>.json3`. Prefers manual subs, falls back to auto. */
-export function buildYtdlpSubsArgs(cfg: YtdlpTranscriptConfig, langPref: string[], videoId: string, outTemplate: string): string[] {
+export function buildYtdlpSubsArgs(cfg: YtdlpTranscriptConfig, langPref: string[], videoId: string, outTemplate: string, cookiesFile?: string | null): string[] {
   const langs = langPref.length ? langPref.join(',') : 'ja';
   const args: string[] = [];
   if (cfg.jsRuntime) args.push('--js-runtimes', cfg.jsRuntime);
+  if (cookiesFile) args.push('--cookies', cookiesFile);
   args.push(
     '--write-subs', '--write-auto-subs',
     '--sub-langs', langs,
@@ -282,7 +289,9 @@ export async function fetchViaYtdlp(cfg: YtdlpTranscriptConfig, langPref: string
   const path = nodeReq<{ join(...p: string[]): string }>('path');
   const prefix = `_ytsub_${videoId}`;
   const outTemplate = path.join(cfg.tmpDirAbs, `${prefix}.%(ext)s`);
-  const args = buildYtdlpSubsArgs(cfg, langPref, videoId, outTemplate);
+  const jar = ensureCookieJar(cfg.cookieHeader, cfg.cookieJarAbs, `sub_${videoId}`);
+  const cookiesFile = jar.path;
+  const args = buildYtdlpSubsArgs(cfg, langPref, videoId, outTemplate, cookiesFile);
 
   // clear any stale sub files from a prior run
   const clean = () => {
@@ -295,9 +304,11 @@ export async function fetchViaYtdlp(cfg: YtdlpTranscriptConfig, langPref: string
   try {
     res = await run(bin, args, 120_000);
   } catch (e) {
+    if (jar.temp) removeCookiesFile(cookiesFile);
     const msg = e instanceof Error ? e.message : String(e);
     return { lines: [], lang: langPref[0] ?? 'ja', noCaptions: false, error: /ENOENT/.test(msg) ? `yt-dlp not found (${bin}).` : msg };
   }
+  if (jar.temp) removeCookiesFile(cookiesFile);
 
   // find the produced .json3 (yt-dlp names it <prefix>.<lang>.json3, lang may be 'ja' or 'ja-orig')
   let subFile = '', subLang = langPref[0] ?? 'ja';

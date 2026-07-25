@@ -46,6 +46,90 @@ export interface AudioExtractionConfig {
   preRollSec: number;
   /** Vault-relative folder the clips are written into. */
   outputFolder: string;
+  /** Full youtube.com Cookie header — threaded at CALL time from the history
+   *  settings (never persisted here). YouTube bot-walls anonymous downloads
+   *  ("Sign in to confirm you're not a bot"); the logged-in cookie passes. */
+  cookieHeader?: string;
+  /** Stable absolute path for the persistent cookie JAR (see ensureCookieJar).
+   *  Threaded at call time (plugin dir); without it a throwaway temp file is
+   *  used, which breaks on the SECOND run once YouTube rotates the tokens. */
+  cookieJarAbs?: string;
+}
+
+/** FNV-1a of the pasted header — identifies which paste seeded the jar. */
+export function cookieHeaderHash(header: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < header.length; i++) { h ^= header.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
+
+/**
+ * Persistent cookie jar for yt-dlp. CRITICAL (verified 2026-07-11): YouTube
+ * ROTATES the session tokens on every authenticated player request, and yt-dlp
+ * writes the rotated cookies back into its `--cookies` file. Regenerating the
+ * file from the originally-pasted header therefore works exactly ONCE — the
+ * next run presents rotated-out tokens and the media URL 403s. So the jar
+ * lives at a stable path that yt-dlp owns across runs (like a browser profile),
+ * and is re-seeded from the header only when the USER pastes a new one (hash
+ * recorded in a sidecar `.meta` file — yt-dlp rewrites the jar itself, so the
+ * marker cannot live inside it).
+ */
+export function ensureCookieJar(cookieHeader: string | undefined, jarAbs: string | undefined, tag: string): { path: string | null; temp: boolean } {
+  if (!cookieHeader?.trim()) return { path: null, temp: false };
+  if (!jarAbs) return { path: writeCookiesFile(cookieHeader, tag), temp: true };
+  try {
+    const fs = nodeReq<{
+      existsSync(p: string): boolean; readFileSync(p: string, e: string): string; writeFileSync(p: string, s: string): void;
+    }>('fs');
+    const hash = cookieHeaderHash(cookieHeader);
+    const meta = jarAbs + '.meta';
+    if (fs.existsSync(jarAbs) && fs.existsSync(meta) && fs.readFileSync(meta, 'utf8').trim() === hash) {
+      return { path: jarAbs, temp: false };            // same paste → reuse the (rotated) jar
+    }
+    const lines = ['# Netscape HTTP Cookie File'];
+    for (const pair of cookieHeader.split(';')) {
+      const eq = pair.indexOf('=');
+      if (eq <= 0) continue;
+      const name = pair.slice(0, eq).trim();
+      if (!name) continue;
+      lines.push(`.youtube.com\tTRUE\t/\tTRUE\t2147483647\t${name}\t${pair.slice(eq + 1).trim()}`);
+    }
+    if (lines.length < 2) return { path: null, temp: false };
+    fs.writeFileSync(jarAbs, lines.join('\n') + '\n');
+    fs.writeFileSync(meta, hash + '\n');
+    return { path: jarAbs, temp: false };
+  } catch { return { path: writeCookiesFile(cookieHeader, tag), temp: true }; }
+}
+
+/** Cookie header → a temp Netscape cookies.txt for `--cookies`. Returns the
+ *  absolute path, or null when the header is empty / fs unavailable. The file
+ *  contains SECRETS: callers delete it after the run (best-effort). */
+export function writeCookiesFile(cookieHeader: string | undefined, tag: string): string | null {
+  if (!cookieHeader?.trim()) return null;
+  try {
+    const fs = nodeReq<{ writeFileSync(p: string, s: string): void }>('fs');
+    const os = nodeReq<{ tmpdir(): string }>('os');
+    const path = nodeReq<{ join(...p: string[]): string }>('path');
+    const lines = ['# Netscape HTTP Cookie File'];
+    for (const pair of cookieHeader.split(';')) {
+      const eq = pair.indexOf('=');
+      if (eq <= 0) continue;
+      const name = pair.slice(0, eq).trim();
+      const value = pair.slice(eq + 1).trim();
+      if (!name) continue;
+      lines.push(`.youtube.com\tTRUE\t/\tTRUE\t2147483647\t${name}\t${value}`);
+    }
+    if (lines.length < 2) return null;
+    const p = path.join(os.tmpdir(), `_yt_cookies_${tag}.txt`);
+    fs.writeFileSync(p, lines.join('\n') + '\n');
+    return p;
+  } catch { return null; }
+}
+
+/** Best-effort removal of a secrets file. */
+export function removeCookiesFile(p: string | null): void {
+  if (!p) return;
+  try { nodeReq<{ unlinkSync(q: string): void }>('fs').unlinkSync(p); } catch { /* */ }
 }
 
 export const DEFAULT_AUDIO_EXTRACTION: AudioExtractionConfig = {
@@ -96,11 +180,13 @@ export function buildYtdlpArgs(
   req: ExtractRequest,
   cfg: AudioExtractionConfig,
   outPath: string,
+  cookiesFile?: string | null,
 ): string[] {
   const [start, end] = clipWindow(req, cfg);
   const args: string[] = [];
   if (cfg.ffmpegPath) args.push('--ffmpeg-location', cfg.ffmpegPath);
   if (cfg.jsRuntime) args.push('--js-runtimes', cfg.jsRuntime);
+  if (cookiesFile) args.push('--cookies', cookiesFile);
   args.push(
     '-f', '140/bestaudio[ext=m4a]/bestaudio',   // m4a first → clean, precise cuts
     '--download-sections', `*${start}-${end}`,
@@ -255,10 +341,15 @@ export interface FullAudioResult {
 }
 
 /** yt-dlp args to fetch the whole audio-only stream (no sectioning). */
-export function buildFullAudioArgs(cfg: AudioExtractionConfig, videoId: string, outTemplate: string): string[] {
+export function buildFullAudioArgs(cfg: AudioExtractionConfig, videoId: string, outTemplate: string, cookiesFile?: string | null): string[] {
   const args: string[] = [];
   if (cfg.ffmpegPath) args.push('--ffmpeg-location', cfg.ffmpegPath);
   if (cfg.jsRuntime) args.push('--js-runtimes', cfg.jsRuntime);
+  // VERIFIED RECIPE (2026-07-11, yt-dlp ≥2026.07.04): cookies + DEFAULT clients
+  // fully download (yt-dlp mints the PO tokens via its JS runtime). Do NOT force
+  // player_client=tv — on current yt-dlp that path serves range-limited URLs
+  // that 403 past the first chunk. Keep yt-dlp updated (`winget upgrade yt-dlp`).
+  if (cookiesFile) args.push('--cookies', cookiesFile);
   args.push(
     '-f', '140/bestaudio[ext=m4a]/bestaudio',
     '--no-playlist', '--no-part',
@@ -285,7 +376,9 @@ export async function downloadFullAudio(cfg: AudioExtractionConfig, videoId: str
   const bin = cfg.ytdlpPath || 'yt-dlp';
   const prefix = `_srcaudio_${videoId}`;
   const outTemplate = `${folderAbs}/${prefix}.%(ext)s`;
-  const args = buildFullAudioArgs(cfg, videoId, outTemplate);
+  const jar = ensureCookieJar(cfg.cookieHeader, cfg.cookieJarAbs, videoId);
+  const cookiesFile = jar.path;
+  const args = buildFullAudioArgs(cfg, videoId, outTemplate, cookiesFile);
   const command = commandLine(bin, args);
   const fs = nodeReq<{ existsSync(p: string): boolean; statSync(p: string): { size: number }; unlinkSync(p: string): void }>('fs');
 
@@ -296,16 +389,20 @@ export async function downloadFullAudio(cfg: AudioExtractionConfig, videoId: str
   try {
     res = await run(bin, args, 240_000);   // 4 min ceiling for the single full download
   } catch (e) {
+    if (jar.temp) removeCookiesFile(cookiesFile);
     const msg = e instanceof Error ? e.message : String(e);
     const hint = /ENOENT/.test(msg) ? `yt-dlp が見つかりません（${bin}）。` : msg;
     return { ok: false, srcPath: '', bytes: 0, command, error: hint };
   }
+  if (jar.temp) removeCookiesFile(cookiesFile);   // the persistent jar must survive (rotated tokens live there)
   const src = findByPrefix(folderAbs, prefix);
   const bytes = src && fs.existsSync(src) ? fs.statSync(src).size : 0;
   if (res.code !== 0 || !src || bytes < 1024) {
     const jsHint = /No supported JavaScript runtime/i.test(res.stderr)
       ? '\nJavaScript ランタイム（deno か node）が必要です。' : '';
-    return { ok: false, srcPath: '', bytes, command, error: `full-audio ダウンロード失敗 (exit ${res.code}, ${bytes}B)${jsHint}`, stderrTail: tail(res.stderr) };
+    const botHint = /confirm you.re not a bot|--cookies/i.test(res.stderr) && !cookiesFile
+      ? '\nYouTube がログインを要求しています — 設定「視聴履歴（Cookie）」に youtube.com の Cookie を貼ると通ります。' : '';
+    return { ok: false, srcPath: '', bytes, command, error: `full-audio ダウンロード失敗 (exit ${res.code}, ${bytes}B)${jsHint}${botHint}`, stderrTail: tail(res.stderr) };
   }
   return { ok: true, srcPath: src, bytes, command };
 }
@@ -352,7 +449,8 @@ export async function extractClip(
   outPath: string,
 ): Promise<ExtractResult> {
   const bin = cfg.ytdlpPath || 'yt-dlp';
-  const args = buildYtdlpArgs(req, cfg, outPath);
+  const jar = ensureCookieJar(cfg.cookieHeader, cfg.cookieJarAbs, `clip_${req.videoId}`);
+  const args = buildYtdlpArgs(req, cfg, outPath, jar.path);
   const command = commandLine(bin, args);
   const base: ExtractResult = { ok: false, outPath: '', bytes: 0, durationSec: 0, command };
 
@@ -360,10 +458,12 @@ export async function extractClip(
   try {
     res = await run(bin, args);
   } catch (e) {
+    if (jar.temp) removeCookiesFile(jar.path);
     const msg = e instanceof Error ? e.message : String(e);
     const hint = /ENOENT/.test(msg) ? `yt-dlp が見つかりません（${bin}）。設定でパスを指定してください。` : msg;
     return { ...base, error: hint };
   }
+  if (jar.temp) removeCookiesFile(jar.path);
 
   // Validate the produced file — a nonzero exit OR an empty/too-short clip is failure.
   const fs = nodeReq<{ existsSync(p: string): boolean; statSync(p: string): { size: number } }>('fs');

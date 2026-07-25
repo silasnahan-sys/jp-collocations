@@ -25,6 +25,8 @@ export interface MatcherLine {
   index: number;
   tStartSec?: number;
   text: string;
+  /** Diarized speaker letter (`[HH:MM:SS] A: …` lines — §23.4-3 layer-1 truth). */
+  speaker?: string;
 }
 
 /** surface → kana reading, or null if unknown. Backed by DictionaryStore + deinflection in prod. */
@@ -91,22 +93,10 @@ function bigrams(s: string): Map<string, number> {
   }
   return m;
 }
-function diceBigram(a: string, b: string): number {
-  if (a.length < 2 || b.length < 2) return a === b ? 1 : 0;
-  const ma = bigrams(a), mb = bigrams(b);
-  let inter = 0;
-  for (const [g, ca] of ma) { const cb = mb.get(g); if (cb) inter += Math.min(ca, cb); }
-  const total = (a.length - 1) + (b.length - 1);
-  return (2 * inter) / total;
-}
 function editRatio(a: string, b: string): number {
   const d = levenshtein(a, b);
   const m = Math.max(a.length, b.length) || 1;
   return 1 - d / m;
-}
-/** Combined fuzzy similarity in a given (surface or reading) space. */
-function sim(a: string, b: string): number {
-  return Math.max(diceBigram(a, b), editRatio(a, b));
 }
 
 /**
@@ -138,19 +128,61 @@ export function match(
     return { best: null, alternatives: [], contextBefore: [], contextAfter: [], corrections: [], confidence: 0 };
   }
 
-  // slide a window ~ note length (±40%) and score by surface similarity
+  // Slide a window ~ note length (±40%) and score by surface similarity.
+  // PERF (real transcripts are 100k+ normalized chars): the note's bigram map is
+  // built ONCE; each start position grows its window incrementally (one bigram
+  // per char) instead of rebuilding maps per length; the expensive edit-ratio
+  // runs only when the cheap Dice score says the window is a live candidate.
   const W = noteNorm.length;
   const minW = Math.max(2, Math.floor(W * 0.7));
   const maxW = Math.min(concat.length, Math.ceil(W * 1.5));
   const step = Math.max(1, Math.floor(W / 6));
+  const lenStep = Math.max(1, Math.floor(W / 6));
+  const noteBi = bigrams(noteNorm);
+  const noteBiTotal = Math.max(1, W - 1);
+  // Below this Dice score, skip the edit-ratio refinement. 0.30, deliberately
+  // permissive: when BOTH sides carry independent errors (user's shorthand vs
+  // the captions' ASR garble, e.g. ことさら喜んで vs こさ喜んで) the shared
+  // bigrams collapse while the edit ratio stays high — a tighter gate silently
+  // loses exactly the matches this pipeline exists to make.
+  const DICE_GATE = 0.30;
   type Cand = { start: number; end: number; score: number; text: string };
   const cands: Cand[] = [];
   for (let start = 0; start <= concat.length - minW; start += step) {
-    let bestLen = minW, bestScore = -1;
-    for (let len = minW; len <= maxW && start + len <= concat.length; len += Math.max(1, Math.floor(W / 6))) {
-      const win = concat.slice(start, start + len);
-      const s = sim(win, noteNorm);
-      if (s > bestScore) { bestScore = s; bestLen = len; }
+    const upto = Math.min(maxW, concat.length - start);
+    // incremental bigram intersection over the growing window
+    const winCount = new Map<string, number>();
+    let inter = 0;
+    const addBigramAt = (i: number) => {
+      const g = concat.slice(i, i + 2);
+      const c = (winCount.get(g) ?? 0) + 1;
+      winCount.set(g, c);
+      const cn = noteBi.get(g);
+      if (cn !== undefined && c <= cn) inter++;
+    };
+    for (let i = start; i < start + minW - 1; i++) addBigramAt(i);
+    const lens: number[] = [minW];
+    const dices: number[] = [W < 2 ? (concat.slice(start, start + minW) === noteNorm ? 1 : 0)
+      : (2 * inter) / ((minW - 1) + noteBiTotal)];
+    let len = minW;
+    while (len + lenStep <= upto) {
+      const next = len + lenStep;
+      for (let i = start + len - 1; i < start + next - 1; i++) addBigramAt(i);
+      len = next;
+      lens.push(len);
+      dices.push((2 * inter) / ((len - 1) + noteBiTotal));
+    }
+    let bestLen = lens[0], bestScore = dices[0];
+    for (let k = 1; k < lens.length; k++) if (dices[k] > bestScore) { bestScore = dices[k]; bestLen = lens[k]; }
+    if (bestScore >= DICE_GATE) {
+      // Live region: refine with the edit ratio at EVERY plausible length —
+      // Dice alone would truncate a window right before a substituted char
+      // (homophone tails like 効く→聞く), losing the correction downstream.
+      for (let k = 0; k < lens.length; k++) {
+        if (dices[k] < DICE_GATE - 0.15) continue;
+        const s = Math.max(dices[k], editRatio(concat.slice(start, start + lens[k]), noteNorm));
+        if (s > bestScore) { bestScore = s; bestLen = lens[k]; }
+      }
     }
     cands.push({ start, end: start + bestLen, score: bestScore, text: concat.slice(start, start + bestLen) });
   }
@@ -185,6 +217,82 @@ export function match(
   const confidence = Math.max(0, Math.min(1, best.score - homoPenalty));
 
   return { best, alternatives, contextBefore, contextAfter, corrections, confidence };
+}
+
+/**
+ * GAPPED pattern matching — the handwriting habit this pipeline serves writes
+ * correlative patterns as connected fragments (`んだったら〜なきゃ`,
+ * `が違えば　と思う一方で`): the parts appear NEAR each other in the
+ * transcript with the speaker's own words in the gap. Each part is located
+ * independently (top candidates kept), then the combination is chosen that
+ * puts the parts IN ORDER within a bounded gap — the parts disambiguate each
+ * other, so a fragment that is hopelessly generic alone (なきゃ) becomes a
+ * confident match when pinned by its partner.
+ */
+export function matchGapped(
+  parts: string[],
+  lines: MatcherLine[],
+  readingOf?: ReadingResolver,
+  opts: { maxGapLines?: number; maxGapSec?: number; contextLines?: number } = {},
+): MatchResult {
+  const maxGapLines = opts.maxGapLines ?? 8;
+  const maxGapSec = opts.maxGapSec ?? 40;
+  const ctxN = opts.contextLines ?? 2;
+  const empty: MatchResult = { best: null, alternatives: [], contextBefore: [], contextAfter: [], corrections: [], confidence: 0 };
+  if (parts.length < 2) return empty;
+
+  const weights = parts.map((p) => Math.max(1, normalizeJapanese(p).replace(/\s+/g, '').length));
+  const wTotal = weights.reduce((a, b) => a + b, 0);
+
+  // Wide candidate list for the FIRST part (generic fragments recur dozens of
+  // times — the right occurrence is rarely in a short top-K)…
+  const r0 = match(parts[0], lines, readingOf, { topK: 32, contextLines: 0 });
+  if (!r0.best) return empty;
+  const starts = [r0.best, ...r0.alternatives];
+
+  // …then every LATER part is searched LOCALLY in the bounded window after the
+  // chain so far — co-occurrence, not global rank, decides.
+  let bestChain: MatchSpan[] | null = null;
+  let bestScore = -1;
+  for (const a of starts) {
+    const chain: MatchSpan[] = [a];
+    let acc = a.score * weights[0];
+    let ok = true;
+    for (let i = 1; i < parts.length; i++) {
+      const prev = chain[chain.length - 1];
+      const from = prev.endLine;
+      let to = Math.min(lines.length - 1, from + maxGapLines);
+      const t0 = lines[from]?.tStartSec;
+      if (t0 != null) {
+        while (to > from && lines[to]?.tStartSec != null && (lines[to].tStartSec as number) - t0 > maxGapSec) to--;
+      }
+      const slice = lines.slice(from, to + 1);
+      const local = match(parts[i], slice, readingOf, { topK: 1, contextLines: 0 });
+      if (!local.best) { ok = false; break; }
+      chain.push({ ...local.best, startLine: local.best.startLine + from, endLine: local.best.endLine + from,
+        tStartSec: lines[local.best.startLine + from]?.tStartSec });
+      acc += local.best.score * weights[i];
+    }
+    if (ok && acc > bestScore) { bestScore = acc; bestChain = chain; }
+  }
+  if (!bestChain) return empty;
+  const chain = bestChain as MatchSpan[];
+
+  const first = chain[0], last = chain[chain.length - 1];
+  const best: MatchSpan = {
+    startLine: first.startLine,
+    endLine: last.endLine,
+    tStartSec: first.tStartSec,
+    text: chain.map((c) => c.text).join('〜'),
+    score: bestScore / wTotal,
+  };
+  const corrections: Correction[] = [];
+  for (let i = 0; i < parts.length; i++) corrections.push(...diffCorrections(parts[i], chain[i].text, readingOf));
+  const contextBefore = lines.slice(Math.max(0, best.startLine - ctxN), best.startLine).map((l) => l.text);
+  const contextAfter = lines.slice(best.endLine + 1, best.endLine + 1 + ctxN).map((l) => l.text);
+  const homoPenalty = corrections.some((c) => c.kind !== 'homophone') ? 0.15 : 0;
+  const confidence = Math.max(0, Math.min(1, best.score - homoPenalty));
+  return { best, alternatives: [], contextBefore, contextAfter, corrections, confidence };
 }
 
 /**

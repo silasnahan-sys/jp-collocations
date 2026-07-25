@@ -182,7 +182,7 @@
   white-space: nowrap;
 }
 
-.jp-col-pos--noun   { background: #4a90d9; }
+.jp-col-pos--noun   { background: #6a7fd6; }
 .jp-col-pos--verb   { background: #e06c75; }
 .jp-col-pos--adj-i  { background: #98c379; color: #1e2227; }
 .jp-col-pos--adj-na { background: #56b6c2; color: #1e2227; }
@@ -1571,7 +1571,7 @@
   gap: 2px;
   padding: 1px 8px;
   border-radius: 10px;
-  background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);
+  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
   color: #fff;
   font-size: 0.62rem;
   font-weight: 600;
@@ -2359,7 +2359,7 @@
 .jp-vis-cat-A { border-color: #e74c3c; }
 .jp-vis-cat-B { border-color: #3498db; }
 .jp-vis-cat-C { border-color: #2ecc71; }
-.jp-vis-cat-D { border-color: #f39c12; }
+.jp-vis-cat-D { border-color: #b06fd8; }
 .jp-vis-cat-E { border-color: #9b59b6; }
 .jp-vis-cat-F { border-color: #1abc9c; }
 .jp-vis-cat-G { border-color: #e67e22; }
@@ -2373,7 +2373,7 @@
 
 /* ── Relation connector colors ────────────────────────────── */
 .jp-rel-cause { border-left: 2px solid #e74c3c; }
-.jp-rel-concession { border-left: 2px solid #f39c12; }
+.jp-rel-concession { border-left: 2px solid #9b59b6; }
 .jp-rel-conditional { border-left: 2px solid #3498db; }
 .jp-rel-temporal { border-left: 2px solid #2ecc71; }
 .jp-rel-purpose { border-left: 2px solid #9b59b6; }
@@ -3197,7 +3197,7 @@
 /* Color classes for relation types */
 .jp-rel-cause { border-color: #e74c3c; color: #e74c3c; }
 .jp-rel-concession { border-color: #9b59b6; color: #9b59b6; }
-.jp-rel-conditional { border-color: #f39c12; color: #f39c12; }
+.jp-rel-conditional { border-color: #7b5cd6; color: #7b5cd6; }
 .jp-rel-temporal { border-color: #3498db; color: #3498db; }
 .jp-rel-purpose { border-color: #2ecc71; color: #2ecc71; }
 .jp-rel-means { border-color: #1abc9c; color: #1abc9c; }
@@ -3550,7 +3550,7 @@
 }
 .jp-ctx-bitrel-row[data-reconciliation="locked"] { border-left-color: #27ae60; }
 .jp-ctx-bitrel-row[data-reconciliation="td"]     { border-left-color: #2980b9; }
-.jp-ctx-bitrel-row[data-reconciliation="bu"]     { border-left-color: #f39c12; }
+.jp-ctx-bitrel-row[data-reconciliation="bu"]     { border-left-color: #9b59b6; }
 .jp-ctx-bitrel-label {
   font-weight: 600;
   min-width: 120px;
@@ -3596,7 +3596,7 @@
 }
 .jp-dict-ctx-bitrel-row[data-reconciliation="locked"] { border-left-color: #27ae60; }
 .jp-dict-ctx-bitrel-row[data-reconciliation="td"]     { border-left-color: #2980b9; }
-.jp-dict-ctx-bitrel-row[data-reconciliation="bu"]     { border-left-color: #f39c12; }
+.jp-dict-ctx-bitrel-row[data-reconciliation="bu"]     { border-left-color: #9b59b6; }
 .jp-dict-ctx-bitrel-label {
   font-weight: 600;
   min-width: 90px;
@@ -4422,8 +4422,8 @@
   font-weight: 600;
 }
 .jp-capture-turn--target {
-  border-left: 3px solid #d9534f;
-  background: rgba(217, 83, 79, 0.07);
+  border-left: 3px solid var(--interactive-accent);
+  background: color-mix(in srgb, var(--interactive-accent) 7%, transparent);
 }
 .jp-capture-turn--after { opacity: 0.75; }
 .jp-capture-turn--none { font-size: 0.76rem; color: var(--text-muted); padding: 6px 8px; }
@@ -4475,10 +4475,10 @@
 }
 .jp-srs-count-n { font-size: 1.5rem; font-weight: 700; font-family: var(--font-monospace); }
 .jp-srs-count-label { font-size: 0.72rem; color: var(--text-muted); }
-.jp-srs-count--learn .jp-srs-count-n { color: #d9832b; }
-.jp-srs-count--due .jp-srs-count-n { color: #4a90d9; }
-.jp-srs-count--new .jp-srs-count-n { color: #5cb85c; }
-.jp-srs-count--leech .jp-srs-count-n { color: #d9534f; }
+.jp-srs-count--learn .jp-srs-count-n { color: var(--jp-srs-learn); }
+.jp-srs-count--due .jp-srs-count-n { color: var(--jp-srs-good); }
+.jp-srs-count--new .jp-srs-count-n { color: var(--jp-srs-easy); }
+.jp-srs-count--leech .jp-srs-count-n { color: var(--jp-srs-again); }
 .jp-srs-count--leech { opacity: 0.85; }
 
 /* ── ContextWindow (DESIGN §20.2): the one attestation-context renderer ── */
@@ -4689,10 +4689,10 @@
 .jp-canvas-pill:hover { background: var(--background-secondary); }
 .jp-canvas-pill--punct { opacity: 0.45; cursor: default; padding: 7px 1px; }
 .jp-canvas-pill--spanning, .jp-canvas-pill--span { background: var(--background-secondary); box-shadow: inset 0 -2px 0 var(--interactive-accent); }
-.jp-canvas-pill--part { border-color: #f39c12; color: #f39c12; font-weight: 700; }
+.jp-canvas-pill--part { border-color: var(--jp-cls-skeletal); color: var(--jp-cls-skeletal); font-weight: 700; }
 .jp-canvas-pill--striking, .jp-canvas-pill--struck { text-decoration: line-through 2px; opacity: 0.55; }
-.jp-canvas-pill--circled { border: 2px solid #5cb85c; border-radius: 999px; font-weight: 700; }
-.jp-canvas-pill--halo { box-shadow: inset 0 -2px 0 #5cb85c; }
+.jp-canvas-pill--circled { border: 2px solid var(--jp-cls-rhet-coll); border-radius: 999px; font-weight: 700; }
+.jp-canvas-pill--halo { box-shadow: inset 0 -2px 0 var(--jp-cls-rhet-coll); }
 .jp-canvas-sugs { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .jp-canvas-sug { font-size: 11px; padding: 2px 8px; border-radius: 10px; opacity: 0.65; cursor: pointer; }
 .jp-canvas-sug:hover { opacity: 1; }
@@ -4807,11 +4807,11 @@
 }
 .jp-srs-grade-label { font-size: 0.84rem; font-weight: 600; }
 .jp-srs-grade-ivl { font-size: 0.7rem; color: var(--text-muted); font-family: var(--font-monospace); }
-.jp-srs-grade--again { border-color: #d9534f; }
-.jp-srs-grade--again .jp-srs-grade-label { color: #d9534f; }
-.jp-srs-grade--hard { border-color: #d9832b; }
-.jp-srs-grade--good { border-color: #4a90d9; }
-.jp-srs-grade--easy { border-color: #5cb85c; }
+.jp-srs-grade--again { border-color: var(--jp-srs-again); }
+.jp-srs-grade--again .jp-srs-grade-label { color: var(--jp-srs-again); }
+.jp-srs-grade--hard { border-color: var(--jp-srs-hard); }
+.jp-srs-grade--good { border-color: var(--jp-srs-good); }
+.jp-srs-grade--easy { border-color: var(--jp-srs-easy); }
 .jp-srs-btn {
   font-size: 0.92rem; padding: 9px 18px; border-radius: 8px; cursor: pointer;
   border: 1px solid var(--background-modifier-border); background: var(--background-secondary);
@@ -5045,16 +5045,16 @@
 .jp-dm-hint { color: var(--text-muted); font-size: 0.78rem; margin-bottom: 10px; line-height: 1.6; }
 .jp-dm-turns { display: flex; flex-direction: column; gap: 10px; }
 .jp-dm-turn { border: 1px solid var(--background-modifier-border); border-radius: 14px; padding: 8px 10px; border-left-width: 4px; }
-.jp-dm-turn--A { border-left-color: #4a90d9; }
-.jp-dm-turn--B { border-left-color: #5cb85c; margin-left: 24px; }
-.jp-dm-turn--C { border-left-color: #d9832b; }
-.jp-dm-turn--D { border-left-color: #b06fd8; margin-left: 24px; }
+.jp-dm-turn--A { border-left-color: var(--jp-spk-a); }
+.jp-dm-turn--B { border-left-color: var(--jp-spk-b); margin-left: 24px; }
+.jp-dm-turn--C { border-left-color: var(--jp-spk-c); }
+.jp-dm-turn--D { border-left-color: var(--jp-spk-d); margin-left: 24px; }
 .jp-dm-turn-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
 .jp-dm-speaker { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; font-weight: 800; font-size: 1rem; cursor: pointer; border: 2px solid var(--background-modifier-border); background: var(--background-secondary); }
-.jp-dm-speaker--A { color: #4a90d9; border-color: #4a90d9; }
-.jp-dm-speaker--B { color: #5cb85c; border-color: #5cb85c; }
-.jp-dm-speaker--C { color: #d9832b; border-color: #d9832b; }
-.jp-dm-speaker--D { color: #b06fd8; border-color: #b06fd8; }
+.jp-dm-speaker--A { color: var(--jp-spk-a); border-color: var(--jp-spk-a); }
+.jp-dm-speaker--B { color: var(--jp-spk-b); border-color: var(--jp-spk-b); }
+.jp-dm-speaker--C { color: var(--jp-spk-c); border-color: var(--jp-spk-c); }
+.jp-dm-speaker--D { color: var(--jp-spk-d); border-color: var(--jp-spk-d); }
 .jp-dm-time { color: var(--text-muted); font-size: 0.74rem; font-family: var(--font-monospace); flex: 1; }
 .jp-dm-cap { min-width: 40px; min-height: 40px; border-radius: 10px; cursor: pointer; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); font-size: 0.95rem; }
 .jp-dm-line { padding: 7px 8px; border-radius: 8px; cursor: pointer; line-height: 1.65; font-size: 0.95rem; }
@@ -5071,8 +5071,8 @@
 /* component pills (§23 layer-2 suggestions): solid, kind-tinted, with ✕ */
 .jp-dm-comp { display: inline-flex; align-items: stretch; }
 .jp-dm-pill--comp { border-style: solid; border-radius: 17px 0 0 17px; color: var(--text-normal); }
-.jp-dm-comp--aizuchi .jp-dm-pill--comp, .jp-dm-comp--reaction .jp-dm-pill--comp { border-color: #5cb85c; }
-.jp-dm-comp--return .jp-dm-pill--comp { border-color: #4a90d9; }
+.jp-dm-comp--aizuchi .jp-dm-pill--comp, .jp-dm-comp--reaction .jp-dm-pill--comp { border-color: var(--jp-spk-b); }
+.jp-dm-comp--return .jp-dm-pill--comp { border-color: var(--jp-spk-a); }
 .jp-dm-comp--echo .jp-dm-pill--comp { border-color: #d9832b; }
 .jp-dm-comp--connective .jp-dm-pill--comp { border-color: #9b7ed9; }
 .jp-dm-comp--quotative .jp-dm-pill--comp { border-color: #c95d9a; }
@@ -5093,7 +5093,7 @@
 .jp-dm-reading--micro .jp-dm-reading-lens { background: #7a6ff0; }
 .jp-dm-reading--macro .jp-dm-reading-lens { background: #2f9e7d; }
 .jp-dm-reading--meta .jp-dm-reading-lens { background: #d9832b; }
-.jp-dm-reading--thought .jp-dm-reading-lens { background: #4a90d9; }
+.jp-dm-reading--thought .jp-dm-reading-lens { background: var(--jp-spk-a); }
 .jp-dm-reading-x { border: none; background: transparent; color: var(--text-faint); cursor: pointer; min-height: 28px; min-width: 26px; }
 .jp-dm-reading-editor { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; align-items: center; }
 .jp-dm-reading-lensbtn { font-size: 11px; min-height: 34px; padding: 2px 10px; border-radius: 12px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); cursor: pointer; }
@@ -5123,3 +5123,89 @@
 .jp-follow-drill-ng { color: var(--color-red, #c62828); font-weight: 700; }
 .jp-follow-drill-line { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
 .jp-follow-drill-acts { display: flex; gap: 6px; margin-top: 6px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE CLASS GRAMMAR (DESIGN §26.0 rule 4 — one grammar everywhere)
+   The six --jp-cls-* properties are published at runtime from NOTE_TYPES by
+   src/ui/class-grammar.ts. They are the ONLY place a class color may come
+   from, and they are RESERVED: no non-taxonomy rule may use these hues.
+   Bands that used to collide now have their own reserved ranges below.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── the rail: the left edge every classed card wears, on every surface ── */
+.jp-cls-railed { border-left: 3px solid var(--jp-rail, var(--background-modifier-border)); }
+
+/* ── the dot: the compact mark where a rail does not fit ── */
+.jp-cls-dot {
+  display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--jp-dot, var(--text-faint)); flex-shrink: 0;
+  vertical-align: middle; margin-right: 2px;
+}
+/* a class the hand has not ratified is hollow — provisional, never truth */
+.jp-cls-dot--suggested {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--jp-dot, var(--text-faint));
+}
+
+/* ── the badge: dot + label, for rows with room ── */
+.jp-cls-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.72rem; padding: 1px 8px; border-radius: 11px;
+  border: 1px solid var(--jp-badge, var(--background-modifier-border));
+  color: var(--jp-badge, var(--text-muted));
+  background: color-mix(in srgb, var(--jp-badge, transparent) 9%, transparent);
+  white-space: nowrap;
+}
+.jp-cls-badge--suggested { border-style: dashed; opacity: 0.72; }
+.jp-cls-badge-emoji { font-size: 0.78rem; }
+
+/* ── the chips: THE control for setting a note type, identical everywhere ── */
+.jp-cls-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.jp-cls-chips--suggested { opacity: 0.78; }
+.jp-cls-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 0.82rem; padding: 5px 10px; border-radius: 14px;
+  border: 1.5px solid var(--background-modifier-border);
+  background: transparent; cursor: pointer; min-height: 34px;
+}
+.jp-cls-chip:hover { border-color: var(--jp-chip, var(--interactive-accent)); }
+.jp-cls-chip--active {
+  border-color: var(--jp-chip, var(--interactive-accent));
+  box-shadow: inset 0 0 0 1px var(--jp-chip, var(--interactive-accent));
+  background: color-mix(in srgb, var(--jp-chip, transparent) 10%, transparent);
+  font-weight: 600;
+}
+.jp-cls-chip-emoji { font-size: 0.86rem; }
+.jp-cls-chip-key {
+  font-size: 8.5px; font-weight: 700; color: var(--text-faint);
+  border: 1px solid var(--background-modifier-border); border-radius: 3px;
+  padding: 0 3px; transform: translateY(-1px);
+}
+.jp-cls-chip-suggest { font-size: 0.68rem; color: var(--text-accent); }
+/* compact: emoji-only, for catalog cards and tray rows (three-hands: still 34px) */
+.jp-cls-chips--compact .jp-cls-chip { padding: 4px 7px; min-width: 34px; justify-content: center; }
+
+/* ── RESERVED BANDS — these hues are NOT the taxonomy's. Speaker channel and SRS
+   scheduling used to wear class colors, which made 連語-blue also mean "speaker A"
+   and "graded Good" (§26.0 rule 4 violation). The rules that consume these live
+   with their own components; only the band is defined here. ── */
+body {
+  --jp-spk-a: #7b5cd6;   /* violet  */
+  --jp-spk-b: #17a2a2;   /* teal    */
+  --jp-spk-c: #c2698b;   /* rose    */
+  --jp-spk-d: #8a94a6;   /* slate   */
+  /* RESERVED BAND: SRS scheduling — intensity, not identity */
+  --jp-srs-again: #b5378f;
+  --jp-srs-hard:  #9a6bd0;
+  --jp-srs-good:  #6a7fd6;
+  --jp-srs-easy:  #4aa8c9;
+  --jp-srs-learn: #a8709a;
+}
+
+/* ── §28 S1: YOUR catalog patterns, found inside an X card ── */
+.jp-x-card-mine { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
+.jp-x-mine-badge { font-size: 0.7rem; }
+.jp-x-mine-badge:hover { background: color-mix(in srgb, var(--jp-badge, transparent) 18%, transparent); }
+
+/* ── the lexicon headword's class control (§26.1 entry anatomy) ── */
+.jp-lex-detail-classchips { margin: 4px 0 2px; }

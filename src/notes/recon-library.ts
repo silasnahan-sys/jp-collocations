@@ -27,11 +27,13 @@ export class ReconLibrary {
     return { entries: this.all() };
   }
 
-  /** Upsert entries from a (re)reconciliation of one file — preserves class already set. */
+  /** Upsert entries from a (re)reconciliation of one file — preserves class
+   *  already set, and a 'commentary' triage (a re-run must not re-flag it). */
   upsertMany(entries: LibraryEntry[]): void {
     for (const e of entries) {
       const prev = this.byId.get(e.blockId);
-      this.byId.set(e.blockId, prev ? { ...e, noteClass: prev.noteClass } : e);
+      const status = prev?.status === 'commentary' && e.status === 'needs-review' ? 'commentary' : e.status;
+      this.byId.set(e.blockId, prev ? { ...e, noteClass: prev.noteClass, status } : e);
     }
     void this.persist();
   }
@@ -39,6 +41,28 @@ export class ReconLibrary {
   /** Drop all entries anchored in a given file (before rewriting it). */
   removeForFile(file: string): void {
     for (const [id, e] of this.byId) if (e.file === file) this.byId.delete(id);
+  }
+
+  /** Drop entries for one (transcript, source-notes) pair — a re-run of that
+   *  notes file replaces exactly its own entries, never another run's. */
+  removeForSourceNote(transcriptFile: string, sourceNote: string): void {
+    for (const [id, e] of this.byId) {
+      if (e.file === transcriptFile && e.sourceNote === sourceNote) this.byId.delete(id);
+    }
+  }
+
+  /** Drop one entry (triage edit-retry replaces it under a new block id). */
+  remove(blockId: string): void {
+    if (this.byId.delete(blockId)) void this.persist();
+  }
+
+  /** Triage: flip an entry's status (e.g. needs-review ⇄ commentary). */
+  setStatus(blockId: string, status: LibraryEntry['status']): LibraryEntry | undefined {
+    const e = this.byId.get(blockId);
+    if (!e) return undefined;
+    e.status = status;
+    void this.persist();
+    return e;
   }
 
   setClass(blockId: string, cls: NoteClass): LibraryEntry | undefined {
@@ -50,6 +74,17 @@ export class ReconLibrary {
   }
 
   get(blockId: string): LibraryEntry | undefined { return this.byId.get(blockId); }
+
+  /** All entries anchored in a given file. */
+  forFile(file: string): LibraryEntry[] {
+    return [...this.byId.values()].filter((e) => e.file === file);
+  }
+
+  /** Patch one entry's anchorId (cluster re-formed on a later run). */
+  setAnchorId(blockId: string, anchorId: string): void {
+    const e = this.byId.get(blockId);
+    if (e && e.anchorId !== anchorId) { e.anchorId = anchorId; void this.persist(); }
+  }
 
   /** Prior class map for one file (feeds annotate so re-runs keep the class). */
   classMapForFile(file: string): Map<string, NoteClass> {

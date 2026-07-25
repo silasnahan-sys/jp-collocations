@@ -63,6 +63,12 @@ export class HyogenScraper {
     return count;
   }
 
+  /** §22.7: on-demand profile for ONE word — returns parsed entries WITHOUT
+   *  touching the legacy store. The corpus serves the catalog. */
+  async profileWord(word: string): Promise<CollocationEntry[]> {
+    return this.fetchWord(word);
+  }
+
   private async fetchWord(word: string): Promise<CollocationEntry[]> {
     const url = `https://collocation.hyogen.info/word/${encodeURIComponent(word)}`;
     const response = await requestUrl({ url, method: "GET" });

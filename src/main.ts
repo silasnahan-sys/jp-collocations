@@ -12,6 +12,7 @@ import { SearchModal } from "./ui/SearchModal";
 import { AddEntryModal } from "./ui/AddEntryModal";
 import { SettingsTab } from "./ui/SettingsTab";
 import { CaptureModal, type CaptureContext, type CaptureDeps } from "./ui/CaptureModal";
+import { injectClassGrammar } from "./ui/class-grammar";
 import { DiscourseGoldStore, toJsonl } from "./notes/discourse-gold";
 import { SrsStore } from "./srs/srs-store";
 import { ReviewView, JP_REVIEW_VIEW_TYPE } from "./ui/ReviewView";
@@ -167,6 +168,11 @@ export default class JPCollocationsPlugin extends Plugin {
   private sidecarStatusEl: HTMLElement | null = null;
 
   async onload(): Promise<void> {
+    // Publish the 6-class taxonomy into CSS (--jp-cls-*) before any view renders,
+    // so a stylesheet rule and a JS-built element cannot disagree about what a
+    // class color is. NOTE_TYPES stays the single source; this is its only exit.
+    injectClassGrammar(document);
+
     // ── Canonical blob: one owner, serialized debounced writes, .bak ──
     const pluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/jp-collocations`;
     const blobIO: BlobFileIO = {
@@ -1750,7 +1756,10 @@ export default class JPCollocationsPlugin extends Plugin {
         // 3) The pattern catalog — tweets must not bypass the unified index
         //    (DESIGN §13.4). Class stays a suggestion until ratified.
         void this.patternStore.record(surface, {
-          source: "x", file: sourceUrl, tStartSec: null,
+          // §28 S2: the door back. `file` alone identified the tweet but left
+          // the renderers guessing at the medium; scene.deepLink is the door.
+          source: "x", medium: "x", file: sourceUrl, tStartSec: null,
+          scene: { deepLink: sourceUrl, sourceName: "X" },
           quote: example, addedAt: now,
         });
       },
@@ -1761,6 +1770,19 @@ export default class JPCollocationsPlugin extends Plugin {
           source: { kind: "x", url: tweet.url },
         }, this.makeCaptureDeps()).open();
       },
+      // §28 S1: the X corpus is a view of the SAME lexicon. A tweet holding a
+      // pattern already in the 台帳 wears that pattern's class mark here too.
+      patternsIn: (text) => {
+        const hits: Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }> = [];
+        for (const p of this.patternStore.all()) {
+          const terms = sweepTerms(p);
+          if (terms.length && terms.every((t) => text.includes(t))) {
+            hits.push({ id: p.id, key: p.key, class: p.class, classRatified: p.classRatified });
+          }
+        }
+        return hits;
+      },
+      openPattern: (id) => this.openLexiconAt(id),
     };
   }
 
@@ -2020,6 +2042,18 @@ export default class JPCollocationsPlugin extends Plugin {
     new Notice(matched
       ? `🎧 ${r.shot.episode}${r.shot.elapsedSec != null ? ` @ ${fmtStamp(r.shot.elapsedSec)}` : ""} → マーク`
       : `🎧 マーク作成（一致するトランスクリプトなし — 「🎙 Podcast」で取り込むと照合できます）`);
+  }
+
+  /**
+   * §28 S4 — open the lexicon focused on ONE catalog pattern. This is what makes
+   * a class mark on a foreign surface (an X card, a tray item) an action: the
+   * same object, re-rendered where its full context lives.
+   */
+  async openLexiconAt(id: string): Promise<void> {
+    await this.openLexiconView();
+    const leaf = this.app.workspace.getLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE)[0];
+    const view = leaf?.view as CollocationView | undefined;
+    view?.openPattern?.(id);
   }
 
   async openLexiconView(): Promise<void> {
@@ -2754,7 +2788,14 @@ export default class JPCollocationsPlugin extends Plugin {
     const now = Date.now();
     await this.patternStore.recordMany(tweets.map((t) => ({
       note: p.note,
-      att: { source: "x" as const, file: t.url, quote: t.text.replace(/\s+/g, " ").trim(), addedAt: now },
+      // §28 S2: carry the door back. The corpus join used to leave `medium`
+      // and `scene` empty, so a tweet attached here rendered without the X
+      // affordances the same tweet gets when captured by hand.
+      att: {
+        source: "x" as const, medium: "x" as const, file: t.url,
+        scene: { deepLink: t.url, sourceName: t.authorHandle ? `@${t.authorHandle}` : "X" },
+        quote: t.text.replace(/\s+/g, " ").trim(), addedAt: now,
+      },
     })), now);
     const added = (this.patternStore.byId(p.id)?.attestations.length ?? 0) - before;
     new Notice(tweets.length

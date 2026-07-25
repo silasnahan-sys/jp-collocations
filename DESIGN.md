@@ -29,7 +29,20 @@ abbreviated, cut off, or simply wrong. The pipeline:
 
 A worked example of the reconciliation output already exists at
 `samplenotes-reconciled.md` (built by hand from `testtranscript.md` +
-`samplenotes.png`). That is the target output shape.
+`samplenotes.png`). That is the target *callout* shape.
+
+> **Implemented 2026-07 (in-transcript anchoring).** Callouts are written INTO
+> the transcript file itself (`src/notes/transcript-anchor.ts`), wrapping the
+> real timestamped lines — no separate `-reconciled.md` report. The context
+> window grows per side to char/second minimums, extends while the boundary
+> clause is unfinished (continuative particles — captions have no 。), and is
+> hard-capped; the SAME window drives the audio clip range. `stripAnchors` is
+> the exact inverse of `applyAnchors` (golden-proven roundtrip), so re-runs are
+> idempotent, and other notes-files' anchors on the same transcript are
+> re-planned from their persisted library entries (`entryToResult`).
+> Overlapping windows merge into one callout block (one `^recon-id` per block —
+> an Obsidian constraint); embeds/cards target the cluster anchor while card
+> and library ids stay per-note. See `golden/anchor.mjs`.
 
 ---
 
@@ -198,6 +211,22 @@ constant; structured-output schema enforced at the call boundary.
 
 ## 5. Reconciliation flow (Architecture B — transcripts never go to the API)
 
+> **Implemented 2026-07-10 (handwriting stage):** `src/notes/claude-client.ts`
+> (the only Anthropic-aware file; models pinned `claude-haiku-4-5-20251001` →
+> escalation `claude-opus-4-8`; key in `settings.notes.ocrApiKey`, stored like
+> the X cookies; `requestUrl` transport = mobile-safe) +
+> `src/notes/ocr-reconciler.ts` (schema-locked JSON prompt that transcribes
+> phrases EXACTLY as written — correction is the local matcher's job; parse →
+> validate → escalate once; `mergeOcrPhrases` materializes phrases INTO the
+> notes file under an idempotent `%% ocr:<imagehash> %%` marker as plain list
+> items, so from that moment the text path owns everything and every line is
+> hand-editable). Command **`ocr-reconcile-handwriting`**: OCRs every image
+> embedded in the active notes file (wiki + md embeds, canvas-downscaled to
+> ≤1568px ≈ 1,600 image tokens/page), materializes, then runs the standard
+> reconcile flow (anchors → library → cards → clips unchanged). Golden:
+> `golden/ocr.mjs` (27 pure checks + a LIVE call gated on env
+> `ANTHROPIC_API_KEY` + `golden/fixtures/handwriting.png`).
+
 Cost and reliability both come from keeping the transcript out of the model.
 
 ```
@@ -269,66 +298,93 @@ green.** Reading source in production is `makeDictionaryReadingResolver(store)`
 
 ---
 
-## 7. Note types — the "Big 5" (resolved)
+## 7. Note types — the six classes (v2, 2026-07-10)
 
-Defined across the user's design chats (see project memory `five-note-types`).
-A note type is **not** just a callout color — each is a distinct analytic object
-with its own payload and its own index key. Annotation is therefore a **router**
-into five typed stores, not a highlighter.
+Defined across the user's design chats (see project memories `five-note-types`
+and `phraseological-schema-sixth-region`; v2 supersedes the v1 "Big 5" colors
+and adds a sixth class). A note type is **not** just a callout color — each is a
+distinct analytic object with its own payload and its own index key. Annotation
+is therefore a **router** into typed stores, not a highlighter.
 
-| # | Class | Color (FINAL) | Identity / index key | Strip-test | Store |
+The v2 classification criterion is the **speaker's processing unit** (how the
+utterance is mentally assembled in production), and each class has an
+operational test:
+
+| # | Class | Color (FINAL v2) | Identity / index key | Test | Store |
 |---|---|---|---|---|---|
 | 1 | **serifu** セリフ | 🟡 yellow | surface form | citational | surface list |
-| 2 | **collocation** | 🟢 green | pattern id (N+に+V…) | → ungrammatical | `CollocationStore` (exists) |
-| 3 | **rhetorical collocation** | 🔵 **blue** | **lemma** | → gesture not performed | **gesture catalog (new)** |
-| 4 | **rhetorical construction** | 🩵 **aqua** | anchor-lattice id + function | → maneuver vanishes | anchor-lattice store (new) |
-| 5 | **discourse pattern** | 🔴 red | discourse role | → discourse function vanishes | discourse engine (port, §7.1) |
+| 2 | **collocation** 連語 | 🔵 blue | pattern id (lexical⟷lexical bond) | swap → ungrammatical | `CollocationStore` (exists) |
+| 3 | **rhetorical collocation** 修辞連語 | 🟢 green | **evocative lemma** | remove lemma → gesture not performed; lemma must pass the **evocation test** | gesture catalog (new) |
+| 4 | **phrase schema** 慣用構文 | 💠 mint `#03FFB1` | the frame itself | said WHOLE; **rearrangement kills it** (slots open, frame fixed) | schema store (new) |
+| 5 | **skeletal construction** 骨格構文 | 🟠 orange | the component-LINK | **link survives rearrangement** (以前の→以前に…); fillers are context, not construction | link store (new) |
+| 6 | **discourse pattern** 談話 | 🔴 red | discourse role | requires **responsivity** (function references what it is in discourse WITH) | discourse engine (port, §7.1) |
 
-> Colors were corrected by the user at the end of the chat: rhet-collocation is
-> **blue** (was purple), rhet-construction is **aqua** (was blue). Do not revert.
-
-The config still exists, but carries a typed `payload` per class and routes to a
-per-class store:
+> v2 colors set by the user 2026-07-10 (supersede the v1 set — collocation was
+> green, rhet-collocation blue, and "rhetorical construction" 🩵 aqua). Do not
+> revert. The v1 callout keyword `rhet-constr` is kept as a legacy alias for
+> `skeletal` in `CALLOUT_TO_CLASS`.
 
 ```ts
 type NoteClass = 'serifu' | 'collocation' | 'rhet_collocation'
-               | 'rhet_construction' | 'discourse';
+               | 'phrase_schema' | 'skeletal' | 'discourse';
 
-interface NoteType {
-  id: NoteClass;
-  label: string;
-  color: string;     // Highlightr / CSS variable (yellow/green/blue/aqua/red)
-  callout: string;
-}
-
-// The Big-5 payloads — what each annotation actually carries:
+// The per-class payloads — what each annotation actually carries:
 type Payload =
   | { class: 'serifu';        spans: Span[] }
   | { class: 'collocation';   spans: Span[]; patternId: string }
-  | { class: 'rhet_collocation';                       // 🔵 the subtle one
-      lemma: string;                                   // citation form = the index KEY
+  | { class: 'rhet_collocation';                       // 🟢 the subtle one
+      lemma: string;                                   // citation form = the index KEY (must EVOKE)
       haloSpans: Span[];                               // bracketed residue (evidence)
       gestureName: string;                             // 3–8 words: the move performed
       gestureFamily?: string }                         // cross-lemma cluster, optional
-  | { class: 'rhet_construction';                      // 🩵
-      anchors: Span[]; slots: Span[]; latticeId: string; rhetoricalFunction: string }
+  | { class: 'phrase_schema';                          // 💠 holistic frame + slots
+      frame: string;                                   // e.g. "[X]というところで納得している"
+      slots: { span: Span; fillers?: string[] }[];     // paradigm substitutions live here
+      stance: string }                                 // what deploying the whole phrase does
+  | { class: 'skeletal';                               // 🟠 the component-link
+      components: string[];                            // e.g. ['以前', 'ば'] — the LINK is the entry
+      constructedMeaning: string;                      // e.g. "counterfactual displacement to a former state"
+      crystallizations: { form: string; spans: Span[] }[];  // 以前の[N]であれば, 以前に[V]ていれば…
+      fillers?: { text: string; context: string }[] }  // 私 etc. — context leaves, NOT construction parts
   | { class: 'discourse';                              // 🔴
       role: string; operatorChainRef?: string };       // → §7.1 engine
 ```
 
-**🔵 rhetorical collocation is a *gesture catalog keyed by lemma*, not a "meaning
-of a word."** The lemma is the *hook a speaker reaches for*; the halo is the
-*structural residue* the move leaves. One lemma licenses several gestures (e.g.
-生々しい → impulse-trigger / authenticity-attribution / rejection-threshold), each
-a separate entry under the same key; gestures cluster across lemmas into
-**families** (漏れなく・例外なく・ことごとく = postures for "class-closure +
-saturating verdict"). The annotator supplies exactly three things: **lemma +
-bracketed halo span(s) + a short gesture name**. Core can be any POS,
-**re-rootable** (`[暴力]描写…[目をそらし]たくなる` — bracket every core; promote any to
-its own entry; key on the *citation form*, never the inflected surface). This is
-a **production** index ("what can I do with this word"), orthogonal to the
-Yomitan *comprehension* dictionary. The 🔵/🩵 cut is **soft** — the same span may
-carry both annotations (overlapping spans are allowed and expected).
+**🟢 rhetorical collocation is a *gesture catalog keyed by lemma*, not a "meaning
+of a word,"** with an **admission condition (v2): the lemma must be evocative** —
+it must hold an inherent impression/image/conceptualization that thinking of the
+word summons by itself (onomatopoeia is the prototype; 生々しい, 顧みる, 破綻 =
+破 tear + 綻 seam-unravel all pass). The condition is constitutive, not a
+filter: green is keyed on the lemma because the speaker *reaches for* it, and
+only an image affords a grip. Bland classificatory labels (難点, 点, 問題) evoke
+nothing → strings hung on them (`〜のが難点ですけど`) are 💠 phrase schemas, not
+green. One lemma licenses several gestures (生々しい → impulse-trigger /
+authenticity-attribution / rejection-threshold), each a separate entry under the
+same key; gestures cluster across lemmas into **families** — and family members
+differ precisely in their *image* (漏れなく = no leakage / 一つ残らず = none left
+behind / ことごとく = itemized sweep), which is why you'd pick one over another =
+the production insight itself. The annotator supplies **lemma + bracketed halo
+span(s) + a short gesture name**; core can be any POS, **re-rootable**; key on
+the citation form. This is a **production** index, orthogonal to the Yomitan
+comprehension dictionary.
+
+**Classes are perspectival projections, not string properties.** The class is
+determined by (a) what the note gives insight INTO (green = about the lemma;
+mint = about the phrase) and (b) how the annotator actually produces the span
+(assembled through the image vs retrieved whole — can differ per speaker and
+drift over time). The same span may therefore carry entries in **more than one
+class** (`{概念}として破綻している` = 🟢 insight into 破綻 AND/OR 💠 a phrase said
+whole — "it depends"). Overlapping spans are allowed and expected; the save flow
+offers projections and never forces one. Corpus signatures can *suggest* a class
+(🟠 high arrangement-entropy + pair attraction; 💠 one dominant frame + high slot
+entropy; 🟢 one lemma + variable halo) but never decide it.
+
+**🟠 includes the correlatives (呼応表現).** どんな⟷ても, ても⟷からには,
+決して⟷ない are component-links whose constructed meaning happens to be pure
+logic — the zero-pragmatic-cargo end of the same class as 以前⟷ば.
+Compositionality varies *within* orange; it is not a class boundary. Orange is
+**not** discourse: 🔴 requires responsivity, and a component-link composes the
+same meaning in a vacuum.
 
 ### 7.1 The 🔴 discourse type ports an existing engine
 
@@ -360,10 +416,11 @@ wholesale, and confirm none of it overlaps the dead-code set before porting.
 | Type | Status |
 |---|---|
 | 🔴 discourse | **port** `_tmp_pipeline` (mature, tested) |
-| 🟢 collocation | reuse `CollocationStore` |
+| 🔵 collocation | reuse `CollocationStore` |
 | 🟡 serifu | trivial surface store |
-| 🔵 rhet-collocation | **build** the lemma-keyed gesture catalog; `_tmp_pipeline/envelope.mjs` is an *early-form* starting point (pre-"gesture" framing) |
-| 🩵 rhet-construction | **build** the anchor-lattice store; `_tmp_pipeline/structure.mjs` anchors/bundles are partial scaffolding |
+| 🟢 rhet-collocation | **build** the lemma-keyed gesture catalog; `_tmp_pipeline/envelope.mjs` is an *early-form* starting point (pre-"gesture" framing) |
+| 🟠 skeletal construction | **build** the component-link store (link → crystallizations → filler/context leaves); `_tmp_pipeline/structure.mjs` anchors/bundles are partial scaffolding |
+| 💠 phrase schema | **build** the frame+slots schema store |
 
 Stages 1.4–1.5 are now **unblocked**.
 
@@ -377,13 +434,13 @@ Stages 1.4–1.5 are now **unblocked**.
 1. transcript → daily-note assembly under per-video headings (idempotent)
 2. `LocalMatcher` (pure) + golden-set harness
 3. `OcrReconciler` (Claude client, schema, Haiku→Opus tier) + reconciliation flow
-4. write `ReconciledNote`s back as Big-5-typed callouts with block IDs +
-   route each into its per-class store (§7); colors yellow/green/blue/aqua/red
-5. `LibraryView` sidebar: block-embeds, **filter by Big-5 class**, context modal
+4. write `ReconciledNote`s back as typed callouts with block IDs +
+   route each into its per-class store (§7); colors v2 yellow/blue/green/mint/orange/red
+5. `LibraryView` sidebar: block-embeds, **filter by class**, context modal
 
 Note: the 🔴 discourse store is a separate, larger workstream — the
 `_tmp_pipeline` port (§7.1). Step 1 can land with 🔴 stubbed (role label only)
-and the engine ported in a follow-up phase; 🟡/🟢/🔵/🩵 do not depend on it.
+and the engine ported in a follow-up phase; the other five do not depend on it.
 
 **Step 2 — bolt on the fragile adapters**, each behind its isolation boundary
 with the paste fallback:
@@ -465,7 +522,7 @@ carries `{ videoId, tStartSec, blockId }` and renders it as:
   the moment.
 
 A card is therefore a *view over an anchored transcript span*, not a new content
-note — same anti-explosion rule as the library (invariant #1, #5). Cards render as
+note — same anti-explosion rule as the library (invariant # 1, #5). Cards render as
 Markdown and route through the same idempotent writer.
 
 ## 12. Audio provider (decoupled; the timestamp is the durable primitive)
@@ -503,3 +560,1849 @@ interface AudioProvider {
 `resolve()` returns local-if-present else deep-link, so the whole feature is
 complete with zero audio and gets richer if the desktop extractor is run — no
 redesign either way.
+
+## 13. The capture spine — universal classification + the discourse gold loop (2026-07-12)
+
+**Problem this section solves.** The plugin has four capture surfaces (transcript
+reconciliation, X tweets, dictionary entries, plain vault text) but only ONE of
+them (handwriting recon) feeds the pattern catalog, and none of them collects the
+structured data the 🔴 discourse parser needs to get better. Saving from X goes to
+the legacy `CollocationStore` only; saving from the dictionary goes to the legacy
+store only; there is no way to say "this span, in THIS context, is a 談話 move of
+kind X responding to turn Y" from anywhere. The plugin cannot bootstrap its own
+parsing logic from its own use — the user's stated goal ("emergence by being used
+to build on itself").
+
+**The contract:**
+
+1. **One destination.** Every classified capture, from every surface, lands in the
+   `PatternStore` catalog as a `PatternEntry` + `Attestation`. The legacy
+   `CollocationStore` keeps receiving what it already receives (external contract,
+   CollocationView) but is no longer the primary home. `Attestation.source` gains
+   `'web'` (note.com posts, arbitrary URLs, vault notes that aren't transcripts).
+
+2. **One modal.** `ClassifyModal` (src/ui/ClassifyModal.ts) takes a
+   `CaptureContext { text, example?, contextBefore[], contextAfter[], speakers?,
+   source }` and renders: the six class chips (operational-test hint per class,
+   suggestion pre-selected from `derivePattern` + heuristics, NEVER auto-committed
+   — perspectival principle: user can save the same span under several classes in
+   sequence), per-class payload fields (🟠 parts / 💠 frame / 🟢 lemma+halo /
+   🔵 headword+collocate), and — for 🔴 only — the **skeleton section** (§13.3).
+
+3. **Suggestion vs ratification is ALWAYS recorded.** `PatternEntry` gains
+   `classSuggested?: NoteClass`. Every capture where the user overrides the
+   suggestion is a labeled training example for the class-suggester; every
+   discourse capture where the user overrides the detector's move/edge is a labeled
+   example for the parser. The delta IS the dataset.
+
+### 13.1 Capture surfaces (all call the same modal)
+
+- **X tweet card** — 🏷️ action next to 💾. Selection inside the card body wins as
+  the target span; the tweet text is the example; `source = {kind:'x', url}`.
+- **Dictionary entry card** — 🏷️ action; expression is the span; first extracted
+  example sentence is the example.
+- **Editor selection** — command `classify-selection` (+ context-menu). The
+  surrounding lines are read from the active file. If the file is a transcript
+  (`CAPTION_STAMP_RE` gate), the surrounding STAMPED LINES become
+  contextBefore/After with speakers + `tStartSec` — this is the discourse-rich
+  path; attestation is `source:'yt'` with file+time. Otherwise `source:'web'` if
+  the note's frontmatter has `url:`/`source:` (note.com exports), else `'manual'`.
+- **Library/catalog** — existing class dropdowns stay (one-click ratify);
+  catalog rows open the modal for payload editing.
+
+### 13.2 Discourse gold store (`_discourseGold` in the plugin-data blob)
+
+```ts
+interface GoldExample {
+  id: string;                       // gold-<fnv36(source|utterance)>
+  utterance: string;                // the classified turn/span
+  contextBefore: string[];          // prior turns, oldest→nearest (≤5)
+  contextAfter: string[];           // following turns (≤3)
+  speakers?: (string|null)[];       // aligned with contextBefore+[utterance]+contextAfter
+  // what the CURRENT parser said at capture time (frozen — evaluation datum):
+  suggestedAct?: string;            // analyzeCrossTurn act for the utterance
+  suggestedEdge?: { kind: string; toOffset: number } | null;
+  // what the USER ratified (the label):
+  act: string;                      // from the act inventory + free text allowed
+  edge?: { kind: '→'|'↳'|'↧'|'answers'|'restates'|'responds-expands'|'contrasts'|'receipts'; toOffset: number } | null;
+  note?: string;                    // free-form observation (the user's insight)
+  patternId?: string;               // catalog entry this capture also created
+  source: { kind:'yt'|'x'|'web'|'manual'; file?: string; url?: string; tStartSec?: number|null };
+  addedAt: number;
+}
+```
+
+- `toOffset` is turns-back-from-utterance (1 = immediately prior) so examples are
+  self-contained — no external indices to resolve.
+- **Export**: command `discourse-gold-export` writes
+  `discourse-gold.jsonl` (one example per line) + a summary header note with
+  per-act counts and the **agreement rate** (suggested == ratified) — the live
+  scoreboard for the parser. This file is the input for building/evaluating the
+  next parser iteration (the adjudication-workbench lineage).
+- Non-discourse classes contribute to the same loop more cheaply: the
+  `classSuggested` field on PatternEntry (13.3 above) exports in the same run as
+  `class-choices.jsonl`.
+
+### 13.3 Skeleton section of the modal (🔴 only)
+
+Pre-filled, never auto-committed: on open, `analyzeCrossTurn` runs over
+contextBefore+utterance+contextAfter; the utterance's detected `act` pre-selects
+the act picker, the detected edge pre-selects the relation + target-turn picker
+(turns listed as tappable rows). The user ratifies or corrects. Saving writes BOTH
+the gold example and a normal catalog attestation (class 🔴, keyed on the
+utterance's skeleton-relevant surface).
+
+### 13.4 Legacy accuracy fixes riding this change
+
+- `ContextEngine.getCoPatterns` recomputed the full KWIC search once per indexed
+  file (O(files×search)) — hoisted.
+- **Dictionary deinflection** (`src/dictionary/deinflect.ts`): rule-based iterative
+  suffix rewriting (Yomitan's algorithm shape: ~30 rules, て/た/ない/ます/れる/
+  られる/させる/ば/たら/たり/ちゃう/じゃう/とく/てる + polite/negative chains,
+  max 4 hops). `lookup()` falls back to deinflected candidates when exact+reading
+  match fails, and labels results with the inflection trail (「食べた → 食べる
+  〈past〉」). Pure + golden-tested.
+- X 💾 also records into the PatternStore (class-unratified 🔵 by default) so
+  tweets stop bypassing the catalog.
+
+
+## 14. Unified lexicon + real SRS (monokakido feel; 2026-07-12)
+
+Two surfaces built on the pattern catalog as the single source of truth.
+
+### 14.1 The 語彙 tab — one search, clean context tree
+
+`src/lexicon/unified-search.ts` (PURE) ranks the six-class catalog above the
+legacy collocation lexicon above the dictionary (deinflection-aware), exact →
+prefix → substring, with a catalog stratum bonus + attestation weight so the
+user's own noticings and well-attested items win. `autocomplete()` is the same
+ranking filtered to surface-initial matches.
+
+`src/lexicon/context-tree.ts` (PURE) is the fix for the old lexicon's junk: it
+builds the context view from PatternStore ATTESTATIONS (already-located,
+provenanced real quotes) instead of raw-vault `indexOf ±80`. Leaves are grouped
+by source (▶ video / 𝕏 tweets / 🌐 web / ✍ manual), deduped by normalized
+quote, dropped if <3 non-punctuation chars, capped at 12/group with an overflow
+count, anchored-before-swept, timestamp-sorted. The constellation is real
+co-occurrence — patterns sharing an attestation FILE with the focus — not a
+substring guess. **Verified: 0 junk leaves across the top-30 patterns of the
+real vault.**
+
+`src/ui/LexiconPanel.ts` renders it: instant search + autocomplete dropdown,
+class×source facet chips, compact rows (color dot + headword + gloss + source
+badges + count), and a drill-down detail with the class-shaped payload, a
+collapsible context tree (per-leaf 🎧 clip playback via the shared
+`resolveAttestationClip`, ↪ source jump), constellation chips, and a
+🏷️ reclassify / 📖 dict / 🗑 action row. Mounted by CollocationView's 語彙 tab
+(legacy chrome hidden while active); audio uses a detached `<audio>`.
+
+### 14.2 Real SRS — scheduler, deck, review view
+
+- `src/srs/scheduler.ts` (PURE) — Anki/SM-2 lineage: new→learning(1,10min)→
+  review(day intervals), ease 1300–∞, lapse→relearning at ½ interval, four
+  grades with real next-interval previews. `MAX_INTERVAL 365d`.
+- `src/srs/srs-store.ts` — `_srsDeck` blob; the card unit is the PATTERN id
+  (three sightings = one card). Queue policy: due learning → due review → up to
+  `srsNewPerSession` fresh, learning-first by dueMs. `prune()` drops dead ids.
+- `src/srs/review-cards.ts` (PURE) — class-shaped fronts (P4 drill semantics on
+  the pattern): 🟡 audio-first dictation, 🟠 first-component→produce-mate, 🔴
+  prior-turn→produce-response (upgraded by the discourse gold example), 💠 型
+  産出, 🟢 表現産出, softHint = first-char+length (never the answer).
+- `src/ui/ReviewView.ts` (view `jp-srs-review-view`, ribbon `layers`, command
+  `open-srs-review`) — home shows learn/due/new counts + class breakdown;
+  session shows progress, class-shaped card, Space-to-reveal, 1–4 grade keys,
+  interval previews, 🎧 clip on the card, ↪ source jump, session summary.
+  Prunes the deck to live catalog ids on open.
+
+Golden: `srs.mjs` (51) + `lexicon.mjs` (28). 17 suites total.
+
+## 15. Class-aware sweep — the candidate machine (2026-07-17)
+
+The transcript sweep previously matched only near-verbatim surfaces. But the
+six classes are DEFINED by semantic tests (evocation / rearrangement /
+responsivity) that no surface matcher can run — so the sweep architecture is:
+
+- **Tier 1 — confirmed**: near-verbatim reconcile (auto + ≥0.9). The only tier
+  allowed to assert truth, because there the unit IS the surface.
+- **Tier 2 — suggested** (`src/notes/sweep-match.ts`, PURE, golden/sweep.mjs):
+  the class-appropriate structural parse, deinflection-validated
+  (`findTermAll`: stem occurrence + the surface slice must deinflect BACK to
+  the term):
+  - 🔵 collocation — components in order, gap ≤10, final component may inflect;
+    bare surface keys also match under inflection (気になる attests 気になって)
+  - 🟠 skeletal — link parts in order, clause-scale gap ≤30
+  - 💠 schema — frame fixed material in order, slots BOUNDED and actually
+    filled (no clause break inside a slot)
+  - 🟢 rhet-coll — the captured HALO near-verbatim; a bare lemma hit is NOT a
+    sighting (the evocation test is human-only) → not sweepable without a halo
+  - 🔴 discourse — never swept (parser work explicitly halted)
+
+**Tier-2 precision is known-bad — treat it as a recall machine, full stop.**
+"Class-appropriate structural parse" describes the *shape* of each matcher, not
+its accuracy: adversarially probed (2026-07-17), every class matcher fired on
+spans that are not instances of the class. The class-defining semantic tests
+are human-only, so misfires are irreducible at this tier: the sweep proposes,
+the human classifies. Confidence numbers are ranking weights, not
+probabilities.
+
+Hardenings shipped from that probe (golden: "precision hardening" section):
+
+- **Compound-prefix guard** — a kanji-initial match preceded by exactly ONE
+  kanji is the tail of a compound, a different lexeme (本|気になる no longer
+  attests 気になる; 口|約束 no longer fires 約束). A 2+-kanji run before the
+  match stays legal (毎日食べる — particle-dropped speech is normal captions).
+- **🔵 gaps admit no punctuation** — a collocation is one phrase
+  (「約束はさ、守るとか」 no longer fires 約束を守る).
+- **🟠 gaps stop at 。！？** — clause-scale, but never across a sentence
+  boundary; 、 still links.
+- **💠 single-seg frames need ≥4 chars of fixed material** — 「○○として」
+  fires on every compositional として (結果として, 一つとして), holisticity is
+  invisible to a surface matcher → not sweepable, same abstention as the 🟢
+  bare lemma. 「○○というわけだ」-shaped frames stay sweepable.
+- **Deinflection needs a real stem** — a 1-char kana stem matches inside
+  unrelated okurigana (いる's い found 書いた's いた, which deinflects back to
+  いる); now ≥2 chars, or 1 kanji (見る→見た).
+
+Residual, irreducible-without-morphology failure modes (measured, accepted):
+ordered co-occurrence with a clean gap (「面倒だから見るのをやめた」 fires
+面倒を見る) and fixed material hidden at a kana junction (例えば's ば fires
+ば〜ほど). These are what the ✓✕ loop is for:
+
+- **Auto-mute** (`sweepMuted`): a pattern with ≥3 rejected candidates and no
+  ratified sweep hit stops being swept — the user's ✕s prove that ENTRY is
+  structurally coincidence-prone. Each ratified sweep hit (matchKind set,
+  status cleared) buys back 5 strikes; purely derived, so a later ✓ un-mutes.
+  Short single-seg frames and kana-heavy links mute themselves within days of
+  honest use; good patterns are never throttled.
+- The full ✓✕ record stays exportable for a future learned reranker — that
+  needs hundreds of labels, so it is a later phase, not a promise. Porting the
+  CLI's morphological true-hit filter (`_tmp_pipeline`, needs a tokenizer)
+  would fix the residual class structurally but is heavy for mobile; decide
+  when the mute data shows it's needed.
+
+Tier-2 finds land as `status:'suggested'` attestations: quarantined out of the
+context tree (own collapsed 候補 bucket), out of constellation, out of SRS
+cards, out of search ranking. One-tap ✓ ratifies (clears status), ✕ rejects —
+removed AND remembered in `rejectedAtts` so the sweep never re-proposes it.
+Ratifications + rejections are the training signal for a future learned
+matcher (same suggested-vs-ratified principle as the 🔴 gold store). Suggested
+never downgrades confirmed; all sweep adds go BY ENTRY ID (`addAttestations`),
+never re-deriving keys (lemma-keyed 🟢 and class-siblings keep identity).
+
+**Auto-sweep**: every freshly fetched transcript (history batch or single URL)
+is swept immediately — the lexicon grows passively from watching. Real-vault
+calibration at ship time: 8 candidates across 79 transcripts (incl. genuine
+cross-video 🟠 firings like 「逃げるんだったらさ、急がなきゃじゃん」).
+
+Also: catalog ⇔ legacy merge (`linkLegacy` in unified-search) — a catalog
+pattern and legacy collocation with the same normalized surface render as ONE
+row (catalog identity + legacy reading/grammar notes/examples in the detail's
+📚 block), and every row carries ONE embedded just-enough example
+(`bestExample`: best confirmed attestation, anchored-yt first — never a
+suggested candidate).
+
+## 16. ⚡ Capture flow — the pipeline as one surface (2026-07-17)
+
+`src/ui/PipelineView.ts` (`jp-pipeline-view`, ribbon ⚡): the whole YT path as
+one designed stepper — ① 動画 (recent transcripts + live-history fetch + paste
+a URL) → ② 手書き (photo picker → vault attachment → embed; direct phrase
+input; capture note CREATED ONLY when material is added — selecting never
+litters) → ③ ⚡ (runs the same cards-first pipeline on the managed note) →
+④ 復習 (cards + one-tap SRS). File conventions unchanged underneath
+(`source:` frontmatter, `-cards.md`), so everything stays inspectable.
+
+Mobile: the same view is the phone/tablet entry point — the photo button opens
+the iOS camera roll, stages are 44px+ touch targets, safe-area padded, and the
+audio stage simply doesn't exist off-desktop (deep-link tier is the default).
+Supporting mobile pass: 📱 デバイス診断 command (capability report per device,
+no binary probes), ReviewView tap-anywhere-to-reveal + sticky thumb-height
+grade bar on phones.
+
+## 17. 談話モード — the manipulable discourse surface (2026-07-17)
+
+`src/ui/DiscourseModeView.ts` (`jp-discourse-mode-view`, ribbon 💬): a MODE
+for working a transcript as discourse, built so annotating IS building the
+parser's training corpus. One gesture vocabulary (finger/Pencil-sized, no
+precision aiming):
+
+- tap a line → toggle the turn boundary before it (mid-turn = split; the
+  split starts on the NEXT speaker letter, since a new break usually means a
+  new voice; turn-initial = merge up)
+- tap the speaker chip → cycle A→B→C→D
+- tap a pattern pill (detectPatterns suggestions) or ✍ → CaptureModal with
+  parser-grade context: ±3 turns + aligned speakers + timestamp → catalog +
+  🔴 gold via the normal spine
+
+Initial segmentation is a HUMBLE time-gap merge (≤6s join, ≤4 lines) — a
+starting point, never an assertion. Every correction persists per file as
+`_discourseSeg` in the plugin-data blob: the human-ratified record of where
+turns break and who speaks — exactly the corpus the over-segmenting speaker
+detection lacks. The discourse parser itself is deliberately untouched
+(halted per user); this mode exists so its training data accumulates from use.
+
+## 18. The data layer that cannot lose the corpus (2026-07-18, AUDIT §1–2)
+
+AUDIT.md items 1–5, shipped as one block:
+
+- **`DataManager`** (`src/data/data-manager.ts`, PURE, golden/storage.mjs) is
+  the ONE owner of the plugin-data blob. Loaded once at startup; canonical in
+  memory thereafter; every store persists via `dm.setKey('_key', data)` —
+  debounced, coalesced, and **serialized** (writes never overlap, killing the
+  read-modify-write lost-update race). `loadData`/`saveData` are never called
+  after onload.
+- **The §1.1 clobber is dead by construction**: `loadSettings` builds
+  `this.settings` from `settingsSlice()` (underscore keys excluded), and
+  `saveSettings` goes through `setSettings()`, which CANNOT touch `_` keys —
+  the protection is the shape of the operation, not caller discipline.
+- **Derived indexes left the blob** (99.5% of the historical 62MB):
+  `SurferBridge` no longer serializes `discourseIndex`/`kwicIndex`; they are
+  memory-only and rebuild idle-batched each session (`needsReindex` always
+  true at load). A one-time migration strips them from existing blobs —
+  data.json drops to ~600KB and every save/load gets ~100× cheaper.
+- **Secrets are device-local** (`app.saveLocalStorage`, never synced):
+  X `authToken`/`csrfToken`, the YT history cookie, and `ocrApiKey` migrate
+  out of the blob on load and are scrubbed from every settings save
+  (`blob-migrations.ts`); the settings UI's 「端末内にのみ保存」 claim is now
+  actually true. The yt-dlp cookie jar moved out of the vault to
+  `~/.jp-collocations/yt_cookies.txt`; the old in-vault `_yt_cookies.txt` is
+  deleted on load.
+- **Crash safety**: every write first saves the previous good serialization
+  to `data.json.bak`; a corrupt `data.json` restores from `.bak` at load
+  (with a Notice). The first post-migration write banks the original 62MB
+  state as the backup.
+- **CI**: `.github/workflows/ci.yml` runs build + golden (now 20 suites,
+  including the storage suite that would have caught §1.1) + lint on push.
+
+## 19. Files-over-app + the product gets a front door (2026-07-18, AUDIT #6–8, 10–11)
+
+- **Vault-native mirror** (`src/notes/catalog-mirror.ts`, PURE,
+  golden/mirror.mjs): every pattern-store or gold-store persist regenerates
+  `JP Lexicon/catalog.jsonl` (one entry per line, id-sorted for stable diffs
+  — the disaster-recovery source), `catalog.md` (human-readable index by
+  class, deliberately timestamp-free so unchanged catalogs write nothing),
+  and `discourse-gold.jsonl`. Debounced 5s; idempotent writes; flushed on
+  unload. `台帳: Restore Catalog from Vault Mirror` reads catalog.jsonl back
+  (`importReplace`) — the corpus now survives the blob AND the plugin.
+- **One ribbon** (AUDIT §4): the 8 ribbon icons collapsed into a single
+  torii-gate hub menu (⚡ flow / 語彙 / 復習 / 辞書 / 𝕏 / 談話 / ライブラリ /
+  pipeline run). All commands unchanged.
+- **Leeches** (`LEECH_LAPSES = 5` in scheduler.ts): a review card lapsing 5×
+  is flagged and leaves the queue — it needs a REWRITE, not more failed reps.
+  ReviewView home shows a 🛑 リーチ pill; tapping revives all (due now);
+  grading 簡単 after a revive clears the flag for good. Golden-tested.
+- **Dead code → `_attic/`**: the citation L1–L5 pipeline, rhetorical-*,
+  program-builder, schema-driven-l4, TextClassifier, and the upper-cased SRS
+  duplicates (15 files) moved out of src/. NOTE: `surfer-types.ts` looked
+  dead in the esbuild metafile but is `import type`-referenced by live files
+  (type imports are erased at bundle time) — it stays. Check both signals
+  before declaring a file dead.
+- **🩺 debug-dump command**: blob key sizes, session write count, store
+  counts, engine state, secret presence — one clipboard dump that turns
+  "mysteriously empty" into a diagnosis.
+
+## 20. The lexicon as the product surface (ratified + SHIPPED 2026-07-18)
+
+User feedback: the catalog is not monokakido enough; not seamlessly
+integrated; sidebar embeds show the bare anchored line without its context;
+and the 用例 story doesn't exist. Ratified with the condition: accurate,
+philosophy-true, useful. Shipped implementation notes at the end of each
+subsection contract below.
+
+
+Shipped shape (all golden-tested):
+- `src/notes/context-window.ts` (PURE, golden/context.mjs — 20 checks incl.
+  the accuracy contract: quote-first anchor location, distant-timestamp
+  refusal, no invented speakers, compound-guard holds in highlighting) +
+  `src/ui/ContextWindow.ts` renderer → wired into LibraryView cards
+  (replacing raw `![[…]]` embeds; commentary/needs-review keep their special
+  renderings) and LexiconPanel leaves (chevron-expandable inline context).
+- Monokakido pass: rail-colored dense index rows, 前方/含む/用例 search-mode
+  chips (`SearchMode` in unified-search, golden-tested incl. "suggested
+  quotes are not searchable"), あかさたな scrubber in browse mode (kanji
+  under 漢), 用例 tree moved to be the entry BODY, 飛び込み tap-lookup on
+  quotes via caretRangeFromPoint + longest-match deinflected dictLookup
+  (no tokenizer guessing — dictionary-validated or nothing), back preserves
+  list scroll.
+- 用例 cascade: 「🔎 用例を探す」 = per-entry vault sweep (explicit ask
+  bypasses sweepMuted, everything else identical — suggested only, rejected
+  never return) + `xJoinPattern`; dry run → 🎯 assignment box (𝕏 live search
+  prefilled with quoted sweep terms); ⚗ scaffold via
+  `src/notes/scaffold.ts` (PURE, golden/scaffold.mjs — pinned model shared
+  with OCR, and every generated line must pass the SWEEP MATCHER's
+  deinflect-validated check or it is discarded: the validator, not the
+  generator, decides). `payload.scaffold` renders 生成-badged, never in the
+  tree, auto-retired by pattern-store on any confirmed attestation
+  (upsertEntry AND ratifyAttestation paths, both golden-tested).
+
+### 20.1 Monokakido pass (how it should LOOK and FEEL)
+
+The current LexiconPanel is functionally right (unified search, context tree,
+zero junk) and typographically wrong (inline-styled 10px buttons, generic
+list). The monokakido qualities to adopt, concretely:
+
+- **Index list = dense headword rows**: headword 17px bold leading, one-line
+  muted gloss 12px under it, class color as a 3px left rail (not an emoji
+  chip), 44px rows, no borders — separation by whitespace. Tap anywhere.
+- **Instant incremental search** stays, plus **search-mode chips**:
+  前方一致 (default) / 含む / 用例全文 (searches attestation quotes).
+- **Index scrubber**: あかさたな… rail on the right edge of the list (mobile
+  especially); tap = jump, drag = scrub.
+- **Entry anatomy** (detail view): headword 26px, reading under it, class
+  accent bar; then senses/gloss; then 用例 (the context tree) as the BODY of
+  the entry, not an appendix — monokakido entries ARE their examples. Every
+  Japanese word in the detail is tappable → jumps to its own lookup
+  (dictionary fallback), monokakido's 飛び込み.
+- **No chrome**: buttons become quiet inline glyphs; the panel owns the full
+  height; one back gesture from detail to list preserving scroll position.
+
+### 20.2 One ContextWindow renderer (the embed answer)
+
+Kill raw `![[file#^anchor]]` embeds everywhere. One shared component renders
+ANY attestation as a context window, used by the LibraryView cards, the
+LexiconPanel context-tree leaves, and the dictionary context panel — that
+sameness IS the seamless integration:
+
+- **Resolve**: read the transcript file, locate the anchor block (or nearest
+  timestamp to `tStartSec`), take ±2 turns. If `_discourseSeg` has ratified
+  turns/speakers for the file, use THOSE boundaries and speaker letters —
+  the 談話モード corpus finally pays rent in the reading UI.
+- **Highlight dynamically**: locate the pattern inside the window with the
+  class-appropriate matcher (`findTermAll` — inflection-aware, so 気になって
+  lights up for 気になる); highlight the span, dim the context turns.
+- **Audio in place**: local clip → inline player; else timestamped deep-link
+  ▶; resolved lazily as the card scrolls into view. One detached <audio>
+  per view (survives re-render, sidebar-safe).
+- **Degrade honestly**: file gone → render the stored quote (never blank,
+  never a broken-embed box).
+
+### 20.3 用例 — a FINDER cascade, not a writer (the design answer)
+
+The plugin's identity is the attested lexicon: examples are heard/seen,
+never fabricated. So the 用例 "generator" is a cascade ordered by evidential
+strength, all landing in the ONE suggested→ratified spine:
+
+- **Tier A — find in what you already have** (one 「用例を探す」 action per
+  entry): run the class-aware sweep against all transcripts NOW for this one
+  entry; substring/co-occurrence search of the X corpus; example sentences
+  from imported dictionaries; the TWC collocation profile (scraper exists).
+  Unified candidate list, source-badged, each ✓ becomes a real attestation
+  with provenance, each ✕ trains `rejectedAtts`. No new machinery — this is
+  the existing finders finally surfaced as one button.
+- **Tier B — assignments, not sentences**: when Tier A comes up dry, the
+  honest output is WHERE to hear it: a prefilled live 𝕏 search, a history
+  sweep. A missing 用例 becomes a capture task — the gap grows the corpus
+  instead of getting papered over.
+- **Tier C — synthetic scaffold, quarantined**: LLM-generated examples
+  (pinned model, schema-validated) ONLY for zero-attestation patterns, ONLY
+  as SRS card material, always marked 生成, never entering the context tree,
+  and RETIRED automatically the first time a real attestation lands. The
+  scaffold's job is to keep a pattern drillable until reality provides.
+
+Build order when ratified: 20.2 (one component, pays off in three places) →
+20.1 (CSS + panel restructure) → 20.3 Tier A (wiring existing finders) →
+Tier B → Tier C.
+## 21. The hivemind ports — suggester, discovery, and the app integrations (2026-07-18)
+
+### 21.1 SHIPPED — the two engines the ports feed
+
+- **Class-suggester, made real** (`src/notes/class-suggester.ts`, PURE,
+  golden/suggester.mjs): structural signals (the user's own notation first —
+  〜 → 🟠, ○○ → 💠; responsivity markers → 🔴; utterance shape → 🟡; tight
+  N+助詞+V → 🔵; bare lemma hint → 🟢) CALIBRATED by the user's record —
+  priors from what they actually choose (≥5 captures before priors bite) and
+  correction transfers ("machine said X, user chose Y" ×2+ lifts Y whenever
+  X wins structurally). Every score carries WHY. Wired as
+  `CaptureDeps.suggestClass`: every capture surface preselects the top
+  suggestion and records it as `classSuggested`, so every override is the
+  next training example. Never authority — the tap is the classifier.
+- **💡 Discovery** (`src/notes/discovery.ts`, PURE, golden/discovery.mjs +
+  `DiscoveryModal`, command `discover-collocations`): the collocations never
+  written down — an EXPOSURE COUNTER, not a language generator. Its own
+  precision-first chunker (the legacy regex extractor mis-segments —
+  電話をかける came out 話をかける — so discovery does one shape RIGHT:
+  kanji-run noun + case particle + deinflect-VALIDATED verb, canonicalized
+  to the lemma so かけて/かける count as one; 2-kanji+する; mid-compound
+  nouns rejected; rejected matches don't consume text). Recurrence must span
+  ≥2 sources (breadth beats frequency — many videos ≈ the language, one
+  video ≈ a speaker's tic); catalog keys and dismissals (`_discoveryDismissed`)
+  never resurface; 𝕏 corpus counts as exposure too. Each row: 🏷️ one tap →
+  CaptureModal prefilled with its best REAL occurrence as the attestation.
+- **The universal capture port**: `obsidian://jpc-capture?text=…&example=…`
+  `&source=yt|x|web|manual&url=…` — protocol handler → CaptureModal
+  prefilled, suggester preselected, source-tagged. Every outside app reaches
+  the hivemind through this one URL; on iPad, share-sheet → Shortcut →
+  this URL is the whole integration.
+
+### 21.2 PROPOSED — per-app pipelines (each suited to what the app IS)
+
+Common spine for ALL of them: content in the app → (app-specific text
+acquisition) → `jpc-capture` URL or a transcript-shaped note in the vault →
+the EXISTING machinery (reconcile / sweep / 用例 / SRS) takes over. Study
+happens where the capture happened: the capture modal → catalog → the same
+⚡ cards-first path. Stage Manager is the design constraint everywhere: the
+plugin's surfaces already work as a narrow column next to the content app —
+capture must never need more than the narrow window.
+
+- **Manga (Manatan)** — manga is IMAGES + short speech-bubble utterances =
+  serifu-shaped exposure. Path A (zero-setup): copy the bubble text in the
+  reader (if it exposes text) → share/Shortcut → `jpc-capture` with
+  `source=manual`, page screenshot attached to the capture note by hand.
+  Path B (when text isn't selectable): screenshot → the EXISTING handwriting
+  OCR pipeline with a manga-tuned prompt (vertical text, bubble order) — the
+  §4 pipeline already does image→candidates→classify; manga is a prompt
+  variant, not a new system. Needs: which reader build you use and whether
+  its text is selectable — confirm before building the OCR prompt variant.
+- **Kindle** — books are the LONG-FORM attestation source. The iPad app
+  exports highlights (share → export notebook). Pipeline: a paste-import
+  command that parses the Kindle notebook export (highlight + book title +
+  location) into a book-transcript note (`source: book frontmatter`), then
+  the sweep runs over it like any transcript (no timestamps → no audio tier,
+  everything else identical). Requires ONE schema addition, proposed here:
+  Attestation `source` gains `'book'` (context-tree group = 📕 the book
+  title). Confirm before the schema moves.
+- **Apple Podcasts** — no transcripts, no links → the plugin's first
+  GENERATED transcript source. Desktop tier: the speech tooling already
+  probed by `voice-lab`/デバイス診断 (whisper-class) transcribes an audio
+  file into a timestamped transcript note tagged `source: podcast` +
+  `generated: whisper` — honesty rule: generated transcripts are marked in
+  frontmatter and their attestations render with a ⚙ badge (they are real
+  AUDIO exposure but machine-heard text). Then everything downstream is the
+  YT path (reconcile, sweep, clips from the local audio file — the audio
+  tier actually works BETTER than YT since the mp3 is local). Capture of the
+  episode audio itself is the open question (Podcasts has no export; the
+  honest paths are RSS-feed download of the same episode — most JP podcasts
+  are open RSS — or desktop screen-record; RSS is the right one). Needs: a
+  podcast-RSS fetch command (search feed, download episode mp3 to vault).
+- **TV / Plex** — the show is on the external TV; the iPad is the companion
+  surface. Pipeline: fetch JP subtitles for the episode (jimaku/OpenSubtitles
+  or the sub file already on the Plex server) → convert .srt → the standard
+  timestamped transcript note → open it in 談話モード or the ⚡ flow ON the
+  iPad while watching; tap-capture at the line you just heard. No player
+  integration needed or wanted — the transcript IS the companion. Needs: an
+  .srt→transcript import command (tiny, pure) + your subtitle source of
+  choice.
+- **Stage Manager** — not an integration, the LAYOUT CONTRACT: every capture
+  surface (CaptureModal, ⚡ flow, 談話モード, 語彙) must be fully usable at
+  ~1/3-screen width, touch-first, no hover-only affordances. The mobile pass
+  (§16) covers ⚡; the §20 monokakido pass covers 語彙; audit the remaining
+  two at narrow width when the first real integration lands.
+
+Build order on ratification: `.srt` import (smallest, unlocks TV tonight) →
+Kindle notebook import + `'book'` source → podcast RSS + whisper tier →
+manga OCR prompt variant.
+
+
+
+## 22. Context is meaning — the scene contract (RATIFIED 2026-07-18 with user edits — the hivemind's constitution)
+
+User ratifications folded in: vault = `Documents/Lenovo`; manga app =
+Manatan (TestFlight); subs = jimaku (+ Plex server reachable from the other
+computer — clips ARE in scope); written sources = Kindle AND note.com;
+podcasts = ゆる言語学ラジオ + branches, のうラジオ, misc (open RSS).
+
+### 22.1 The principle
+
+An attestation is not a quote. It is a POINTER INTO A SCENE, and the scene —
+who spoke, what came before, what the panel looked like, what the paragraph
+was arguing — is where the meaning lives. Therefore the hivemind's unit of
+storage is not "text + timestamp" but **enough provenance to re-manifest the
+scene in the shape native to its medium, plus a door back into the medium
+itself**. Every embed anywhere in the system is that door. Study happens by
+walking back through doors.
+
+### 22.2 SceneRef — one schema addition carries every medium
+
+```ts
+// on Attestation (all fields optional; today's yt/x fields keep working)
+medium?: 'yt'|'podcast'|'tv'|'manga'|'book'|'note'|'x'|'web'|'dict'|'corpus';
+scene?: {
+  deepLink?: string;   // door back: youtube ts-link / kindle://…&location= /
+                       // note.com#anchor / plex://… / tweet URL / Manatan (if
+                       // it exposes a scheme; else absent and the stored
+                       // image IS the return destination)
+  image?: string;      // vault path: manga page/panel crop, TV still
+  bbox?: [number, number, number, number]; // highlight region in the image
+  audio?: string;      // vault path: podcast mp3 / plex-cut clip
+  loc?: string;        // kindle location / page / paragraph anchor
+  sourceName?: string; // book title / 番組名 / dictionary name / site
+};
+```
+
+ContextWindow becomes medium-dispatched behind its ONE interface (adapter
+rule §2.2): each medium gets a renderer that shows context THE WAY THAT
+MEDIUM MEANS —
+
+- **yt / podcast / tv (dialogue)**: the exchange — ±2 turns, ratified
+  speakers, audio in place (already shipped for yt). Podcast: local mp3 →
+  the clip tier works BETTER than YT; transcripts are whisper-generated and
+  carry a ⚙ badge + `generated:` frontmatter (machine-heard, honestly
+  marked). TV: jimaku `.srt` → standard transcript; when the Plex server is
+  reachable, an adapter cuts audio clips (and a still frame) at sub
+  timestamps — same clip machinery as YT, media from the server instead.
+- **manga**: the PANEL IS the context. Store the page/panel crop in the
+  vault; OCR (existing §4 vision pipeline, manga-tuned prompt, bounding
+  boxes requested) gives bubble text + bbox; the context window renders the
+  IMAGE with the captured bubble highlighted (bbox overlay) and neighbor
+  bubbles as tappable text below. Text-only context for manga is a lossy
+  projection — never the primary rendering.
+- **book / note.com (written)**: the PARAGRAPH is the context. ±1 paragraph
+  rendered as prose (indented, justified, book-shaped — NOT chat rows),
+  source line pinned (title + location / URL), door = kindle deep link or
+  note.com anchor. No audio tier, no speakers — written context is flow,
+  and the renderer must read like a page.
+- **x**: the tweet + its thread parent when captured. Door = tweet URL.
+- **dict / corpus (curated — see 22.3)**: the ENTRY is the context — the
+  example rendered inside its sense structure, door = the entry itself.
+
+**出会いの履歴 (meeting timeline)**: the entry detail gains a horizontal
+timeline of attestations across mediums by `addedAt` — first heard in video
+X, then read in book Y, then a tweet — the visual manifestation of "my study
+with the material" derived from data we already store. 
+
+### 22.3 The three strata — lived / curated / 生成
+
+Dictionary examples and corpus hits are REAL language but not YOUR exposure.
+The hierarchy, enforced everywhere (tree order, ranking, badges, SRS):
+
+1. **lived** — yt, podcast, tv, manga, book, note, x: things you actually
+   met. The context tree's body; drives ranking; the only stratum that
+   counts as exposure.
+2. **curated** — dict, corpus: 📖-badged, grouped after lived attestations,
+   capturable from dictionary entries and corpus profiles (22.5/22.7),
+   valid SRS material, better than 生成 and never confused with lived.
+3. **生成** — scaffold (§20.3): last resort, auto-retiring. Unchanged.
+
+### 22.4 TokenCanvas — the taxonomy embodied in gesture (pencil-first)
+
+ONE component renders any sentence/tweet/bubble/passage as token pills and
+accepts marks. Each class's DEFINING TEST becomes its gesture — the
+manipulation IS the semantics:
+
+- **drag across tokens** → span bounds → 🟡 serifu / 🔵 collocation (the
+  unit is the surface; you draw its edges)
+- **tap multiple non-adjacent tokens** → the parts of a link → 🟠 skeletal
+  (you literally pick the bones)
+- **strike through middle tokens** → struck tokens become ○○ slots, kept
+  tokens the fixed frame → 💠 (the REARRANGEMENT TEST as a gesture: what
+  you can cross out and refill is the slot)
+- **circle one token** → the evocative pivot → 🟢, then drag the halo
+  handles outward to set how much rendering travels with the lemma (the
+  EVOCATION TEST: you circle what does the evoking)
+- **draw an arrow from the utterance to a prior turn** → 🔴 discourse edge
+  with target (the RESPONSIVITY TEST as ink — the →/↳/↧ notation drawn by
+  hand, landing in the gold store as edge + target). this needs to work really well and actually feel nice to use and be fast, there might be room for the apple pages psuedo-inspiration thing i talked about
+  -Caveat: it must be stated that the tokens themselves must be accurate, dynamic and respond to variation in every sense, and each note type must be suited to the kinds of suggestions. Or as accurate as possible. 
+
+**Suggestions are pentimento**: machine proposals render as FAINT pre-drawn
+marks (a faint span, faint strikes, a faint arrow) from the suggester +
+detectors + discovery chunker. Tracing/tapping a faint mark accepts it —
+one stroke = classified + payload-filled; drawing your own overrides it —
+and every accept/override is recorded suggested-vs-chosen. Finger works
+everywhere Pencil does (44px+ targets, tolerant recognition — paperlike
+screens favor drawn strokes over precise taps). TokenCanvas replaces the
+part-picking fields in CaptureModal, powers the X span picker (22.6), and
+runs on manga bubble text and book passages.
+
+Tokenization for the pills: dictionary-validated longest-match (the same
+deinflect machinery, per §20 飛び込み) with kana-run fallback — accurate or
+coarse, never confidently wrong.
+
+**The Pages reference, resolved (user: a loose inspiration to deduce from).**
+Three gleanings adopted: (1) marks anchor to TEXT, not position — token
+indexes, never pixels (Smart-Annotation behavior); (2) reuse the SYSTEM ink
+vocabulary — scratch-out and circle are Scribble muscle memory, so strike
+and circle ride habits the iPad already taught (a zigzag scratch counts as a
+strike, v2); (3) draw-then-snap — rough input is accepted and visibly snaps
+to token boundaries.
+
+**v1 SHIPPED 2026-07-18** (`src/notes/token-canvas.ts` PURE +
+`src/ui/TokenCanvas.ts`, golden/canvas.mjs 14 checks): tokenizer with
+deinflection-validated okurigana splitting (昨日書いた → 昨日|書いた,
+勉強した whole via the し-heuristic; probe = dictionary lookup when dicts
+exist); marks model + deriveFromMarks (priority circle > strike > parts >
+span — the most deliberate mark wins); tap=部品 / drag=範囲 /
+長押しドラッグ=スロット / ダブルタップ=◯軸 + halo-drag; pentimento chips
+from the discovery chunker (inflection-located); wired INTO CaptureModal —
+marks live-drive the note field, payload fields, and class chips. 🔴 arrow
+gesture + zigzag-scratch recognition + machine strike/circle suggestions
+are v2.
+
+### 22.5 Dictionaries — recursive, capturable, monokakido to the bone
+
+- **Structured entries**: render Yomitan structured content faithfully
+  (senses, sub-senses, EXAMPLE SENTENCES as first-class rows — the
+  Kenkyūsha 新和英大 examples are the crown, and other dictionary entries and their structures as well). Every Japanese string in an
+  entry is 飛び込み-tappable (recursion); cross-references inside entries
+  resolve in-panel; multiple dictionaries = tabs per headword.
+- **Every example sentence is capturable**: a quiet 🏷️ per example opens
+  TokenCanvas over it → catalog entry with a `dict`-stratum attestation
+  ({sourceName: 辞書名, entry: headword}) whose door leads back INTO the
+  entry. The dictionary stops being a lookup and becomes a mine.
+- **External dictionary pages** (goo辞書 etc.): selection → `jpc-capture`
+  (share sheet). No per-site scrapers — the fragility rule stands.
+  -There should be various ways to capture. Capturing all collocations, entries and parts of entries, all the ways a word is used in say example sentences and those sentences and translations if that dict has them, all ways that also work with the schema. Everything is supposed to amount to my input and what is encountered, alongside ways to, say, capture stuff from transcripts in obsidian even if not directly touched note wise to have in the lexicon. This must be readable, useable, nice, its like the Pokedex of JP input, i am the subject but it is an emergent product of me, my input, external sources and corpus etc. 
+
+### 22.6 X — the span picker
+
+Tapping a tweet opens TokenCanvas over the full tweet text: faint suggested
+spans (detectPatterns + discovery chunker + suggester), pencil/finger marks
+choose what is actually selectable and saved — multi-span for 🟠 parts,
+strikes for 💠, circles for 🟢 — then the class suggestion runs ON THE
+MARKED MATERIAL (not the whole tweet: the current classifier is lackluster
+precisely because it classifies the tweet instead of the selection). Save →
+catalog with the tweet as a lived-x attestation, exactly today's spine.
+
+### 22.7 Hyogen / TWC — from bulk scrapers to enrichment adapters
+
+The word-list bulk scrape into the legacy store dies. Corpus access becomes
+**on-demand enrichment of ONE catalog entry**: a 語法 action in the entry
+detail queries the corpus adapters for THIS key and renders a 語法プロフィール
+block — common collocates, particle frames, register notes — with each
+corpus example capturable as a `corpus`-stratum attestation. Results are
+cached in the entry (fetched once, frozen — invariant §2.4), adapters stay
+one-file isolated (§2.2), everything degrades soft. The corpus serves the
+catalog; the catalog never serves the corpus. the twc way ied.n which entries are fomratting is interesting to think about  as it is further encourporated. 
+
+### 22.8 収集トレイ (the collection tray) — drag-and-drop inbox
+
+A drop-target view (narrow, Stage-Manager-shaped) that accepts edrops from
+any app: images (manga panels → OCR affordance), text (dictionary examples,
+passages, tweets → TokenCanvas), URLs (→ fetch/capture). Every drop lands
+as an UNPROCESSED card in `_inbox` — quarantine, exactly like sweep
+candidates: nothing enters the catalog without classification, but nothing
+you flick into the tray is ever lost. Cards carry their drop provenance so
+the eventual capture is scene-complete. The tray is where "reading with the
+Pencil in hand" physically happens. Real time nice formatting applied depending on content and part of thing captured, say images or example sentences or dialogue or some combo of anything.
+
+### 22.9 Build order on ratification
+
+1. SceneRef schema + strata (everything else hangs on it) + medium-
+   dispatched ContextWindow shells (book/prose renderer first — cheapest).
+2. `.srt` import (jimaku) + book/note.com import → the first non-yt lived
+   mediums prove the schema.
+3. TokenCanvas v1 (drag-span + tap-parts + strike-slots on text) wired into
+   CaptureModal and the X span picker; circle/arrow gestures v2.
+4. Dictionary structured rendering + example capture (Kenkyūsha first).
+5. 収集トレイ + manga OCR (bbox) + podcast RSS/whisper tier.
+6. Corpus enrichment adapters (Hyogen/TWC rebuilt).
+7. Then — and only then — JP Sentence Surfer integration (§23, unwritten).
+
+## 23. The discourse stack — asking each layer only what it can know (2026-07-19)
+
+User diagnosis, accepted in full: the discourse side "is hardly a parser" —
+segmentation can't see quick speaker jumps (「うん。そこまで言う。」 is the
+listener; 「急に…」 is the floor returning), can't name what the second
+「感謝。」 in 「感謝した方がいい。感謝。日頃の感謝が…」 is doing, and
+single-label classification is wrong-SHAPED for lines that are blurry under
+meta/macro/thought-level lenses simultaneously. The fix is not a better
+classifier. It is a STACK where every layer is only asked questions it can
+actually answer, and the blur is stored as blur instead of being forced.
+
+### 23.1 The two examples, analyzed (and now golden-locked)
+
+- 「…感謝した方がいい。**感謝。**日頃の感謝が…」 — the second 感謝 is an
+  **echo**: a bare predicate-less fragment re-uttering a word from the
+  immediately preceding clause, re-anchoring the discourse on that lexeme
+  before elaborating (a lexical retake/pivot). WHAT the echo does (savoring,
+  distilling, comedic beat) is human, layer-4. THAT it echoes — fragment ⊆
+  previous clause — is pure shape, machine-detectable at high precision.
+- 「うん。そこまで言う。急に…」 — an **aizuchi + reaction cluster** followed
+  by a **floor return**. Conversation-analysis adjacency logic as a prior:
+  reaction-shaped fragments belong to the LISTENER by definition; when
+  exposition resumes after a reaction cluster, the floor returns to the
+  pre-reaction speaker. The turn grain is the SENTENCE, not the caption line
+  — a single line can hold the flip and the return.
+
+Both are implemented in `src/discourse/components.ts` (PURE, 13 golden
+checks against these sentences verbatim) and surfaced as suggestion pills in
+談話モード. Precision-first: plain exposition yields zero marks.
+
+### 23.2 The four layers
+
+1. **Turns (who / where)** — for local-audio mediums (podcast, TV via Plex,
+   clips) this is a DIARIZATION problem, not a text-inference problem: the
+   sherpa pipeline voice-lab already probes (diarBin/segModel/embModel) can
+   speaker-tag the whisper segments → `[HH:MM:SS] A: …` lines. Stop guessing
+   who's who from text when the audio knows. Text-only transcripts (YT
+   captions) keep the humble time-gap default + the 23.1 flip/return
+   suggestions + tap-corrections (`_discourseSeg` stays the ratified truth).
+2. **Components (what shapes are present)** — echo, aizuchi, reaction,
+   return, connective, quotative, fragment. Machine-suggested, ✓✕-ratified,
+   each with evidence (the echoed word, the flip direction). This layer is
+   the parser's honest ceiling today — and it's USEFUL: it is exactly what
+   the 23.1 failures needed.
+3. **Relations (what points at what)** — the →/↳/↧ notation (skeleton
+   principle): responds-to, extends, undercuts, with explicit targets. Drawn
+   by hand — the TokenCanvas arrow gesture lands HERE, on the 談話モード
+   turn canvas where arrows between real turns mean something.
+4. **Readings (what it's doing)** — move names, tone, meta-discourse, the
+   macro/thought lenses. HUMAN-ONLY, PERSPECTIVAL, PLURAL: a span holds
+   multiple readings under different lenses without contradiction (taxonomy
+   v2's perspectival principle applied to discourse). Blur is data: 「うん。
+   そこまで言う。」 can carry {aizuchi-component, tsukkomi-reading@micro,
+   framing-shift-reading@meta} simultaneously — never one forced label.
+
+### 23.3 Gold v2 — layered, so parsing data generation stops being flawed
+
+The current gold example (utterance + act + one edge) forces layer-4 answers
+at capture time — that's why generating parsing data feels fundamentally
+flawed. Gold v2 records per-layer: turn corrections (already `_discourseSeg`),
+component ✓✕ (new — every ratified/rejected pill), drawn relations, and
+readings-as-a-set. Each layer trains its own successor model when volume
+arrives; layer-2 data accumulates from ordinary 談話モード use starting NOW.
+
+### 23.4 Build order
+
+1. ✅ components.ts + 談話モード pills.
+2. ✅ (2026-07-19) Sentence-grain turn splitting: `_discourseSeg` boundaries
+   are now (line,char) pairs (backward compatible — old segs are the char:0
+   case; `src/discourse/turns.ts` PURE, golden/turns.mjs). Tapping a
+   flip/return pill splits at that sentence boundary with the CA-suggested
+   speakers — the うん。そこまで言う。 case is one tap.
+3. ✅ (2026-07-19) Diarization tier: podcast-transcribe runs the sherpa pass
+   when the tools are installed → `[HH:MM:SS] A:` speaker-lettered lines
+   (IoU segment attribution, `generated: whisper+sherpa`);
+   parseTranscriptLines strips the letter into `MatcherLine.speaker` and
+   談話モード's initial seg follows the letters as layer-1 truth.
+4. ✅ (2026-07-19) Component ✓✕ persistence (`_componentGold`, keyed
+   file|kind|unit|turn-head) + connective/quotative detectors (ratify-only
+   pills — no structural change; precision-first: pause/fragment-gated
+   connectives, bracket-or-quote-verb quotatives, bare という never fires).
+5. ✅ (2026-07-19) The layer-3 arrow on 談話モード: ⤳ grip drag / tap-tap /
+   keyboard r (j/k target, ⏎ commit, Esc cancel), chips cycle →/↳/↧ (key t),
+   persisted per file in `_discourseRel` (relations model in turns.ts,
+   golden-locked: retype-not-duplicate, self-refusal, merge-sanitize).
+6. ✅ (2026-07-19, same session — the "after habits" sequencing was caution,
+   not a dependency) Readings layer: 👓 / key y opens an inline editor on the
+   turn — lens chips (微視/巨視/メタ/思考) + free label, PLURAL by design
+   (same label under different lenses coexists; same-lens duplicates refused;
+   machine never suggests here). Stored `_readingsGold` per file per turnKey;
+   readings of merged-away turns drop with their turn. golden/turns.mjs.
+
+Pencil/integration hardening (same session): TokenCanvas gained pointer
+capture (drags survive leaving the row) and TRUE pentimento — the best
+suggestion pre-drawn as a faint span on the tokens; tapping inside it before
+any mark accepts it whole, drawing your own overrides. Diarized speaker
+letters now ride into ContextWindow rows even without a ratified seg
+(heard truth ≠ invented). Canvas pills raised to 34px+ touch targets.
+
+§22 leftovers ✅ (2026-07-19): manga ContextWindow renderer (panel image +
+bbox highlight + tappable neighbor bubbles from the tray card), ⚙ badge on
+generated-transcript attestations (reads `generated:` frontmatter), TWC as a
+second 語法 adapter (profileWord, merged with hyogen), dictionary example
+sentences as first-class rows (`data content=example` → styled block).
+§24 = Sentence Surfer, next.
+
+### 23.5 The ergonomics contract (2026-07-19) — every surface, three hands
+
+User mandate: moving things freely via Pencil, gestures, and keyboard must
+have PERFECT coverage on every surface, every medium — enjoyable and fast.
+The contract: every interactive surface supports all three input hands —
+**Pencil/touch** (gesture, 44px+, drag-and-drop), **keyboard** (single-key
+verbs on the hot paths, hints visible in the UI), **mouse** (everything
+tappable is clickable). No action may exist in only one hand.
+
+Shipped now (the hottest path first): CaptureModal — keys 1–6 select the
+class (chip order, hinted with key badges on the chips), Ctrl/Cmd+Enter
+saves, digits ignored while typing; TokenCanvas already covers the Pencil
+hand (drag/tap/scratch/circle) and mouse. Existing: ReviewView Space + 1–4.
+
+Coverage matrix — CLOSED 2026-07-19 (hints visible in place on every surface):
+- ✅ 談話モード: j/k walk · a–d speaker · s split · ⏎ accept · x reject ·
+  e capture · m merge · r arrow · t arrow-type; Pencil: tap-pill split +
+  the ⤳ arrow drag.
+- ✅ LexiconPanel: / search focus, j/k row walk (list rows AND detail
+  leaves), ⏎ open (=✓ on candidate rows), x ✕; Pencil: swipe a candidate
+  right=✓ left=✕ (horizontal-claim only, list still scrolls).
+- ✅ TrayView: j/k walk, ⏎/e classify, x/Delete remove; Pencil: drag a text
+  card ONTO the 語彙 view → capture with tray provenance (card stays —
+  quarantine until classified). Long-press reorder deferred: reorder isn't
+  an action in ANY hand yet, so the no-single-hand rule isn't violated.
+- ✅ ReviewView: l revives leeches (hint on the 🛑 pill); Space + 1–4 existing.
+- ✅ DictionaryView: / search focus, j/k walk capturable example rows,
+  t/⏎ = that row's 🏷️ capture.
+
+## 24. JP Sentence Surfer integration — reserved (explicitly deferred by user)
+
+Unwritten. Note: §25.5's production-gold store is designed to be the data
+Sentence Surfer will eventually want — the two sections meet there.
+
+## 25. How input sits — the per-medium engagement contract (2026-07-19, PROPOSED)
+
+§22 answered *what a scene is* (storage). This section answers the half the
+user says is still being missed: **what the body is doing** when each medium
+is being lived — which hand is free, where the eyes are, who else is in the
+room, whether the medium can be paused — and molds capture to that posture
+instead of asking the posture to bend. The §21.2/§22 pipelines moved the
+*data* for every medium; several of them still assume an attention budget the
+actual experience doesn't have.
+
+### 25.1 The doctrine: posture → marks → harvest
+
+Every medium has an **engagement posture**:
+
+| medium | device / hand | eyes | pausable | social | live attention for the plugin |
+|---|---|---|---|---|---|
+| YouTube (study) | iPad + Pencil | screen | yes | alone | high — the current pipelines are right |
+| YouTube (なりきり) | iPad, *mouth busy* | screen | yes | alone | **near zero while speaking** |
+| Apple Podcasts | iPhone, one thumb | **elsewhere** (walking etc.) | yes | alone | near zero, screen often locked |
+| Plex / TV | iPad on lap, TV elsewhere | mostly TV | **socially no** | **with dad** | glances only; silence; no scrolling |
+| Manga (Manatan) | iPad, immersed reading | page | yes | alone | zero mid-page — leaving the reader breaks the read |
+| Kindle / note.com | iPad/iPhone reading | page | yes | alone | low — highlighting is the native gesture |
+| X | either, scrolling | screen | n/a | alone | medium — the app IS text |
+
+The law that falls out, generalizing what the tray and the cards-first
+pipeline already believe:
+
+> **Live phases emit MARKS. Harvest phases do the thinking.**
+> A mark is the cheapest gesture the medium natively affords (tap a line,
+> screenshot, share-sheet ping, one big button) and carries only *where/when*
+> — never a classification, never typed text. Nothing marked is ever lost
+> (tray quarantine doctrine); nothing mid-experience ever asks a question.
+> All marks converge on ONE harvest surface afterwards, where the full spine
+> (context, TokenCanvas, CaptureModal, catalog, SRS) engages at leisure.
+
+Concretely: the tray gains a card kind **`mark`** — `{ medium, sourceName,
+file?, tSec? | loc?, wallClock, note? }` — enough provenance to re-manifest
+the moment at harvest (transcript window at `tSec`, book location, spread
+image). The harvest surface is the tray itself, with mark cards rendering
+their re-manifested moment inline (ContextWindow does this already for
+anchored attestations; marks reuse it pre-anchor).
+
+Two hardenings found by stress-testing the law against real behavior:
+
+- **The law is a floor, not a ceiling.** It exists for attention-poor
+  postures. Where the posture affords rich capture (YouTube study with the
+  Pencil — the whole §1 handwriting practice — dictionary reading, X
+  hunting), the existing immediate paths stay primary. Marks never replace
+  a capture the body was already happy to make.
+- **A mark recovers the MEDIUM's content, never YOURS.** The transcript can
+  reconstruct what the speaker said at `tSec`; it cannot reconstruct the
+  thought *you* had there — and "I know when stuff needs to go down" is
+  often that thought. So a mark accepts an optional **seed**: a one-word
+  Scribble field / quick jot (`note?`), Pencil-or-thumb, ≤2 seconds,
+  skippable. The seed is not the note — it is the retrieval cue that makes
+  the thought recoverable at harvest. For anything longer, the paper-path
+  (jot on the handwriting page, reconcile later) remains exactly right and
+  is not deprecated by this section.
+
+### 25.2 今ここ — one follow-along engine, four clocks
+
+The single biggest missing piece across podcasts / Plex / なりきり is that
+the transcript in the vault doesn't know **where in it "now" is**. One
+component fixes all three:
+
+`FollowAlong(transcriptFile, clock)`: binary-search the `[HH:MM:SS]` stamps
+for the clock's position → the current line renders large and highlighted,
+auto-scrolled (auto-scroll suspends the moment the user scrolls, resumes on
+tap of a 「今へ」 pill — never fight the finger); ±2 lines visible dimmed;
+**tapping any line = drop a mark on it** (one gesture, no modal). Clocks:
+
+- **(a) local audio** — the plugin plays the imported mp3 itself (podcasts;
+  `<audio>.currentTime`, works on mobile). Exact, zero setup.
+- **(b) Plex session poll** — the server (`/status/sessions`, X-Plex-Token)
+  reports the playing episode's `viewOffset`; poll ~5s + interpolate between
+  polls; pause state respected. Adapter-isolated (§2.2), one file.
+- **(c) manual sync + wall clock** — tap the line you just heard once; from
+  then on the transcript advances on the device clock (pause/resync = one
+  tap). Works for ANY screen — YouTube on the TV, broadcast, a friend's
+  setup — no integration at all. Drift over a 25-min episode is seconds;
+  resync is one tap. This is the universal fallback and ships first.
+- **(d) none** — plain reading; FollowAlong degrades to today's transcript.
+
+**The Plex glance dividend (the hard-to-hear fix):** with clock (b) or (c),
+「今なんて言った？」 is answered by *glancing at the iPad* — the line just
+spoken is already on screen in big type. No rewinding the shared TV, no
+subtitles forced onto dad's viewing, no interaction at all. This alone makes
+the companion transcript worth opening every episode, which in turn makes
+marks free — the surface is already up.
+
+### 25.3 Apple Podcasts (iPhone, one thumb, eyes elsewhere)
+
+**Ratified constraints (2026-07-19, user):** Apple Podcasts stays the
+player — moving playback into the vault is not the behavior. And Shortcuts
+are out ("ehh and have been ehh") — no Shortcut may sit on any hot path.
+The first draft of this section (Shortcut ping / in-vault study-listen as
+the primary) is therefore superseded by:
+
+- **The screenshot IS the mark — the manga doctrine generalizes to audio.**
+  When something lands mid-listen, the zero-friction iOS act that needs no
+  app switch, no unlock ceremony, and no Shortcut is a **screenshot of the
+  player** — and the Apple Podcasts now-playing screen (lock screen
+  included) shows exactly what a mark needs: **episode title + elapsed
+  time on the scrub bar**. So: hear it → screenshot → keep walking. At
+  harvest, the tray's screenshot recognizer (the same pinned vision client
+  as manga/handwriting, one prompt variant) reads show/episode/elapsed off
+  the player chrome → resolves against the episode's whisper transcript →
+  a precise mark with full context, clips cuttable from the local mp3.
+  One gesture, learned once, working from the lock screen. This makes the
+  iOS mark story ONE doctrine across manga and podcasts: **the screenshot
+  is the universal mark; the tray recognizes what it's a screenshot OF.**
+- **In-vault listening survives only as an optional replay tier**: the
+  episode note already embeds the mp3, so *harvest-time* relistening around
+  each mark happens in the vault with exact audio — that's where FollowAlong
+  clock (a) actually earns its keep for podcasts, not during the walk.
+
+### 25.4 Plex / TV — the co-viewing contract
+
+Postures: the show is shared; the iPad must be **silent, glanceable,
+non-absorbing**. Scrolling, modals, and typing during the episode are design
+failures even if technically available.
+
+- **Before the show** (or once per series): jimaku `.srt` → `import-srt`
+  (shipped) → the episode transcript note exists.
+- **During**: FollowAlong with clock (b) if the server answers, else (c).
+  The screen shows the current exchange only. Interactions permitted: glance
+  (zero-touch), tap-line-to-mark, tap 今へ. Nothing else exists in this mode
+  — a deliberate 鑑賞モード chrome-reduction, not a limitation.
+- **After**: harvest walks the episode's marks with ±turns of context; where
+  the Plex server is reachable, the adapter cuts the audio clip (and a still
+  frame) at each mark's timestamp — the §22.2 TV scene promise, landed at
+  the exact moments that mattered. Captures get real 📺 scenes; the episode
+  note joins 談話モード for discourse work like any transcript.
+- Needs from you: Plex server URL + an X-Plex-Token (Settings → adapter,
+  secret-stored like the other tokens), confirmation the iPad can reach the
+  server on LAN.
+
+### 25.5 YouTube なりきりスピーキング — the practice becomes a first-class mode
+
+The 本質, extracted from your description: **responsive production under
+authentic time pressure, inside a real conversation's flow.** The value
+lives in (1) taking a *turn-position* (kikite's slot, or yourself barging
+in), (2) producing under a constraint (timer, lightning, counter), (3)
+comparing your production against what the real speaker then said, (4)
+honest self-assessment. The disorganization you apologize for is mostly the
+tool-shaped hole: your head is currently holding the structure (whose turn,
+what mode, how many points, what I wanted to write down) *while also
+producing Japanese*. The plugin's job is to hold the structure so your head
+holds only the language — and to make note-taking stop competing with
+speaking, which is exactly the §25.1 law: **while speaking you never write;
+you mark.**
+
+**Ratified specifics (2026-07-19, user):** the practice is natively
+**two-device** — the video plays on the **iPhone 17** (better screen), the
+**iPad mini 7** holds Apple Notes + Pencil. So the companion never fights
+the player for screen space: the plugin's session surface lives on the iPad
+beside Apple Notes (or replaces it when marks suffice), and nothing about
+the design assumes split-screen with YouTube. Rating happens **per-bout, in
+the pause** (confirmed) — but the user flagged honest doubt that
+qualitative 0–4 is even the right instrument ("I want to improve myself").
+The design's response: the aspects and the 0–4 scale are STORED as raw
+per-bout records but the *method* is deliberately swappable data — if the
+practice later moves to binary checks, or comparison-anchored judgments
+("closer to the speaker's actual turn than my last attempt?"), or anything
+else, the session store schema (aspect-id + value + bout context) already
+holds it. The tool must never entrench a rubric the user himself doubts.
+
+**Seed aspects (the user's own, 2026-07-19 — editable data, not code):**
+一貫性 (coherence) · 文脈適合 (context relevance) · 独自の寄与 (uniquely
+adding value — e.g. the foreigner's perspective) · 簡潔さ (concision —
+*topic-dependent*: philosophical topics legitimately run longer, so the
+aspect is "appropriately concise for the topic", not "short") · 正確さ
+(no major grammar/pronunciation/word-choice errors — baseline, but still a
+factor) · 一発で言えたか (said in one go within reasonable/allotted time —
+the hardest one against ゆる言語学ラジオ-speed conversation).
+
+**発話セッション (a mode over any transcript note):**
+
+- **Setup (10 seconds):** pick a mode — なりきり (role-response: you take a
+  speaker letter, usually the kikite), 乱入 (as-yourself: react/join as you),
+  自由 (open response), 瞬発 (lightning) — pick the constraint — ⏱ timer /
+  🔢 counter-to-goal (your MultiTimer 30-points practice, native) / none —
+  and, for なりきり, the role letter (from `_discourseSeg` speakers when
+  present). Modes and constraints are **config data, not code** (§2.9 spirit)
+  — your practice will keep mutating and the tool must not ossify it.
+- **During:** FollowAlong (clock (c) manual-sync against the playing video,
+  or (a) over local clips). TWO big buttons, bottom-anchored:
+  **📍** (plain mark — "something here for later", the note-taking hand) and
+  **🎤発話** (production mark — "I spoke at this turn"). Both are one tap,
+  no text, no pause required. Corrections from re-reading the actual
+  practice: the **points come from the RATINGS, not from speaking** (you
+  rate 0–4 on aspects after a bout and those points make their way to the
+  goal) — so when the counter constraint is active, a thumb-sized 0–4
+  rating row may appear right after a 🎤 bout, *during the pause you were
+  already in* (that IS your current practice; deferring all rating to the
+  debrief is an option, not the default). And since なりきり pauses the
+  video constantly, a wall-clock sync is useless here — **the marks
+  themselves are the sync**: each tap on a line says "we're here now."
+  Nothing else is on screen. If MediaRecorder proves usable
+  in Obsidian mobile (probe first, degrade to nothing), 🎤 hold-to-record
+  attaches your actual attempt audio to the mark — but the design does not
+  depend on it.
+- **After — the debrief (where the practice becomes data):** the session
+  walks the 🎤 marks in order. Each shows: the context turns before your
+  slot, **the actual next turn** (what the speaker really said — the
+  comparison you currently do by intuition, made structural), your recorded
+  attempt if any, and the rating row: your aspects, each 0–4. Aspects are a
+  user-editable list (seeded from nothing — you name them; the tool must
+  not invent your rubric). Points accumulate toward the session goal.
+  Any mark (📍 or 🎤) opens normal capture with full context. Ten quiet
+  seconds per mark, after the flow-state ends — never during.
+- **What persists:** `_speakSessions` — session config + marks + ratings +
+  totals (your practice's memory: trends per aspect, per channel, per mode —
+  renderable later, stored now). And each debriefed 🎤 mark is a
+  **production-gold** record: `{contextTurns, role, constraint, actualTurn,
+  attemptAudio?, ratings}` — a NEW gold stratum. Comprehension gold (§13,
+  §23.3) records how you *read* discourse; this records how you *produce
+  into* it. It is precisely the data a future Sentence Surfer (§24) or
+  production-side drill generator is starving for, and no tool on earth
+  collects it — it falls out of practice you already do.
+- **Explicitly NOT:** the plugin does not drive the video, does not auto-
+  pause, does not enforce the timer (MultiTimer can stay — the plugin is
+  scorekeeper and memory, not metronome), and never grades you. The 0–4 is
+  yours; suggested-vs-chosen has no meaning here because there is no
+  machine opinion. When you "know when stuff needs to go down" — that's 📍,
+  one tap, and the thought is safe without leaving the conversation.
+
+### 25.6 Kindle / note.com — input that sits as a document (the artifact answer)
+
+Your requirement, taken as the contract: a captured passage must not be
+「locked away」 in a store or reduced to a flashcard — it must remain a
+**standing artifact of your engagement with that book/topic**, where
+idea-level annotation and linguistic extraction both live and both work.
+
+- **One note per book/article — the artifact.** `import-written` (shipped)
+  grows: imports merge idempotently **by location** into a single
+  `source: book` note per book, highlights in location order. Between and
+  around the highlights, TWO registers interleave, visually distinct:
+  - **typed linguistic captures** — the six-class callouts, rail-colored,
+    each also in the catalog (a *reference*, per invariant §2.1 — the note
+    remains the truth);
+  - **💭 thoughts** — plain prose blocks with `[[wiki-links]]` into your
+    topic notes. NOT in the catalog, NOT a class — ideas are not language
+    data, but they belong to the same encounter. Every capture surface
+    gains a quiet 💭 route (a seventh chip that is explicitly not a class):
+    it writes to the source artifact instead of the catalog. This is
+    cross-medium — a thought about a podcast exchange lands in the episode
+    note the same way.
+  Read top-to-bottom, the note is *your passage through the book* — the
+  Pokédex principle (§22.5) applied longitudinally: you are the subject,
+  the artifact is the emergent product.
+- **The export path must be taught, not assumed** (user 2026-07-19: "I use
+  the app" — the notebook-export flow isn't known practice). The import
+  surface therefore *guides*: the ImportModal's Kindle mode shows the
+  actual in-app path (book → notebook icon ▤ → share → 引用をエクスポート
+  → 送る先はObsidianでもファイルでも → paste/pick here) and the parser
+  accepts BOTH the app's export-citations format (with its 位置No. lines
+  and publisher boilerplate, stripped) and a raw paste from
+  read.amazon.com/notebook (the web notebook — every highlight for a book,
+  copy-paste-able, no per-book export ceremony). Lock the parser against a
+  real export from the user's app the first time they run it — the format
+  is the truth, the doc is the guess.
+- **The Kindle context problem, honestly.** Kindle exports give the
+  highlight text only. The design refuses fake continuity: (1) the
+  practice-side fix is stated in the UI — *highlight generously*; the
+  paragraph you highlight IS the scene, and TokenCanvas picks the span
+  within it at harvest (capture the sentence, keep the paragraph); (2) the
+  location becomes the door (`kindle://` deep link with book ASIN +
+  location — probe the scheme on your device; else the artifact's location
+  line is the address); (3) neighbor highlights render as context with a
+  visible 「…」 gap marker — never pretending adjacency. No scraping of
+  book content beyond your highlights: your input is what you marked.
+- **note.com**: same artifact shape per article (`source: note`, URL door,
+  paragraphs as prose — renderer shipped in §22). Share-sheet selection →
+  `jpc-capture` is already the capture path; the addition is only that
+  captures append to the article artifact when one exists.
+
+### 25.7 Manga — the screenshot IS the mark
+
+The reading experience must never be exited mid-page — and it never needs
+to be, because iOS screenshots are the perfect mark gesture: instantaneous,
+no app switch, muscle-memory, and they capture the *scene itself*. The §22
+pieces (tray image cards, OCR, bbox capture) are right; what's missing is
+the **session shape** around them:
+
+- **Live phase = just read.** Screenshot anything that lands. Zero plugin
+  interaction. (This is already your behavior — the design's job is to stop
+  punishing it with per-image drag-and-drop afterwards.)
+- **Ingest without friction:** a 📷 button on the tray opens the system
+  photo picker with **multi-select** — one visit, grab the evening's
+  screenshots, done. (The first draft's Shortcut-based auto-ingest is
+  demoted to "never build unless asked": Shortcuts are out per the user's
+  2026-07-19 ratification, and the picker is one tap worse but zero setup
+  and zero fragility.)
+- **Session grouping:** time-clustered screenshots (same evening, gaps
+  <30min) render as ONE 読書セッション group in the tray, in shot order —
+  your reading, reassembled. One 「🔎 全ページOCR」 runs the batch (cost
+  visible up front); then harvest pages *in order*, bubble by bubble.
+- **The page-chain invention:** consecutive spreads' bubbles, concatenated
+  in reading order, form a **pseudo-transcript of the scene's dialogue** —
+  which means the dialogue machinery (談話モード turn work, 🔴 capture with
+  real prior turns, echo/reaction pills) works on manga conversation.
+  Manga is dialogue; until now only its images knew that. Scene stays
+  image+bbox (the panel remains the primary rendering, §22.2 — the
+  pseudo-transcript is for *discourse context*, not for display).
+- Needs from you: whether Manatan exposes a URL scheme (deep-link door);
+  else the stored spread stays the return destination (already true).
+
+### 25.8 X — the scene is the thread
+
+X's posture splits: **hunting** (deliberate in-plugin search — shipped, span
+picker and all) and **serendipity** (scrolling the real app, where a tweet
+ambushes you). Serendipity's mark is the share-sheet (→ `jpc-capture` /
+tray URL card → syndication fetch). The miss: a lone tweet is very often a
+*response*, and capturing it alone amputates the responsivity its 🔴 reading
+needs — so the syndication fetch gains **thread-parent retrieval**: when the
+tweet has a parent, fetch it too, store it as `contextBefore` + render it in
+the scene (the §22.2 "thread parent when captured" promise, made automatic).
+The quoted tweet counts as a parent. Depth 1 is enough — the scene is the
+exchange, not the whole thread.
+
+### 25.9 What this section buys, structurally
+
+One new tray card kind (`mark`), one new component (FollowAlong + its three
+real clocks), one session store (`_speakSessions` + production gold), one
+register (💭 → source artifact), and a Shortcut or two. Everything lands in
+the EXISTING spine — tray → TokenCanvas → CaptureModal → catalog → scenes →
+SRS. No new stores of language data, no new formats, no parser work.
+
+**Build order on ratification:**
+
+1. `mark` card kind + FollowAlong with clock (c) manual-sync (universal, no
+   integration) → Plex/TV co-viewing works *tonight* with jimaku alone, and
+   なりきり marking works over any transcript.
+2. Podcast study-listen: clock (a) + thumb transport + resume (the mp3s and
+   whisper transcripts already exist).
+3. 発話セッション: modes/constraints config + 📍/🎤 + debrief + ratings +
+   `_speakSessions` + production gold. (MediaRecorder probe rides along,
+   optional.)
+4. Book artifact merge-by-location + 💭 register (+ note.com append).
+5. Manga session ingest (folder watch + grouping + batch OCR) + page-chain.
+6. Plex clock (b) + clip/still cutting at marks (needs server token).
+7. X thread-parent fetch.
+
+**Needs from you before the relevant step** (updated 2026-07-19 after
+ratification — aspects ✓ answered, podcasts ✓ answered, devices ✓
+answered): Plex URL + token (6); a real Kindle export from your app the
+first time you run the guided import (4); Manatan URL-scheme check (5).
+Ratified same day: manga session ingest = **build now**; Shortcuts banned
+from hot paths everywhere; Apple Podcasts stays the player (screenshot-mark
+doctrine replaces both prior podcast tiers).
+
+> **SHIPPED 2026-07-19 (steps 1–3 + 5 + podcast recognizer; golden/follow.mjs
+> 37 checks, all 31 suites green):**
+> - **Marks** (§25.1): inbox gains `mark` cards (`MarkRef` medium/file/tSec/
+>   loc/sourceName/seed/wallClock, `markCard`); TrayView renders them
+>   (stamp + seed) and 🏷️ re-manifests the moment via
+>   `resolveMarkContext` (main reads the transcript at tSec → ±3 turns +
+>   speakers into CaptureModal). Marks never enter 読書セッション groups.
+> - **鑑賞モード** (`src/ui/FollowAlongView.ts`, view `jp-follow-view`,
+>   command `open-follow-along`, hub-menu 👁): clock (c) in
+>   `src/notes/follow.ts` (PURE — sync/pause/resume wall-clock arithmetic +
+>   binary-search `currentLineIndex`, untimed lines never win). First tap =
+>   sync only; after that tap = resync + 📍 tray mark; long-press = one-word
+>   seed input; auto-scroll suspends 8s on user scroll with a 「⌄今へ」pill;
+>   current line renders 20px against dimmed context (the Plex glance).
+>   Keys: j/k ⏎ s(sync-no-mark) m p g (+ y in session). Timestampless files
+>   get a warning banner, not a refusal.
+> - **発話セッション** (`src/notes/speak-session.ts` PURE + store
+>   `_speakSessions`): modes なりきり/乱入/自由/瞬発 + constraint
+>   counter-to-goal/timer/none + role letter (from diarized speakers) as
+>   config data; during = 📍/🎤 big buttons only; 🎤 opens the per-bout
+>   rating row (aspects 0–4, live points update, skippable); points = sum
+>   of RATINGS (golden-locked: speaking alone earns nothing, 📍 never
+>   earns); debrief walks marks with the ACTUAL next turns + re-ratable
+>   rows + 🏷️ capture; past sessions reopenable (過去n回 chip). Aspects +
+>   goal live in settings (発話セッション section) seeded with the user's
+>   six; sessions freeze their aspect list (rubric may evolve).
+> - **Podcast screenshot-mark** (`src/notes/player-shot.ts` PURE):
+>   PLAYER_PROMPT reads episode/show/elapsed off player chrome (elapsed =
+>   left of the scrub bar; missing elapsed → coarse mark, not failure);
+>   `matchEpisodeNote` exact→containment→bigram-Dice≥0.5, null over
+>   confident-wrong; TrayView image cards gain 🎧 プレイヤー認識 →
+>   `recognizePlayerShot` (same pinned vision client) converts the
+>   screenshot into a precise podcast mark card and removes the image.
+> Remaining from this section: Plex clock (b) + clip cutting (needs token),
+> book-artifact merge + 💭 register, manga page-chain, X thread-parent.
+
+## 26. The Monokakido realization (2026-07-19 — from the user's own recording, not from memory of the brand)
+
+Source of truth: the user's 55s screen recording of ACE CROWN 4 in
+Monokakido Dictionaries on the iPhone 17
+(`videos/ScreenRecording_07-15-2026 18-17-42_1.mp4`), frame-analyzed this
+session; six reference stills are committed at **`_ref_monokakido/`**
+(f01 minimal entry + chrome, f12 entry anatomy, f18/f32 selection-echo,
+f25 なぜ？ box, f40 似ている単語 box + neighbor pills). **Any implementer
+MUST view those frames before writing code.** Previous attempts failed by
+carbon-copying surface features; this section extracts the grammar and
+applies it to OUR objects.
+
+### 26.0 Seamless integration, defined (the gate everything must pass)
+
+Theoretical definition — seamlessness is the absence of cognitive cost at
+the boundary between tool and content, decomposed into five properties:
+
+1. **No remembered modes.** All state is visible in place; nothing behaves
+   differently because of something you did on another screen.
+2. **No translation step.** The verb is performed ON the content in the
+   content's own representation (marks on tokens, taps on lines, selection
+   on sentences) — never on a proxy (form fields describing the content).
+3. **No place-change to complete a thought.** Actions finish where
+   attention already is; content never leaves the visual field to be acted
+   on. (The capture modal is the tolerated exception — and TokenCanvas
+   inside it exists to honor rule 2.)
+4. **One grammar everywhere.** The same color, box shape, badge, or key
+   means the same thing on every surface. Knowledge transfers with zero
+   relearning; the product feels like ONE typeset system, not screens.
+5. **Continuity of identity.** An entry seen in search, in the context
+   tree, in SRS, in a sidebar is the SAME object re-rendered — never a
+   copy with different affordances.
+
+Operational tests — a feature ships ONLY if all five hold:
+
+- (a) it **removes a step** from an existing workflow (count the taps/
+  glances between intention and result — the number must go DOWN);
+- (b) it is **discoverable by doing what you already do** — no tutorial;
+- (c) it works in **all three hands** (§23.5) or degrades honestly;
+- (d) **removing it would make a real workflow longer** — not just uglier;
+- (e) every visual element **encodes semantics** — color, box, weight,
+  and motion that carry no information are banned.
+
+**The gimmick test (hard rejection):** if a feature demos well but does
+not change the step/glance count between intention and result, it is a
+gimmick. No parallax, no decorative animation, no novelty gestures.
+Motion is permitted only when it encodes information (e.g. the neighbor-
+walk transition encodes "you moved through the index, not to a random
+result" — and even that ships last and dies first if it janks).
+
+### 26.1 What the recording actually shows (the grammar, frame by frame)
+
+- **The entry is a typeset ARTICLE, not a UI** (f12, f40). Inside the
+  content area there is zero chrome: no cards, no dividers except
+  semantic boxes; hierarchy is typography alone. The information design
+  IS the interface.
+- **A small, fixed semantic color grammar, learned once** (f12, f40):
+  red = headword/JP-gloss/section-labels/warnings; blue = example
+  sentences with the target word bold; green = idioms/set-phrases
+  (`the coast is clear`); black = translation prose. Badges are
+  shape-coded (A1 filled square, 文型 outlined, 名/動 boxed, ❗ inline).
+  Color is never decoration.
+- **Knowledge boxes are typed objects** (f25 なぜ？, f40 似ている単語,
+  f12 ⇒フォーカス chips): red-banner boxes with a NAMED pedagogical role,
+  inline in the article at the point of relevance. Crucially, 似ている単語
+  discriminates near-synonyms **by their image** (beach = 砂浜の行楽地 /
+  coast = 広い沿岸地方 / shore = 岸辺一般) — which is EXACTLY this
+  plugin's 🟢 gesture-family theory (§7: family members differ precisely
+  in their image), shipped by a commercial dictionary.
+- **The dictionary is a SPACE you walk, not a query you fire** (f01,
+  f40): persistent prev/next headword pills in the bottom corners
+  (二月|苦み, be|béach bàll), a ghost of the previous headword during the
+  walk, an in-entry index (≡), and a ▾ chevron that switches DICTIONARY
+  while holding the same headword. Position and locality persist.
+- **Selection is a verb** (f18, f32): selecting text pink-highlights it
+  and echoes it enlarged in a banner — selection immediately offers
+  jump/search. Text is never inert.
+- **Density with hierarchy, and honesty in it** (f40): pronunciation row
+  carries audio AND the anti-reading (×コースト — "not this"); inflection
+  micro-tables sit inline; nothing is hidden behind disclosure for
+  tidiness. Density never reads as noise because the grammar is strict.
+- **A persistent identity bar** (all frames): Search/Bookmarks/History/
+  Appendices/More — the app's few global places, always one tap, never
+  nested.
+
+### 26.2 Applied to OUR objects (innovation, not carbon copy)
+
+The plugin's content is what no commercial dictionary has: lived
+attestations with scenes, six classes, strata, the user's own error and
+ratification record. The realization = monokakido's grammar rendering
+THAT:
+
+1. **Semantic grammar tokens** — one CSS block defines the system-wide
+   grammar: class rail colors (already §7-fixed) + example-blue +
+   idiom-green + warn-red + box-banner style + boxed-badge style. Every
+   surface (LexiconPanel, DictionaryView, ContextWindow, ReviewView,
+   TrayView) consumes the SAME tokens. This is property 4 made physical.
+2. **Entry-article pass** on the LexiconPanel detail: headword block
+   (reading under, boxed class badge, strata badges, attestation count),
+   then gloss, then the 用例 tree AS the body (already §20) restyled to
+   the grammar — quotes example-blue with the matched span bold
+   (findTermAll already locates it), translations/notes black.
+3. **Typed knowledge boxes** (one renderer, named roles):
+   - 語法プロフィール (§22.7) renders as a 似ている単語-class box;
+   - a 🟢 entry whose gestureFamily has siblings AUTO-COMPOSES a real
+     似ている単語 box from the family members and their gesture names —
+     the user's own image-discrimination theory, self-assembling from
+     their captures. **This is the flagship innovation of the section.**
+   - scaffold examples render in a 生成-banner box (existing rule, new
+     dress); discourse readings (§23 layer 4) render as a なぜ？-class
+     box on 🔴 entries.
+   - **The personal ❗ box**: reconciliation corrections (効く→聞く
+     homophone record) and sweep rejections for THIS entry render as
+     ×-marked anti-readings — the dictionary warns about the user's OWN
+     demonstrated confusions, from data already stored. No commercial
+     dictionary can do this.
+4. **Space-walking**: prev/next pills (bottom corners, thumb-reachable)
+   on LexiconPanel detail (catalog neighbors in the current sort/index)
+   and DictionaryView entries (dictionary order); ≡ floating in-entry
+   section index (senses/用例/語法/家族); ▾ on the headword switches the
+   RENDERING of the same surface form across stores (catalog ⇄ dictionary
+   ⇄ corpus) — same key, different authority, one gesture.
+5. **Selection-echo**: selecting text inside any plugin view raises the
+   echo banner (enlarged selection + 検索 / 🏷️ / 💭). Plugin views only —
+   never fight the Obsidian editor's own selection UI.
+
+### 26.3 Per-platform native existence (each platform gets its OWN verbs)
+
+One grammar (26.2) everywhere; different native verbs per hand. Nothing
+below is "the same feature on three screens" — each item is the thing
+that platform is uniquely best at, and each must pass 26.0.
+
+- **iPhone 17 — the one-thumb walker.** Reading zone on top, EVERY
+  actionable element in the thumb zone (corner pills, bottom bars —
+  ACE CROWN's own layout law). Swipe left/right on the entry header =
+  neighbor walk. Persistent mini identity bar (語彙・辞書・復習・トレイ・⚡)
+  as a footer inside plugin views on `Platform.isMobile`. Selection-echo
+  actions sit at the thumb, not at the selection. The screenshot-mark
+  doctrine (§25.3/25.7) is this device's capture verb. The phone is for
+  WALKING and MARKING, not for annotating.
+- **iPad mini 7 + Pencil (paperlike, Stage Manager) — the ink surface.**
+  Ink is the verb: TokenCanvas gestures + pentimento (shipped) are the
+  center of gravity. Additions that are natively Pencil: (1) **hover
+  peek** — iPad mini 7 supports Pencil hover; hovering a Japanese word in
+  any plugin view peeks its entry in a floating preview BEFORE committing
+  (feature-detect `pointerType === 'pen'` hover events; silently absent
+  otherwise); (2) Scribble-safe inputs everywhere (real `<input>`
+  elements, no fake fields — Scribble then works for free); (3)
+  cross-pane drag as the standing verb (tray⇄語彙 shipped; extend to
+  dragging a 用例 quote onto the SRS view = card, onto a book artifact =
+  💭). The iPad is for READING WITH A PEN IN HAND.
+- **Desktop (mouse + keyboard, Windows) — the composition engine.**
+  Keyboard is a LANGUAGE, not shortcuts: the §23.5 verb set (j/k ⏎ x /
+  s m p g y t e) is already standardized — hold that line for every new
+  surface. Mouse hover = instant preview on every entry link and 飛び込み
+  word (the mouse's superpower; zero-cost on desktop, absent on touch).
+  Multi-pane composition: entry + ContextWindow + tray tiled side by
+  side; bulk ratification runs at keyboard speed. The desktop is for
+  PROCESSING VOLUME.
+
+### 26.4 Build order (each step independently shippable, gimmick-gated)
+
+1. Semantic grammar tokens (CSS custom properties) + entry-article pass
+   on LexiconPanel detail. (Foundation — properties 4/5.)
+2. Typed knowledge-box renderer + wiring: 語法 box, 生成 box, なぜ？
+   readings box, **❗ personal anti-error box**, **🟢 family
+   discrimination box** (flagship).
+3. Space-walking: neighbor pills + ≡ section index + ▾ store switcher.
+4. Selection-echo verb (plugin views only).
+5. Platform verbs: phone footer bar + header swipe; Pencil hover peek;
+   desktop hover previews. (Feature-detected, degrade silently.)
+6. LAST and only if it never janks: the neighbor-walk ghost transition.
+
+> **SHIPPED 2026-07-19 (catalog + dictionary realization; build green, all
+> 31 golden suites + patternstore 25):** Frames watched, six committed to
+> `_ref_monokakido/`.
+> - **Grammar tokens** (styles.css §26 block): `--jpc-sem-example/idiom/warn`,
+>   `--jpc-box-banner`, and per-role box hues (`family`/`naze`/`goho`/
+>   `warn`/`gen`) resolved through Obsidian's palette (theme-aware). The
+>   dictionary's example rows (`.jp-dict-sc--example`) now consume
+>   `--jpc-sem-example` — an example reads the same blue on catalog AND
+>   dictionary (property 4 made physical).
+> - **`src/ui/knowledge-box.ts`** — one `knowledgeBox(host, title, tone)`
+>   renderer (banner + body + role rail). Empty boxes never render.
+> - **LexiconPanel entry-article** (§26.2): headword block gains reading-
+>   under-headword, boxed badges (class/用例count/family), and the context
+>   tree stays the body. 語法 + 生成 scaffold refitted into knowledge boxes.
+> - **Flagship boxes**: 似ている表現 auto-composes from the user's OWN
+>   captures — cross-lemma `payload.family` members, or (no family) the same
+>   🟢 lemma's other gestures — each row = member + its image/gesture desc,
+>   tappable to walk there, self-row pinned. The **personal ❗ box** renders
+>   the entry's `rejectedExamples` (new pattern-store field: the QUOTES of
+>   ✕'d sightings, capped 5, populated in `rejectAttestation`) as ×-marked
+>   strike-through anti-readings — the dictionary warning about the user's
+>   own demonstrated confusions. Golden-locked (patternstore 25).
+> - **Space-walking** (§26.3): neighbor pills in the detail's thumb corners
+>   (prev/next in the CURRENT list order — `neighborsOf`), `h`/`l` keys, and
+>   header touch-swipe all walk to the adjacent entry (`walkTo`).
+> - **Hover peek** (§26.3): `src/ui/hover-peek.ts` — ONE shared `HoverPeek`
+>   component (dwell-gated, mouse/Pencil only via `pointerType`, never touch,
+>   viewport-clamped, pointer-transparent). Used by BOTH LexiconPanel (over
+>   `.jp-lex-tappable`, longest-match `wordAt`) and DictionaryView (over
+>   `.jp-dict-clickable-word`, in-place preview that keeps your place in the
+>   current entry). The shared component IS the seamless integration.
+> Remaining §26: selection-echo verb, phone footer bar, and the ghost
+> transition (build order steps 4–6) — deferred, none blocking.
+
+## 27. The production lexicon — a dictionary that inverts look-up into reach-for (2026-07-20, PROPOSED)
+
+Correcting my own first pass (the user pushed back twice: the plugin's
+philosophy is the core, and Eijiro's genuine uniqueness must inform it — not
+be flattened into "feedstock"). This section is written from the plugin's
+actual philosophy, grounded in §7 and the taxonomy-v2 memories.
+
+### 27.0 What this plugin IS (so the dictionary can be built from it)
+
+This is not a comprehension dictionary with capture bolted on. It is a
+**production lexicon**: the governing question everywhere is *how is an
+utterance mentally ASSEMBLED in production* — what you REACH FOR. The six
+classes are processing units on a grid of unit-shape × stratum; the unit is
+never "the word." 🟢 is the heart: you reach for an evocative lemma because
+it holds an **image** that affords a grip, and a gesture-family's members
+differ precisely by their image (漏れなく=no leakage / 一つ残らず=none left /
+ことごとく=itemized sweep) — *the image difference is why you pick one, which
+is the production insight itself.* Class is perspectival (what it gives
+insight INTO × how you produce it), attested (encountered, never fabricated;
+lived > curated > 生成), and human-classified (machines suggest as
+pentimento; the evocation/rearrangement/responsivity tests decide).
+
+A normal dictionary answers **"I met X — what does it mean?"** (comprehension,
+headword-alphabetical). This plugin answers **"I want to express THIS — what
+reaches for it, and why this over its siblings?"** (production, organized by
+gesture/image/frame/situation). Every dictionary the user owns is
+comprehension-organized. The design act of §27 is to **invert access**: use
+the dictionaries as the substrate of one production index, entered from
+meaning-you-want-to-produce, unified with the lived catalog (which is already
+a production index — the 🟢 gesture catalog keyed by evocative lemma, the
+似ている表現 family box §26.2). The dictionary becomes the *curated stratum of
+the same production index the catalog is the lived stratum of.*
+
+### 27.0.1 The real purpose (the donor email is the spec) + the two directions
+
+Governing source: `Documents/Bridging foundation email.md` (the user's
+scholarship essay). Its thesis is the plugin's north star: **"language mastery
+is reconstructing yourself in the language… not by translating, but seeing the
+connections between your native and target language that are not
+translatable."** "The combination of words and grammar is greater than the sum
+of its parts" (→ the note types). "Despite Japanese and English being
+completely different, I noticed glimpses of myself… something that underlies
+both languages" (→ the 普遍文法 the user names). The essay's worked example —
+wanting **"at some point"**, finding it in no dictionary, then *hearing* a
+podcaster say **どっかのタイミングで** and recognizing it as the exact
+reconstruction — IS the governing use case. The dictionary is not a reference;
+it is a **self-reconstruction instrument**, and it must serve two distinct
+directions the user actually uses:
+
+- **JP search = the paradigmatic map of a word's productive life.** The user
+  wants to see *how many usage PATTERNS a word lives in, what it associates
+  with, what contexts it occurs in* — because that range is how a word lets a
+  speaker "display their whole existence." **This is why the note types
+  exist**: a JP word page answers with the word's participations across the
+  six classes — every collocation (🔵), skeletal frame (🟠), phrase schema
+  (💠), gesture it performs (🟢), fixed use (🟡), and discourse role (🔴) it
+  enters — each with its real contexts (lived attestations first, curated
+  senses under). The note types ARE the schema of "a word's usage patterns."
+  This confirms and is the reason for the taxonomy expansion.
+
+- **EN↔JP is not translation — it is one meaning EXTERNALIZED twice.** The
+  user's frame, made explicit via Chomsky: English and Japanese are not
+  "languages" in the deep sense; language is the internal system within us
+  (I-language / the faculty), and English and Japanese are E-language
+  *externalizations* of it. So the object the plugin tracks is the internal
+  MEANING-UNIT, and Japanese 逆に and English "actually" are two
+  externalizations of ONE such unit — never a surface-pair to be aligned.
+  **Meaning is the node; every surface (JP or EN) is a projection of it.** The
+  user's example, read CORRECTLY (my earlier "逆に ≈ actually @context" was too
+  simplistic — still translation-thinking): the context — a pivot right before
+  a question — PINS one meaning-node among 逆に's many; at that node "actually"
+  is a co-externalization, a different node than the one 実は (revelation) or
+  実際に (factuality) externalizes. **Context is meaning** because context is
+  what selects WHICH internal node a surface is projecting. Seeing 逆に and
+  "actually" meet there is a *glimpse of the universal (普遍文法)* — the
+  internal reality only a bilingual catches after years. So EN↔JP search does
+  not map surface→surface-with-a-tag; it **resolves any surface — an English
+  intention, a Japanese word, a heard phrase, an image — TOWARD the meaning-
+  node**, and returns that node's full externalization-spread across both
+  surface systems, its contexts, and its note-classes.
+
+**Not a new note, not a translation field — ONE meaning-graph.** "Meaning is
+meaning… it's not a new note" (user): the English rendering is never a field
+bolted onto a note, nor a seventh class. **A note is ALREADY a meaning-node** —
+keyed by production-meaning (a 🟢 gesture, a 🟠 link, a 💠 frame), not by
+string; this is exactly why class is perspectival and not a property of the
+surface (§7). Its externalizations *accrete as representations of it*: Japanese
+phrases heard/read (lived attestations), Eijiro's English glosses, the kokugo's
+Japanese definitions, its contexts — **every dictionary source is an
+externalization-FEEDER into the same node-graph, not a separate store**.
+"Everything fits together in some odd way" (user) because it IS one graph: the
+catalog (lived externalizations), the dictionaries (curated externalizations),
+the families/constellations (§14/§26.2), and the cross-surface links are all
+edges on it; entering from any surface reaches the node and everything else
+hanging on it. The decisive externalizations are still LIVED — どっかのタイミングで
+and 逆に-as-actually were caught by HEARING, not found in a dictionary — so the
+corpus is the crown evidence and Eijiro's context-annotated 〔…〕 renderings are
+the richest curated feeder (its real uniqueness, §27.1). What the user
+"captures" is never a translation pair; it is one more externalization attached
+to a meaning-node — a glimpse of the language-within, kept. Over time the graph
+becomes the user's own map of the 普遍文法: *reconstructing yourself in the
+language*, operationalized as one growing web rather than two dictionaries and
+a catalog.
+
+### 27.0.2 Why "one meaning-graph" is too tidy (the correction, found not given)
+
+The node-graph of §27.0.1 is still a database wearing philosophy, and it
+betrays the plugin's own deepest instincts. The messier truth, from the user's
+actual experience:
+
+- **A glimpse is an EVENT, not a stored edge.** 逆に-as-"actually" was an
+  instinctive flash ("I knew in that moment INSTINCTly") that fades. The
+  artifact can keep a *trace* of a glimpse; it can never hold the glimpse.
+  Success is therefore not coverage — it is how often the artifact makes
+  another flash HAPPEN.
+- **The node is a HORIZON, not an object.** You never see the meaning-unit;
+  you catch a partial, contextual sliver. It is internal (I-language) and
+  stays out of reach; every sighting is incomplete and the unit always exceeds
+  them. "Glimpses of such a reality" — glimpses, never the reality.
+- **Context is CONSTITUTIVE, not a selector.** No two 逆に are identical; the
+  boundary where it stops being "actually" shades continuously. You cannot
+  enumerate the nodes — context is unbounded, so a "node" is only a soft cloud
+  over never-identical instances. This is exactly why the plugin stores whole
+  SCENES (§22): context is not an index into meaning, it IS the meaning, and
+  abstracting it away destroys the thing.
+- **The subject is irreducibly in it.** These are glimpses of YOURSELF — your
+  being, your personality, the people you have known ("emergent product of
+  me"). A different self carves different clouds. The graph pretends
+  objectivity; the reality is subject-saturated — the whole donor-email point.
+- **Relations are RESONANCES, not typed edges.** "Everything fits together in
+  some ODD way." 破綻 = 破 tear + 綻 seam-unravel bridges by felt IMAGE, not
+  logic (onomatopoeia, metaphor, family-resemblance). The relations resist
+  formalization BY NATURE — not a gap to close, it is what they are.
+- **The HOLES are as real as the nodes, and more alive.** どっかのタイミングで:
+  the WANT came first (a meaning felt but un-externalized — "no phrase I found
+  captured that"), the finding came later by HEARING, and the magic was the
+  *collision*. The plugin today holds only what you have caught; it does not
+  hold what you are REACHING FOR. That negative space — the yearning — is the
+  most human, most alive part, and it is missing.
+
+**So the plugin is NOT the graph. The graph lives in YOU; the plugin is the
+trellis that grows it.** Its job: accumulate partial personal traces AND the
+holes; REFUSE to consolidate them into asserted facts (the plugin's
+suggested-not-ratified / scene-not-quote / recall-not-truth / pentimento
+instincts are ALL already this — my graph regressed from them); and JUXTAPOSE
+externalizations so the user's intuition catches the resonance rather than
+being told it (the 似ている box §26.2 is this; the cross-lingual case is the
+same move — never print "逆に = actually", set the scenes side by side and let
+the flash happen). The one genuinely NEW demand: **hold the reaching.** A
+first-class place for a felt want (a paraphrase, an English gloss, a gesture,
+"that feeling when…"), and a collision-watcher over the incoming attested
+stream that OFFERS — never asserts — a possible fill, confirmed only by the
+user's felt recognition. That turns the instrument from a record of the met
+into a companion for the reaching-toward — the production lexicon finally
+honest about being unfinished. Everything in §27.1+ (Eijiro, per-dict, storage,
+feel) still holds, but as feeders of traces into this trellis, never as a
+graph to complete.
+
+### 27.1 Why Eijiro specifically informs this plugin (its real uniqueness)
+
+Eijiro is not just "big." It is uniquely a **production/expression
+dictionary** — Japanese learners use 英辞郎 to answer *"how do I SAY this,"*
+not *"what does this word mean."* Four of its properties are the plugin's own
+notation, prefigured, and must be preserved (not flattened):
+
+1. **The unit is the expression-in-use, not the word.** 85% of entries are
+   phrases (measured). Eijiro already believes what the plugin believes — the
+   meaningful unit is the collocation/frame, not the dictionary headword.
+   This is why its philosophy seeded the note types.
+2. **The 〔context〕 bracket is a production-condition, not a definition.**
+   `〔銀行口座の残高が〕マイナス＿ドルである` says *"when you want to express
+   THIS situation, reach for THIS phrase."* That is a production-index entry
+   and a 💠 phrase-schema signal (the situation is the frame's condition of
+   use) — the plugin's "context is meaning" (§22) written into the source.
+3. **The frame labels (`be ～` / `a ～` / `$__ `) are the plugin's
+   skeleton notation, pre-drawn.** Eijiro already annotates whether a phrase
+   lives as a predicate frame, a nominal frame, or a numeric-slot frame —
+   exactly the 🟠 skeletal / 💠 schema distinction. The `～` and `__` ARE the
+   plugin's slot markers.
+4. **It is descriptive/attested in spirit** — colloquial, domain, slang,
+   "living English," with a 225/126 category-subcategory register system.
+   Encountered usage, not idealized definition: the plugin's stratum ethic.
+
+So Eijiro's uniqueness is that it is *already half-built toward a production
+index* — it marks skeletons and situations. The realization finishes the
+inversion the source started, rather than importing it as flat rows.
+
+### 27.2 The inversion, concretely — production entry points
+
+The dictionary-for-this-plugin is queryable along the plugin's production
+axes, not only by headword:
+
+- **By gesture / image (🟢).** Enter an image or a lemma; get the evocative
+  words that perform it and the 似ている表現 discrimination (why THIS image vs
+  that) — fed by the thesaurus dict (類語例解), onomatopoeia dicts (the
+  evocation prototype), the kanji dict (破 tear + 綻 unravel = the image of
+  破綻), AND the user's own family captures. One box, both strata.
+- **By frame / skeleton (🟠/💠).** Enter a frame; get its crystallizations.
+  Eijiro's `be ～`/`〔ctx〕` entries populate this directly — the frame IS the
+  index key, the fillers are leaves (§7 orange data model).
+- **By situation (💠).** Eijiro's 〔context〕 brackets become searchable
+  situations — "how do I express 'when a balance goes negative'."
+- **By headword (the ordinary axis)** — still there, but a headword page is
+  a PRODUCTION page: senses (curated backbone), then the pre-classified
+  reach-for candidates (collocations/frames/situations, class-hinted), then
+  YOUR lived attestations. Look-up and reach-for on one page.
+
+### 27.3 The plugin-native model (shaped by production, not by Yomitan tuples)
+
+One normalized model every dictionary parses INTO; PURE per-dict adapters
+(the §2.2 isolation rule) produce it; generic structured-content is the
+fallback. The bridge object is the class-hinted reach-for candidate:
+
+```
+DictHeadword { expression, reading?, pron?, kana?, pos?, svl?,   // SVL = production priority
+  senses: DictSense[], reachFor: ReachCandidate[], family?: {word, image?}[] }
+DictSense { pos?, gloss, register?, situation?/*〔〕*/, note?/*◆*/, xrefs?, examples? }
+ReachCandidate {            // the production unit — Eijiro's phrases become these
+  surface, gloss, frame?/*be ～*/, situation?/*〔〕*/, slots?/*～ __ positions*/,
+  classHint: NoteClass,     // shape → 🔵/🟠/💠/🟡, or 🟢 when the head is evocative
+                            // NEVER 🔴 (responsivity is dialogic, not in a dict); suggestion only
+  svl?, register? }
+```
+
+`classHint` is pure/shape-only/pentimento (never a verdict): grammatical
+frame → 🟠; 〔situation〕-framed whole with a slot → 💠; bare lexical bond →
+🔵; fixed quotable/proverb → 🟡; evocative head → 🟢 offered. The human tests
+still decide, exactly as everywhere else (§13.3/§15).
+
+### 27.4 Per-dictionary mapping — each to its production facet
+
+The 36 dicts are NOT one flat store; each feeds a specific production facet by
+what it uniquely is (adapter registry keyed on title):
+
+- **英辞郎 v144** — the reach-for engine: frames→🟠, 〔situation〕→💠, bonds→🔵,
+  SVL→priority. The largest single candidate source. (The one the user most
+  wants realized.)
+- **研究社 新和英大 / 用例.jp / WISDOM** — the crown examples → curated
+  example attestations (§22.3).
+- **類語例解辞典** — the 似ている表現 / 🟢-family discriminator (curated side of
+  §26.2's box).
+- **擬音語・擬態語辞典 / Onomatoproject** — the 🟢 evocation PROTOTYPE: entries
+  are evocative-lemma candidates; the described image IS the halo.
+- **ことわざ・慣用句 / 四字熟語 / 絵でわかる慣用句** — 💠/🟡 whole-phrase
+  candidates.
+- **旺文社漢字典** — kanji breakdown → the IMAGE-of-kanji feeding 🟢 (破/綻).
+- **大辞泉 / 大辞林 / 新明解 / 三省堂国語 / 明鏡 / 新選 / 現代国語例解** — the
+  JP-side sense backbone (priority-ordered; user picks the lead kokugo).
+- **NHK発音アクセント / アクセント辞典** — pitch overlay (not senses).
+- **日本語俗語 / ネット用語 / 新語時事 / 実用日本語表現** — register/currency
+  labels on a headword.
+- **JMnedict / Wikipedia proper nouns** — deprioritized names, never study
+  noise (the phrase-drowning fix applied to names).
+- **SVL (in Eijiro tags) / BCCWJ** — production-priority/difficulty signal →
+  SRS ordering + capture-worth nudge, not display content.
+
+### 27.5 Storage (the big dicts never touch the blob — AUDIT §18 governs)
+
+英辞郎 (2.36M) and the large dicts import as **vault sidecar stores**
+(`JP Dictionaries/<title>/` sharded JSONL + an in-memory headword→shard
+offset index), NOT blob keys; lookup reads one shard on demand (mobile-safe).
+A `convert-yomitan-export` command (desktop, stream-parses the 12.7GB Dexie
+dump into per-dict sidecars) + a blob-exodus migration for anything already
+imported. Files-over-app (§19) honored; sidecars sync like any vault file.
+
+### 27.6 Feel = §26 (they meet here)
+
+The production page IS a §26 monokakido entry-article (headword block →
+senses → the reach-for candidate list → 似ている表現 box → your lived context
+tree), with hover-peek to graze the collocation-dense field instead of
+drowning, space-walk between headwords, and capture-in-place (🏷️ per
+candidate, class-hint pre-selected) landing in the same six-class spine —
+because the candidate IS a catalog object at the curated stratum. Three hands
+throughout (§23.5).
+
+### 27.7 Build order (on ratification)
+
+1. Plugin-native model + PURE 英辞郎 adapter (structured-content →
+   DictHeadword/ReachCandidate with class-hints + frame/situation/SVL parse)
+   + goldens on real Eijiro fixtures. Highest value, offline-testable.
+2. Lookup partitioning + reach-for candidate list in DictionaryView (§26
+   grammar) + one-tap class-hinted capture.
+3. Sidecar storage + convert-yomitan-export + blob-exodus migration.
+4. Per-dict adapter registry (kokugo backbone, 類語→family, onomatopoeia→🟢,
+   idioms→💠/🟡, SVL/pitch/register overlays; generic fallback preserved).
+5. Production entry points (by gesture/frame/situation) + names deprioritize
+   + SVL→SRS.
+
+**Needs from user before the relevant step:** lead kokugo choice; convert
+whole 12.7GB export or a curated subset first; confirm `JP Dictionaries/` as
+the sidecar home; and — the open question — whether the production entry
+points (§27.2) match how they actually reach for language, since that axis is
+the whole design and only they can confirm it.
+
+---
+
+## 28. Seamless integration, whole-system (2026-07-25 — GOVERNING)
+
+§26.0 defines seamlessness as a property of a *screen*. That is only its surface,
+and reading it alone has repeatedly led to work that polished views while the
+chain underneath stayed broken. This section states the whole-system version.
+
+**The plugin is one chain, not a set of features:**
+
+```
+encounter → mark → reconcile → classify → attest → index → retrieve → drill → produce
+ (media)   (capture) (vs source) (6 classes) (accumulate) (catalog)  (search)  (SRS)  (reach-for)
+```
+
+The product is the *last* box. Everything before it exists so that a thing you
+met once, in the wild, becomes a thing you can reach for. **A seam is any point
+where a noticing loses identity, provenance, provisionality, or reachability as
+it crosses a subsystem boundary.** Seams are invisible on any single screen —
+they only show up when you follow one phrase all the way through.
+
+### The six invariants (each falsifiable, each with its test)
+
+**S1 — One object, re-rendered; never copied.**
+A noticing is a `PatternEntry` with a stable id. The 台帳, the lexicon detail,
+the tray, the SRS card, the X view and the context tree are *views of the same
+row*. Text is embedded (`![[file#^id]]`), never duplicated.
+→ *Test:* retype a pattern on one surface; every other surface showing it is
+already correct. A surface that renders a classed object **without its class
+mark has silently created a different object** — the defect that had six views
+(collocations, dictionary, X, tray, pipeline, 談話モード) showing classed
+objects with no class at all.
+
+**S2 — Provenance is never dropped.**
+Every attestation carries where it came from and the door back: `source` /
+`medium`, `SceneRef` (`deepLink` / `image`+`bbox` / `audio` / `loc` /
+`sourceName`), `file`, `videoId`, `tStartSec`, `anchorId`. A stage that emits an
+attestation without a door back has made an orphan — a phrase you can no longer
+verify or re-experience.
+→ *Test:* every attestation, on every surface, is one tap from its source **in
+that source's own medium** — the video at the second, the tweet, the panel crop,
+the dictionary entry.
+
+**S3 — Suggested is never truth, and must look it.**
+The machine is a **recall machine**. Sweep hits, class suggestions, discourse
+moves, 生成 scaffolds are all `status:'suggested'` and must *render as
+provisional* wherever they appear (hollow dot, dashed border, 提案), with ✓✕
+available in place. The hand is the classifier.
+→ *Test:* no machine output is displayed with the weight of a ratified fact, and
+ratifying never requires going somewhere else. **Corollary (learned 2026-07-25):
+ratification must be a byproduct of study, never homework.** A design that
+requires the user to sit down and label N rows will stall at 0 — it has, twice.
+
+**S4 — Every object is actionable where it sits.**
+See it → act on it: jump to source, play the clip, retype, capture, attach as a
+用例. A dead end is a seam even when it looks clean.
+→ *Test:* count taps from "I notice this" to "it is in the lexicon with its
+context." The number may only go down. (This is §26.0(a), applied to the chain
+rather than the screen.)
+
+**S5 — One road in, one road out.**
+Every medium — YT, X, web, manga, Kindle, podcast, Plex, dictionary, corpus —
+funnels into the *same* capture → `PatternStore` path, and back out through the
+same `ContextEngine` join. A source-specific side-channel with its own store is
+a seam by construction, however good it looks alone.
+→ *Test:* adding a medium requires a new `Medium` value and a `SceneRef` shape.
+If it requires a new store or a new view, the design is wrong.
+
+**S6 — Degrade honestly, in place.**
+Missing audio, unimported dictionary, expired X cookies, a 404 scrape: say so
+*where the thing would have been*, with the recovery action attached. Never an
+empty box, never a silent zero, never a number that counts failures as results.
+
+### The gimmick test, restated for pipelines
+
+§26.0 rejects a *view* that demos well without changing the step count. The
+pipeline form: **a stage earns its place only if it removes a step from the
+chain.** A stage that produces more rows without producing more *reachable,
+ratifiable, provenance-carrying* rows is the pipeline equivalent of parallax.
+Volume is not evidence — this is the same rule §11/§12 applied to the discourse
+recognizer, and it applies to ingestion identically.
+
+### Why this section exists
+
+The five §26.0 properties are readable as styling advice by anyone who has not
+followed a phrase end-to-end. They are not. They are the visible half of a data
+contract that `pattern-store.ts` already encodes (`Attestation`, `SceneRef`,
+`stratumOf`, `status:'suggested'`) and that the ingestion pipelines only
+partially honor. When the two disagree, **the contract in `pattern-store.ts`
+wins and the pipeline is the bug.**

@@ -78,8 +78,9 @@ export class HistoryRangeModal extends Modal {
       b.setButtonText('取得').setCta().onClick(() => {
         const s = Date.parse(this.sinceText.value);
         const u = Date.parse(this.untilText.value);
-        if (Number.isNaN(s) || Number.isNaN(u)) { this.since = this.since; }  // keep defaults if unparseable
-        else { this.since = startOfDay(s); this.until = endOfDay(u); }
+        // unparseable input keeps the current default for that bound
+        if (!Number.isNaN(s)) this.since = startOfDay(s);
+        if (!Number.isNaN(u)) this.until = endOfDay(u);
         if (this.since > this.until) { const t = this.since; this.since = startOfDay(this.until); this.until = endOfDay(t); }
         this.close();
         this.onSubmit({ since: this.since, until: this.until, maxVideos: this.maxVideos, alsoTranscripts: this.alsoTranscripts });

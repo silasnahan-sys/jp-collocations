@@ -7,7 +7,7 @@
  * (main.ts) reads/writes vault files and injects the DictionaryStore resolver.
  */
 
-import { match, type MatcherLine, type ReadingResolver, type Correction, type MatchSpan } from './local-matcher.ts';
+import { match, matchGapped, type MatcherLine, type ReadingResolver, type Correction, type MatchSpan } from './local-matcher.ts';
 
 /** Below this combined confidence a result is flagged for human review (DESIGN §5/#7). */
 export const RECONCILE_THRESHOLD = 0.7;
@@ -25,19 +25,52 @@ export interface ReconciledResult {
   alternatives: MatchSpan[];
 }
 
+/** Caption stamp, optionally a markdown LINK stamp as produced by copy-transcript
+ *  browser tools: `[MM:SS]` / `[H:MM:SS]` / `[MM:SS](https://youtu.be/…?t=N)`.
+ *  Groups: 1=h?, 2=m, 3=s, 4=rest-of-line. Shared with transcript-anchor.ts —
+ *  the two files MUST agree on what counts as a transcript line. */
+export const CAPTION_STAMP_RE = /\[(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\](?:\((?:https?|obsidian):[^)\s]*\))?\s*(.*)/;
+
+/** Strip non-speech noise and inline markup from a caption line so the MATCHER
+ *  sees only spoken text. Real vault transcripts carry `[音楽]`-style cue tags,
+ *  user highlights (`<mark …>…</mark>`, `==…==`), strikethroughs, wikilinks and
+ *  HTML entities — none of that is speech. Raw lines are never modified; this
+ *  cleaning exists only in matching space. */
+export function cleanCaptionText(s: string): string {
+  return s
+    .replace(/\[(?:音楽|拍手|笑い?|Music|Applause|Laughter)\]/gi, '')
+    .replace(/<[^>\n]*>/g, '')                        // html tags (mark/br/span…)
+    .replace(/\[\[([^\]|\n]*)\|([^\]\n]*)\]\]/g, '$2') // [[target|alias]] → alias
+    .replace(/\[\[([^\]\n]*)\]\]/g, '$1')             // [[target]] → target
+    .replace(/\[([^\]\n]*)\]\((?:https?|obsidian):[^)\s]*\)/g, '$1') // md links → text
+    .replace(/~~|==|\*\*|%%/g, '')                    // marker pairs
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .trim();
+}
+
+/** Diarized speaker prefix on a stamped line: `A: 続きの発話…` (§23.4-3 — the
+ *  sherpa tier writes single letters A–H; anything longer is content, and 全角
+ *  ：is accepted since IMEs produce it). The prefix is data, not speech. */
+const SPEAKER_PREFIX_RE = /^([A-H])[:：]\s*/;
+
 /** Parse a transcript markdown into timestamped lines. Handles inline caption
- *  stamps `[HH:MM:SS]` / `[MM:SS]`; falls back to untimed lines otherwise. */
+ *  stamps `[HH:MM:SS]` / `[MM:SS]` (bare or link-wrapped) and the diarized
+ *  `[HH:MM:SS] A: …` speaker-letter form; falls back to untimed lines. */
 export function parseTranscriptLines(md: string): MatcherLine[] {
   const lines: MatcherLine[] = [];
   let idx = 0;
   let sawStamp = false;
   for (const rawLn of md.split('\n')) {
-    const m = rawLn.match(/\[(?:(\d{1,2}):)?(\d{1,2}):(\d{2})\]\s*(.*)/);
+    const m = rawLn.match(CAPTION_STAMP_RE);
     if (m) {
       sawStamp = true;
       const h = m[1] ? +m[1] : 0;
-      const text = (m[4] || '').replace(/\[音楽\]/g, '').trim();
-      if (text) lines.push({ index: idx++, tStartSec: h * 3600 + +m[2] * 60 + +m[3], text });
+      let text = cleanCaptionText(m[4] || '');
+      let speaker: string | undefined;
+      const sp = text.match(SPEAKER_PREFIX_RE);
+      if (sp) { speaker = sp[1]; text = text.slice(sp[0].length); }
+      if (text) lines.push({ index: idx++, tStartSec: h * 3600 + +m[2] * 60 + +m[3], text, ...(speaker ? { speaker } : {}) });
     }
   }
   if (sawStamp) return lines;
@@ -45,18 +78,55 @@ export function parseTranscriptLines(md: string): MatcherLine[] {
   for (const rawLn of md.split('\n')) {
     const t = rawLn.trim();
     if (!t || t.startsWith('#') || t.startsWith('---')) continue;
-    lines.push({ index: idx++, text: t });
+    lines.push({ index: idx++, text: cleanCaptionText(t) || t });
   }
   return lines;
 }
 
+/** First YouTube video id found in a document BODY (linked timestamps, bare
+ *  URLs). Fallback for transcripts that carry no frontmatter at all. */
+export function bodyVideoId(md: string): string | null {
+  const m = md.match(/https?:\/\/(?:www\.)?(?:youtu\.be\/|youtube\.com\/(?:watch\?[^)\s]*?v=|shorts\/|live\/|embed\/))([\w-]{11})/);
+  return m ? m[1] : null;
+}
+
 /** Pull the `source:` transcript reference out of YAML frontmatter, if present. */
 export function frontmatterSource(md: string): string | null {
-  const fm = md.match(/^---\n([\s\S]*?)\n---/);
-  if (!fm) return null;
-  const m = fm[1].match(/^\s*source(?:_transcript)?:\s*(.+?)\s*$/m);
-  if (!m) return null;
-  return m[1].replace(/^["'\[]+|["'\]]+$/g, '').trim() || null;
+  return frontmatterSources(md)[0] ?? null;
+}
+
+/**
+ * ALL transcript references in the frontmatter — one handwritten page often
+ * spans several videos. Accepted shapes:
+ *   source: [[A]]
+ *   source: [[A]], [[B]]
+ *   sources: [[A]], [[B]]
+ *   sources:
+ *     - [[A]]
+ *     - [[B]]
+ */
+export function frontmatterSources(md: string): string[] {
+  const fm = md.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/);
+  if (!fm) return [];
+  const out: string[] = [];
+  // Obsidian's Properties panel wraps values in quotes ('"[[X]]"'), users add
+  // their own, and whitespace hides between the layers — strip ITERATIVELY
+  // until stable, or mixed nesting like `' "[[X]]"'` survives one pass mangled.
+  const push = (raw: string) => {
+    let v = raw;
+    for (let prev = ''; v !== prev;) {
+      prev = v;
+      v = v.trim().replace(/^["'\[]+|["'\]]+$/g, '');
+    }
+    if (v) out.push(v);
+  };
+  // horizontal whitespace ONLY after the colon — `\s*` would swallow the
+  // newline and make an empty `sources:` (list form) capture the next line
+  const inline = fm[1].match(/^\s*sources?(?:_transcript)?:[^\S\r\n]*(\S.*?)\s*$/m);
+  if (inline) for (const part of inline[1].split(',')) push(part);
+  const list = fm[1].match(/^\s*sources?(?:_transcript)?:\s*$\r?\n((?:\s*-\s*.+\r?\n?)+)/m);
+  if (list) for (const ln of list[1].split('\n')) push(ln.replace(/^\s*-\s*/, ''));
+  return [...new Set(out)];
 }
 
 /** Read a single scalar `key: value` from the leading YAML frontmatter block.
@@ -90,6 +160,9 @@ export function extractNotePhrases(md: string): string[] {
     if (!t || t.startsWith('#') || t.startsWith('>') || t.startsWith('---') || t.startsWith('```')) continue;
     t = t.replace(/^[-*+]\s+/, '').replace(/^\d+[.)]\s+/, '').replace(/^\[[ x]\]\s+/, '');
     t = t.replace(/[*_`~]/g, '').trim();
+    // Not notes: image/file embeds, bare links, %%comments%% — a notes file
+    // legitimately carries its handwriting image and the video URLs.
+    if (/^!?\[\[[^\]]*\]\]$/.test(t) || t.startsWith('![') || /^https?:\/\/\S+$/.test(t) || /^%%.*%%$/.test(t)) continue;
     if (t.length >= 2) out.push(t);
   }
   return out;
@@ -97,22 +170,105 @@ export function extractNotePhrases(md: string): string[] {
 
 /** Reconcile note phrases against a transcript. */
 export function reconcile(notes: string[], lines: MatcherLine[], readingOf?: ReadingResolver): ReconciledResult[] {
-  return notes.map((note) => {
-    const r = match(note, lines, readingOf);
-    const status: 'auto' | 'needs-review' = r.best && r.confidence >= RECONCILE_THRESHOLD ? 'auto' : 'needs-review';
-    return {
-      note,
-      best: r.best,
-      tStartSec: r.best?.tStartSec ?? null,
-      reconciled: r.best?.text ?? '',
-      confidence: r.confidence,
-      status,
-      corrections: r.corrections,
-      contextBefore: r.contextBefore,
-      contextAfter: r.contextAfter,
-      alternatives: r.alternatives,
-    };
-  });
+  return notes.map((note) => reconcileOne(note, lines, readingOf));
+}
+
+/** Like `reconcile`, but yields to the event loop between notes so a long run
+ *  (real transcripts are 100k+ chars) never freezes the Obsidian UI thread.
+ *  `onProgress` lets the caller update a Notice. */
+export async function reconcileAsync(
+  notes: string[], lines: MatcherLine[], readingOf?: ReadingResolver,
+  onProgress?: (done: number, total: number) => void,
+): Promise<ReconciledResult[]> {
+  const out: ReconciledResult[] = [];
+  for (let i = 0; i < notes.length; i++) {
+    out.push(reconcileOne(notes[i], lines, readingOf));
+    onProgress?.(i + 1, notes.length);
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  return out;
+}
+
+/**
+ * Multi-source reconcile: each phrase is matched against EVERY transcript and
+ * assigned to the one where it scores best (a handwritten page can span
+ * multiple videos). Yields between notes like `reconcileAsync`. Returns the
+ * results grouped per source, index-aligned with `sources`.
+ */
+export async function reconcileMultiAsync(
+  notes: string[], sources: MatcherLine[][], readingOf?: ReadingResolver,
+  onProgress?: (done: number, total: number) => void,
+): Promise<ReconciledResult[][]> {
+  const grouped: ReconciledResult[][] = sources.map(() => []);
+  for (let i = 0; i < notes.length; i++) {
+    let best: ReconciledResult | null = null;
+    let bestIdx = 0;
+    for (let s = 0; s < sources.length; s++) {
+      const r = reconcileOne(notes[i], sources[s], readingOf);
+      // strictly-better keeps ties on the FIRST source (stable, deterministic)
+      if (!best || r.confidence > best.confidence) { best = r; bestIdx = s; }
+    }
+    if (best) grouped[bestIdx].push(best);
+    onProgress?.(i + 1, notes.length);
+    await new Promise((r) => setTimeout(r, 0));
+  }
+  return grouped;
+}
+
+/**
+ * Split a handwritten note into pattern PARTS. In this notation a dash/wave
+ * between expressions means "…the speaker's words here…" — the note is one
+ * correlative pattern whose parts appear near each other in the transcript
+ * (`んだったら〜なきゃ`). Interior whitespace acts the same way in
+ * Japanese-only notes (`が違えば　と思う一方で`). Returns [note] when the
+ * note is a single contiguous quote.
+ */
+export function splitPatternParts(note: string): string[] {
+  let parts = note.split(/\s*[〜~→⇒]+\s*|\s*(?:…|⋯|・・・)\s*/).filter((p) => p.trim().length > 0);
+  // whitespace as connector — but never inside English text
+  if (parts.length === 1 && !/[a-zA-Z]/.test(note)) {
+    parts = note.split(/[\s　]+/).filter((p) => p.length > 0);
+  }
+  parts = parts.map((p) => p.trim()).filter((p) => p.length >= 2);
+  return parts.length >= 2 && parts.length <= 4 ? parts : [note.trim()];
+}
+
+export function reconcileOne(note: string, lines: MatcherLine[], readingOf?: ReadingResolver): ReconciledResult {
+  const contiguous = match(note, lines, readingOf);
+  // AMBIGUITY: a short/generic fragment (また、なきゃ…) scores "perfectly" at
+  // dozens of positions — the top hit is then an arbitrary pick, not a located
+  // quote. When the runner-up is essentially as good as the winner, the match
+  // is ambiguous and must NOT count as auto, whatever its raw score.
+  const ambiguous = !!contiguous.best && contiguous.alternatives.length > 0 &&
+    contiguous.alternatives[0].score >= Math.max(0.9, contiguous.best.score - 0.02);
+  let r = contiguous;
+  let auto = !!r.best && r.confidence >= RECONCILE_THRESHOLD && !ambiguous;
+
+  // Connected-pattern path: the parts are located together (each pinning the
+  // others), so the ambiguity veto does not apply — co-occurrence IS the
+  // disambiguation.
+  const parts = splitPatternParts(note);
+  if (parts.length >= 2) {
+    const gapped = matchGapped(parts, lines, readingOf);
+    const gappedAuto = !!gapped.best && gapped.confidence >= RECONCILE_THRESHOLD;
+    if (gapped.best && (gappedAuto && !auto || gapped.confidence > r.confidence)) {
+      r = gapped;
+      auto = gappedAuto;
+    }
+  }
+  const status: 'auto' | 'needs-review' = auto ? 'auto' : 'needs-review';
+  return {
+    note,
+    best: r.best,
+    tStartSec: r.best?.tStartSec ?? null,
+    reconciled: r.best?.text ?? '',
+    confidence: r.confidence,
+    status,
+    corrections: r.corrections,
+    contextBefore: r.contextBefore,
+    contextAfter: r.contextAfter,
+    alternatives: r.alternatives,
+  };
 }
 
 const fmtTime = (s: number | null): string =>
