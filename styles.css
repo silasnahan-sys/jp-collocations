@@ -5217,3 +5217,47 @@ body {
 /* ── §28 S1: your catalog, on a dictionary entry (lived outranks curated) ── */
 .jp-dict-mine { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin: 6px 0 2px; }
 .jp-dict-mine-label { font-size: 0.68rem; color: var(--text-faint); margin-right: 2px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   §27.0.2 THE REACHING — the plugin's one place for a HOLE rather than a catch.
+   Quiet on purpose: an offer is not a result. Nothing here may look like an
+   answer, because the recognition is the user's and the machine cannot have it.
+   ══════════════════════════════════════════════════════════════════════════ */
+.jp-reach-wrap { margin: 10px 0 6px; }
+.jp-reach-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.jp-reach-title { font-size: 0.82rem; font-weight: 700; letter-spacing: 0.04em; }
+.jp-reach-sub { font-size: 0.7rem; color: var(--text-faint); flex: 1; }
+.jp-reach-add {
+  font-size: 0.9rem; line-height: 1; min-width: 28px; min-height: 28px;
+  border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--background-modifier-border); background: transparent;
+}
+/* dashed = unclosed. The same visual language as a suggested class: provisional. */
+.jp-reach-card {
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 12px; padding: 8px 10px; margin-bottom: 8px;
+  background: color-mix(in srgb, var(--background-secondary) 40%, transparent);
+}
+.jp-reach-card-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.jp-reach-want { font-size: 0.95rem; font-weight: 600; }
+.jp-reach-gloss { font-size: 0.74rem; color: var(--text-muted); }
+.jp-reach-drop {
+  margin-left: auto; font-size: 0.7rem; background: transparent; border: none;
+  color: var(--text-faint); cursor: pointer; min-width: 28px; min-height: 28px;
+}
+.jp-reach-empty { font-size: 0.72rem; color: var(--text-faint); margin-top: 6px; }
+.jp-reach-offer {
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px dashed var(--background-modifier-border);
+}
+.jp-reach-offer-surface { font-size: 0.9rem; line-height: 1.6; }
+/* the offer's account of itself — faint, because it is not evidence */
+.jp-reach-offer-why { font-size: 0.68rem; color: var(--text-faint); margin-top: 2px; }
+.jp-reach-offer-acts { display: flex; gap: 6px; margin-top: 6px; }
+.jp-reach-offer-acts button {
+  font-size: 0.74rem; padding: 4px 10px; min-height: 30px; border-radius: 8px;
+  cursor: pointer; border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+.jp-reach-yes { font-weight: 600; }
+.jp-reach-modal .jp-reach-btns { display: flex; justify-content: flex-end; margin-top: 12px; }

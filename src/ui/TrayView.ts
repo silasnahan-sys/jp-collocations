@@ -19,6 +19,7 @@ import { fmtStamp } from '../notes/srt.ts';
 import type { CaptureContext } from './CaptureModal.ts';
 import { NOTE_TYPES, type NoteClass } from '../notes/note-types.ts';
 import { classBadge, applyClassRail } from './class-grammar.ts';
+import type { Reach } from '../notes/reach.ts';
 
 export const JP_TRAY_VIEW_TYPE = 'jp-tray-view';
 
@@ -40,6 +41,12 @@ export interface TrayDeps {
   patternsIn?: (text: string) => Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }>;
   /** §28 S4: the door back into the lexicon. */
   openPattern?: (id: string) => void;
+  /** §27.0.2 — the open wants, and the felt-recognition verdicts on their offers. */
+  reaches?: () => Reach[];
+  onRecognize?: (reachId: string, offerIndex: number) => Promise<void>;
+  onRejectOffer?: (reachId: string, offerIndex: number) => Promise<void>;
+  onAbandonReach?: (reachId: string) => Promise<void>;
+  openReach?: () => void;
 }
 
 export class TrayView extends ItemView {
@@ -58,6 +65,11 @@ export class TrayView extends ItemView {
     this.contentEl.setAttr('tabindex', '0');
     this.registerDomEvent(this.contentEl, 'keydown', (e) => this.onKey(e));
     this.render();
+  }
+
+  /** Re-render from outside (a reach was opened, or the watcher made offers). */
+  refresh(): void {
+    if (this.contentEl) this.render();
   }
 
   /** The on-screen card order (§25.7): the feed interleaves 読書セッション
@@ -147,6 +159,13 @@ export class TrayView extends ItemView {
       this.render();
     };
     pickBtn.onclick = () => picker.click();
+
+    // ── §27.0.2 THE REACHING ────────────────────────────────────────────────
+    // The tray holds what has arrived and is not yet resolved. A reach is the
+    // same shape of thing pointing the other way: a want that has not yet
+    // arrived. Putting them on one surface is the juxtaposition — the offers
+    // sit next to the stream they came from, and the flash is the user's.
+    this.renderReaches(root);
 
     // §23.5 keyboard hints, visible in place
     const keys = root.createDiv('jp-dm-keys jp-tray-keys');
@@ -239,6 +258,76 @@ export class TrayView extends ItemView {
     const fresh = await this.deps.store.add(card);
     new Notice(fresh ? `⤵ トレイへ（${{ url: 'URL', dialogue: '対話', sentence: '文', word: '語', text: 'テキスト', image: '画像' }[card.kind]}）` : '同じ内容が既にあります');
     this.render();
+  }
+
+  /**
+   * §27.0.2 — the open wants, with whatever the watcher has set beside them.
+   *
+   * Deliberately understated: an offer is NOT a result. It says why it was
+   * raised in words that never assert meaning, and the only verdict available
+   * is the user's own recognition. A filled reach keeps its trace rather than
+   * vanishing — how you came to it is the point.
+   */
+  private renderReaches(root: HTMLElement): void {
+    if (!this.deps.reaches) return;
+    const all = this.deps.reaches();
+    const open = all.filter((r) => !r.filled && !r.abandonedAt);
+    if (!open.length && !this.deps.openReach) return;
+
+    const wrap = root.createDiv('jp-reach-wrap');
+    const head = wrap.createDiv('jp-reach-head');
+    head.createSpan({ text: '願い', cls: 'jp-reach-title' });
+    head.createSpan({
+      text: open.length ? `${open.length}件 — まだ言えないもの` : 'まだありません',
+      cls: 'jp-reach-sub',
+    });
+    if (this.deps.openReach) {
+      const add = head.createEl('button', { text: '＋', cls: 'jp-reach-add' });
+      add.title = '言いたいのに言えないものを保持する';
+      add.onclick = () => this.deps.openReach!();
+    }
+
+    for (const r of open) {
+      const card = wrap.createDiv('jp-reach-card');
+      const top = card.createDiv('jp-reach-card-top');
+      top.createSpan({ text: r.want, cls: 'jp-reach-want' });
+      if (r.gloss) top.createSpan({ text: r.gloss, cls: 'jp-reach-gloss' });
+      if (this.deps.onAbandonReach) {
+        const drop = top.createEl('button', { text: '✕', cls: 'jp-reach-drop' });
+        drop.title = 'これは本当の穴ではなかった';
+        drop.onclick = async () => { await this.deps.onAbandonReach!(r.id); this.render(); };
+      }
+
+      const pending = r.offers.map((o, i) => ({ o, i })).filter(({ o }) => !o.verdict);
+      if (!pending.length) {
+        card.createDiv({
+          text: '——  届いたものはまだありません。掃き寄せや取り込みのたびに並べられます。',
+          cls: 'jp-reach-empty',
+        });
+        continue;
+      }
+      for (const { o, i } of pending) {
+        const row = card.createDiv('jp-reach-offer');
+        row.createDiv({ text: o.surface, cls: 'jp-reach-offer-surface' });
+        // the offer's own account of itself — never a claim of meaning
+        row.createDiv({ text: o.why, cls: 'jp-reach-offer-why' });
+        const acts = row.createDiv('jp-reach-offer-acts');
+        if (this.deps.onRecognize) {
+          const yes = acts.createEl('button', { text: '✓ これだ', cls: 'jp-reach-yes' });
+          yes.title = '見定め — これが探していたもの';
+          yes.onclick = async () => { await this.deps.onRecognize!(r.id, i); this.render(); };
+        }
+        if (this.deps.onRejectOffer) {
+          const no = acts.createEl('button', { text: '✕', cls: 'jp-reach-no' });
+          no.title = '違う（願いは開いたまま）';
+          no.onclick = async () => { await this.deps.onRejectOffer!(r.id, i); this.render(); };
+        }
+        if (o.source?.file) {
+          const jump = acts.createEl('button', { text: '↪', cls: 'jp-reach-jump' });
+          jump.title = o.source.file + (o.source.tStartSec != null ? ` @${o.source.tStartSec}s` : '');
+        }
+      }
+    }
   }
 
   private renderCard(list: HTMLElement, c: InboxCard): void {

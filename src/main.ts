@@ -89,6 +89,8 @@ import { parsePodcastFeed, podcastNote } from "./notes/podcast-rss";
 import { componentKeyOf, type ComponentVerdict } from "./ui/DiscourseModeView";
 import { ImportModal } from "./ui/ImportModal";
 import { InboxStore, markCard, type MarkRef, type InboxCard } from "./notes/inbox";
+import { ReachStore, reachStats, type ReachData, type Reach } from "./notes/reach";
+import { ReachModal } from "./ui/ReachModal";
 import { TrayView, JP_TRAY_VIEW_TYPE } from "./ui/TrayView";
 import { discoverCollocations, type DiscoverySource, type Discovery } from "./notes/discovery";
 import { DiscoveryModal } from "./ui/DiscoveryModal";
@@ -168,6 +170,8 @@ export default class JPCollocationsPlugin extends Plugin {
 
   /** 収集トレイ (§22.8) — the drag-drop inbox. */
   private inboxStore!: InboxStore;
+  /** §27.0.2 — the open wants: what you are reaching for but cannot yet say. */
+  private reachStore!: ReachStore;
   /** §25.5 発話セッション record (`_speakSessions`). */
   private speakStore!: SpeakStore;
 
@@ -321,6 +325,12 @@ export default class JPCollocationsPlugin extends Plugin {
     // ── 収集トレイ (§22.8): the drag-drop inbox — quarantine, never loss ──
     this.inboxStore = new InboxStore((data) => this.dm.setKey("_inbox", data));
     this.inboxStore.load(stored?._inbox);
+
+    // §27.0.2 — the plugin holds what you have caught; this holds what you are
+    // still REACHING FOR. Tiny (a sentence and a few offers), so unlike the
+    // dictionaries it genuinely belongs in the blob.
+    this.reachStore = new ReachStore((data) => this.dm.setKey("_reaches", data));
+    this.reachStore.load((stored as { _reaches?: ReachData } | undefined)?._reaches);
     this.registerView(JP_TRAY_VIEW_TYPE, (leaf) => new TrayView(leaf, {
       store: this.inboxStore,
       openCapture: (ctx) => new CaptureModal(this.app, ctx, this.makeCaptureDeps()).open(),
@@ -358,6 +368,21 @@ export default class JPCollocationsPlugin extends Plugin {
         : undefined,
       // §25.1 harvest: a mark re-manifests its transcript moment
       resolveMarkContext: (mark) => this.resolveMarkContext(mark),
+      // §28 S1: a dropped phrase you have already noticed says so
+      patternsIn: (text) => this.patternsIn(text),
+      openPattern: (id) => void this.openLexiconAt(id),
+      // §27.0.2 — the holes, held beside the stream that might fill them
+      reaches: () => this.reachStore.all(),
+      openReach: () => new ReachModal(this.app, async (want, gloss) => {
+        await this.reachStore.add(want, Date.now(), gloss);
+        this.refreshTrayViews();
+      }).open(),
+      onRecognize: async (id, i) => {
+        const r = await this.reachStore.recognizeOffer(id, i, Date.now());
+        if (r?.filled) new Notice(`「${r.want}」 → 「${r.filled.surface}」`, 8000);
+      },
+      onRejectOffer: async (id, i) => { await this.reachStore.rejectOffer(id, i); },
+      onAbandonReach: async (id) => { await this.reachStore.abandonReach(id, Date.now()); },
     }));
 
     // ── 発話セッション store + 鑑賞モード view (§25.2/§25.5) ──
@@ -1022,6 +1047,18 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "convert-big-dictionary",
       name: "辞書: Convert Yomitan Export → Vault Sidecars (desktop)",
       callback: async () => { await this.convertBigDictionary(); },
+    });
+
+    // §27.0.2 — record a want you cannot yet say. The one place the plugin
+    // holds a HOLE rather than a catch.
+    this.addCommand({
+      id: "open-reach",
+      name: "願い: Hold a Reach (a meaning you can't yet say)",
+      callback: () => new ReachModal(this.app, async (want, gloss) => {
+        const r = await this.reachStore.add(want, Date.now(), gloss);
+        new Notice(`願い「${r.want}」を保持しました — 届いたものが並べられます`, 6000);
+        this.refreshTrayViews();
+      }).open(),
     });
 
     this.addCommand({
@@ -2189,6 +2226,28 @@ export default class JPCollocationsPlugin extends Plugin {
     }
   }
 
+  private refreshTrayViews(): void {
+    for (const leaf of this.app.workspace.getLeavesOfType(JP_TRAY_VIEW_TYPE)) {
+      (leaf.view as TrayView).refresh?.();
+    }
+  }
+
+  /**
+   * §27.0.2 collision watcher — run the open reaches against whatever just
+   * landed in the attested stream. Offers only; nothing is ever filled here.
+   * Juxtaposition is capped low: the point is to set two things side by side,
+   * not to bury a want under everything that arrived today.
+   */
+  private async watchReaches(incoming: Array<{ surface: string; source?: Reach['offers'][number]['source']; frameKey?: string; at: number }>): Promise<void> {
+    if (!this.reachStore.open().length || !incoming.length) return;
+    const made = await this.reachStore.watch(incoming, { juxtaposeLimit: 2 });
+    if (made) {
+      const s = reachStats(this.reachStore.all());
+      new Notice(`願い: ${made}件の候補が届きました（${s.waiting}件が見定め待ち）`, 6000);
+      this.refreshTrayViews();
+    }
+  }
+
   async openReconLibrary(): Promise<void> {
     const existing = this.app.workspace.getLeavesOfType(JP_RECON_LIBRARY_VIEW_TYPE);
     if (existing.length) { this.app.workspace.revealLeaf(existing[0]); return; }
@@ -2938,6 +2997,15 @@ export default class JPCollocationsPlugin extends Plugin {
     const msg = `走査完了: transcripts ${transcripts}件 → 確定 +${confirmed} / 候補 +${suggested}${suggested ? "（候補は語彙タブで ✓/✕）" : ""}`;
     new Notice(msg, 6000);
     this.refreshReconLibrary();
+    // §27.0.2: the sweep is the incoming attested stream — exactly where a
+    // collision can happen. The watcher OFFERS against the open wants; the
+    // recognition is the user's and happens in the tray.
+    await this.watchReaches(this.patternStore.all().flatMap((p) =>
+      p.attestations.slice(-2).map((a) => ({
+        surface: a.quote,
+        source: { file: a.file, tStartSec: a.tStartSec, medium: a.medium ?? a.source, deepLink: a.scene?.deepLink },
+        at: a.addedAt,
+      }))));
     return msg;
   }
 
