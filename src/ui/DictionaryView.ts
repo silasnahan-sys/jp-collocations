@@ -35,6 +35,8 @@ import { CATEGORY_COLORS, CATEGORY_LABELS } from '../discourse/discourse-grammar
 import { PATTERN_BY_ID, type PatternCategory } from '../discourse/discourse-patterns';
 import { JP_COLLOCATIONS_VIEW_TYPE, CollocationView } from './CollocationView';
 import { HoverPeek, definitionsPreview } from './hover-peek';
+import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
+import { classBadge } from './class-grammar';
 
 export const JP_DICTIONARY_VIEW_TYPE = 'jp-dictionary-view';
 
@@ -57,6 +59,16 @@ export class DictionaryView extends ItemView {
   private onClassify: ((expression: string, example?: string, dictMeta?: { dict: string; headword: string }) => void) | null;
   /** §26.3 hover peek — same shared component as the catalog (one grammar). */
   private peek: HoverPeek | null = null;
+  /**
+   * §28 S1 — which of YOUR catalog patterns contain this headword. A dictionary
+   * entry for a word you have already noticed must SAY so, with the same class
+   * mark it wears in the lexicon; otherwise looking a word up hides the fact
+   * that you own it. Assigned by main.ts (kept off the constructor, which is
+   * already six positional params deep).
+   */
+  patternsIn: ((text: string) => Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }>) | null = null;
+  /** §28 S4 — the door back into the lexicon. */
+  openPattern: ((id: string) => void) | null = null;
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -626,6 +638,24 @@ export class DictionaryView extends ItemView {
         this.onClassify!(primary.term.expression, this.extractExampleFromDefs(group) || undefined,
           { dict: group[0]?.dictionary ?? '辞書', headword: primary.term.expression });
       });
+    }
+
+    // ── §28 S1: your catalog, for this headword ──────────────
+    // Placed ABOVE the context panel because "you already noticed this" outranks
+    // curated senses in a production lexicon (§27.0.1: lived attestations first).
+    const mine = this.patternsIn?.(primary.term.expression) ?? [];
+    if (mine.length) {
+      const row = card.createDiv('jp-dict-mine');
+      row.createSpan({ text: '台帳', cls: 'jp-dict-mine-label' });
+      for (const p of mine.slice(0, 6)) {
+        const b = classBadge(row, p.class, { ratified: p.classRatified });
+        b.querySelector('.jp-cls-badge-label')?.setText(p.key);
+        b.title = `${NOTE_TYPES[p.class].label} — あなたの台帳にあります（タップで開く）`;
+        if (this.openPattern) {
+          b.style.cursor = 'pointer';
+          b.onclick = () => this.openPattern!(p.id);
+        }
+      }
     }
 
     // ── Context Panel (lazy loaded on tap) ───────────────────

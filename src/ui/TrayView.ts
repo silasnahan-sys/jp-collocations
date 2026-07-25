@@ -17,6 +17,8 @@ import type { InboxStore, InboxCard, ReadingSession, MarkRef } from '../notes/in
 import { shapeDrop, imageCard, sessionGroups } from '../notes/inbox.ts';
 import { fmtStamp } from '../notes/srt.ts';
 import type { CaptureContext } from './CaptureModal.ts';
+import { NOTE_TYPES, type NoteClass } from '../notes/note-types.ts';
+import { classBadge, applyClassRail } from './class-grammar.ts';
 
 export const JP_TRAY_VIEW_TYPE = 'jp-tray-view';
 
@@ -33,6 +35,11 @@ export interface TrayDeps {
   /** §25.1 harvest: re-manifest a mark's moment as capture context (reads
    *  the transcript at tSec). Null = file/moment unresolvable. */
   resolveMarkContext?: (mark: MarkRef) => Promise<CaptureContext | null>;
+  /** §28 S1: catalog patterns occurring in this card's text — "you have
+   *  already noticed this", wearing the same class mark as everywhere else. */
+  patternsIn?: (text: string) => Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }>;
+  /** §28 S4: the door back into the lexicon. */
+  openPattern?: (id: string) => void;
 }
 
 export class TrayView extends ItemView {
@@ -256,6 +263,27 @@ export class TrayView extends ItemView {
     if (c.origin) head.createSpan({ text: c.origin, cls: 'jp-tray-card-origin' });
     const del = head.createEl('button', { text: '🗑', cls: 'jp-tray-card-del' });
     del.onclick = async () => { await this.deps.store.remove(c.id); this.render(); };
+
+    // §28 S1: a tray card is uncaptured, but the phrase in it may already BE in
+    // the catalog. Showing that with the same class mark turns "another inbox
+    // item" into "you have met this before" — and gives the rail its identity
+    // before it is classified, rather than after.
+    if (c.kind !== 'image') {
+      const mine = this.deps.patternsIn?.(c.content) ?? [];
+      if (mine.length) {
+        applyClassRail(card, mine[0].class);
+        const row = card.createDiv('jp-tray-card-mine');
+        for (const p of mine.slice(0, 4)) {
+          const b = classBadge(row, p.class, { ratified: p.classRatified });
+          b.querySelector('.jp-cls-badge-label')?.setText(p.key);
+          b.title = `${NOTE_TYPES[p.class].label} — 台帳にあります（タップで開く）`;
+          if (this.deps.openPattern) {
+            b.style.cursor = 'pointer';
+            b.onclick = (e) => { e.stopPropagation(); this.deps.openPattern!(p.id); };
+          }
+        }
+      }
+    }
 
     const body = card.createDiv('jp-tray-card-body');
     switch (c.kind) {

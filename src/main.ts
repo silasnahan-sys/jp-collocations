@@ -458,7 +458,7 @@ export default class JPCollocationsPlugin extends Plugin {
       })
     );
     this.registerView(JP_DICTIONARY_VIEW_TYPE, leaf =>
-      new DictionaryView(leaf, this.dictStore, async () => {
+      this.withCatalogHits(new DictionaryView(leaf, this.dictStore, async () => {
         await this.dictStore.save();
         this.refreshDictionaryViews();
       }, (expression, reading, example) => {
@@ -473,7 +473,7 @@ export default class JPCollocationsPlugin extends Plugin {
             ? { kind: "manual", medium: "dict", sourceName: dictMeta.dict, loc: dictMeta.headword }
             : { kind: "manual" },
         }, this.makeCaptureDeps()).open();
-      })
+      }))
     );
     this.registerView(JP_X_VIEW_TYPE, leaf => new XSearchView(leaf, this.makeXDeps()));
     this.registerView(JP_RECON_LIBRARY_VIEW_TYPE, leaf => new LibraryView(leaf, {
@@ -1799,22 +1799,7 @@ export default class JPCollocationsPlugin extends Plugin {
       },
       // §28 S1: the X corpus is a view of the SAME lexicon. A tweet holding a
       // pattern already in the 台帳 wears that pattern's class mark here too.
-      patternsIn: (text) => {
-        // Called once per rendered tweet CARD, so this is O(tweets × patterns).
-        // sweepTerms() does real string work and its result only changes when
-        // the pattern's key/payload does — memoize per pattern id, and keep
-        // reading class/classRatified live so a retype shows up immediately.
-        const hits: Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }> = [];
-        if (!text) return hits;
-        for (const p of this.patternStore.all()) {
-          let terms = this.sweepTermsCache.get(p.id);
-          if (!terms) { terms = sweepTerms(p); this.sweepTermsCache.set(p.id, terms); }
-          if (terms.length && terms.every((t) => text.includes(t))) {
-            hits.push({ id: p.id, key: p.key, class: p.class, classRatified: p.classRatified });
-          }
-        }
-        return hits;
-      },
+      patternsIn: (text) => this.patternsIn(text),
       openPattern: (id) => this.openLexiconAt(id),
     };
   }
@@ -2075,6 +2060,39 @@ export default class JPCollocationsPlugin extends Plugin {
     new Notice(matched
       ? `🎧 ${r.shot.episode}${r.shot.elapsedSec != null ? ` @ ${fmtStamp(r.shot.elapsedSec)}` : ""} → マーク`
       : `🎧 マーク作成（一致するトランスクリプトなし — 「🎙 Podcast」で取り込むと照合できます）`);
+  }
+
+  /** §28 S1/S4 — give a view the catalog-identity pair in one place. */
+  private withCatalogHits(v: DictionaryView): DictionaryView {
+    v.patternsIn = (text) => this.patternsIn(text);
+    v.openPattern = (id) => void this.openLexiconAt(id);
+    return v;
+  }
+
+  /**
+   * §28 S1 — which of YOUR catalog patterns occur in this text.
+   *
+   * The one implementation behind every "you have already noticed this" mark:
+   * the X card, the tray card, the dictionary panel. Without it each surface
+   * shows the same phrase as an unrelated object and identity continuity is
+   * broken by construction.
+   *
+   * Called once per rendered card, so it is O(cards × patterns). `sweepTerms()`
+   * does real string work and only changes when a pattern's key/payload does,
+   * so it is memoized by id and cleared from PatternStore's persist callback;
+   * class/classRatified are read live so a retype shows up immediately.
+   */
+  patternsIn(text: string): Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }> {
+    const hits: Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }> = [];
+    if (!text) return hits;
+    for (const p of this.patternStore.all()) {
+      let terms = this.sweepTermsCache.get(p.id);
+      if (!terms) { terms = sweepTerms(p); this.sweepTermsCache.set(p.id, terms); }
+      if (terms.length && terms.every((t) => text.includes(t))) {
+        hits.push({ id: p.id, key: p.key, class: p.class, classRatified: p.classRatified });
+      }
+    }
+    return hits;
   }
 
   /**
