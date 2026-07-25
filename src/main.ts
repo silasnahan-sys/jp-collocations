@@ -50,6 +50,9 @@ import { makeDictionaryReadingResolver } from "./notes/reading-resolver";
 import { LibraryView, JP_RECON_LIBRARY_VIEW_TYPE } from "./ui/LibraryView";
 import { ReconLibrary } from "./notes/recon-library";
 import { PatternStore, sweepTerms, patternIdFor, derivePattern, attestationKey, type Attestation, type PatternEntry } from "./notes/pattern-store";
+// §27.5 big-dictionary sidecars (the blob never sees 2.36M entries).
+import { importEijiro, type BankSource } from "./dictionary/import-eijiro";
+import { vaultSidecarIO, nodeBankSource } from "./dictionary/sidecar-io";
 // The move concordance (DISCOURSE-VERDICT §11 fail branch → §12 result).
 import { transcriptToTurns } from "./discourse/calculus/turns.mjs";
 import {
@@ -170,6 +173,9 @@ export default class JPCollocationsPlugin extends Plugin {
 
   /** Shared sidecar-aware relations resolver — initialised in onload(). */
   private relationsResolver!: RelationsResolver;
+  /** sweepTerms() memo, keyed by pattern id. Cleared whenever the catalog is
+   *  written, so a retyped/edited pattern never serves a stale term list. */
+  private sweepTermsCache = new Map<string, string[]>();
   /** Status-bar item showing sidecar coverage for the current session. */
   private sidecarStatusEl: HTMLElement | null = null;
 
@@ -268,6 +274,9 @@ export default class JPCollocationsPlugin extends Plugin {
     // Every persist also refreshes the vault-native mirror (files-over-app:
     // the corpus survives the plugin; see writeMirror / DESIGN §19).
     this.patternStore = new PatternStore((data) => {
+      // Every catalog write invalidates the sweepTerms memo — one place, so a
+      // new write path can never forget and serve stale terms.
+      this.sweepTermsCache.clear();
       this.scheduleMirror();
       return this.dm.setKey("_patternStore", data);
     });
@@ -1007,6 +1016,12 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "build-discourse-concordance",
       name: "談話: Build Move Concordance from Transcripts",
       callback: async () => { await this.buildConcordance(); },
+    });
+
+    this.addCommand({
+      id: "convert-big-dictionary",
+      name: "辞書: Convert Yomitan Export → Vault Sidecars (desktop)",
+      callback: async () => { await this.convertBigDictionary(); },
     });
 
     this.addCommand({
@@ -1785,9 +1800,15 @@ export default class JPCollocationsPlugin extends Plugin {
       // §28 S1: the X corpus is a view of the SAME lexicon. A tweet holding a
       // pattern already in the 台帳 wears that pattern's class mark here too.
       patternsIn: (text) => {
+        // Called once per rendered tweet CARD, so this is O(tweets × patterns).
+        // sweepTerms() does real string work and its result only changes when
+        // the pattern's key/payload does — memoize per pattern id, and keep
+        // reading class/classRatified live so a retype shows up immediately.
         const hits: Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }> = [];
+        if (!text) return hits;
         for (const p of this.patternStore.all()) {
-          const terms = sweepTerms(p);
+          let terms = this.sweepTermsCache.get(p.id);
+          if (!terms) { terms = sweepTerms(p); this.sweepTermsCache.set(p.id, terms); }
           if (terms.length && terms.every((t) => text.includes(t))) {
             hits.push({ id: p.id, key: p.key, class: p.class, classRatified: p.classRatified });
           }
@@ -2900,6 +2921,55 @@ export default class JPCollocationsPlugin extends Plugin {
     new Notice(msg, 6000);
     this.refreshReconLibrary();
     return msg;
+  }
+
+  /**
+   * §27.5/§27.7 step 3 — convert an extracted Yomitan export into vault
+   * sidecars. Desktop only, and deliberately so: the export is 522MB and lives
+   * outside the vault. The big dictionaries must never enter the plugin data
+   * blob (AUDIT §18 recorded a 62MB blob from exactly that mistake), so this
+   * writes sharded JSONL that syncs like any other vault file and uninstalls by
+   * deleting the folder.
+   */
+  async convertBigDictionary(): Promise<string> {
+    const folder = this.settings.bigDict?.exportFolder?.trim();
+    if (!folder) {
+      new Notice("設定 → 大型辞書 に、展開したYomitan辞書フォルダのパスを入力してください。", 8000);
+      return "no export folder configured";
+    }
+    let src: BankSource;
+    try {
+      src = nodeBankSource(folder);
+    } catch (err) {
+      new Notice(String(err instanceof Error ? err.message : err), 10000);
+      return String(err);
+    }
+
+    const notice = new Notice("辞書変換の準備中…", 0);
+    let cancelled = false;
+    try {
+      const res = await importEijiro(vaultSidecarIO(this.app), src, {
+        root: this.settings.bigDict?.root || "JP Dictionaries",
+        shouldStop: () => cancelled,
+        onProgress: (p) => {
+          notice.setMessage(
+            `辞書変換 ${p.bank}/${p.banks} — ${p.headwords.toLocaleString()}見出し / ${p.frames.toLocaleString()}フレーム`,
+          );
+        },
+      });
+      // §28 S6: a partial import says so, in place, with the failures named.
+      const msg = res.failed.length
+        ? `${res.title}: ${res.headwords.toLocaleString()}見出し変換（${res.failed.length}バンク失敗: ${res.failed.slice(0, 3).join(", ")}）— 不完全です`
+        : `${res.title}: ${res.headwords.toLocaleString()}見出し / ${res.frames.toLocaleString()}フレーム → ${res.dir}（${(res.ms / 1000).toFixed(1)}秒）`;
+      new Notice(msg, 12000);
+      return msg;
+    } catch (err) {
+      const msg = `辞書変換に失敗: ${String(err instanceof Error ? err.message : err)}`;
+      new Notice(msg, 12000);
+      return msg;
+    } finally {
+      notice.hide();
+    }
   }
 
   /**

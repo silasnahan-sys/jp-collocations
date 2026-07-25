@@ -174,6 +174,13 @@ export interface PluginSettings {
   speak: SpeakSettings;
   /** §25.4 Plex/TV co-viewing adapter (clock (b) + clip cutting). */
   plex: PlexSettings;
+  /**
+   * §27.5 big-dictionary sidecars. Absolute path to an EXTRACTED Yomitan export
+   * folder (index.json + term_bank_*.json) — desktop only, and deliberately
+   * outside the vault: 英辞郎 extracts to 522MB and syncing that would be
+   * absurd. The converted shards DO live in the vault, under `bigDictRoot`.
+   */
+  bigDict: { exportFolder: string; root: string };
 }
 
 export const DEFAULT_SRS_SETTINGS: SRSSettings = {
@@ -213,6 +220,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     goalPoints: 30,
   },
   plex: { ...DEFAULT_PLEX_SETTINGS },
+  bigDict: { exportFolder: '', root: 'JP Dictionaries' },
 };
 
 export interface StoreStats {

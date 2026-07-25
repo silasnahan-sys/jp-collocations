@@ -1,0 +1,224 @@
+/**
+ * sidecar.ts — sharded vault storage for the BIG dictionaries (DESIGN §27.5).
+ *
+ * `DictionaryStore` holds every term in memory and serializes into the plugin
+ * data blob. That is correct for a 30k-entry Yomitan dict and catastrophic for
+ * 英辞郎's 2.36M — AUDIT §18 already recorded a 62MB blob from exactly this
+ * mistake, and the blob is rewritten wholesale on every save. So the big dicts
+ * live in the vault as ordinary files instead:
+ *
+ *   JP Dictionaries/<title>/meta.json          — what this is, how it is sharded
+ *   JP Dictionaries/<title>/head-NNN.jsonl     — headwords, one JSON per line
+ *   JP Dictionaries/<title>/frame-NNN.jsonl    — the reach-for index
+ *
+ * **There is deliberately no index file.** A headword→shard map for 2.36M
+ * entries would itself be tens of MB and would have to be loaded to answer one
+ * lookup — the blob problem again, wearing a different hat. Instead the shard
+ * is a pure function of the key: normalize → hash → shard. Lookup reads exactly
+ * ONE file (~1MB at 512 shards) and scans it. Nothing is held in memory between
+ * queries, which is what makes this phone-safe.
+ *
+ * Files-over-app (§19): these are plain JSONL in the vault. They sync like any
+ * other file, they can be inspected with a text editor, and deleting the folder
+ * uninstalls the dictionary.
+ *
+ * The core is PURE with IO injected — golden: golden/sidecar.mjs.
+ */
+
+import type { DictHeadword, ReachCandidate } from './eijiro.ts';
+import { normalizeFrame } from './frames.ts';
+
+/** Minimal IO surface, so the core tests without Obsidian. */
+export interface SidecarIO {
+  read(path: string): Promise<string | null>;
+  write(path: string, text: string): Promise<void>;
+  append(path: string, text: string): Promise<void>;
+  exists(path: string): Promise<boolean>;
+  mkdir(path: string): Promise<void>;
+  remove(path: string): Promise<void>;
+}
+
+export interface SidecarMeta {
+  title: string;
+  revision: string;
+  /** number of head-*.jsonl shards. Changing this invalidates every path. */
+  shards: number;
+  headwords: number;
+  frames: number;
+  builtAt: number;
+  /** schema version of the line format, so a future change can migrate. */
+  format: 1;
+}
+
+export const DEFAULT_SHARDS = 512;
+
+/**
+ * FNV-1a over the normalized key. Deterministic across platforms and runs —
+ * the shard path IS the index, so this function changing is a data migration.
+ */
+export function hashKey(key: string): number {
+  let h = 0x811c9dc5;
+  const s = String(key).normalize('NFKC');
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/** Which shard a key lives in. Pure — no file, no index, no state. */
+export function shardOf(key: string, shards: number = DEFAULT_SHARDS): number {
+  return hashKey(normalizeLookupKey(key)) % shards;
+}
+
+/**
+ * The lookup key normalization. Must be applied identically at write and read
+ * time or entries become unreachable — hence one exported function, not two
+ * call sites doing "roughly the same thing".
+ */
+export function normalizeLookupKey(key: string): string {
+  return String(key ?? '').normalize('NFKC').trim().toLowerCase();
+}
+
+const pad = (n: number) => String(n).padStart(3, '0');
+export const metaPath = (dir: string) => `${dir}/meta.json`;
+export const headPath = (dir: string, shard: number) => `${dir}/head-${pad(shard)}.jsonl`;
+export const framePath = (dir: string, shard: number) => `${dir}/frame-${pad(shard)}.jsonl`;
+
+// ── line format ──────────────────────────────────────────────────────────────
+
+/** One stored headword line. Kept compact — this is written 2.36M times. */
+export interface HeadLine { k: string; e: DictHeadword }
+/** One stored frame line: the key plus the candidates that realize it. */
+export interface FrameLine { k: string; c: ReachCandidate[] }
+
+export const encodeLine = (o: unknown): string => JSON.stringify(o) + '\n';
+
+/** Parse a JSONL body, skipping blank lines and surviving a torn last line. */
+export function decodeLines<T>(text: string | null): T[] {
+  if (!text) return [];
+  const out: T[] = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    try { out.push(JSON.parse(line) as T); } catch { /* torn write — skip */ }
+  }
+  return out;
+}
+
+// ── writing ──────────────────────────────────────────────────────────────────
+
+/**
+ * Group entries into their shards. Returned as a Map so the caller can write
+ * one file per shard in a batched loop rather than 2.36M appends.
+ */
+export function planHeadShards(
+  entries: DictHeadword[], shards: number = DEFAULT_SHARDS,
+): Map<number, HeadLine[]> {
+  const plan = new Map<number, HeadLine[]>();
+  for (const e of entries) {
+    const k = normalizeLookupKey(e.expression);
+    const s = hashKey(k) % shards;
+    const list = plan.get(s);
+    const line: HeadLine = { k, e };
+    if (list) list.push(line); else plan.set(s, [line]);
+  }
+  return plan;
+}
+
+/** Same, for the reach-for index — keyed on the normalized FRAME. */
+export function planFrameShards(
+  entries: DictHeadword[], shards: number = DEFAULT_SHARDS,
+): Map<number, FrameLine[]> {
+  const byKey = new Map<string, ReachCandidate[]>();
+  for (const e of entries) {
+    for (const c of e.reachFor) {
+      const k = normalizeFrame(c.frameKey);
+      if (!k) continue;
+      const list = byKey.get(k);
+      if (list) list.push(c); else byKey.set(k, [c]);
+    }
+  }
+  const plan = new Map<number, FrameLine[]>();
+  for (const [k, c] of byKey) {
+    const s = hashKey(normalizeLookupKey(k)) % shards;
+    const list = plan.get(s);
+    const line: FrameLine = { k, c };
+    if (list) list.push(line); else plan.set(s, [line]);
+  }
+  return plan;
+}
+
+/**
+ * Append one batch of adapted entries. Import streams bank-by-bank, so this is
+ * called ~237 times rather than once with everything in memory — the whole
+ * point of sharding is that the full corpus never has to be resident.
+ */
+export async function appendBatch(
+  io: SidecarIO, dir: string, entries: DictHeadword[], shards: number = DEFAULT_SHARDS,
+): Promise<{ heads: number; frames: number }> {
+  const heads = planHeadShards(entries, shards);
+  const frames = planFrameShards(entries, shards);
+  let h = 0, f = 0;
+  for (const [shard, lines] of heads) {
+    await io.append(headPath(dir, shard), lines.map(encodeLine).join(''));
+    h += lines.length;
+  }
+  for (const [shard, lines] of frames) {
+    await io.append(framePath(dir, shard), lines.map(encodeLine).join(''));
+    f += lines.length;
+  }
+  return { heads: h, frames: f };
+}
+
+export async function writeMeta(io: SidecarIO, dir: string, meta: SidecarMeta): Promise<void> {
+  await io.write(metaPath(dir), JSON.stringify(meta, null, 1));
+}
+
+export async function readMeta(io: SidecarIO, dir: string): Promise<SidecarMeta | null> {
+  const t = await io.read(metaPath(dir));
+  if (!t) return null;
+  try { return JSON.parse(t) as SidecarMeta; } catch { return null; }
+}
+
+// ── reading ──────────────────────────────────────────────────────────────────
+
+/**
+ * Look up one headword. Reads exactly one shard file and nothing else.
+ * Multiple entries can share an expression (Eijiro has many); all are returned.
+ */
+export async function lookupHead(
+  io: SidecarIO, dir: string, expression: string, shards: number = DEFAULT_SHARDS,
+): Promise<DictHeadword[]> {
+  const k = normalizeLookupKey(expression);
+  const text = await io.read(headPath(dir, hashKey(k) % shards));
+  return decodeLines<HeadLine>(text).filter((l) => l.k === k).map((l) => l.e);
+}
+
+/**
+ * Look up a frame — the reach-for query. Same single-file read.
+ * The caller passes any notation; `normalizeFrame` makes Eijiro's `$__`, the
+ * user's `～` and a gapped sentence land on the same shard and the same key.
+ */
+export async function lookupFrame(
+  io: SidecarIO, dir: string, frame: string, shards: number = DEFAULT_SHARDS,
+): Promise<ReachCandidate[]> {
+  const k = normalizeFrame(frame);
+  if (!k) return [];
+  const text = await io.read(framePath(dir, hashKey(normalizeLookupKey(k)) % shards));
+  const out: ReachCandidate[] = [];
+  for (const l of decodeLines<FrameLine>(text)) if (l.k === k) out.push(...l.c);
+  return out;
+}
+
+/** Remove a dictionary: delete its folder's files. Uninstall = delete. */
+export async function dropSidecar(
+  io: SidecarIO, dir: string, shards: number = DEFAULT_SHARDS,
+): Promise<void> {
+  for (let s = 0; s < shards; s++) {
+    for (const p of [headPath(dir, s), framePath(dir, s)]) {
+      if (await io.exists(p)) await io.remove(p);
+    }
+  }
+  if (await io.exists(metaPath(dir))) await io.remove(metaPath(dir));
+}

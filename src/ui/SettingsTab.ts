@@ -10,11 +10,16 @@ import type { PluginSettings, SpeakerFormat } from "../types.ts";
 import type { CollocationStore } from "../data/CollocationStore.ts";
 import type { HyogenScraper } from "../scraper/HyogenScraper.ts";
 
+/** The slice of the plugin this tab calls back into (kept narrow to avoid a
+ *  circular import of the concrete plugin class). */
+type SettingsHost = Plugin & { convertBigDictionary?: () => Promise<string> };
+
 export class SettingsTab extends PluginSettingTab {
   private settings: PluginSettings;
   private store: CollocationStore;
   private getScraper: () => HyogenScraper | null;
   private onSettingsChange: () => Promise<void>;
+  private host: SettingsHost;
 
   constructor(
     app: App,
@@ -25,6 +30,7 @@ export class SettingsTab extends PluginSettingTab {
     onSettingsChange: () => Promise<void>
   ) {
     super(app, plugin);
+    this.host = plugin as SettingsHost;
     this.settings = settings;
     this.store = store;
     this.getScraper = getScraper;
@@ -235,6 +241,50 @@ export class SettingsTab extends PluginSettingTab {
       });
 
     // ── Audio clips (yt-dlp) — DESKTOP ONLY, DESIGN §12 Tier 1 ─────
+    // ── §27.5 big dictionaries as vault sidecars ──────────────────────────
+    containerEl.createEl("h3", { text: "大型辞書（英辞郎など）— デスクトップ限定" });
+    if (!this.settings.bigDict) this.settings.bigDict = { exportFolder: "", root: "JP Dictionaries" };
+    const big = this.settings.bigDict;
+    if (!Platform.isDesktopApp) {
+      containerEl.createEl("p", {
+        text: "変換はデスクトップ版でのみ実行できます（モバイルには Node がありません）。変換済みの辞書はモバイルでも読めます。",
+        cls: "setting-item-description",
+      });
+    }
+    const bigDesc = containerEl.createEl("p", { cls: "setting-item-description" });
+    bigDesc.innerHTML =
+      "英辞郎（236万語）のような巨大辞書は、プラグインのデータ blob に入れると起動のたびに全体が読み書きされます。" +
+      "代わりに<b>金庫内のシャードJSONL</b>へ変換します — 1回の検索で読むファイルは1つだけ、索引ファイルはありません。<br>" +
+      "Yomitan書き出しZIPを<b>展開したフォルダ</b>（index.json と term_bank_*.json がある場所）を指定してください。" +
+      "ZIPは金庫の外に置いたままで構いません（展開後 522MB を同期する必要はありません）。";
+
+    new Setting(containerEl)
+      .setName("Yomitan書き出しフォルダ（展開済み）")
+      .setDesc("例: C:/Users/…/eijiro-yomitan  ── index.json を含むフォルダ")
+      .addText(t => t
+        .setPlaceholder("/path/to/extracted-export")
+        .setValue(big.exportFolder)
+        .onChange(async v => { big.exportFolder = v.trim(); await this.onSettingsChange(); }));
+
+    new Setting(containerEl)
+      .setName("変換先フォルダ（金庫内）")
+      .setDesc("シャードの置き場所。フォルダごと削除すればアンインストールになります。")
+      .addText(t => t
+        .setValue(big.root)
+        .onChange(async v => { big.root = v.trim() || "JP Dictionaries"; await this.onSettingsChange(); }));
+
+    new Setting(containerEl)
+      .setName("辞書を変換")
+      .setDesc("コマンド「辞書: Convert Yomitan Export → Vault Sidecars」と同じ。再実行すると作り直します。")
+      .addButton(b => b
+        .setButtonText("変換を実行")
+        .setDisabled(!Platform.isDesktopApp)
+        .onClick(async () => {
+          b.setDisabled(true).setButtonText("変換中…");
+          try { await this.host.convertBigDictionary?.(); }
+          finally { b.setDisabled(false).setButtonText("変換を実行"); }
+        }));
+
     containerEl.createEl("h3", { text: "音声クリップ (yt-dlp) — デスクトップ限定" });
     const audio = this.settings.audioExtraction;
     if (!Platform.isDesktopApp) {
