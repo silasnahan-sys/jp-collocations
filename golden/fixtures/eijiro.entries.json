@@ -1,0 +1,182 @@
+{
+ "\"V for Victory\" sign": [
+  "\"V for Victory\" sign",
+  "",
+  "",
+  "",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"sense\"><span class=\"label\">the ～</span> <span class=\"label\">the ～</span>〔人さし指と中指で作る〕勝利を意味するVサイン</div>"
+   }
+  ],
+  29,
+  ""
+ ],
+ "$__ in arrears": [
+  "$__ in arrears",
+  "",
+  "",
+  "",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"sense\"><span class=\"label\">be ～</span> <span class=\"label\">be ～</span>＿ドルの支払いが滞っている</div>"
+   }
+  ],
+  49,
+  ""
+ ],
+ "$__ will automatically be taken off your ~ purchase": [
+  "$__ will automatically be taken off your ~ purchase",
+  "",
+  "",
+  "",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"sense\">～を買うと自動的に＿ドル値引きされる</div>"
+   }
+  ],
+  64,
+  ""
+ ],
+ "$__ discount per person": [
+  "$__ discount per person",
+  "",
+  "",
+  "",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"sense\"><span class=\"label\">a ～</span> <span class=\"label\">a ～</span>1人当たり<span class=\"alt\">[につき]</span>＿ドルの割引<span class=\"alt\">[値引き]</span></div>"
+   }
+  ],
+  47,
+  ""
+ ],
+ "\"bring it on\" gesture": [
+  "\"bring it on\" gesture",
+  "",
+  "",
+  "",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"sense\"><span class=\"label\">a ～</span> <span class=\"label\">a ～</span>「かかってこい」というジェスチャー</div>\n<div class=\"supplement\">上向きの指先などで招くしぐさ。</div>"
+   }
+  ],
+  4,
+  ""
+ ],
+ "\"": [
+  "\"",
+  "",
+  "",
+  "n",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"entry-header\"><span class=\"pos-tag\">名</span></div>\n<ol class=\"senses\">\n<li><span class=\"sense-pos\">名</span> ＝<span class=\"xref\">→inch</span><span class=\"xref\">→ inch</span></li>\n<li><span class=\"sense-pos\">名</span> ＝<span class=\"xref\">→double quotation mark</span><span class=\"xref\">→ double quotation mark</span></li>\n</ol>"
+   }
+  ],
+  2,
+  ""
+ ],
+ "!": [
+  "!",
+  "",
+  "",
+  "n",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"entry-header\"><span class=\"pos-tag\">名</span></div>\n<div class=\"sense\">＝<span class=\"xref\">→exclamation point</span></div>\n<div class=\"xref\">→ exclamation point</div>"
+   }
+  ],
+  1,
+  ""
+ ],
+ "'tween": [
+  "'tween",
+  "",
+  "",
+  "prep n",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"entry-header\"><span class=\"pos-tag\">前</span> <span class=\"pos-tag\">名</span></div>\n<ol class=\"senses\">\n<li><span class=\"sense-pos\">前</span> ＝<span class=\"xref\">→between</span><span class=\"xref\">→ between</span></li>\n<li><span class=\"sense-pos\">名</span> トゥイーン<div class=\"supplement\">8～12歳の子ども。</div><div class=\"supplement\">preteenとほとんど同じ意味だが、口語的・俗語的。preteenよりやや広い意味を持つこともある。</div></li>\n</ol>"
+   }
+  ],
+  137,
+  ""
+ ],
+ "(Hugo) Alvar (Henrik) Aalto": [
+  "(Hugo) Alvar (Henrik) Aalto",
+  "",
+  "",
+  "人名",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"entry-header\"><span class=\"pos-tag\">人名</span></div>\n<div class=\"sense\">アルヴァ・アールト</div>\n<div class=\"supplement\">フィンランドの建築家・家具のデザイナー。1898～1976年</div>"
+   }
+  ],
+  146,
+  ""
+ ],
+ "$1 store": [
+  "$1 store",
+  "",
+  "",
+  "",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"sense\">米国版100円ショップ</div>"
+   }
+  ],
+  35,
+  ""
+ ],
+ "$64 question": [
+  "$64 question",
+  "",
+  "",
+  "",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"sense\">難しい<span class=\"alt\">[回答の困難な]</span>質問<span class=\"alt\">[問題]</span>、難題、重大な問題</div>"
+   }
+  ],
+  37,
+  ""
+ ],
+ "$__ a game": [
+  "$__ a game",
+  "",
+  "",
+  "",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"sense\">〔遊びが〕1回＿ドル</div>"
+   }
+  ],
+  41,
+  ""
+ ]
+}
