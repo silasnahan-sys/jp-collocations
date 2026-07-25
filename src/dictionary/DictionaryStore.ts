@@ -60,9 +60,39 @@ export class DictionaryStore {
     }
   }
 
+  /**
+   * Terms above which a dictionary must NOT live in the plugin data blob.
+   *
+   * Learned the hard way on 2026-07-25: a large import pushed `_dictStore` to
+   * **239.6 MB of a 241 MB blob**, the whole-file rewrite was truncated
+   * mid-string, and the plugin then failed to load at all (the view opened for
+   * a second and went white). AUDIT §18 had already flagged the blob; this is
+   * the same failure, an order of magnitude worse. Big dictionaries belong in
+   * vault sidecars (DESIGN §27.5, `sidecar.ts` — one shard read per lookup, no
+   * blob involvement at all).
+   */
+  static readonly BLOB_TERM_LIMIT = 120_000;
+
+  /** Dictionaries too big for the blob — reported, never silently dropped. */
+  oversized(): Array<{ title: string; terms: number }> {
+    const out: Array<{ title: string; terms: number }> = [];
+    for (const d of this.dictionaries.values()) {
+      if (d.terms.length > DictionaryStore.BLOB_TERM_LIMIT) {
+        out.push({ title: d.meta.title, terms: d.terms.length });
+      }
+    }
+    return out;
+  }
+
   async save(): Promise<void> {
     const serialized: SerializedDictionary[] = [];
     for (const dict of this.dictionaries.values()) {
+      // Refuse to write a dictionary that would blow up the blob. Skipping it
+      // here means it lives only in memory for this session and is gone on
+      // reload — which is strictly better than a 240MB blob that cannot be
+      // parsed and takes the whole plugin down with it. `oversized()` lets the
+      // caller say so in place (§28 S6), and the sidecar path is the real home.
+      if (dict.terms.length > DictionaryStore.BLOB_TERM_LIMIT) continue;
       serialized.push(this.serialize(dict));
     }
     await this.persistFn({ dictionaries: serialized, settings: this.settings });

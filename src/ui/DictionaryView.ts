@@ -1221,6 +1221,19 @@ export class DictionaryView extends ItemView {
           const data = await importer.import(buf, (msg) => {
             new Notice(msg, 3000);
           });
+          // §27.5 / AUDIT §18: a dictionary this large cannot live in the
+          // plugin data blob. On 2026-07-25 one did, reached 239MB, its
+          // whole-file rewrite was truncated, and the plugin stopped loading.
+          // Say so BEFORE importing rather than after the damage.
+          if (data.terms.length > DictionaryStore.BLOB_TERM_LIMIT) {
+            new Notice(
+              `「${data.meta.title}」は ${data.terms.length.toLocaleString()} 語 — 大きすぎるため` +
+              `プラグインのデータに保存できません（${DictionaryStore.BLOB_TERM_LIMIT.toLocaleString()}語まで）。\n` +
+              `設定 → 大型辞書 で「Yomitan書き出しフォルダ」を指定し、金庫内シャードに変換してください。`,
+              15000,
+            );
+            continue;
+          }
           this.dictStore.addDictionary(data);
           await this.onImport();
           new Notice(`✓ Imported "${data.meta.title}" (${data.meta.termCount.toLocaleString()} terms)`, 5000);
