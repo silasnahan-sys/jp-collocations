@@ -158,13 +158,13 @@ preserves annotations by id.
 > prev: それについてはまそれは良くないだろうとは思いますよね。
 > **とはいえゆくゆくは自分も置いていくわけじゃないですか。**
 > trigger: とはいえ⟨GRANT-ANCHOR⟩
-> bound to: ものの理解度みたいなものを含めるのであれば完全実力主義でいいと思うんですよ。
+> bound to: でもそれだとただいるだけのやつが高級取りになりますよ。
 
 **[·] nenko:396:GRANT** `06:36` nenko — suggested **✓** — concedes legitimacy of the stance then pivots
 > prev: そう、そういうことですね。俺たちはこのままで言いさせてくれたっていう。
 > **ま、でも僕もその立場だったら絶対そう言うから。**
 > trigger: ま、でも⟨GRANT-ANCHOR⟩
-> bound to: やっぱだから得してる世代です。
+> bound to: 年光の上の方にいる世代は回収だから終わってなるものかっていう。
 
 **[·] nenko:506:GRANT** `08:26` nenko — suggested **✓** — 面白いけど genuine concede-assessment; NB board had no live other-prop (upstream floor inference)
 > prev: 税金を使ってうん。3年間なら3年間社会人として通用するような教育を施してからみんなは本当に今使えるなって思うやつだけを取るにした方が社会としてはフェアな形じゃな
@@ -176,13 +176,13 @@ preserves annotations by id.
 > prev: めっちゃ勉強しなきゃいけない話ですけどね、これね。
 > **ま、でもそういう風に社会設計があってもいいかもしれないねっていう提案としてはね、**
 > trigger: ま、でも⟨GRANT-ANCHOR⟩
-> bound to: (nothing to grant)
+> bound to: ま、だから年除列的な制度ってみんなが働けるってことを前提として制度設計されてるよねってことを堀さ
 
 **[·] nenko:904:GRANT** `15:04` nenko — suggested **✓** — そう+でも = accept then warn
 > prev: そういうのってお金にならないじゃないですか。
 > **そうでもこういうものが排除されてく恐れがあるんですよ。**
 > trigger: そうでも⟨GRANT-ANCHOR⟩
-> bound to: そうだから困っている同僚のサポートとかま、あと職場の雰囲気を良くするための気遣いとか
+> bound to: そういうのってお金にならないじゃないですか。
 
 **[·] nenko:1645:GRANT** `27:25` nenko — suggested **✓** — まあでも concessive wrap
 > prev: すげえぬるっとして。うん。
@@ -194,7 +194,7 @@ preserves annotations by id.
 > prev: とピアノの数からピアノかつ黒いものを引いたもの黒くないピアノですね黒くないピアノの集合の数を比べてみると黒いピアノと黒くないピアノを比べてどっちが大きいかを調べ
 > **わかるけど集合た瞬間めっちゃ難なったそうあでだから今ご弊があったんですけど黒くないものの数黒くないピアノの数っていうのを要すにピアノの数から黒いピアノ引いてもいいじゃないですかそうですねだ**
 > trigger: わかるけど⟨GRANT-ANCHOR⟩
-> bound to: ピアノ黒いピアノかつ黒いものの集合を考える共通分ですね共通分を考えるその数
+> bound to: とピアノの数からピアノかつ黒いものを引いたもの黒くないピアノですね黒くないピアノの集合の数を比べ
 
 ## RELATE_CONTRAST — 9 sampled · suggested ✓ 4/9
 
@@ -252,25 +252,25 @@ preserves annotations by id.
 > trigger: でも⟨CONTRAST-INITIAL⟩
 > bound to: でそういうところでの代謝って多分我々がやってるようなリとかをベストにしたあのなんか3輪さでのシみ
 
-## RATIFY — 20 sampled · suggested ✓ 16/20
+## RATIFY — 20 sampled · suggested ✓ 3/20
 
-**[·] nenko:65:RATIFY** `01:05` nenko — suggested **✕** — そう self-resumptive, not acceptance of other's prop
-> prev: ほら、ほら、ほら、ほら、[笑い]あ、やばい。置いてかれた。
-> **そう、僕は実力主義だって言ってるんですよ。**
-> trigger: そう、⟨BUILD-ON⟩
-> bound to: ほら、ほら、ほら、ほら、[笑い]あ、やばい。置いてかれた。
+**[·] nenko:95:RATIFY** `01:35` nenko — suggested **·** 
+> prev: それを実力のうちだとカウントするのであれば僕も賛動します。
+> **うん。ああ。**
+> trigger: via「なるほどね」
+> bound to: それを実力のうちだとカウントするのであれば僕も賛動します。
 
-**[·] nenko:191:RATIFY** `03:11` nenko — suggested **✓** — そう。で = accept then build
-> prev: ま、だから現在の会社でそれを実力として捉えてもらえているかどうかって話ですよね。
-> **そう。で、結局それが定不可能って話だと思うんですよ。**
-> trigger: そう。で⟨INITIAL-UPTAKE⟩
-> bound to: ま、だから現在の会社でそれを実力として捉えてもらえているかどうかって話ですよね。
+**[·] nenko:173:RATIFY** `02:53` nenko — suggested **·** 
+> prev: なるほどな。
+> **あのね、分かりました。分かりました。話整理されてきたんですけど、実力の定義だな、これ。**
+> trigger: via「ああ、なるほど。」
+> bound to: あのね、分かりました。分かりました。話整理されてきたんですけど、実力の定義だな、これ。
 
-**[·] nenko:398:RATIFY** `06:38` nenko — suggested **✓** — genuine alignment (めっちゃ気持ち分かります)
-> prev: ま、でも僕もその立場だったら絶対そう言うから。
-> **そう。めっちゃ気持ち分かりますけどね。**
-> trigger: そう。め⟨INITIAL-UPTAKE⟩
-> bound to: ま、でも僕もその立場だったら絶対そう言うから。
+**[·] nenko:456:RATIFY** `07:36` nenko — suggested **·** 
+> prev: それ要はさ、公共の福祉じゃん。
+> **社会として職業訓練を大企業が担おうってさ。**
+> trigger: tacit (conscription + continuer) via「うん。うん。」
+> bound to: それ要はさ、公共の福祉じゃん。
 
 **[·] nenko:578:RATIFY** `09:38` nenko — suggested **✓** — conscription + assent → tacit CG (design case)
 > prev: で、そうなってることでこの問題って大体解決するなと思って。
@@ -278,35 +278,35 @@ preserves annotations by id.
 > trigger: tacit (conscription + continuer) via「うん。」
 > bound to: 大企業が使える人材を育てないとまずいっていう話って案にみんながこの資本主義社会で働ける人材じゃな
 
-**[·] nenko:765:RATIFY** `12:45` nenko — suggested **✓** — genuine uptake of other's suggestion (そうね + engagement)
-> prev: ちゃんと成果主義が機能したら谷口君が言ってる年上列の問題もケアできるんじゃないか。
-> **そうね。ま、それこそやりきった企画数とかに対してインセンティブを出すような設計になってれば反映されてる気はしますね。**
-> trigger: そうね。⟨INITIAL-UPTAKE⟩
-> bound to: ちゃんと成果主義が機能したら谷口君が言ってる年上列の問題もケアできるんじゃないか。
+**[·] nenko:874:RATIFY** `14:34` nenko — suggested **·** 
+> prev: なって気しますよね。
+> **そうなんですよね。これやっぱ年所除列賛成派の意見として組織協力とか知識共有を支えるっていうのがやっぱり強く上げられていて年性やめちゃうともう組織を保つことが難しく。**
+> trigger: via「なるほど」
+> bound to: そうなんですよね。これやっぱ年所除列賛成派の意見として組織協力とか知識共有を支えるっていうのがや
 
-**[·] nenko:843:RATIFY** `14:03` nenko — suggested **✕** — これはですね filler ですね; AGREE-MARK over-fire
-> prev: 数時間単位でPDCAサイクル回してるみたいな生活になってるから数字で目に見える成果が実感として得やすいと思うんですけどやっぱ会社経営ってすごい長期的に数字見るも
-> **これはですね、谷口君が実際苦しんでいる叫びなんで僕には気持ちがよくわかるんですけど、例えばですね、我々が今スタジオの横にあのどこに何が入ってるかの機材の表があるんですよ。**
-> trigger: ですね⟨AGREE-MARK⟩
-> bound to: これ営業の人とかもそうで俺が1億円売上取ってきましたとか言えるんですけど、じゃあ円滑に今年も法人
+**[·] nenko:988:RATIFY** `16:28` nenko — suggested **·** 
+> prev: いるなあ。じゃあいるか。
+> **年光除列いりそう。なんかある程度はいる。あ、てかごめん。違うわ。年光除列って言葉の本来の意味ってさ、除列でしょ。だから長くいるやつほど出世していくって話じゃん。**
+> trigger: via「そうですね。」
+> bound to: 年光除列いりそう。なんかある程度はいる。あ、てかごめん。違うわ。年光除列って言葉の本来の意味って
 
-**[·] nenko:894:RATIFY** `14:54` nenko — suggested **?** — そうだから resumptive; prior turn was itself agreement
-> prev: めっちゃそうだなそれ。
-> **そうだから困っている同僚のサポートとかま、あと職場の雰囲気を良くするための気遣いとか**
-> trigger: そうだか⟨INITIAL-UPTAKE⟩
-> bound to: めっちゃそうだなそれ。
-
-**[·] nenko:1199:RATIFY** `19:59` nenko — suggested **✓** — そう + elaboration accepts and extends
-> prev: プロパガンダしたおかげでみんなめっちゃ麺も食うようになってパンは分かるけどさ麺そっから食れ始めたの意外じゃないそう確ばとかはあだそばとかあったんですよありはした
-> **そうあのものすごいみんな麺食うじゃん今普通に1日1回とか食うあの週間は戦後から麺ってそんなによく食いもんじゃなかったらしいです。**
-> trigger: そうあの⟨INITIAL-UPTAKE⟩
-> bound to: プロパガンダしたおかげでみんなめっちゃ麺も食うようになってパンは分かるけどさ麺そっから食れ始めた
+**[·] nenko:1258:RATIFY** `20:58` nenko — suggested **·** 
+> prev: どういうことですか?内部の成功性。
+> **うん。要はその会社を成立させることをまず第1目標として収益の最適化にバリバリに振ろうとしていない。**
+> trigger: via「ああ、なるほど。」
+> bound to: うん。要はその会社を成立させることをまず第1目標として収益の最適化にバリバリに振ろうとしていない
 
 **[·] nenko:1331:RATIFY** `22:11` nenko — suggested **?** — tacit via ああ、 alone; thin assent evidence
 > prev: 今いる社員を幸せにしたいみたいな気持ちが一番強い。
 > **うん。あ、うん。そうですね。なんかあとさ、年除列みたいにみんなをナーにいい感じにさせといた方が結局みんな幸せって説ありますよね。**
 > trigger: tacit (conscription + continuer) via「ああ、」
 > bound to: うん。あ、うん。そうですね。なんかあとさ、年除列みたいにみんなをナーにいい感じにさせといた方が結
+
+**[·] nenko:1344:RATIFY** `22:24` nenko — suggested **·** 
+> prev: そう、そう。やっぱ負荷に耐えられる人が多いわけじゃないです。
+> **ね。競争に向いてない。競争したくないって気持ちもすごいわかるもんな。**
+> trigger: via「確かに」
+> bound to: ね。競争に向いてない。競争したくないって気持ちもすごいわかるもんな。
 
 **[·] nenko:1431:RATIFY** `23:51` nenko — suggested **✓** — 確かに = real acceptance
 > prev: 俺も俺も一緒。
@@ -320,59 +320,59 @@ preserves annotations by id.
 > trigger: via「なるほど」
 > bound to: 調夫を強調するのはですね京都出身ですって言うとその京都市内の人からあのかまされてしまいますのでか
 
-**[·] imiron:950:RATIFY** `15:50` imiron — suggested **✓** — なるほど genuine acceptance of explanation
-> prev: のちょっと気持ち悪いですけどねこういうだからこういう状況とかこういう状態現実かどうかわからないですよこういう状態っていうことが発言によって伝わるわけですだから水
-> **たらあ水さんのタムの数は奇数っていう状況が成立してるんだなってそれ信じたらそれは正しいしいやそれは間違ってるよっていうこともできるそれが心理条件だしそういうのが**
+**[·] imiron:923:RATIFY** `15:23` imiron — suggested **·** 
+> prev: はいはい意味分かりますよね我々全員日本語話者としてでもそれってもう事実かどうか絶対わからないじゃない数えないとわかんないですだからましないしできないじゃないです
+> **これが進化義はでも言葉の意味は分かってるうんああなので心理条件を知るっていうことは実際にそれが進化自を知るってことでは当然ない世界に関する何らかの事実化いうことですねそれ条件ってて**
 > trigger: via「なるほど」
-> bound to: たらあ水さんのタムの数は奇数っていう状況が成立してるんだなってそれ信じたらそれは正しいしいやそれ
+> bound to: はいはい意味分かりますよね我々全員日本語話者としてでもそれってもう事実かどうか絶対わからないじゃ
 
-**[·] imiron:1859:RATIFY** `30:59` imiron — suggested **✓** — conscripted + うんうんはいはい assent run = tacit acceptance
-> prev: な可能な空間上はいくらでも存するわけ
-> **じゃないですか我々人類が到達したのはその国一部というかでラムダ計算があるその普通の1回術語論理があるみたいなこう色々あるわけじゃないですか**
-> trigger: tacit (conscription + continuer) via「うんうんはいはい」
-> bound to: じゃないですか我々人類が到達したのはその国一部というかでラムダ計算があるその普通の1回術語論理が
-
-**[·] imiron:2921:RATIFY** `48:41` imiron — suggested **✓** — なるほどなるほど acceptance
-> prev: 自動的に導出されるようなメカを作ろう
-> **モタとまやってることは同じなんですけどもこの人たちはもうチョムスキーの影響を受けているのでチョムスキーが言っているこの自然言語のツリあれを直接解釈するようなメカを作だから**
-> trigger: via「なるほどなるほど」
-> bound to: モタとまやってることは同じなんですけどもこの人たちはもうチョムスキーの影響を受けているのでチョム
-
-**[·] imiron:3876:RATIFY** `1:04:36` imiron — suggested **✓** — なるほどうんうんうん acceptance
-> prev: 意論なですえだからねこれ難しいのが心理条件的意論ってのは意論立場なんだけど形式意論ってのは意論の位手法というか
-> **あってますこの理解あそういいんじゃないですかねまるまる意味論っていうやつちょ要注意でそのイロの研究分野の1つのとがイロの**
-> trigger: via「なるほどうんうんうん」
-> bound to: あってますこの理解あそういいんじゃないですかねまるまる意味論っていうやつちょ要注意でそのイロの研
-
-**[·] imiron:5413:RATIFY** `1:30:13` imiron — suggested **✓** — 確かに acceptance
-> prev: あの訂正をさせていただきますけどじゃテロップに入れてきましょうちょはい結局そうですねモアブとモースト分を比べてどうもその資格課題を同じでも我々の反応が変わってく
-> **いろんな一連の研究ということになるかなと思いますそうでも言われてみるとそんな気もするかもなんか日本の都道府県のほとんどは山ばかりだて言われたってなんとなく日本全体を考えてるうん**
-> trigger: via「確かに」
-> bound to: いろんな一連の研究ということになるかなと思いますそうでも言われてみるとそんな気もするかもなんか日
-
-**[·] imiron:6084:RATIFY** `1:41:24` imiron — suggested **✓** — なるほどうん acceptance
-> prev: ってことですよねそのやり口は絶対原理的なうん原理的なところに関心があるという
-> **うんなるうん今のその具体的**
-> trigger: via「なるほどうん」
-> bound to: うんなるうん今のその具体的
-
-**[·] imiron:7487:RATIFY** `2:04:47` imiron — suggested **✓** — assent run ending ですよね on prior explanation
-> prev: けど泉先生は男性だっていう時はその泉先生ただ1人を差してるから全然振るまい違いそうな感じます違いますよねうんて
-> **いうのが多分今まで言われていたことでこ名詞は扱いはちょっと例外なんじゃないかうんいう風に扱われてきたはずそうなんですでそれが普通の論理学とか数理論理学の伝統でも**
-> trigger: via「うんうんうんうんですよね」
-> bound to: いうのが多分今まで言われていたことでこ名詞は扱いはちょっと例外なんじゃないかうんいう風に扱われて
-
-**[·] imiron:8548:RATIFY** `2:22:28` imiron — suggested **✓** — なるほど acceptance
-> prev: いうか同じ種類のもの例えばつげることは例えば動物にもできるかもしれませんけれども例えばあの黒い壁っていう情報と
-> **か臭くて黒い壁とかだそういった情報は多分統合できてないかもしれないですよねあれはその限られてくるうんでそういうのをむしろ人間の言語がさせてくれてるんじゃないかとマジを経由してて**
+**[·] imiron:2078:RATIFY** `34:38` imiron — suggested **·** 
+> prev: いう感じでこうモンタはその厳密な論理言語で英語の結構な部分をですねこうあの書き下したわけですでだそれは理論でこれまでだからま要するに自然言語っていうものの理論な
+> **まふわっとしてて曖昧でどうしようもないよねって思ってたところをですねうんああトゴの方ではチョムスキーが50年代に現れていやこうすればいいんだよってこうさささっという風な感じで形式化し**
 > trigger: via「なるほど」
-> bound to: か臭くて黒い壁とかだそういった情報は多分統合できてないかもしれないですよねあれはその限られてくる
+> bound to: まふわっとしてて曖昧でどうしようもないよねって思ってたところをですねうんああトゴの方ではチョムス
 
-**[·] imiron:9699:RATIFY** `2:41:39` imiron — suggested **✓** — なるほど + reformulating check = accept + verify
-> prev: って我々言うしっていうでそれはJSミル的な発想なんですね全ては昨日ミルはそういった数学とか論理学とかも全部機能なので心理的な事実うん我々はそう教わってるしそれと
-> **なるほどそうだっていう人間抜きで存在してるようなものなのではないってことですねミがそうそうそうそうでLMって見る的だなと思ってでもそれだからるってそんなほまでやってんですかジョンスチミル理**
-> trigger: なるほど⟨INITIAL-UPTAKE⟩
-> bound to: って我々言うしっていうでそれはJSミル的な発想なんですね全ては昨日ミルはそういった数学とか論理学
+**[·] imiron:2932:RATIFY** `48:52` imiron — suggested **·** 
+> prev: モタとまやってることは同じなんですけどもこの人たちはもうチョムスキーの影響を受けているのでチョムスキーが言っているこの自然言語のツリあれを直接解釈するようなメカ
+> **これ名前がセマンティクスインジェネラティブグラマーてなってるんだけどジェネラティブグラマーて生分だからあのハマクラ読むために文法の理解も必要になるのもまた形式難しいとなんだけどでもこれすごいねでかい進歩**
+> trigger: via「なるほど」
+> bound to: これ名前がセマンティクスインジェネラティブグラマーてなってるんだけどジェネラティブグラマーて生分
+
+**[·] imiron:3700:RATIFY** `1:01:40` imiron — suggested **·** 
+> prev: あシアとかがなんか人を殺しちゃってウプスみたいなごめんああ派手
+> **な派手ななんかこんな場所で使わないよそれていう時におっとて言っちゃってるみたいなそうそうていうごめんなさいに拾えなくてすいまかったですはいすいませんなるそれってでもなんかもうもはや意論でなってご論なんじゃない**
+> trigger: via「なるほど」
+> bound to: な派手ななんかこんな場所で使わないよそれていう時におっとて言っちゃってるみたいなそうそうていうご
+
+**[·] imiron:5349:RATIFY** `1:29:09` imiron — suggested **·** 
+> prev: これはその角のそのエラーの出方とかであの調べようとしてるっていうさっきの黒いピアのやは泉先生が実験でやられた全然違いますこれはただメリーランド大学の大学院生もう
+> **大学で教えてると思いますけどもの人がやった研究ですね私の元指導教官とかが感でるでそれで実験した結果どうだったみたいな話はえっとどうなったんでしたっけ結局を使う時はその黒いピアノと黒く**
+> trigger: via「なるほど」
+> bound to: 大学で教えてると思いますけどもの人がやった研究ですね私の元指導教官とかが感でるでそれで実験した結
+
+**[·] imiron:5968:RATIFY** `1:39:28` imiron — suggested **·** 
+> prev: 使い方とかだよねら抜き言葉良くないとかそういったこととかは全然ま基本的に勝ちしなての言語枠のま根本的な立ですうんそうですねでも倫理がやっぱ言語哲学というかま哲学
+> **そうですねだからそういったこともその守備範囲にはな入ってくるということになります面白いよねだからさ結果的に応用的なことしてるわけじゃん言語哲学がそうだね哲学って言うとね理論**
+> trigger: via「なるほど」
+> bound to: そうですねだからそういったこともその守備範囲にはな入ってくるということになります面白いよねだから
+
+**[·] imiron:6756:RATIFY** `1:52:36` imiron — suggested **·** 
+> prev: コノテーションみたいなものペガサスっていう言葉の外因コノテーションみたいなものが全然違うので片方は褒めてるかもしれないし片方はいじってるかもしれないしうんていう
+> **ようって時にっとした認知言語学的なアプローチがいいのかもしれないしああなんかぱ責任範囲だよね責任**
+> trigger: via「なるほど」
+> bound to: ようって時にっとした認知言語学的なアプローチがいいのかもしれないしああなんかぱ責任範囲だよね責任
+
+**[·] imiron:7853:RATIFY** `2:10:53` imiron — suggested **·** 
+> prev: うんうんまそういう感じになりますそうだ冒頭にいくつか例出てたけど例読んだらなと思ったんだよな俺も面白いね今日このちょいがち言語学でやってるせいで俺感覚バグってき
+> **面白い問だって今なってるんだけどいつもの感じゆ言語からラでこれ持ってこられたらどうでもいいですって返すやったこれ難しい今感覚をくなってるそうですよすいマジックにすごい面白い今日あ**
+> trigger: via「なるほどね」
+> bound to: 面白い問だって今なってるんだけどいつもの感じゆ言語からラでこれ持ってこられたらどうでもいいですっ
+
+**[·] imiron:8862:RATIFY** `2:27:42` imiron — suggested **·** 
+> prev: だっていうそういうそれ面白いなそれはもうね言語会のずっと未解決問題そ言語は
+> **思考のためのツール派と言語はコミュニケーションためのツール派がもうバチバチ根深いねこの戦いスとかしこうなんだけどコミュニケーション派の人もやっぱ十分な数いるからうん泉先生は**
+> trigger: via「なるほど」
+> bound to: 思考のためのツール派と言語はコミュニケーションためのツール派がもうバチバチ根深いねこの戦いスとか
 
 ## SUBSTITUTE — 11 sampled · suggested ✓ 11/11
 
@@ -533,87 +533,87 @@ preserves annotations by id.
 > **もあの普通意味って何かっていうその標準的な立場とか多分紹介しいいははいあはい**
 > bound to: parked: じゃ泉先生がどういう立場なのか一旦置いておいて置いておいてでみんなの脳に深すごいぞこれいいよそう
 
-## TACIT_CG — 16 sampled · suggested ✓ 7/16
+## TACIT_CG — 16 sampled · suggested ✓ 0/16
 
 **[·] nenko:38:TACIT_CG:0** `00:38` nenko — suggested **✕** — cascades from じゃないかな misfire conscription
 > **そうですよ。**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
 > bound to: あれマックス振らないにしてもこんぐらい行ってもいいんじゃないかな。
 
-**[·] nenko:68:TACIT_CG:1** `01:08` nenko — suggested **✕** — the central contested thesis; not tacitly settled
-> **で、この実力の中には仕事で結果を出すということが含まれてるんですね。**
+**[·] nenko:119:TACIT_CG:1** `01:59` nenko — suggested **·** 
+> **それってやっぱり時間をかけてその会社と感覚が一致してる人ほど会社にとっての**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
-> bound to: もう古いんじゃないですか。
+> bound to: 結果を出すためには当然その会社の中身とか組織構造とかを理解していた方が有利じゃないですか。
 
-**[·] nenko:142:TACIT_CG:2** `02:22` nenko — suggested **?** — became shared via explicit それはそうなんだけど the recognizer missed; tacit channel wrong
-> **そう。あなたの仕事はここでこれだけの金額の取引を成立させることですとだけ言われてれば、ま、それで完結するじゃないですか。**
+**[·] nenko:180:TACIT_CG:2** `03:00` nenko — suggested **·** 
+> **ものの理解度みたいなものを含めるのであれば完全実力主義でいいと思うんですよ。**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
-> bound to: 年情率じゃないじゃん。だっていや、ま、それはそうなんだけど、生主義的な価値観であなたはこの部分だ
+> bound to: そう。あなたの仕事はここでこれだけの金額の取引を成立させることですとだけ言われてれば、ま、それで
 
-**[·] nenko:240:TACIT_CG:3** `04:00` nenko — suggested **✓** — characterization adopted by both
-> **それさ、その俺たちがこの会社の黄金機を支えてやったんだから、今は価値産んでなくてもたくさん金もらうのは当たり前なんだっていうじじの論法。**
+**[·] nenko:253:TACIT_CG:3** `04:13` nenko — suggested **·** 
+> **ま、そのまま拡大してくと、ま、そう言えてしまう話ではありますけど。**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
-> bound to: そう。何も学習していないのに30年いるだけのやつに高い金払っての正解なんかっていう感じですよね。
+> bound to: とはいえゆくゆくは自分も置いていくわけじゃないですか。
 
-**[·] nenko:335:TACIT_CG:4** `05:35` nenko — suggested **✓** — unchallenged; discussion proceeds on it
-> **うん。で、その結果としてもう無理でみんな退職していくわけです。**
+**[·] nenko:651:TACIT_CG:4** `10:51` nenko — suggested **·** 
+> **そうなのよ。うん。**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
-> bound to: 産んでる価値より取されてるわけじゃないですか。
+> bound to: AIなどの活用によって人類の生産性が十分上がるのであれば別にその人たちも働かなくていいと思うんで
 
-**[·] nenko:920:TACIT_CG:5** `15:20` nenko — suggested **?** — garbled bound prop
-> **なんかそれってジョブ型雇用の弊害だよなっていうのめっちゃ思ったね。**
+**[·] nenko:908:TACIT_CG:5** `15:08` nenko — suggested **·** 
+> **うーん。聞いたもん。外師のメーカーに就職した技術職の先輩がみんな自分の仕事しかしてなくてつまんないんだよね。うん。**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
-> bound to: そうそうだそうだてのがあるんすよね。
+> bound to: なって気しますよね。
 
-**[·] nenko:1310:TACIT_CG:6** `21:50` nenko — suggested **?** — underlying じゃないですか? may have been an open question
-> **そう。だからバリバリに稼ぎに行って上場目指すぞとかじゃなくって**
+**[·] nenko:1088:TACIT_CG:6** `18:08` nenko — suggested **·** 
+> **あ、待って俺これ知ってるかも。**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
-> bound to: あ、でも世の空気感ってそっちに寄ってそうじゃないですか?
+> bound to: バランスが大事なんじゃないかな。
 
-**[·] nenko:1514:TACIT_CG:7** `25:14` nenko — suggested **?** — insufficient context
-> **僕今1万円札しかないっすって言って1万円渡してあちょっと待ってくださいねって言ってなんか認室みたいなこ言っておくからガチャガチャ持ってこれ何これ何って僕マジで腹立ってそそのそのことについてばっかり考えてたんすよ今週**
+**[·] nenko:1396:TACIT_CG:7** `23:16` nenko — suggested **·** 
+> **みたいなことをここで話した時に結局AIによってこれまでの単純作業っぽいものは大体されるかもしれないけどAI活用を考えるみたいな新しい仕事が生まれるよねみたいな話になってたと思いますけど**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
-> bound to: あ、効率的じゃないですか?
+> bound to: みんながそれなりに幸せに暮らせるっていうのはベーシックインカムとか生活保護みたいな社会保障でクリ
 
 **[·] imiron:795:TACIT_CG:0** `13:15` imiron — suggested **✕** — meta-move (shelve) treated as prop; should not enter CG
 > **例えばあ女王陛下が来日するから警察官気**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
 > bound to: じゃ泉先生がどういう立場なのか一旦置いておいて置いておいてでみんなの脳に深すごいぞこれいいよそう
 
-**[·] imiron:2402:TACIT_CG:1** `40:02` imiron — suggested **✓** — expository claim; listener proceeds on it
+**[·] imiron:1260:TACIT_CG:1** `21:00` imiron — suggested **·** 
+> **面白い手ですそれはそう俺ら何も持って**
+> trigger: (conscription unchallenged for 6 turns → slid into CG)
+> bound to: ね先生そういうケースもあるじゃないですか違うんじゃないですか
+
+**[·] imiron:2402:TACIT_CG:2** `40:02` imiron — suggested **·** 
 > **でも私は周期表全部書いてるのでて言ってくるでなるあそういうその原理的なことを問題は言ってると硫黄をメインで代謝する生物のことを考えているんだと地球には馴染まないんだけどそういうこともあり**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
 > bound to: でもできるじゃないですかで実際にでもそれで実現している範囲の組み合わせってのはごくその論理的に可
 
-**[·] imiron:3643:TACIT_CG:2** `1:00:43` imiron — suggested **✕** — challenge was answered, not tacitly accepted
-> **の論理がこう書く時はどうしたらいいだろうみたいなめっちゃむいよそんなそういうあれもだから使える時は使えない時があるんですよねはあは例えばハリウッド映画とかで敵の組織を壊滅させてボカーン**
+**[·] imiron:2531:TACIT_CG:3** `42:11` imiron — suggested **·** 
+> **この学会にこの人たちが集まってたとかそういう歴史的な範囲をすごい追ってるので非常によに答えがあってあここの人とこの人こんなツツだったんだみたいななんかそういうのも含めて非常に面白い**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
-> bound to: それは完全統語論の話で意味がそんな違ってくるもんですか形式未論的に扱っっていうのはうんと例えばそ
+> bound to: の話をさっきのそのビジョンサイエンスと例えながら話してくださって例えうまてっそうだからめっちゃ聞
 
-**[·] imiron:4038:TACIT_CG:3** `1:07:18` imiron — suggested **✓** — expository claim; hearer continues within frame
+**[·] imiron:4038:TACIT_CG:4** `1:07:18` imiron — suggested **·** 
 > **それが心理条件心理条件全体が真になる時の条件え心理条件の最初の聞いた説明だとその世界にについての事実なんかわかないけど女王が来日してるみたいなそうね心理表がすなわちその世界について**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
 > bound to: 要するに前提が真だったら結論も真になるあるいはいかなるモデルにおいうん言ってもこの水論は真である
 
-**[·] imiron:4251:TACIT_CG:4** `1:10:51` imiron — suggested **✓** — intuition appeal stood unchallenged
+**[·] imiron:4251:TACIT_CG:5** `1:10:51` imiron — suggested **·** 
 > **というかロンリーエンザみたいな話が多分あってそれを自然語にも持ってこうぜうんそうですそうですてきたのの理条件である**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
 > bound to: ですかそれって結局その勝つとまたはていう単語の意味が違うってことうんですよねでかつまわってどうい
 
-**[·] imiron:5126:TACIT_CG:5** `1:25:26` imiron — suggested **?** — garbled ASR; bound prop unclear
+**[·] imiron:5126:TACIT_CG:6** `1:25:26` imiron — suggested **·** 
 > **が進んでいるので人間の資格っていうのはこういうような特徴があるっていうのも分かってるのを利用してだからもし今のみたいにその大半のピアノが黒いっての聞いた時聞いて一瞬でそのなんか絵を見て**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
 > bound to: ですか一緒ですでそれはまなんかプログラマーとかの趣味とか次第ですよね
 
-**[·] imiron:7843:TACIT_CG:6** `2:10:43` imiron — suggested **✓** — example accepted, discussion proceeds
+**[·] imiron:7843:TACIT_CG:7** `2:10:43` imiron — suggested **·** 
 > **うんうんまそういう感じになりますそうだ冒頭にいくつか例出てたけど例読んだらなと思ったんだよな俺も面白いね今日このちょいがち言語学でやってるせいで俺感覚バグってきてすごいめちゃくちゃ**
 > trigger: (conscription unchallenged for 6 turns → slid into CG)
 > bound to: 例えば勝又さんという苗字は珍しい勝又さんは静岡にしか住んでいないて普通じゃないですか
-
-**[·] imiron:9699:TACIT_CG:7** `2:41:39` imiron — suggested **✓** — example accepted
-> **なるほどそうだっていう人間抜きで存在してるようなものなのではないってことですねミがそうそうそうそうでLMって見る的だなと思ってでもそれだからるってそんなほまでやってんですかジョンスチミル理**
-> trigger: (conscription unchallenged for 6 turns → slid into CG)
-> bound to: データの中に2+2は5っていうのをいっぱい入れといたら2+2は5って言い出すじゃないですか
 
 ## RETRACT_OWN — 7 sampled · suggested ✓ 5/7
 

@@ -364,6 +364,9 @@ function applyTurn(board, turn, r) {
       case 'shelve': fire('SHELVE_QUD', { p: focal ?? newProp(board, s, sp, 'assert', { issue: true }) }); break;
       case 'resume': fire('RESUME_QUD'); break;
       case 'uptake': fire('RATIFY'); break;
+      // Amendment VI: alignment display on a turn that continues with new
+      // content is a floor-take — attend the prop, write nothing to CG.
+      case 'align': fire('ACKNOWLEDGE'); break;
       case 'reject': fire('REJECT'); break;
       case 'concede': fire('GRANT'); break;
       case 'contrast': fire('RELATE_CONTRAST'); break;

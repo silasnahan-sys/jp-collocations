@@ -116,6 +116,26 @@ const INITIAL_UPTAKE_RE = /^(?:あ、?)?(?:いや+ー?、?\s*)?(?:そう(?!い�
 
 const stripLen = (t) => t.replace(/[、。．，,.\s「」『』！!？?ー~〜…]/g, '').length;
 
+// ── AMENDMENT VI (candidate, 2026-07-25): alignment display ≠ issue settled ──
+// Falsified by a blind read of nenko 12:15–16:45 (window fixed before looking):
+// 「そうかな。…めちゃくちゃ測りやすいと思う。」 fired RATIFY — the board moved
+// the OTHER speaker's prop into CG at the moment it was being disputed. Measured
+// across both fixtures: 91% (nenko) / 100% (imiron) of turn-level uptake firings
+// are turns where the speaker went on to say 20+ chars of NEW content. They are
+// floor-takes with an alignment display on the front (「そうですねあとじゃ先生の
+// ご関心内容を…」 = a host moving to the next question), not acceptances.
+// The cause is structural, not a tuning error: the INITIAL-UPTAKE guard REQUIRES
+// stripLen > 8, so this path can only ever fire on a turn that continues past
+// the alignment token — it is incapable of firing on a pure acceptance. Genuine
+// short acceptances already arrive through the grounding channel (turns.mjs
+// gradeBackchannel → applyGrounding), which this amendment leaves untouched.
+// Rule (components.ts / DESIGN §23 semantics — an alignment unit followed by
+// substantive content is a `return`-shaped floor-take): uptake RATIFIES only on
+// a turn that IS the alignment and nothing else; otherwise it ACKNOWLEDGEs —
+// the prop stays live and attended, nothing is written to common ground.
+const ALIGN_ONLY_RE = /^(?:あ、?)?(?:いや+ー?、?\s*)?(?:そう(?:そう)*(?:です(?:ね|よね)?|か|かな|なんです|だね|ね)?|分かる(?:よ)?|わかる(?:よ)?|なるほど(?:ね)?|確かに|たしかに|ですね|だね)[、。！!\s]*$/;
+const isAlignmentOnlyTurn = (t) => ALIGN_ONLY_RE.test(String(t).trim());
+
 /**
  * @param {string} text
  * @returns {{ events: {kind:string, offset:number, surface:string, src:string, grade?:string}[],
@@ -205,6 +225,11 @@ export function recognizeEvents(text) {
     if ((e.kind === 'concede' || e.kind === 'reject' || e.kind === 'uptake') && e.offset > headOff + INITIAL_WINDOW) {
       e.kind = e.kind === 'concede' ? 'contrast-medial' : 'agree-medial';
     }
+  }
+
+  // Amendment VI: demote alignment-plus-content to ACKNOWLEDGE (see above).
+  if (!isAlignmentOnlyTurn(t)) {
+    for (const e of events) if (e.kind === 'uptake') e.kind = 'align';
   }
 
   // (4) question placement
