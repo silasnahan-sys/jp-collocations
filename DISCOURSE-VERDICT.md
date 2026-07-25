@@ -392,6 +392,80 @@ fails, the conclusion is recorded here and the direction changes.
 
 ---
 
+## 12. RESULT — measured 2026-07-25, after the fix, against §11 unchanged
+
+### M1 — **FAIL**
+
+| | | |
+|---|---|---|
+| baseline re-derived (HEAD matcher) | 43 / 302 | 14.2% — matches §11 exactly |
+| **measured with clause-split** | **65 / 302** | **21.5%** |
+| threshold | ≥ 76 / 302 | ≥ 25% |
+
+Recorded but explicitly **not** grounds to relitigate: the same fix scores
+**25.4% on imiron** (77 → 265 / 1042). It would have passed on the unpunctuated
+file. §11 named nenko in advance; nenko is the measurement.
+
+Where the lift went, per primitive on nenko:
+
+```
+CONSCRIPT            28 →  52   (+24)
+SUBSTITUTE            3 →   4   (+1)
+RETRACT_OWN           0 →   1   (+1)
+GRANT                 6 →   6   (+0)
+RELATE_CONTRAST       6 →   6   (+0)
+PROJECT_CONSEQUENCE   3 →   3   (+0)
+DENY_COMMITMENT / RE_TYPE / SHELVE_QUD    unchanged
+```
+
+One channel opened wide; every *relational* primitive stayed exactly as dark as
+before. The seam was real and fixing it did not make this a parser.
+
+### M2 — unratified; the model's pre-read is **20 ✓ / 10 ✕** (inadmissible)
+
+§11 reserves this judgment for the user and that stands — the count above is a
+pre-read, not the criterion. It is recorded only because the failure mode is
+mechanical and singular: **all 10 ✕ have the trigger inside a quotative or
+own-opinion frame** (っていう・みたいな・と思う) that the matcher does not shield
+CONSCRIPT against, though it already detects those markers as `ADJUST_FORCE`.
+
+Mechanical audit of the full recovered set (226 turns, no judgment involved):
+って(いう) 42%, とか 29%, みたいな 19%, と思う 12% — **75% carry at least one.**
+
+### The fix is kept, the label is demoted
+
+The §5.2 bisection defect is genuinely gone: `有利じゃないですか` fires intact and
+`じゃないですか` on nenko went **11 → 14** where the throwaway shim regressed it
+86% → 29%. Residual: `んですね` 1 → 0 and `ですね` 18 → 16 on nenko.
+
+M1 fails ⇒ **the rules road is finished as a route to a parser.** Per §11's fail
+branch, the direction is now the **move concordance**, and CG / Table / Projected
+become internal bookkeeping that is never quoted as a result. The move *label* is
+part of that bookkeeping; the *marker instance* is the concordance's unit — which
+is why the fix is kept rather than reverted. What it bought is a concordance
+asset, not a state-model asset:
+
+```
+imiron, real instances made visible:
+  じゃないですか   7 → 54       ですよね   3 → 66
+  よね            0 → 60       じゃん     0 → 11
+```
+
+That is a decisive result for a production lexicon and a mediocre one for a
+common-ground state model. The plugin needed the former.
+
+### The finding §11 could not have pre-registered
+
+The gate is not the recognizer. §11 requires the user to personally judge 30
+rows; the truth channel stands at **0 / 109 ratified** (0 / 123 frozen) across
+three days, and the session that ran this measurement opened with the labeling
+being handed to the model. Ratification-as-homework has never once completed at
+scale. It has to become a **byproduct of study** — each drill answer, board
+review, and 談話モード boundary tap emitting a ✓✕ silently. That is the next
+seam, and it is a human one.
+
+---
+
 ### Reproducing this
 
 ```bash

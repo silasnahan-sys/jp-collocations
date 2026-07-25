@@ -34,6 +34,72 @@
 
 import { matchSentence } from '../engine/match.mjs';
 
+// ── THE TURN↔SENTENCE SEAM (2026-07-25) ──────────────────────────────
+// match.mjs is, by its own header, a SENTENCE-level matcher: every
+// conscription/alignment trigger carries scope:'sentence-final', validated by
+// classifyPosition requiring ≤6 trailing chars. turns.mjs (Amendment IV) merges
+// ASR fragments into ≤90-char turns — 3108 fragments → 1042 turns on imiron.
+// Handing the whole turn to matchSentence therefore means ONLY THE LAST CLAUSE
+// can ever fire a final-particle operator. Measured before this fix, on imiron:
+// よね present in 184 turns / fired in 8 (4%), でしょ 25/1, じゃん 11/0,
+// ですよね 118/7, んですね 47/4. Not ambiguous — never looked at.
+//
+// Fix: partition the turn into clauses and match each, rebasing offsets so
+// Amendment I's span order survives. Purely skeletal; no content is read.
+// A split may NEVER fall inside a trigger: shapes are matched longest-first and
+// the scanner jumps past a matched cluster rather than retrying a shorter
+// alternative inside it (the defect that made a throwaway probe split
+// 有利じゃない|ですか and lose GROUND-CLAIM).
+const FINAL_SHAPES = [
+  'んじゃないですかね', 'じゃないですかね', 'んじゃないですか', 'じゃないですか',
+  'んですけれども', 'ですけれども', 'ますけれども', 'んですけども', 'んですけど',
+  'んですよね', 'んですかね', 'んじゃない', 'でしょうね', 'ですけども',
+  'んだけども', 'ますけども', 'ですかね', 'ますかね', 'んですね', 'んですよ',
+  'んですか', 'ですけど', 'ますけど', 'んだけど', 'んだよね', 'でしょう',
+  'ですよね', 'ますよね', 'じゃない', 'んですし', 'んだから', 'んですから',
+  'ですね', 'ですか', 'ですし', 'ですよ', 'ますね', 'ますか', 'ますし', 'ますよ',
+  'でしょ', 'だよね', 'んです', 'のです', 'じゃん', 'だから',
+  'ですと', 'ました', 'ません', 'ますと',
+  'よね', 'です', 'ます', 'だよ', 'かな',
+];
+
+/** Partition a merged turn into clause spans, each carrying its base offset. */
+function clauseSpans(text) {
+  const out = [];
+  let start = 0, i = 0;
+  const push = (end) => { if (end > start) out.push({ text: text.slice(start, end), off: start }); start = end; };
+  while (i < text.length) {
+    if (/[。！？!?]/.test(text[i])) { push(i + 1); i = start; continue; }
+    let shape = null;
+    for (const s of FINAL_SHAPES) if (text.startsWith(s, i)) { shape = s; break; } // longest-first
+    if (shape) {
+      const end = i + shape.length;
+      const rest = text.slice(end).replace(/^[、。，,\s]+/, '');
+      // Split only when substantive material follows and the clause is real.
+      // Never split immediately before hard punctuation (that IS the end).
+      if (rest.length >= 3 && end - start >= 4) push(end);
+      i = end;            // jump the cluster — never retry a shorter shape inside it
+      continue;
+    }
+    i++;
+  }
+  if (start < text.length) out.push({ text: text.slice(start), off: start });
+  return out.length ? out : [{ text, off: 0 }];
+}
+
+/** matchSentence over a merged turn: clause-wise, offsets rebased to the turn. */
+function matchTurn(text) {
+  const spans = clauseSpans(text);
+  if (spans.length <= 1) return matchSentence(text);
+  const hits = [];
+  for (const sp of spans) {
+    for (const h of matchSentence(sp.text).hits) hits.push({ ...h, offset: h.offset + sp.off });
+  }
+  hits.sort((a, b) => a.offset - b.offset);
+  // A turn that partitions into ≥2 clauses is definitionally not backchannel-only.
+  return { hits, backchannel: false };
+}
+
 // op-id → event kind (unchanged sets from v1)
 const CONSCRIPT_OPS = new Set(['GROUND-CLAIM', 'CONFIRMATION-SEEK', 'CONJECTURE-APPEAL', 'EXPLAIN-CONFIRM']);
 const DERIVED_OPS = new Set(['CAUSAL-DERIVE', 'CAUSAL-DISCOURSE', 'EXPLAIN-CAUSE']);
@@ -144,7 +210,7 @@ const isAlignmentOnlyTurn = (t) => ALIGN_ONLY_RE.test(String(t).trim());
  */
 export function recognizeEvents(text) {
   const t = String(text || '');
-  const { hits, backchannel } = matchSentence(t);
+  const { hits, backchannel } = matchTurn(t);
   const events = [];
   const push = (kind, offset, surface, src, extra = {}) =>
     events.push({ kind, offset, surface, src, ...extra });
