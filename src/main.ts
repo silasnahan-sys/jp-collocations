@@ -50,6 +50,12 @@ import { makeDictionaryReadingResolver } from "./notes/reading-resolver";
 import { LibraryView, JP_RECON_LIBRARY_VIEW_TYPE } from "./ui/LibraryView";
 import { ReconLibrary } from "./notes/recon-library";
 import { PatternStore, sweepTerms, patternIdFor, derivePattern, attestationKey, type Attestation, type PatternEntry } from "./notes/pattern-store";
+// The move concordance (DISCOURSE-VERDICT §11 fail branch → §12 result).
+import { transcriptToTurns } from "./discourse/calculus/turns.mjs";
+import {
+  buildConcordance as buildConcordanceRows, uptakeProfile, toAttestations,
+  type ConcordanceRow,
+} from "./discourse/concordance.mjs";
 import { sweepEntry, sweepableClass, sweepMuted, findTermAll } from "./notes/sweep-match";
 import { chunkLine } from "./notes/discovery";
 import { PipelineView, JP_PIPELINE_VIEW_TYPE } from "./ui/PipelineView";
@@ -995,6 +1001,12 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "catalog-sweep-transcripts",
       name: "台帳: Sweep All Transcripts for Pattern Sightings",
       callback: async () => { await this.sweepCatalog(); },
+    });
+
+    this.addCommand({
+      id: "build-discourse-concordance",
+      name: "談話: Build Move Concordance from Transcripts",
+      callback: async () => { await this.buildConcordance(); },
     });
 
     this.addCommand({
@@ -2886,6 +2898,77 @@ export default class JPCollocationsPlugin extends Plugin {
     }
     const msg = `走査完了: transcripts ${transcripts}件 → 確定 +${confirmed} / 候補 +${suggested}${suggested ? "（候補は語彙タブで ✓/✕）" : ""}`;
     new Notice(msg, 6000);
+    this.refreshReconLibrary();
+    return msg;
+  }
+
+  /**
+   * THE MOVE CONCORDANCE (DISCOURSE-VERDICT §11 fail branch, §12 result).
+   *
+   * M1 measured 21.5% against a pre-registered 25%, so the board is finished as
+   * a route to a parser and the direction is the concordance: a timestamped,
+   * provenance-carrying index of interactional MARKER INSTANCES, with the move
+   * label demoted to a hint.
+   *
+   * It is deliberately NOT a new store (DESIGN §28 S5 — one road in). Each
+   * marker becomes a 🔴 discourse entry in the catalog you already have, and
+   * every occurrence an attestation with `status:'suggested'`, so it inherits
+   * the lexicon's context tree, ✓✕ ratification, clip playback and source
+   * jumps for free — and so ratification happens as a byproduct of study
+   * rather than as homework (§28 S3, the corollary that 0/109 taught us).
+   */
+  async buildConcordance(): Promise<string> {
+    const files = this.app.vault.getMarkdownFiles().filter((f) => !f.path.endsWith("-cards.md"));
+    const notice = new Notice("談話コンコーダンス作成中…", 0);
+    const now = Date.now();
+    let transcripts = 0, instances = 0;
+    const merged = new Map<string, ConcordanceRow[]>();
+    try {
+      for (const f of files) {
+        const md = await this.app.vault.cachedRead(f);
+        if (!CAPTION_STAMP_RE.test(md)) continue;
+        transcripts++;
+        const { turns } = transcriptToTurns(md);
+        const videoId = this.resolveVideoId(f, f, md);
+        const rows = buildConcordanceRows(turns, {
+          source: {
+            source: "yt", medium: "yt", file: f.path, videoId,
+            sourceName: f.basename,
+            ...(videoId ? { deepLink: `https://youtu.be/${videoId}` } : {}),
+          },
+        });
+        instances += rows.length;
+        for (const r of rows) {
+          const list = merged.get(r.marker) ?? [];
+          list.push(r);
+          merged.set(r.marker, list);
+        }
+        notice.setMessage(`談話コンコーダンス作成中… ${transcripts}本 / ${instances}例`);
+        await new Promise((r) => setTimeout(r, 0));   // keep the UI thread alive
+      }
+
+      // One catalog entry per marker; every occurrence a SUGGESTED attestation.
+      for (const [marker, rows] of merged) {
+        const entry = { marker, rows, opIds: new Map<string, number>(), count: rows.length,
+          ...uptakeProfile(rows) };
+        const atts = toAttestations(entry, now) as unknown as Attestation[];
+        // The CLASS is asserted — a final particle is 🔴 by definition, it is
+        // responsivity-defined (§7 v2). The MOVE is not asserted at all.
+        const pattern = await this.patternStore.recordClassified({
+          note: marker, cls: "discourse", att: atts[0] ?? null,
+        }, now);
+        if (atts.length > 1) {
+          await this.patternStore.addAttestations(
+            atts.slice(1).map((att) => ({ id: pattern.id, att })), now);
+        }
+      }
+    } finally {
+      notice.hide();
+    }
+    const msg = merged.size
+      ? `コンコーダンス: transcripts ${transcripts}本 → ${merged.size}マーカー / ${instances}例（語彙タブの🔴で ✓/✕）`
+      : `コンコーダンス: 字幕付き transcript が見つかりません（[MM:SS] 行が必要）`;
+    new Notice(msg, 8000);
     this.refreshReconLibrary();
     return msg;
   }

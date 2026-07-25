@@ -113,7 +113,7 @@ export class FollowAlongView extends ItemView {
   private snaps: BoardSnap[] = [];       // per-turn board snapshots (surface order)
   private moves: BoardMove[] = [];       // full move log
   private afford: Map<number, string[]> = new Map();  // turn idx → afforded prims for NEXT mover
-  private turnTexts: Array<{ tSec: number | null; speaker: string; text: string }> = [];
+  private turnTexts: Array<{ tSec: number | null; speaker: string | null; text: string }> = [];
   private drill: DrillCase | null = null;
   private boardSnapIdx = -1;
 
@@ -183,7 +183,7 @@ export class FollowAlongView extends ItemView {
     if (this.snaps.length || !this.rawMd) return;
     try {
       const { turns } = transcriptToTurns(this.rawMd);
-      this.turnTexts = turns.map((t: { tSec: number | null; speaker: string; text: string }) =>
+      this.turnTexts = turns.map((t) =>
         ({ tSec: t.tSec ?? null, speaker: t.speaker, text: t.text }));
       const afford = this.afford;
       const board = reduce(turns, recognizeEvents, (b: unknown, _t: unknown, i: number) => {
