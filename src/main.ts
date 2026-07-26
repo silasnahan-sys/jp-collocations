@@ -52,7 +52,8 @@ import { ReconLibrary } from "./notes/recon-library";
 import { PatternStore, sweepTerms, patternIdFor, derivePattern, attestationKey, type Attestation, type PatternEntry } from "./notes/pattern-store";
 // §27.5 big-dictionary sidecars (the blob never sees 2.36M entries).
 import { importEijiro, type BankSource } from "./dictionary/import-eijiro";
-import { vaultSidecarIO, nodeBankSource } from "./dictionary/sidecar-io";
+import { vaultSidecarIO, nodeBankSource, nodeChunkSource } from "./dictionary/sidecar-io";
+import { importDexie } from "./dictionary/import-dexie";
 import { BigDictStore } from "./dictionary/big-dict";
 // The move concordance (DISCOURSE-VERDICT §11 fail branch → §12 result).
 import { transcriptToTurns } from "./discourse/calculus/turns.mjs";
@@ -1075,6 +1076,12 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "convert-big-dictionary",
       name: "辞書: Convert Yomitan Export → Vault Sidecars (desktop)",
       callback: async () => { await this.convertBigDictionary(); },
+    });
+
+    this.addCommand({
+      id: "convert-dexie-backup",
+      name: "辞書: Convert Yomitan Backup (all dictionaries, desktop)",
+      callback: async () => { await this.convertDexieBackup(); },
     });
 
     // §27.0.2 — record a want you cannot yet say. The one place the plugin
@@ -2132,6 +2139,63 @@ export default class JPCollocationsPlugin extends Plugin {
     v.patternsIn = (text) => this.patternsIn(text);
     v.openPattern = (id) => void this.openLexiconAt(id);
     return v;
+  }
+
+  /**
+   * §27.4 — convert EVERY dictionary out of Yomitan's single backup file.
+   *
+   * The zip path does one dictionary at a time. This is the other case: one
+   * 12.7GB JSON holding all of them, which no parser can load, so it streams
+   * and routes rows to their dictionaries as they pass. Measured on the user's
+   * real file: 4,015,521 rows in 185s at a peak buffer under 1MB — memory does
+   * not track the file.
+   *
+   * The registry filter matters: that backup carries 97 distinct titles on its
+   * terms table against 36 registered dictionaries, the surplus being orphans
+   * of removed or superseded ones. They are skipped and counted, never
+   * converted into junk folders and never silently dropped.
+   */
+  async convertDexieBackup(): Promise<string> {
+    const path = this.settings.bigDict?.backupFile?.trim();
+    if (!path) {
+      new Notice("設定 → 大型辞書 に、Yomitanのバックアップ(.json)のパスを入力してください。", 8000);
+      return "no backup file configured";
+    }
+    let src: { chunks: AsyncIterable<string>; size: number };
+    try {
+      src = nodeChunkSource(path);
+    } catch (err) {
+      new Notice(String(err instanceof Error ? err.message : err), 10000);
+      return String(err);
+    }
+
+    const notice = new Notice("バックアップを読み込み中…", 0);
+    const gb = (n: number) => (n / 1073741824).toFixed(2);
+    try {
+      const res = await importDexie(vaultSidecarIO(this.app), src.chunks, {
+        root: this.settings.bigDict?.root || "JP Dictionaries",
+        onProgress: (p) => {
+          notice.setMessage(
+            `辞書バックアップ ${gb(p.bytes)}/${gb(src.size)}GB — ${p.dictionaries}辞書 / ` +
+            `${p.rows.toLocaleString()}語（${p.current}）`,
+          );
+        },
+      });
+      this.bigDict.invalidate();
+      const msg =
+        `バックアップ変換完了: ${res.dictionaries.length}辞書 / ${res.rows.toLocaleString()}見出し` +
+        `（${(res.ms / 1000).toFixed(0)}秒）` +
+        (res.orphans ? ` — 登録外の辞書 ${res.orphans.toLocaleString()}語はスキップ` : "") +
+        (res.unparseable ? ` / 解析不能 ${res.unparseable}語` : "");
+      new Notice(msg, 15000);
+      return msg;
+    } catch (err) {
+      const msg = `バックアップ変換に失敗: ${String(err instanceof Error ? err.message : err)}`;
+      new Notice(msg, 12000);
+      return msg;
+    } finally {
+      notice.hide();
+    }
   }
 
   /**

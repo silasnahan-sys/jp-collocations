@@ -180,7 +180,7 @@ export interface PluginSettings {
    * outside the vault: 英辞郎 extracts to 522MB and syncing that would be
    * absurd. The converted shards DO live in the vault, under `bigDictRoot`.
    */
-  bigDict: { exportFolder: string; root: string };
+  bigDict: { exportFolder: string; root: string; backupFile: string };
 }
 
 export const DEFAULT_SRS_SETTINGS: SRSSettings = {
@@ -220,7 +220,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     goalPoints: 30,
   },
   plex: { ...DEFAULT_PLEX_SETTINGS },
-  bigDict: { exportFolder: '', root: 'JP Dictionaries' },
+  bigDict: { exportFolder: '', root: 'JP Dictionaries', backupFile: '' },
 };
 
 export interface StoreStats {

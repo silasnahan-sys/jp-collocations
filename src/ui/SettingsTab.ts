@@ -12,7 +12,10 @@ import type { HyogenScraper } from "../scraper/HyogenScraper.ts";
 
 /** The slice of the plugin this tab calls back into (kept narrow to avoid a
  *  circular import of the concrete plugin class). */
-type SettingsHost = Plugin & { convertBigDictionary?: () => Promise<string> };
+type SettingsHost = Plugin & {
+  convertBigDictionary?: () => Promise<string>;
+  convertDexieBackup?: () => Promise<string>;
+};
 
 export class SettingsTab extends PluginSettingTab {
   private settings: PluginSettings;
@@ -243,7 +246,7 @@ export class SettingsTab extends PluginSettingTab {
     // ── Audio clips (yt-dlp) — DESKTOP ONLY, DESIGN §12 Tier 1 ─────
     // ── §27.5 big dictionaries as vault sidecars ──────────────────────────
     containerEl.createEl("h3", { text: "大型辞書（英辞郎など）— デスクトップ限定" });
-    if (!this.settings.bigDict) this.settings.bigDict = { exportFolder: "", root: "JP Dictionaries" };
+    if (!this.settings.bigDict) this.settings.bigDict = { exportFolder: "", root: "JP Dictionaries", backupFile: "" };
     const big = this.settings.bigDict;
     if (!Platform.isDesktopApp) {
       containerEl.createEl("p", {
@@ -272,6 +275,35 @@ export class SettingsTab extends PluginSettingTab {
       .addText(t => t
         .setValue(big.root)
         .onChange(async v => { big.root = v.trim() || "JP Dictionaries"; await this.onSettingsChange(); }));
+
+    // ── the OTHER path: Yomitan's single all-dictionaries backup ──
+    const backupDesc = containerEl.createEl("p", { cls: "setting-item-description" });
+    backupDesc.innerHTML =
+      "上は<b>1辞書ずつ</b>のZIP書き出し用です。Yomitanの「すべてバックアップ」で作った<b>1つの巨大JSON</b>" +
+      "（実測 12.7GB・36辞書・401万語）はこちらから。ファイル全体は読み込まず流し読みします — " +
+      "実測 185秒・ピークメモリ1MB未満。<br>" +
+      "登録済み36辞書のみを変換します（terms表には削除済み辞書の残骸が97種類ぶん残っており、" +
+      "そのまま変換すると不要なフォルダが61個できます）。";
+
+    new Setting(containerEl)
+      .setName("Yomitanバックアップ(.json)")
+      .setDesc("例: C:/Users/…/yomitan-dictionaries-….json")
+      .addText(t => t
+        .setPlaceholder("/path/to/yomitan-dictionaries-….json")
+        .setValue(big.backupFile)
+        .onChange(async v => { big.backupFile = v.trim(); await this.onSettingsChange(); }));
+
+    new Setting(containerEl)
+      .setName("バックアップから全辞書を変換")
+      .setDesc("1回の流し読みで36辞書ぶんのシャードを作ります。時間がかかります（実測3分）。")
+      .addButton(b => b
+        .setButtonText("全辞書を変換")
+        .setDisabled(!Platform.isDesktopApp)
+        .onClick(async () => {
+          b.setDisabled(true).setButtonText("変換中…");
+          try { await this.host.convertDexieBackup?.(); }
+          finally { b.setDisabled(false).setButtonText("全辞書を変換"); }
+        }));
 
     new Setting(containerEl)
       .setName("辞書を変換")

@@ -65,6 +65,31 @@ export interface ImportOpts extends AdaptOpts {
   now?: () => number;
 }
 
+/**
+ * Convert ONE dictionary's already-streamed tuples into its sidecar. Used by
+ * the Dexie path, where the 36 dictionaries arrive interleaved from a single
+ * 12.7GB pass and cannot be presented as separate `BankSource`s.
+ *
+ * `reset` drops the previous sidecar; it must be true for the FIRST batch of a
+ * dictionary and false afterwards, or each batch would erase the last.
+ */
+export async function importBatch(
+  io: SidecarIO,
+  title: string,
+  tuples: EijiroTuple[],
+  opts: ImportOpts & { reset?: boolean; direction?: Direction } = {},
+): Promise<{ dir: string; heads: number; frames: number; adapter: 'eijiro' | 'generic' }> {
+  const shards = opts.shards ?? DEFAULT_SHARDS;
+  const dir = sidecarDirFor(title, opts.root);
+  if (opts.reset) { await dropSidecar(io, dir, shards); await io.mkdir(dir); }
+  const eijiro = isEijiro(title);
+  const heads = eijiro
+    ? adaptEijiroBank(tuples, { evocativeHead: opts.evocativeHead })
+    : adaptGenericBank(tuples, { direction: opts.direction ?? 'ja->en', evocativeHead: opts.evocativeHead });
+  const res = await appendBatch(io, dir, heads, shards);
+  return { dir, heads: res.heads, frames: res.frames, adapter: eijiro ? 'eijiro' : 'generic' };
+}
+
 /** Vault-safe folder name for a dictionary title. */
 export function sidecarDirFor(title: string, root = 'JP Dictionaries'): string {
   const safe = String(title).replace(/[\\/:*?"<>|#^[\]]/g, '_').trim() || 'dictionary';
