@@ -24,6 +24,7 @@ import type { SegLike } from '../notes/context-window.ts';
 import { renderContextWindow } from './ContextWindow.ts';
 import { NOTE_TYPES, NOTE_CLASSES, type NoteClass } from '../notes/note-types.ts';
 import { classChips, classDot, applyClassRail, classColor } from './class-grammar.ts';
+import type { BigDictHit, BigFrameHit } from '../dictionary/big-dict.ts';
 import { unifiedSearch, autocomplete, linkLegacy, type UnifiedEntry, type SearchMode } from '../lexicon/unified-search.ts';
 import { buildContextTree, type ContextTree, type ContextLeaf } from '../lexicon/context-tree.ts';
 import { knowledgeBox } from './knowledge-box.ts';
@@ -65,6 +66,17 @@ export interface LexiconDeps {
   fetchGoho?: (p: PatternEntry) => Promise<boolean>;
   /** §22.7: capture a corpus example as a curated-stratum attestation. */
   captureCorpus?: (p: PatternEntry, example: string) => void;
+  /**
+   * §27.5 — the big vault-sidecar dictionaries. ASYNC by nature: each query is
+   * a file read, so the panel renders first and fills this in when it lands.
+   * Absent = none converted yet, and the section simply never appears.
+   */
+  bigDict?: {
+    lookup: (q: string, limit?: number) => Promise<BigDictHit[]>;
+    frame: (frame: string, limit?: number) => Promise<BigFrameHit[]>;
+  };
+  /** One-tap capture of a curated reach-for candidate, class hint pre-selected. */
+  onCaptureCandidate?: (surface: string, intention: string, cls: NoteClass, dictionary: string) => void;
 }
 
 export class LexiconPanel {
@@ -80,6 +92,8 @@ export class LexiconPanel {
   /** last Tier-A run for the open entry: 0 total → show Tier-B assignments. */
   private lastFind: { id: string; total: number } | null = null;
   private findBusy = false;
+  /** guards a late shard read from landing on a newer query. */
+  private bigToken = 0;
 
   private container: HTMLElement | null = null;
   private audio: HTMLAudioElement | null = null;
@@ -454,6 +468,16 @@ export class LexiconPanel {
       for (const d of dict.slice(0, 6)) this.renderDictRow(dsec, d);
     }
 
+    // ── §27.5 the BIG dictionaries (vault sidecars) ────────────────────────
+    // These live in files, so the answer arrives after this render returns. A
+    // placeholder is reserved now and filled when the shard read resolves —
+    // the panel never blocks on disk, and a slow read degrades to "nothing
+    // extra appeared" rather than a frozen list.
+    if (this.query.trim() && this.deps.bigDict) {
+      const slot = body.createDiv('jp-lex-bigsec');
+      void this.fillBigDict(slot, this.query.trim());
+    }
+
     // あかさたな scrubber (browse mode only)
     if (browse && listWrap && results.length > 8) {
       const rail = listWrap.createDiv('jp-lex-rail');
@@ -498,6 +522,76 @@ export class LexiconPanel {
       if (e.kind === 'pattern') { this.selectedId = e.id; this.stopAudio(); this.rerender(); }
       else if (e.collocation) this.renderCollocationDetail(e.collocation);
     });
+  }
+
+  /**
+   * §27.2 — the production half, from the vault sidecars.
+   *
+   * Two questions, kept visibly separate because they ARE separate: what does
+   * this mean (senses, the look-up half) and what do I reach for (candidates,
+   * the frame half). The reach-for list is the one §27.0.1 says the plugin
+   * exists for, so it is rendered first and each candidate is one tap into
+   * capture with its class hint pre-selected — a curated-stratum catalog object
+   * (§27.6), never a separate kind of thing.
+   *
+   * `token` guards against a stale write: the user keeps typing while a shard
+   * read is in flight, and the late answer for an old query must not land.
+   */
+  private async fillBigDict(slot: HTMLElement, query: string): Promise<void> {
+    const big = this.deps.bigDict;
+    if (!big) return;
+    const token = ++this.bigToken;
+    let entries: BigDictHit[] = [];
+    let candidates: BigFrameHit[] = [];
+    try {
+      [entries, candidates] = await Promise.all([big.lookup(query, 8), big.frame(query, 12)]);
+    } catch (err) {
+      if (token !== this.bigToken || !slot.isConnected) return;
+      slot.createDiv({ cls: 'jp-lex-big-error', text: `大型辞書の読み込みに失敗: ${String(err)}` });
+      return;
+    }
+    if (token !== this.bigToken || !slot.isConnected) return;   // superseded
+    if (!entries.length && !candidates.length) return;          // silence, not an empty box
+
+    if (candidates.length) {
+      const sec = slot.createDiv('jp-lex-bigsec-block');
+      sec.createDiv({ cls: 'jp-lex-dictsec-title', text: '🟠 言うなら（型から）' });
+      for (const { dictionary, candidate: c } of candidates.slice(0, 8)) {
+        const row = sec.createDiv('jp-lex-cand');
+        const top = row.createDiv('jp-lex-cand-top');
+        classDot(top, c.classHint as NoteClass, { ratified: false });
+        top.createSpan({ text: c.surface, cls: 'jp-lex-cand-surface' });
+        if (c.shape) top.createSpan({ text: c.shape, cls: 'jp-lex-cand-shape' });
+        const meta = row.createDiv('jp-lex-cand-meta');
+        if (c.situation) meta.createSpan({ text: `〔${c.situation}〕`, cls: 'jp-lex-cand-situation' });
+        meta.createSpan({ text: c.intention, cls: 'jp-lex-cand-intention' });
+        meta.createSpan({ text: dictionary, cls: 'jp-lex-cand-dict' });
+        if (this.deps.onCaptureCandidate) {
+          const cap = row.createEl('button', { text: '🏷️', cls: 'jp-lex-cand-capture' });
+          cap.title = `${NOTE_TYPES[c.classHint as NoteClass].label}として台帳へ（提案 — 確定はあなた）`;
+          cap.onclick = (e) => {
+            e.stopPropagation();
+            this.deps.onCaptureCandidate!(c.surface, c.intention, c.classHint as NoteClass, dictionary);
+          };
+        }
+      }
+    }
+
+    if (entries.length) {
+      const sec = slot.createDiv('jp-lex-bigsec-block');
+      sec.createDiv({ cls: 'jp-lex-dictsec-title', text: '📚 大型辞書' });
+      for (const { dictionary, entry } of entries.slice(0, 6)) {
+        const row = sec.createDiv('jp-lex-dict-row');
+        const top = row.createDiv('jp-lex-row-top');
+        top.createSpan({ text: entry.expression, cls: 'jp-lex-row-hw' });
+        if (entry.reading && entry.reading !== entry.expression) {
+          top.createSpan({ text: entry.reading, cls: 'jp-lex-row-reading' });
+        }
+        top.createSpan({ text: dictionary, cls: 'jp-lex-cand-dict' });
+        const gloss = entry.senses.map((s) => s.gloss).filter(Boolean).join(' / ');
+        if (gloss) row.createDiv({ text: gloss.slice(0, 140), cls: 'jp-lex-row-gloss' });
+      }
+    }
   }
 
   private renderDictRow(parent: HTMLElement, d: DictLookupResult): void {

@@ -53,6 +53,7 @@ import { PatternStore, sweepTerms, patternIdFor, derivePattern, attestationKey, 
 // §27.5 big-dictionary sidecars (the blob never sees 2.36M entries).
 import { importEijiro, type BankSource } from "./dictionary/import-eijiro";
 import { vaultSidecarIO, nodeBankSource } from "./dictionary/sidecar-io";
+import { BigDictStore } from "./dictionary/big-dict";
 // The move concordance (DISCOURSE-VERDICT §11 fail branch → §12 result).
 import { transcriptToTurns } from "./discourse/calculus/turns.mjs";
 import {
@@ -170,6 +171,8 @@ export default class JPCollocationsPlugin extends Plugin {
 
   /** 収集トレイ (§22.8) — the drag-drop inbox. */
   private inboxStore!: InboxStore;
+  /** §27.5 — the converted big dictionaries (vault sidecars, async lookup). */
+  private bigDict!: BigDictStore;
   /** §27.0.2 — the open wants: what you are reaching for but cannot yet say. */
   private reachStore!: ReachStore;
   /** §25.5 発話セッション record (`_speakSessions`). */
@@ -329,6 +332,13 @@ export default class JPCollocationsPlugin extends Plugin {
     // §27.0.2 — the plugin holds what you have caught; this holds what you are
     // still REACHING FOR. Tiny (a sentence and a few offers), so unlike the
     // dictionaries it genuinely belongs in the blob.
+    // §27.5 READ side: the converted sidecars, discovered from the vault
+    // folders. Construction is free — nothing is read until first query.
+    this.bigDict = new BigDictStore(
+      vaultSidecarIO(this.app),
+      this.settings.bigDict?.root || "JP Dictionaries",
+    );
+
     this.reachStore = new ReachStore((data) => this.dm.setKey("_reaches", data));
     this.reachStore.load((stored as { _reaches?: ReachData } | undefined)?._reaches);
     this.registerView(JP_TRAY_VIEW_TYPE, (leaf) => new TrayView(leaf, {
@@ -478,6 +488,24 @@ export default class JPCollocationsPlugin extends Plugin {
             text: p.key,
             example,
             source: { kind: "web", medium: "corpus", sourceName: p.payload.goho?.source ?? "corpus", loc: p.key },
+          }, this.makeCaptureDeps()).open();
+        },
+        // §27.5 — the vault sidecars, queried asynchronously. Both halves:
+        // lookup answers "what does this mean", frame answers "what do I reach
+        // for", and the panel keeps them visibly separate because they are.
+        bigDict: {
+          lookup: (q, limit) => this.bigDict.lookup(q, limit),
+          frame: (f, limit) => this.bigDict.frame(f, limit),
+        },
+        // §27.6 — a curated candidate IS a catalog object at the curated
+        // stratum, so capturing one goes down the SAME road as everything else
+        // (§28 S5), with the shape-derived class as a suggestion only.
+        onCaptureCandidate: (surface, intention, cls, dictionary) => {
+          new CaptureModal(this.app, {
+            text: surface,
+            example: intention,
+            classHint: cls,
+            source: { kind: "manual", medium: "dict", sourceName: dictionary, loc: intention },
           }, this.makeCaptureDeps()).open();
         },
       })
@@ -3044,6 +3072,7 @@ export default class JPCollocationsPlugin extends Plugin {
         },
       });
       // §28 S6: a partial import says so, in place, with the failures named.
+      this.bigDict.invalidate();   // a re-convert must be visible immediately
       const msg = res.failed.length
         ? `${res.title}: ${res.headwords.toLocaleString()}見出し変換（${res.failed.length}バンク失敗: ${res.failed.slice(0, 3).join(", ")}）— 不完全です`
         : `${res.title}: ${res.headwords.toLocaleString()}見出し / ${res.frames.toLocaleString()}フレーム → ${res.dir}（${(res.ms / 1000).toFixed(1)}秒）`;

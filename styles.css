@@ -5261,3 +5261,34 @@ body {
 }
 .jp-reach-yes { font-weight: 600; }
 .jp-reach-modal .jp-reach-btns { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   §27.2/§27.5 — the big vault-sidecar dictionaries, in the 語彙 panel.
+   Two questions kept visibly apart: 言うなら (reach-for, the production half,
+   FIRST because that is what the plugin is for) and 大型辞書 (look-up).
+   ══════════════════════════════════════════════════════════════════════════ */
+.jp-lex-bigsec { margin-top: 10px; }
+.jp-lex-bigsec-block { margin-top: 8px; }
+.jp-lex-big-error { font-size: 0.72rem; color: var(--text-muted); padding: 6px 8px; }
+
+.jp-lex-cand {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 8px; border-radius: 8px;
+  border-left: 2px solid var(--background-modifier-border);
+}
+.jp-lex-cand:hover { background: var(--background-secondary); }
+.jp-lex-cand-top { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; flex: 1; }
+.jp-lex-cand-surface { font-size: 0.95rem; line-height: 1.6; }
+.jp-lex-cand-shape {
+  font-size: 0.66rem; font-family: var(--font-monospace); color: var(--text-faint);
+  border: 1px solid var(--background-modifier-border); border-radius: 4px; padding: 0 4px;
+}
+.jp-lex-cand-meta { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.jp-lex-cand-situation { font-size: 0.7rem; color: var(--text-muted); }
+.jp-lex-cand-intention { font-size: 0.74rem; color: var(--text-muted); }
+.jp-lex-cand-dict { font-size: 0.64rem; color: var(--text-faint); }
+.jp-lex-cand-capture {
+  font-size: 0.8rem; min-width: 32px; min-height: 32px; border-radius: 8px;
+  cursor: pointer; background: transparent;
+  border: 1px solid var(--background-modifier-border); flex-shrink: 0;
+}

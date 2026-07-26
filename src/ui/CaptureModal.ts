@@ -30,6 +30,13 @@ import { analyzeCrossTurn } from '../discourse/relational';
 export interface CaptureContext {
   /** the selected span — becomes the catalog note/notation (editable). */
   text: string;
+  /**
+   * A class the CALLER already has shape evidence for — currently the curated
+   * reach-for candidates, whose frame shape yields a hint (§27.3). Preselects
+   * the chip and is recorded as `classSuggested`, exactly like the notation-
+   * derived and calibrated guesses: a suggestion, never a verdict.
+   */
+  classHint?: NoteClass;
   /** the full sentence/tweet/turn the span came from. */
   example?: string;
   /** prior turns, oldest → nearest (transcript-rich captures). */
@@ -90,7 +97,10 @@ export class CaptureModal extends Modal {
     // Whatever is preselected is RECORDED as classSuggested — every override
     // is the next training example (the loop that improves this).
     const top = deps.suggestClass?.(ctx.text)?.[0];
-    this.suggested = top && top.score > 0 ? top.cls : d.suggestedClass;
+    // An explicit caller hint (a curated candidate's frame shape) outranks bare
+    // notation derivation, but the calibrated suggester still wins when it has
+    // real confidence — it is the one that learns from the user's overrides.
+    this.suggested = top && top.score > 0 ? top.cls : (ctx.classHint ?? d.suggestedClass);
     this.cls = this.suggested;
     const p = splitPatternParts(ctx.text);
     this.parts = p.length >= 2 ? p.join(' 〜 ') : '';

@@ -36,6 +36,9 @@ export interface SidecarIO {
   exists(path: string): Promise<boolean>;
   mkdir(path: string): Promise<void>;
   remove(path: string): Promise<void>;
+  /** Subfolder names of a directory. Needed to DISCOVER installed dictionaries
+   *  — there is no registry file, the folders are the registry (§19). */
+  listFolders?(path: string): Promise<string[]>;
 }
 
 export interface SidecarMeta {

@@ -51,6 +51,14 @@ export function vaultSidecarIO(app: App): SidecarIO {
       const np = p(path);
       if (await a.exists(np)) await a.remove(np);
     },
+    /** Installed dictionaries = the folders present. There is no registry. */
+    async listFolders(path) {
+      const np = p(path);
+      if (!(await a.exists(np))) return [];
+      const listed = await a.list(np);
+      return (listed.folders ?? []).map((f) => f.split('/').filter(Boolean).pop() ?? '')
+        .filter(Boolean);
+    },
   };
 }
 
