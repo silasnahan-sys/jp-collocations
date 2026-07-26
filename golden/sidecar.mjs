@@ -166,5 +166,77 @@ console.log('\n══ batches accumulate (import streams bank by bank) ══');
     'entries from BOTH batches are reachable (append never clobbers)', `(${found}/${keys.length})`);
 }
 
+// ── The write-cost golden (added after a real timeout, 2026-07-26) ──────────
+// The in-memory IO above makes `append` a free string concat, so it could never
+// expose what actually happened in Obsidian: vaultSidecarIO implemented append
+// as read-modify-write, every append cost the size of the file so far, and an
+// 英辞郎 conversion (~242,000 appends onto shards that grow to ~1MB) died with
+// "File system operation timed out". These checks measure CALLS and BYTES, the
+// two things a fake filesystem still tells the truth about.
+console.log('\n══ write cost: appends must not re-write the whole file ══');
+{
+  /** An IO that bills like a real filesystem. */
+  function billedIO() {
+    const files = new Map();
+    let calls = 0, bytesTouched = 0;
+    return {
+      files,
+      stats: () => ({ calls, bytesTouched }),
+      async read(p) { calls++; const v = files.get(p) ?? null; bytesTouched += v?.length ?? 0; return v; },
+      async write(p, t) { calls++; bytesTouched += t.length; files.set(p, t); },
+      async append(p, t) { calls++; bytesTouched += t.length; files.set(p, (files.get(p) ?? '') + t); },
+      async exists(p) { calls++; return files.has(p); },
+      async mkdir() { calls++; },
+      async remove(p) { calls++; files.delete(p); },
+      async listFolders() { calls++; return []; },
+    };
+  }
+
+  const CHUNK = 'x'.repeat(1000);
+  const ROUNDS = 200;
+
+  // Unbuffered: one call per append, and (in the real adapter) a full rewrite.
+  const raw = billedIO();
+  for (let i = 0; i < ROUNDS; i++) await raw.append('d/head-000.jsonl', CHUNK);
+  const rawStats = raw.stats();
+
+  // Buffered: the same data, far fewer calls.
+  const inner = billedIO();
+  const buf = S.bufferedSidecarIO(inner, { maxBytes: 50_000 });
+  for (let i = 0; i < ROUNDS; i++) await buf.append('d/head-000.jsonl', CHUNK);
+  await buf.flush();
+  const bufStats = inner.stats();
+
+  ok(bufStats.calls < rawStats.calls / 10,
+    'buffering cuts filesystem calls by >10x', `(${rawStats.calls} → ${bufStats.calls})`);
+  ok(inner.files.get('d/head-000.jsonl').length === ROUNDS * CHUNK.length,
+    'and every byte still lands', `(${inner.files.get('d/head-000.jsonl').length})`);
+  ok(bufStats.bytesTouched === ROUNDS * CHUNK.length,
+    'bytes written stay LINEAR in the data (not quadratic in file size)',
+    `(${bufStats.bytesTouched})`);
+}
+
+console.log('\n══ the buffer is consistent while it is still held ══');
+{
+  const inner = memIO();
+  const buf = S.bufferedSidecarIO(inner, { maxBytes: 1 << 20 });
+  await buf.append('d/a.jsonl', 'one\n');
+  await buf.append('d/a.jsonl', 'two\n');
+  ok(await buf.exists('d/a.jsonl'), 'exists() sees an unflushed file');
+  ok((await buf.read('d/a.jsonl')) === 'one\ntwo\n',
+    'read() serves buffered appends, so a lookup mid-conversion is never torn');
+  ok((await inner.read('d/a.jsonl')) === null, 'and nothing has reached disk yet');
+  ok(buf.pendingBytes() > 0, 'pendingBytes reports the held tail');
+  await buf.flush();
+  ok((await inner.read('d/a.jsonl')) === 'one\ntwo\n', 'flush lands it');
+  ok(buf.pendingBytes() === 0, 'and empties the buffer');
+
+  await buf.append('d/a.jsonl', 'three\n');
+  await buf.write('d/a.jsonl', 'reset\n');
+  await buf.flush();
+  ok((await inner.read('d/a.jsonl')) === 'reset\n',
+    'a write supersedes buffered appends (dropSidecar must really reset)');
+}
+
 console.log(`\n${fail ? '✗' : '✓'} sidecar: ${n - fail}/${n} checks passed`);
 process.exit(fail ? 1 : 0);

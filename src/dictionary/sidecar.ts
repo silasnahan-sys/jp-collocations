@@ -39,6 +39,10 @@ export interface SidecarIO {
   /** Subfolder names of a directory. Needed to DISCOVER installed dictionaries
    *  — there is no registry file, the folders are the registry (§19). */
   listFolders?(path: string): Promise<string[]>;
+  /** File paths directly inside a directory. Lets dropSidecar delete what is
+   *  actually there instead of probing 2×shards paths that mostly do not
+   *  exist — 1,024 adapter calls before a conversion even starts. */
+  listFiles?(path: string): Promise<string[]>;
 }
 
 export interface SidecarMeta {
@@ -240,10 +244,78 @@ export async function lookupFrame(
   return out;
 }
 
+/**
+ * Coalesce appends in memory and flush them in few, large writes.
+ *
+ * The conversion appends to up to 2×`shards` files per batch. For 英辞郎 that
+ * is 237 batches × ~1024 shards ≈ 242,000 individual filesystem calls — slow
+ * enough to time out even when each call is cheap. Buffering by path and
+ * flushing when the total crosses `maxBytes` turns that into roughly
+ * `total ÷ maxBytes` rounds: for a 536MB conversion at 32MB, about 17.
+ *
+ * `flush()` MUST run before a conversion reports success, or the tail of every
+ * shard is still in memory. Reads are served from the buffer first, so a lookup
+ * during a conversion cannot observe a half-written file.
+ */
+export function bufferedSidecarIO(
+  inner: SidecarIO, opts: { maxBytes?: number } = {},
+): SidecarIO & { flush: () => Promise<void>; pendingBytes: () => number } {
+  const pending = new Map<string, string[]>();
+  let bytes = 0;
+  const cap = opts.maxBytes ?? 32 * 1024 * 1024;
+
+  const flush = async (): Promise<void> => {
+    if (!pending.size) return;
+    // Snapshot then clear, so an append arriving mid-flush is not lost.
+    const batch = [...pending.entries()];
+    pending.clear();
+    bytes = 0;
+    for (const [path, parts] of batch) await inner.append(path, parts.join(''));
+  };
+
+  return {
+    async read(path) {
+      const buffered = pending.get(path);
+      const base = await inner.read(path);
+      if (!buffered) return base;
+      return (base ?? '') + buffered.join('');
+    },
+    async write(path, text) {
+      pending.delete(path);                 // a write supersedes buffered appends
+      await inner.write(path, text);
+    },
+    async append(path, text) {
+      const list = pending.get(path);
+      if (list) list.push(text); else pending.set(path, [text]);
+      bytes += text.length;
+      if (bytes >= cap) await flush();
+    },
+    async exists(path) {
+      return pending.has(path) || inner.exists(path);
+    },
+    mkdir: (path) => inner.mkdir(path),
+    async remove(path) {
+      pending.delete(path);
+      await inner.remove(path);
+    },
+    listFolders: inner.listFolders ? (p: string) => inner.listFolders!(p) : undefined,
+    listFiles: inner.listFiles ? (p: string) => inner.listFiles!(p) : undefined,
+    flush,
+    pendingBytes: () => bytes,
+  };
+}
+
 /** Remove a dictionary: delete its folder's files. Uninstall = delete. */
 export async function dropSidecar(
   io: SidecarIO, dir: string, shards: number = DEFAULT_SHARDS,
 ): Promise<void> {
+  // Preferred: ask what is there (one call) and delete exactly that.
+  if (io.listFiles) {
+    const files = await io.listFiles(dir).catch(() => [] as string[]);
+    for (const f of files) await io.remove(f);
+    return;
+  }
+  // Fallback for IOs without listing: probe every shard path.
   for (let s = 0; s < shards; s++) {
     for (const p of [headPath(dir, s), framePath(dir, s)]) {
       if (await io.exists(p)) await io.remove(p);

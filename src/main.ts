@@ -53,6 +53,7 @@ import { PatternStore, sweepTerms, patternIdFor, derivePattern, attestationKey, 
 // §27.5 big-dictionary sidecars (the blob never sees 2.36M entries).
 import { importEijiro, type BankSource } from "./dictionary/import-eijiro";
 import { vaultSidecarIO, nodeBankSource, nodeChunkSource } from "./dictionary/sidecar-io";
+import { bufferedSidecarIO } from "./dictionary/sidecar";
 import { importDexie } from "./dictionary/import-dexie";
 import { BigDictStore } from "./dictionary/big-dict";
 // The move concordance (DISCOURSE-VERDICT §11 fail branch → §12 result).
@@ -2170,9 +2171,10 @@ export default class JPCollocationsPlugin extends Plugin {
     }
 
     const notice = new Notice("バックアップを読み込み中…", 0);
+    const io = bufferedSidecarIO(vaultSidecarIO(this.app));
     const gb = (n: number) => (n / 1073741824).toFixed(2);
     try {
-      const res = await importDexie(vaultSidecarIO(this.app), src.chunks, {
+      const res = await importDexie(io, src.chunks, {
         root: this.settings.bigDict?.root || "JP Dictionaries",
         onProgress: (p) => {
           notice.setMessage(
@@ -2181,6 +2183,7 @@ export default class JPCollocationsPlugin extends Plugin {
           );
         },
       });
+      await io.flush();
       this.bigDict.invalidate();
       const msg =
         `バックアップ変換完了: ${res.dictionaries.length}辞書 / ${res.rows.toLocaleString()}見出し` +
@@ -3125,8 +3128,11 @@ export default class JPCollocationsPlugin extends Plugin {
 
     const notice = new Notice("辞書変換の準備中…", 0);
     let cancelled = false;
+    // Coalesce the ~242,000 shard appends into a few dozen large writes —
+    // without this the run times out (see bufferedSidecarIO).
+    const io = bufferedSidecarIO(vaultSidecarIO(this.app));
     try {
-      const res = await importEijiro(vaultSidecarIO(this.app), src, {
+      const res = await importEijiro(io, src, {
         root: this.settings.bigDict?.root || "JP Dictionaries",
         shouldStop: () => cancelled,
         onProgress: (p) => {
@@ -3136,6 +3142,7 @@ export default class JPCollocationsPlugin extends Plugin {
         },
       });
       // §28 S6: a partial import says so, in place, with the failures named.
+      await io.flush();            // the tail of every shard is still in memory
       this.bigDict.invalidate();   // a re-convert must be visible immediately
       const msg = res.failed.length
         ? `${res.title}: ${res.headwords.toLocaleString()}見出し変換（${res.failed.length}バンク失敗: ${res.failed.slice(0, 3).join(", ")}）— 不完全です`

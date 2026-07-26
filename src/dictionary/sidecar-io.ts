@@ -37,10 +37,16 @@ export function vaultSidecarIO(app: App): SidecarIO {
     async append(path, text) {
       const np = p(path);
       await ensureParent(app, np);
-      // The adapter has no atomic append; read-modify-write is fine because
-      // import writes one shard at a time from a single sequential loop.
-      const prev = (await a.exists(np)) ? await a.read(np) : '';
-      await a.write(np, prev + text);
+      // NATIVE append. An earlier version did read-modify-write "because the
+      // adapter has no append" — it does. That mistake made every append cost
+      // the size of the file so far: by the end of an 英辞郎 conversion each
+      // shard is ~1MB and there are ~242,000 appends, so the run became
+      // quadratic and Obsidian killed it with "File system operation timed
+      // out". The in-memory test IO concatenated strings for free, which is
+      // exactly why the goldens were green while the real thing could not
+      // finish. See bufferedSidecarIO below for the other half of the fix.
+      if (await a.exists(np)) await a.append(np, text);
+      else await a.write(np, text);
     },
     async exists(path) { return a.exists(p(path)); },
     async mkdir(path) {
@@ -50,6 +56,13 @@ export function vaultSidecarIO(app: App): SidecarIO {
     async remove(path) {
       const np = p(path);
       if (await a.exists(np)) await a.remove(np);
+    },
+    /** One call instead of 1,024 exists() probes when resetting a dictionary. */
+    async listFiles(path) {
+      const np = p(path);
+      if (!(await a.exists(np))) return [];
+      const listed = await a.list(np);
+      return listed.files ?? [];
     },
     /** Installed dictionaries = the folders present. There is no registry. */
     async listFolders(path) {
