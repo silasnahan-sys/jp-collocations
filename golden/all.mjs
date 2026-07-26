@@ -21,7 +21,7 @@ const suites = [
   'anchor.mjs', 'realformat.mjs', 'ocr.mjs',
   'voicesync.mjs', 'transcript.mjs', 'history.mjs', 'audio.mjs',
   'patterns.mjs', 'dictionary.mjs', 'x-transaction.mjs', 'x-format.mjs',
-  'class-grammar.mjs', 'concordance.mjs', 'frames.mjs', 'eijiro.mjs', 'sidecar.mjs', 'import-eijiro.mjs', 'reach.mjs',
+  'class-grammar.mjs', 'concordance.mjs', 'frames.mjs', 'eijiro.mjs', 'sidecar.mjs', 'import-eijiro.mjs', 'generic-yomitan.mjs', 'reach.mjs',
 ];
 const ONLINE_SUITES = new Set(['transcript.mjs', 'audio.mjs']);
 const offline = process.argv.includes('--offline') || !!process.env.CI;

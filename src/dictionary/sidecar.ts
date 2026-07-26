@@ -87,10 +87,34 @@ export const framePath = (dir: string, shard: number) => `${dir}/frame-${pad(sha
 
 // ── line format ──────────────────────────────────────────────────────────────
 
-/** One stored headword line. Kept compact — this is written 2.36M times. */
-export interface HeadLine { k: string; e: DictHeadword }
-/** One stored frame line: the key plus the candidates that realize it. */
-export interface FrameLine { k: string; c: ReachCandidate[] }
+/**
+ * One stored headword line. Written 2.36M times for 英辞郎 alone, so density is
+ * a feature, not an optimization: the first full run produced **1,075 MB**
+ * because `reachFor` duplicated text already present in `senses` AND was
+ * written again into the frame shards. The head shard therefore stores the
+ * LOOK-UP half only; the reach-for half lives in the frame shards, which is
+ * also the honest split (§27.2: look-up and reach-for are different questions).
+ */
+export interface HeadLine { k: string; e: Omit<DictHeadword, 'reachFor'> }
+
+/**
+ * One stored frame line. Candidate fields are single-letter because this file
+ * set is ~1.7M rows: s=surface(JP), i=intention(EN), h=classHint, p=shape,
+ * t=situation. Expanded back to `ReachCandidate` on read.
+ */
+export interface StoredCandidate { s: string; i: string; h: string; p?: string; t?: string }
+export interface FrameLine { k: string; c: StoredCandidate[] }
+
+const packCandidate = (c: ReachCandidate): StoredCandidate => ({
+  s: c.surface, i: c.intention, h: c.classHint,
+  ...(c.shape ? { p: c.shape } : {}), ...(c.situation ? { t: c.situation } : {}),
+});
+
+const unpackCandidate = (c: StoredCandidate, frameKey: string): ReachCandidate => ({
+  surface: c.s, intention: c.i, classHint: c.h as ReachCandidate['classHint'],
+  ...(c.p ? { shape: c.p } : {}), ...(c.t ? { situation: c.t } : {}),
+  frameKey, intentionKey: '', slots: (frameKey.match(/[～＿]/g) ?? []).length,
+});
 
 export const encodeLine = (o: unknown): string => JSON.stringify(o) + '\n';
 
@@ -120,7 +144,9 @@ export function planHeadShards(
     const k = normalizeLookupKey(e.expression);
     const s = hashKey(k) % shards;
     const list = plan.get(s);
-    const line: HeadLine = { k, e };
+    // reachFor is deliberately NOT stored here — see HeadLine.
+    const { reachFor: _drop, ...lookupHalf } = e;
+    const line: HeadLine = { k, e: lookupHalf };
     if (list) list.push(line); else plan.set(s, [line]);
   }
   return plan;
@@ -143,7 +169,7 @@ export function planFrameShards(
   for (const [k, c] of byKey) {
     const s = hashKey(normalizeLookupKey(k)) % shards;
     const list = plan.get(s);
-    const line: FrameLine = { k, c };
+    const line: FrameLine = { k, c: c.map(packCandidate) };
     if (list) list.push(line); else plan.set(s, [line]);
   }
   return plan;
@@ -189,7 +215,7 @@ export async function readMeta(io: SidecarIO, dir: string): Promise<SidecarMeta 
  */
 export async function lookupHead(
   io: SidecarIO, dir: string, expression: string, shards: number = DEFAULT_SHARDS,
-): Promise<DictHeadword[]> {
+): Promise<Array<Omit<DictHeadword, 'reachFor'>>> {
   const k = normalizeLookupKey(expression);
   const text = await io.read(headPath(dir, hashKey(k) % shards));
   return decodeLines<HeadLine>(text).filter((l) => l.k === k).map((l) => l.e);
@@ -207,7 +233,7 @@ export async function lookupFrame(
   if (!k) return [];
   const text = await io.read(framePath(dir, hashKey(normalizeLookupKey(k)) % shards));
   const out: ReachCandidate[] = [];
-  for (const l of decodeLines<FrameLine>(text)) if (l.k === k) out.push(...l.c);
+  for (const l of decodeLines<FrameLine>(text)) if (l.k === k) out.push(...l.c.map((x) => unpackCandidate(x, k)));
   return out;
 }
 

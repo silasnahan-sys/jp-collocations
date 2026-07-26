@@ -1,0 +1,65 @@
+{
+ "single": null,
+ "senses": [
+  "\"",
+  "",
+  "",
+  "n",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"entry-header\"><span class=\"pos-tag\">名</span></div>\n<ol class=\"senses\">\n<li><span class=\"sense-pos\">名</span> ＝<span class=\"xref\">→inch</span><span class=\"xref\">→ inch</span></li>\n<li><span class=\"sense-pos\">名</span> ＝<span class=\"xref\">→double quotation mark</span><span class=\"xref\">→ double quotation mark</span></li>\n</ol>"
+   }
+  ],
+  2,
+  ""
+ ],
+ "frame": [
+  "$__ in arrears",
+  "",
+  "",
+  "",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"sense\"><span class=\"label\">be ～</span> <span class=\"label\">be ～</span>＿ドルの支払いが滞っている</div>"
+   }
+  ],
+  49,
+  ""
+ ],
+ "slot": null,
+ "ctx": [
+  "\"V for Victory\" sign",
+  "",
+  "",
+  "",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"sense\"><span class=\"label\">the ～</span> <span class=\"label\">the ～</span>〔人さし指と中指で作る〕勝利を意味するVサイン</div>"
+   }
+  ],
+  29,
+  ""
+ ],
+ "xref": null,
+ "supp": [
+  "\"bring it on\" gesture",
+  "",
+  "",
+  "",
+  0,
+  [
+   {
+    "type": "structured-content",
+    "content": "<div class=\"sense\"><span class=\"label\">a ～</span> <span class=\"label\">a ～</span>「かかってこい」というジェスチャー</div>\n<div class=\"supplement\">上向きの指先などで招くしぐさ。</div>"
+   }
+  ],
+  4,
+  ""
+ ]
+}

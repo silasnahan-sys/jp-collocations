@@ -35,7 +35,11 @@ export type EijiroTuple = [
   string,            // 2 definitionTags  (always "" in this export)
   string,            // 3 rules           ("", n, 人名, comb, suf, adj)
   number,            // 4 score
-  Array<{ type: string; content?: unknown; text?: string }>,  // 5 glossary
+  // 5 glossary. 英辞郎's converter only ever emits structured-content objects,
+  // but the Yomitan format also allows a bare string and a deinflection tuple
+  // ([uninflected, rules]) — both occur in the user's other dictionaries, so
+  // the type says so rather than making every other adapter cast around it.
+  Array<string | string[] | { type?: string; content?: unknown; text?: string }>,
   number,            // 6 sequence
   string,            // 7 termTags        (always "" in this export)
 ];
@@ -143,7 +147,11 @@ export interface AdaptOpts { evocativeHead?: (expression: string) => boolean }
 export function adaptEijiroEntry(tuple: EijiroTuple, opts: AdaptOpts = {}): DictHeadword {
   const [expression, reading, , rules, , glossary, sequence] = tuple;
   const html = String(
-    (glossary ?? []).map((g) => (typeof g === 'string' ? g : (g.content ?? g.text ?? ''))).join('\n'),
+    (glossary ?? []).map((g) => {
+      if (typeof g === 'string') return g;
+      if (Array.isArray(g)) return '';                    // deinflection tuple
+      return g.content ?? g.text ?? '';
+    }).join('\n'),
   );
 
   const pos = pick(html, 'span', 'pos-tag');

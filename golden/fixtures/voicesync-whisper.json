@@ -1,0 +1,153 @@
+{
+	"systeminfo": "WHISPER : COREML = 0 | OPENVINO = 0 | CPU : SSE3 = 1 | SSSE3 = 1 | AVX = 1 | AVX_VNNI = 1 | AVX2 = 1 | F16C = 1 | FMA = 1 | BMI2 = 1 | OPENMP = 1 | REPACK = 1 | ",
+	"model": {
+		"type": "small",
+		"multilingual": true,
+		"vocab": 51865,
+		"audio": {
+			"ctx": 1500,
+			"state": 768,
+			"head": 12,
+			"layer": 12
+		},
+		"text": {
+			"ctx": 448,
+			"state": 768,
+			"head": 12,
+			"layer": 12
+		},
+		"mels": 80,
+		"ftype": 1
+	},
+	"params": {
+		"model": "C:\\Users\\silas\\AppData\\Local/jp-collocations/speech-tools/models/ggml-small.bin",
+		"language": "ja",
+		"translate": false
+	},
+	"result": {
+		"language": "ja"
+	},
+	"transcription": [
+		{
+			"timestamps": {
+				"from": "00:00:00,000",
+				"to": "00:00:04,160"
+			},
+			"offsets": {
+				"from": 0,
+				"to": 4160
+			},
+			"text": "やっぱ自分が価値を生んでいる実感みたいなものがあんまり得られなかったって"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:04,160",
+				"to": "00:00:08,640"
+			},
+			"offsets": {
+				"from": 4160,
+				"to": 8640
+			},
+			"text": "樋口:かなり割り切れる人じゃないと続けられないなって僕も思うところであります"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:08,640",
+				"to": "00:00:15,440"
+			},
+			"offsets": {
+				"from": 8640,
+				"to": 15440
+			},
+			"text": "樋口:これだから世の働いてるそうがどれぐらい自分の仕事に対してそれを感じてるかってのもまた気になるとこではありますね"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:15,440",
+				"to": "00:00:16,040"
+			},
+			"offsets": {
+				"from": 15440,
+				"to": 16040
+			},
+			"text": "樋口:なるほど"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:16,040",
+				"to": "00:00:17,200"
+			},
+			"offsets": {
+				"from": 16040,
+				"to": 17200
+			},
+			"text": "樋口:そうなんですよね"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:17,200",
+				"to": "00:00:23,560"
+			},
+			"offsets": {
+				"from": 17200,
+				"to": 23560
+			},
+			"text": "だから店売は社会の役に立ってないんじゃないかっていう視点も同じことが言えるなと思うんですよね"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:23,560",
+				"to": "00:00:26,720"
+			},
+			"offsets": {
+				"from": 23560,
+				"to": 26720
+			},
+			"text": "つまりでもそれだったらこの業種も微妙だよねみたいな"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:26,720",
+				"to": "00:00:30,720"
+			},
+			"offsets": {
+				"from": 26720,
+				"to": 30720
+			},
+			"text": "ヤンヤン:この仕事も何かの役に立ってるか微妙だよねみたいな"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:30,720",
+				"to": "00:00:31,240"
+			},
+			"offsets": {
+				"from": 30720,
+				"to": 31240
+			},
+			"text": "樋口:確かに"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:31,240",
+				"to": "00:00:32,720"
+			},
+			"offsets": {
+				"from": 31240,
+				"to": 32720
+			},
+			"text": "ヤンヤン:結構あって"
+		},
+		{
+			"timestamps": {
+				"from": "00:00:32,720",
+				"to": "00:00:34,040"
+			},
+			"offsets": {
+				"from": 32720,
+				"to": 34040
+			},
+			"text": "樋口:何かが右から来ていた"
+		}
+	]
+}

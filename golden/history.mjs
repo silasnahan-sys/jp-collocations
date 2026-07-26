@@ -162,5 +162,18 @@ let threw = false;
 try { await outClient.listWatched({ since: 0, until: NOW }, { maxVideos: 10 }); } catch (e) { threw = e instanceof C.YtHistoryError; }
 ok(threw, 'throws YtHistoryError when cookie is logged out');
 
+// ── brand accounts (channel switcher) — real observed shape 2026-07-11 ──
+const switcher = {
+  actions: [{ updateChannelSwitcherPageAction: { page: { channelSwitcherPageRenderer: { contents: [
+    { dummyHeader: {} },
+    { accountItemRenderer: { accountName: { simpleText: 'Main Name' }, channelHandle: { simpleText: '@main' }, isSelected: true, serviceEndpoint: { selectActiveIdentityEndpoint: { supportedTokens: [{ accountSigninToken: {} }] } } } },
+    { accountItemRenderer: { accountName: { simpleText: 'JP Channel' }, channelHandle: { simpleText: '@jp' }, serviceEndpoint: { selectActiveIdentityEndpoint: { supportedTokens: [{ pageIdToken: { pageId: '110000000000000000001' } }] } } } },
+  ] } } } }],
+};
+const accs = C.extractAccounts(switcher);
+ok(accs.length === 2, `extractAccounts finds both channels (got ${accs.length})`);
+ok(accs[0].pageId === null && accs[0].selected === true, 'primary channel has no pageId');
+ok(accs[1].pageId === '110000000000000000001' && accs[1].handle === '@jp', 'brand channel carries its pageId');
+
 console.log(`\n${fail ? '✗' : '✓'} history golden: ${n - fail}/${n} passed`);
 process.exit(fail ? 1 : 0);

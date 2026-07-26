@@ -50,11 +50,22 @@ const tools = detectTools();
 console.log('  detected:', JSON.stringify(tools, null, 0));
 ok(tools.ytdlp !== '' || true, 'detectTools ran');   // informational
 
+// Use the plugin's persistent cookie jar when it exists — YouTube bot-walls
+// anonymous downloads intermittently; the plugin itself always runs
+// cookie-authenticated through this same jar.
+const PLUGIN_DIR = 'C:/Users/silas/Documents/Obsidian Vault/.obsidian/plugins/jp-collocations';
+let cookieHeader;
+try {
+  const { readFileSync } = await import('node:fs');
+  cookieHeader = JSON.parse(readFileSync(join(PLUGIN_DIR, 'data.json'), 'utf8'))?.ytHistory?.cookie || undefined;
+} catch { /* no vault here → anonymous */ }
 const cfg = {
   ...DEFAULT_AUDIO_EXTRACTION, enabled: true,
   ytdlpPath: tools.ytdlp || 'yt-dlp',
   ffmpegPath: tools.ffmpeg,
   jsRuntime: tools.jsRuntime,   // '' when deno on PATH
+  cookieHeader,
+  cookieJarAbs: cookieHeader ? join(PLUGIN_DIR, '_yt_cookies.txt') : undefined,
 };
 const scratch = mkdtempSync(join(tmpdir(), 'jpc-audio-'));
 

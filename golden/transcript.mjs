@@ -111,7 +111,15 @@ ok(filtered.length === 1 && filtered[0].id === 'Zdfhde6iasg', 'range filter drop
 console.log('\n══ live yt-dlp fetch (network; auto-skip if tools absent) ══');
 const ytdlp = join(links, 'yt-dlp.exe');
 if (existsSync(ytdlp)) {
-  const cfg = { enabled: true, ytdlpPath: ytdlp, jsRuntime: '', tmpDirAbs: tmpdir() };
+  // Same persistent cookie jar as the plugin (anonymous fetches bot-wall intermittently).
+  const PLUGIN_DIR = 'C:/Users/silas/Documents/Obsidian Vault/.obsidian/plugins/jp-collocations';
+  let cookieHeader;
+  try {
+    const { readFileSync } = await import('node:fs');
+    cookieHeader = JSON.parse(readFileSync(join(PLUGIN_DIR, 'data.json'), 'utf8'))?.ytHistory?.cookie || undefined;
+  } catch { /* anonymous */ }
+  const cfg = { enabled: true, ytdlpPath: ytdlp, jsRuntime: '', tmpDirAbs: tmpdir(),
+    cookieHeader, cookieJarAbs: cookieHeader ? join(PLUGIN_DIR, '_yt_cookies.txt') : undefined };
   const r = await T.fetchViaYtdlp(cfg, ['ja'], 'Zdfhde6iasg');
   ok(r.lines.length > 100, 'fetchViaYtdlp → real ja lines', `(${r.lines.length}${r.error ? ', ' + r.error : ''})`);
   ok(r.lines.some((l) => /[ぁ-んァ-ン一-龯]/.test(l.text)), 'lines contain japanese');

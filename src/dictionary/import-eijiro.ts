@@ -12,15 +12,19 @@
  * against in-memory banks and `main.ts` supplies a Node-fs reader on desktop.
  */
 
-import { adaptEijiroBank, type EijiroTuple, type AdaptOpts } from './eijiro.ts';
+import { adaptEijiroBank, type EijiroTuple, type AdaptOpts, type DictHeadword } from './eijiro.ts';
+import { adaptGenericBank, directionOf, isEijiro, type Direction } from './generic-yomitan.ts';
 import {
   appendBatch, writeMeta, dropSidecar, DEFAULT_SHARDS, type SidecarIO, type SidecarMeta,
 } from './sidecar.ts';
 
 /** Where the term banks come from — a folder on disk, a zip, a test double. */
 export interface BankSource {
-  /** index.json, parsed. */
-  index(): Promise<{ title: string; revision?: string; description?: string } | null>;
+  /** index.json, parsed. sourceLanguage decides the direction (§27.4). */
+  index(): Promise<{
+    title: string; revision?: string; description?: string;
+    sourceLanguage?: string; targetLanguage?: string;
+  } | null>;
   /** Names of the term bank files, in a stable order. */
   bankNames(): Promise<string[]>;
   /** One bank's parsed tuples. Called once per bank and not retained. */
@@ -45,6 +49,10 @@ export interface ImportResult {
   failed: string[];
   dir: string;
   ms: number;
+  /** which §27.4 adapter ran — visible, so a wrong pick is not silent. */
+  adapter: 'eijiro' | 'generic';
+  /** which side was treated as Japanese. */
+  direction: Direction;
 }
 
 export interface ImportOpts extends AdaptOpts {
@@ -79,6 +87,17 @@ export async function importEijiro(
   const title = idx?.title ?? '英辞郎';
   const dir = sidecarDirFor(title, opts.root);
 
+  // §27.4 registry. 英辞郎 gets its bespoke adapter because its HTML carries
+  // production structure (frame labels, 〔situations〕) that a generic walker
+  // would flatten into prose. Everything else — jitendex, the kokugo, the
+  // thesaurus — is structured-content node trees, and points the other way
+  // (JA→EN), so both the parser AND the direction must switch.
+  const eijiro = isEijiro(title);
+  const direction: Direction = directionOf(idx);
+  const adapt = (bank: EijiroTuple[]): DictHeadword[] => eijiro
+    ? adaptEijiroBank(bank, { evocativeHead: opts.evocativeHead })
+    : adaptGenericBank(bank, { direction, evocativeHead: opts.evocativeHead });
+
   await dropSidecar(io, dir, shards);
   await io.mkdir(dir);
 
@@ -98,7 +117,7 @@ export async function importEijiro(
       done++;
       continue;
     }
-    const heads = adaptEijiroBank(tuples, { evocativeHead: opts.evocativeHead });
+    const heads = adapt(tuples);
     const res = await appendBatch(io, dir, heads, shards);
     headwords += res.heads;
     frames += res.frames;
@@ -117,5 +136,5 @@ export async function importEijiro(
   };
   await writeMeta(io, dir, meta);
 
-  return { title, headwords, frames, banks: done, failed, dir, ms: now() - t0 };
+  return { title, headwords, frames, banks: done, failed, dir, ms: now() - t0, adapter: eijiro ? "eijiro" : "generic", direction };
 }
