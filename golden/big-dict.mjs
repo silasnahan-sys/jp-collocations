@@ -138,7 +138,7 @@ console.log('\n══ THE REACH-FOR QUERY (§27.2) ══');
 
 console.log('\n══ one shard read per dictionary, then cached ══');
 {
-  const store = new BigDictStore(io, ROOT, { cacheShards: 6 });
+  const store = new BigDictStore(io, ROOT, { cacheBytes: 1 << 20 });
   await store.refresh();
   const before = io.reads();
   await store.lookup('$__ in arrears');
@@ -147,16 +147,36 @@ console.log('\n══ one shard read per dictionary, then cached ══');
   const mid = io.reads();
   await store.lookup('$__ in arrears');
   ok(io.reads() === mid, 'a repeat lookup reads NOTHING (cache hit)');
-  ok(store.cachedShards() <= 6, 'the cache stays inside its cap', `(${store.cachedShards()})`);
 }
 
-console.log('\n══ the cache is BOUNDED (phones) ══');
+// The cap is on BYTES, not entries. A count cap cannot express the constraint:
+// one query reads one shard per installed dictionary — 31 on the real vault, so
+// 62 reads for lookup+frame — while shard sizes span three orders of magnitude.
+// A cap of 6 entries meant each keystroke evicted the last keystroke's shards
+// and nothing was ever reused.
+console.log('\n══ the cache is BOUNDED BY BYTES (phones) ══');
 {
-  const store = new BigDictStore(io, ROOT, { cacheShards: 2 });
+  const store = new BigDictStore(io, ROOT, { cacheBytes: 400 });
   await store.refresh();
   for (const q of ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) await store.lookup(q);
-  ok(store.cachedShards() <= 2, 'never grows past the cap however much you type',
-    `(${store.cachedShards()})`);
+  ok(store.cachedBytes() <= 400 || store.cachedShards() === 1,
+    'never holds more than its byte budget however much you type',
+    `(${store.cachedBytes()}B in ${store.cachedShards()} shards)`);
+}
+
+console.log('\n══ a big budget keeps a whole query resident ══');
+{
+  const store = new BigDictStore(io, ROOT, { cacheBytes: 32 * 1024 * 1024 });
+  await store.refresh();
+  await store.lookup('$__ in arrears');
+  const after = io.reads();
+  // A DIFFERENT key, then back — the second query must not have evicted the first.
+  await store.lookup('no-such-headword-at-all');
+  const mid = io.reads();
+  ok(mid > after, 'a new key does read new shards');
+  await store.lookup('$__ in arrears');
+  ok(io.reads() === mid,
+    'and the earlier query is still cached — consecutive keystrokes reuse reads');
 }
 
 console.log('\n══ an empty vault degrades honestly ══');

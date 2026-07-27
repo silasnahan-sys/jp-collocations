@@ -49,6 +49,10 @@ export interface DexieImportResult {
   orphans: number;
   /** titles found in the dictionaries table (0 = table not seen). */
   registered: number;
+  /** dictionaries deliberately not converted because they already were. */
+  skipped: string[];
+  /** true when the run was cancelled: metas stay marked `partial`. */
+  stopped: boolean;
 }
 
 export interface DexieImportOpts {
@@ -90,21 +94,33 @@ export async function importDexie(
   const registered = new Set<string>();
 
   const seen = new Map<string, { heads: number; frames: number; dir: string; adapter: string }>();
+  const skipped = new Set<string>();
   let rows = 0, bytes = 0, unparseable = 0, stopped = false, orphans = 0;
 
   const router = new DictionaryRouter(async (title, tuples) => {
-    if (opts.skip?.(title)) return;
+    if (opts.skip?.(title)) { skipped.add(title); return; }
     const first = !seen.has(title);
     const res = await importBatch(io, title, tuples as unknown as EijiroTuple[], {
       shards, root: opts.root, reset: first,
       direction: opts.directionFor?.(title) ?? 'ja->en',
     });
     const prev = seen.get(title);
-    seen.set(title, {
+    const acc = {
       heads: (prev?.heads ?? 0) + res.heads,
       frames: (prev?.frames ?? 0) + res.frames,
       dir: res.dir,
       adapter: res.adapter,
+    };
+    seen.set(title, acc);
+    // Meta as we go, NOT at the end. A pass over a 12.7GB backup takes over an
+    // hour, and writing meta only on completion meant an interrupted — or
+    // merely unfinished — run left gigabytes of correct shards that discovery
+    // could not see at all, because a folder without meta is not a dictionary.
+    // Marked partial, so a dictionary that is still being filled reads as
+    // provisional rather than as a finished install. ~150 bytes per batch.
+    await writeMeta(io, res.dir, {
+      title, revision: 'dexie', shards,
+      headwords: acc.heads, frames: acc.frames, builtAt: now(), format: 1, partial: true,
     });
     opts.onProgress?.({ bytes, rows, dictionaries: seen.size, current: title });
   }, opts.bufferRows ?? 20_000);
@@ -130,19 +146,25 @@ export async function importDexie(
   if (!stopped) await router.drain();
   else await router.drain();          // a cancelled run still lands what it read
 
-  // meta is only writable now: the counts were not knowable mid-stream.
+  // Meta was written per batch (above). This pass only settles the final
+  // counts and clears `partial` — and only for a run that actually finished,
+  // so a cancelled run stays honestly marked as incomplete.
   const dictionaries: DexieImportResult['dictionaries'] = [];
   for (const [title, v] of seen) {
     const meta: SidecarMeta = {
       title, revision: 'dexie', shards,
       headwords: v.heads, frames: v.frames, builtAt: now(), format: 1,
+      ...(stopped ? { partial: true } : {}),
     };
     await writeMeta(io, sidecarDirFor(title, opts.root), meta);
     dictionaries.push({ title, headwords: v.heads, frames: v.frames, dir: v.dir, adapter: v.adapter });
   }
   dictionaries.sort((a, b) => b.headwords - a.headwords);
 
-  return { dictionaries, rows, bytes, ms: now() - t0, unparseable, orphans, registered: registered.size };
+  return {
+    dictionaries, rows, bytes, ms: now() - t0, unparseable, orphans,
+    registered: registered.size, skipped: [...skipped].sort(), stopped,
+  };
 }
 
 /** Titles already converted from a zip, so the backup pass can skip them. */

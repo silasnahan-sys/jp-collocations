@@ -55,6 +55,22 @@ function memIO() {
     async exists(p) { return files.has(p); },
     async mkdir(p) { dirs.add(p); },
     async remove(p) { files.delete(p); },
+    /** Files DIRECTLY inside p — the vault adapter's list().files. */
+    async listFiles(p) {
+      return [...files.keys()].filter((k) =>
+        k.startsWith(`${p}/`) && !k.slice(p.length + 1).includes('/'));
+    },
+    /** Immediate subfolder names — how installed dictionaries are discovered. */
+    async listFolders(p) {
+      const set = new Set();
+      for (const k of files.keys()) {
+        if (!k.startsWith(`${p}/`)) continue;
+        const rest = k.slice(p.length + 1);
+        const i = rest.indexOf('/');
+        if (i > 0) set.add(rest.slice(0, i));
+      }
+      return [...set];
+    },
   };
 }
 
@@ -236,6 +252,100 @@ console.log('\n══ the buffer is consistent while it is still held ══');
   await buf.flush();
   ok((await inner.read('d/a.jsonl')) === 'reset\n',
     'a write supersedes buffered appends (dropSidecar must really reset)');
+}
+
+// ── The repair golden (added after 30 dictionaries went missing, 2026-07-26) ─
+// A conversion wrote meta.json only after the WHOLE 12.7GB backup had been
+// read. Discovery requires a meta, so an unfinished run left 30 folders and
+// 1.8GB of perfectly good shards that the plugin could not see at all — one
+// missing 150-byte file per dictionary. These checks pin both halves of the
+// fix: the shard count can be recovered, and the entries come back.
+console.log('\n══ shard-count recovery (no meta to ask) ══');
+{
+  ok(S.inferShardCount([], 512) === 512, 'no shard files → the configured count');
+  ok(S.inferShardCount([0, 5, 511], 512) === 512, 'indices inside the configured count → trust it');
+  ok(S.inferShardCount([0, 3], 512) === 512,
+    'a dictionary too small to touch a high shard is NOT mis-derived as tiny');
+  ok(S.inferShardCount([0, 900], 512) === 1024,
+    'but files that PROVE a bigger count override it', '(→1024)');
+
+  const c = S.classifyShardFiles([
+    'd/head-000.jsonl', 'd/head-007.jsonl', 'd/frame-007.jsonl',
+    'd/meta.json', 'd/.DS_Store', 'd/head-000.jsonl.sync-conflict',
+  ]);
+  ok(c.head.length === 2 && c.frame.length === 1 && c.hasMeta,
+    'shard files are classified, junk and sync-conflict copies ignored');
+}
+
+console.log('\n══ repair: shards without meta are rescued ══');
+{
+  const FIX = JSON.parse(readFileSync(join(HERE, 'fixtures', 'eijiro.entries.json'), 'utf8'));
+  const heads = Object.keys(FIX).map((k) => adaptEijiroEntry(FIX[k]));
+  const io = memIO();
+  const ROOT = 'JP Dictionaries';
+  const dir = `${ROOT}/大辞泉 第二版`;
+  const SHARDS = 16;
+
+  await S.appendBatch(io, dir, heads, SHARDS);
+  ok((await S.readMeta(io, dir)) === null,
+    'an interrupted conversion leaves shards but NO meta — the real failure');
+
+  const res = await S.repairSidecarMeta(io, ROOT, { shards: SHARDS, now: () => 42 });
+  ok(res.repaired.length === 1, 'the orphaned folder is found', `(${res.repaired.length})`);
+  const meta = await S.readMeta(io, dir);
+  ok(meta?.shards === SHARDS, 'meta names the right shard count', `(${meta?.shards})`);
+  ok(meta?.partial === true,
+    'and is marked PARTIAL — nothing on disk proves the run ever finished');
+  ok(meta?.headwords === heads.length,
+    'headwords recovered by counting lines', `(${meta?.headwords}/${heads.length})`);
+
+  let found = 0;
+  for (const h of heads) {
+    const got = await S.lookupHead(io, dir, h.expression, meta.shards);
+    if (got.some((g) => g.expression === h.expression)) found++;
+  }
+  ok(found === heads.length,
+    'EVERY entry is reachable again after repair', `(${found}/${heads.length})`);
+
+  const again = await S.repairSidecarMeta(io, ROOT, { shards: SHARDS, now: () => 43 });
+  ok(again.repaired.length === 0 && again.alreadyOk.length === 1,
+    'repair is idempotent — a healthy dictionary is left alone');
+  ok((await S.readMeta(io, dir)).builtAt === 42, 'and its meta is not rewritten');
+
+  // a folder with nothing in it must not become a phantom dictionary
+  await io.write(`${ROOT}/empty-folder/notes.md`, 'hi');
+  const third = await S.repairSidecarMeta(io, ROOT, { shards: SHARDS, now: () => 44 });
+  ok(third.empty.includes('empty-folder') && third.repaired.length === 0,
+    'a folder with no shards is reported empty, never given a meta');
+}
+
+console.log('\n══ repair degrades honestly without directory listing ══');
+{
+  const io = memIO();
+  const bare = {
+    read: io.read, write: io.write, append: io.append,
+    exists: io.exists, mkdir: io.mkdir, remove: io.remove,
+  };
+  const res = await S.repairSidecarMeta(bare, 'JP Dictionaries', {});
+  ok(res.repaired.length === 0 && res.alreadyOk.length === 0,
+    'an IO that cannot list returns an empty result rather than throwing');
+}
+
+console.log('\n══ dropSidecar without listing still deletes (fallback path) ══');
+{
+  const io = memIO();
+  const bare = {
+    read: io.read, write: io.write, append: io.append,
+    exists: io.exists, mkdir: io.mkdir, remove: io.remove,
+  };
+  const dir = 'd';
+  await bare.append(S.headPath(dir, 3), 'x\n');
+  await bare.append(S.framePath(dir, 9), 'y\n');
+  await S.writeMeta(bare, dir, {
+    title: 't', revision: 'r', shards: 16, headwords: 1, frames: 1, builtAt: 0, format: 1,
+  });
+  await S.dropSidecar(bare, dir, 16);
+  ok(io.files.size === 0, 'the probe fallback removes shards AND meta', `(${io.files.size} left)`);
 }
 
 console.log(`\n${fail ? '✗' : '✓'} sidecar: ${n - fail}/${n} checks passed`);

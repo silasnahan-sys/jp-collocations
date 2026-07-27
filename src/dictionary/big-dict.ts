@@ -42,10 +42,27 @@ export interface BigFrameHit {
   candidate: ReachCandidate;
 }
 
-/** Bounded LRU over shard file bodies. */
+/**
+ * Bounded LRU over shard file bodies, bounded by BYTES.
+ *
+ * A count-based cap cannot express the real constraint. One query reads one
+ * shard per installed dictionary, and this vault has 31 — so a `lookup` plus a
+ * `frame` is 62 reads, while shards range from a few KB (日本語俗語辞書) to
+ * ~1MB (英辞郎). A cap of 6 entries meant every keystroke evicted the previous
+ * keystroke's shards and nothing was ever reused; a cap of 62 entries would
+ * mean anything from 0.5MB to 60MB resident depending on which dictionaries
+ * happened to be installed. Bytes are what memory actually costs, so bytes are
+ * what is capped.
+ */
 class ShardCache {
   private map = new Map<string, string | null>();
-  constructor(private cap: number) {}
+  private bytes = 0;
+  constructor(private maxBytes: number) {}
+  private static cost(v: string | null): number {
+    // A miss is worth caching too — it is what stops a repeated absent lookup
+    // re-reading 31 files — but it is not free to hold, so charge it something.
+    return v === null ? 64 : v.length;
+  }
   get(k: string): string | null | undefined {
     if (!this.map.has(k)) return undefined;
     const v = this.map.get(k)!;
@@ -53,15 +70,19 @@ class ShardCache {
     return v;
   }
   set(k: string, v: string | null): void {
-    if (this.map.has(k)) this.map.delete(k);
+    const prev = this.map.get(k);
+    if (this.map.has(k)) { this.bytes -= ShardCache.cost(prev ?? null); this.map.delete(k); }
     this.map.set(k, v);
-    while (this.map.size > this.cap) {
+    this.bytes += ShardCache.cost(v);
+    while (this.bytes > this.maxBytes && this.map.size > 1) {
       const oldest = this.map.keys().next().value as string;
+      this.bytes -= ShardCache.cost(this.map.get(oldest) ?? null);
       this.map.delete(oldest);
     }
   }
-  clear(): void { this.map.clear(); }
+  clear(): void { this.map.clear(); this.bytes = 0; }
   get size(): number { return this.map.size; }
+  get heldBytes(): number { return this.bytes; }
 }
 
 export class BigDictStore {
@@ -72,9 +93,12 @@ export class BigDictStore {
   constructor(
     private io: SidecarIO,
     private root = 'JP Dictionaries',
-    opts: { cacheShards?: number } = {},
+    opts: { cacheBytes?: number } = {},
   ) {
-    this.cache = new ShardCache(opts.cacheShards ?? 6);
+    // 24MB holds a full query's worth of shards for a large install, so typing
+    // the second character reuses the first character's reads. The caller
+    // lowers it on mobile.
+    this.cache = new ShardCache(opts.cacheBytes ?? 24 * 1024 * 1024);
   }
 
   /** Which dictionaries are installed. Cheap — one meta.json each. */
@@ -96,9 +120,16 @@ export class BigDictStore {
 
   private async ready(): Promise<void> { if (!this.loaded) await this.refresh(); }
 
-  installed(): Array<{ title: string; headwords: number; frames: number; dir: string }> {
+  installed(): Array<{
+    title: string; headwords: number; frames: number; dir: string;
+    partial: boolean; revision: string;
+  }> {
     return this.metas.map(({ dir, meta }) => ({
       title: meta.title, headwords: meta.headwords, frames: meta.frames, dir,
+      // `partial` means a conversion is still filling this, or the meta was
+      // reconstructed by repair — either way the counts are a running total
+      // and the UI must not present it as a settled install.
+      partial: meta.partial === true, revision: meta.revision,
     }));
   }
 
@@ -170,6 +201,8 @@ export class BigDictStore {
 
   /** Exposed for the golden: how many shard bodies are resident. */
   cachedShards(): number { return this.cache.size; }
+  /** Exposed for the golden: the cap is on bytes, so bytes are what is checked. */
+  cachedBytes(): number { return this.cache.heldBytes; }
 }
 
 /** Re-exported so callers need only this module. */

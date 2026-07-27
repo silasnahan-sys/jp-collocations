@@ -55,6 +55,14 @@ export interface SidecarMeta {
   builtAt: number;
   /** schema version of the line format, so a future change can migrate. */
   format: 1;
+  /**
+   * True while a conversion is still adding to this dictionary, or when the
+   * meta was reconstructed by `repairSidecarMeta`. The counts are then a
+   * RUNNING total, not a final one, and the dictionary must be presented as
+   * provisional rather than as a finished install (§12: machine output looks
+   * provisional). Absent/false means a conversion wrote it and completed.
+   */
+  partial?: boolean;
 }
 
 export const DEFAULT_SHARDS = 512;
@@ -212,6 +220,128 @@ export async function readMeta(io: SidecarIO, dir: string): Promise<SidecarMeta 
   const t = await io.read(metaPath(dir));
   if (!t) return null;
   try { return JSON.parse(t) as SidecarMeta; } catch { return null; }
+}
+
+// ── repair ───────────────────────────────────────────────────────────────────
+
+/**
+ * Sort a folder's files into head shards, frame shards and meta.
+ * Tolerant of anything else in the folder (sync conflict copies, .DS_Store).
+ */
+export function classifyShardFiles(
+  files: string[],
+): { head: number[]; frame: number[]; hasMeta: boolean } {
+  const head: number[] = [], frame: number[] = [];
+  let hasMeta = false;
+  for (const f of files) {
+    const name = f.split('/').pop() ?? '';
+    if (name === 'meta.json') { hasMeta = true; continue; }
+    const m = /^(head|frame)-(\d+)\.jsonl$/.exec(name);
+    if (!m) continue;
+    (m[1] === 'head' ? head : frame).push(Number(m[2]));
+  }
+  return { head, frame, hasMeta };
+}
+
+/**
+ * How many shards a folder was written with, when no meta survives to say.
+ *
+ * `expected` (the configured count) is trusted whenever it can be — the repair
+ * runs in the same install that did the conversion. It is only overridden when
+ * the files themselves prove it wrong, i.e. a shard index at or beyond it.
+ * Deriving from `max index + 1` alone would be wrong for any dictionary too
+ * small to touch its highest shard, so the derived value is rounded up to a
+ * power of two, which is the only shape a shard count has ever had here.
+ */
+export function inferShardCount(indices: number[], expected: number = DEFAULT_SHARDS): number {
+  if (!indices.length) return expected;
+  const max = Math.max(...indices);
+  if (max < expected) return expected;
+  let s = 1;
+  while (s <= max) s *= 2;
+  return s;
+}
+
+export interface SidecarRepair {
+  title: string; dir: string; headwords: number; frames: number; shards: number; bytes: number;
+}
+
+export interface RepairResult {
+  /** folders that had shards but no usable meta, now readable. */
+  repaired: SidecarRepair[];
+  /** folders that already had a readable meta — untouched. */
+  alreadyOk: string[];
+  /** folders under the root holding no shard files at all. */
+  empty: string[];
+}
+
+/**
+ * Reconstruct `meta.json` for every dictionary folder that has shards but no
+ * readable meta, making it findable again.
+ *
+ * This exists because a conversion used to write meta only after the whole
+ * 12.7GB backup had been read: a run that was interrupted — or merely still
+ * running — left gigabytes of perfectly good shards that `BigDictStore` could
+ * not see, because discovery requires a meta. One missing 150-byte file hid
+ * 1.8GB of working dictionary. `importDexie` now writes meta as it goes, so
+ * this is the rescue path for runs that predate that (and for a killed run).
+ *
+ * The counts are recovered by reading the shards — the only honest source —
+ * and the result is marked `partial`, because nothing on disk can tell us
+ * whether the conversion that wrote them ever finished.
+ */
+export async function repairSidecarMeta(
+  io: SidecarIO,
+  root: string,
+  opts: {
+    shards?: number;
+    now?: () => number;
+    onProgress?: (p: { title: string; done: number; total: number; bytes: number }) => void;
+    shouldStop?: () => boolean;
+  } = {},
+): Promise<RepairResult> {
+  const expected = opts.shards ?? DEFAULT_SHARDS;
+  const now = opts.now ?? (() => Date.now());
+  const out: RepairResult = { repaired: [], alreadyOk: [], empty: [] };
+  if (!io.listFolders || !io.listFiles) return out;
+
+  const names = await io.listFolders(root).catch(() => [] as string[]);
+  let done = 0, bytes = 0;
+  for (const name of names) {
+    if (opts.shouldStop?.()) break;
+    done++;
+    const dir = `${root}/${name}`;
+    const files = await io.listFiles(dir).catch(() => [] as string[]);
+    const { head, frame, hasMeta } = classifyShardFiles(files);
+    if (hasMeta && (await readMeta(io, dir))) { out.alreadyOk.push(name); continue; }
+    if (!head.length && !frame.length) { out.empty.push(name); continue; }
+
+    const shards = inferShardCount([...head, ...frame], expected);
+    let headwords = 0, frames = 0, folderBytes = 0;
+    for (const [list, isHead] of [[head, true], [frame, false]] as Array<[number[], boolean]>) {
+      for (const s of list) {
+        const body = await io.read(isHead ? headPath(dir, s) : framePath(dir, s));
+        if (!body) continue;
+        folderBytes += body.length;
+        // Every line is written with a trailing newline, so counting them
+        // counts entries — and a torn final line (no newline) is correctly
+        // not counted, matching what `decodeLines` will refuse to parse.
+        let lines = 0;
+        for (let i = 0; i < body.length; i++) if (body.charCodeAt(i) === 10) lines++;
+        if (isHead) headwords += lines; else frames += lines;
+      }
+      opts.onProgress?.({ title: name, done, total: names.length, bytes: bytes + folderBytes });
+    }
+    bytes += folderBytes;
+
+    await writeMeta(io, dir, {
+      title: name, revision: 'repaired', shards,
+      headwords, frames, builtAt: now(), format: 1, partial: true,
+    });
+    out.repaired.push({ title: name, dir, headwords, frames, shards, bytes: folderBytes });
+  }
+  out.repaired.sort((a, b) => b.headwords - a.headwords);
+  return out;
 }
 
 // ── reading ──────────────────────────────────────────────────────────────────

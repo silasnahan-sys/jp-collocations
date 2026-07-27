@@ -5292,3 +5292,31 @@ body {
   cursor: pointer; background: transparent;
   border: 1px solid var(--background-modifier-border); flex-shrink: 0;
 }
+
+/* ── 設定: 変換済みの大型辞書 ─────────────────────────────────────────────
+   The receipt for a conversion. Reads as a list of installed things, with
+   the provisional ones visibly provisional rather than footnoted. */
+.jpc-bigdict-installed { margin-top: 18px; }
+.jpc-bigdict-installed h4 { margin: 0 0 4px; font-size: 0.9rem; }
+.jpc-bigdict-list {
+  display: flex; flex-direction: column; gap: 1px;
+  max-height: 340px; overflow-y: auto;
+}
+.jpc-bigdict-row {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 4px 8px; border-radius: 6px;
+}
+.jpc-bigdict-row:nth-child(odd) { background: var(--background-secondary); }
+.jpc-bigdict-name {
+  display: flex; align-items: baseline; gap: 6px;
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 0.84rem;
+}
+.jpc-bigdict-partial {
+  font-size: 0.62rem; color: var(--text-faint); flex-shrink: 0;
+  border: 1px dashed var(--background-modifier-border); border-radius: 4px; padding: 0 4px;
+}
+.jpc-bigdict-count {
+  font-size: 0.7rem; color: var(--text-muted); flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}

@@ -53,8 +53,8 @@ import { PatternStore, sweepTerms, patternIdFor, derivePattern, attestationKey, 
 // §27.5 big-dictionary sidecars (the blob never sees 2.36M entries).
 import { importEijiro, type BankSource } from "./dictionary/import-eijiro";
 import { vaultSidecarIO, nodeBankSource, nodeChunkSource } from "./dictionary/sidecar-io";
-import { bufferedSidecarIO } from "./dictionary/sidecar";
-import { importDexie } from "./dictionary/import-dexie";
+import { bufferedSidecarIO, repairSidecarMeta } from "./dictionary/sidecar";
+import { importDexie, skipTitles } from "./dictionary/import-dexie";
 import { BigDictStore } from "./dictionary/big-dict";
 // The move concordance (DISCOURSE-VERDICT §11 fail branch → §12 result).
 import { transcriptToTurns } from "./discourse/calculus/turns.mjs";
@@ -175,6 +175,14 @@ export default class JPCollocationsPlugin extends Plugin {
   private inboxStore!: InboxStore;
   /** §27.5 — the converted big dictionaries (vault sidecars, async lookup). */
   private bigDict!: BigDictStore;
+  /**
+   * Which dictionary conversion is running, if any. Two conversions write the
+   * SAME shard folders, and the backup pass resets a dictionary on its first
+   * batch — so starting the zip conversion while the backup pass is live can
+   * delete the other's finished output mid-write. One at a time, and the
+   * refusal says what is already running.
+   */
+  private conversionRunning: string | null = null;
   /** §27.0.2 — the open wants: what you are reaching for but cannot yet say. */
   private reachStore!: ReachStore;
   /** §25.5 発話セッション record (`_speakSessions`). */
@@ -339,6 +347,10 @@ export default class JPCollocationsPlugin extends Plugin {
     this.bigDict = new BigDictStore(
       vaultSidecarIO(this.app),
       this.settings.bigDict?.root || "JP Dictionaries",
+      // One query reads one shard per installed dictionary (31 here), so the
+      // cache has to span a whole query or nothing is ever reused. Phones get
+      // a third of the budget.
+      { cacheBytes: (Platform.isMobile ? 8 : 24) * 1024 * 1024 },
     );
 
     this.reachStore = new ReachStore((data) => this.dm.setKey("_reaches", data));
@@ -1083,6 +1095,12 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "convert-dexie-backup",
       name: "辞書: Convert Yomitan Backup (all dictionaries, desktop)",
       callback: async () => { await this.convertDexieBackup(); },
+    });
+
+    this.addCommand({
+      id: "repair-big-dictionaries",
+      name: "辞書: 変換済み辞書を修復（meta.json を再生成して検索可能に）",
+      callback: async () => { await this.repairBigDictionaries(); },
     });
 
     // §27.0.2 — record a want you cannot yet say. The one place the plugin
@@ -2157,6 +2175,7 @@ export default class JPCollocationsPlugin extends Plugin {
    * converted into junk folders and never silently dropped.
    */
   async convertDexieBackup(): Promise<string> {
+    if (this.conversionRunning) return this.refuseSecondConversion();
     const path = this.settings.bigDict?.backupFile?.trim();
     if (!path) {
       new Notice("設定 → 大型辞書 に、Yomitanのバックアップ(.json)のパスを入力してください。", 8000);
@@ -2170,12 +2189,24 @@ export default class JPCollocationsPlugin extends Plugin {
       return String(err);
     }
 
+    // Dictionaries already converted from a zip must not be redone: the backup
+    // pass resets a dictionary on its first batch, so without this it would
+    // delete a finished 英辞郎 (657MB, 2.36M headwords) and rebuild it from
+    // rows it has no better version of. Only COMPLETE non-backup conversions
+    // are protected, so re-running the backup still refreshes its own output.
+    await this.bigDict.refresh();
+    const done = this.bigDict.installed()
+      .filter((d) => !d.partial && d.revision !== "dexie" && d.revision !== "repaired")
+      .map((d) => d.title);
+
+    this.conversionRunning = "バックアップ";
     const notice = new Notice("バックアップを読み込み中…", 0);
     const io = bufferedSidecarIO(vaultSidecarIO(this.app));
     const gb = (n: number) => (n / 1073741824).toFixed(2);
     try {
       const res = await importDexie(io, src.chunks, {
         root: this.settings.bigDict?.root || "JP Dictionaries",
+        skip: done.length ? skipTitles(done) : undefined,
         onProgress: (p) => {
           notice.setMessage(
             `辞書バックアップ ${gb(p.bytes)}/${gb(src.size)}GB — ${p.dictionaries}辞書 / ` +
@@ -2188,17 +2219,82 @@ export default class JPCollocationsPlugin extends Plugin {
       const msg =
         `バックアップ変換完了: ${res.dictionaries.length}辞書 / ${res.rows.toLocaleString()}見出し` +
         `（${(res.ms / 1000).toFixed(0)}秒）` +
+        (res.skipped.length ? ` — 変換済みのためスキップ: ${res.skipped.join("、")}` : "") +
         (res.orphans ? ` — 登録外の辞書 ${res.orphans.toLocaleString()}語はスキップ` : "") +
         (res.unparseable ? ` / 解析不能 ${res.unparseable}語` : "");
       new Notice(msg, 15000);
       return msg;
     } catch (err) {
-      const msg = `バックアップ変換に失敗: ${String(err instanceof Error ? err.message : err)}`;
+      // Everything read so far is already on disk WITH meta (written per
+      // batch), so a failure here costs the remainder of the file, not the run.
+      await io.flush().catch(() => {});
+      this.bigDict.invalidate();
+      const msg = `バックアップ変換に失敗: ${String(err instanceof Error ? err.message : err)}` +
+        "（ここまでに変換した辞書は使えます）";
       new Notice(msg, 12000);
       return msg;
     } finally {
+      this.conversionRunning = null;
       notice.hide();
     }
+  }
+
+  /** One conversion at a time — both write the same folders. */
+  private refuseSecondConversion(): string {
+    const msg = `${this.conversionRunning}の変換が実行中です。終わってから実行してください（同じフォルダに書き込むため）。`;
+    new Notice(msg, 8000);
+    return msg;
+  }
+
+  /**
+   * §27.5 — make converted dictionaries findable again after an interrupted run.
+   *
+   * Discovery requires `meta.json`, and conversions used to write it only after
+   * the entire 12.7GB backup had been read. A run that was killed — or merely
+   * still going — therefore left gigabytes of perfectly good shards that the
+   * plugin could not see: on this vault, 30 dictionaries and 1.8GB hidden by 30
+   * missing 150-byte files. `importDexie` now writes meta as it goes, so this is
+   * the rescue path for anything converted before that, and after a crash.
+   */
+  async repairBigDictionaries(): Promise<string> {
+    if (this.conversionRunning) return this.refuseSecondConversion();
+    this.conversionRunning = "修復";
+    const notice = new Notice("辞書フォルダを検査中…", 0);
+    const io = vaultSidecarIO(this.app);
+    try {
+      const res = await repairSidecarMeta(io, this.settings.bigDict?.root || "JP Dictionaries", {
+        onProgress: (p) => {
+          notice.setMessage(
+            `辞書を修復中 ${p.done}/${p.total} — ${p.title}（${(p.bytes / 1048576).toFixed(0)}MB 読込）`,
+          );
+        },
+      });
+      this.bigDict.invalidate();
+      const msg = res.repaired.length
+        ? `${res.repaired.length}辞書を復旧: ` +
+          res.repaired.slice(0, 4).map((r) => `${r.title} ${r.headwords.toLocaleString()}語`).join("、") +
+          (res.repaired.length > 4 ? ` ほか${res.repaired.length - 4}辞書` : "") +
+          "（未完了の可能性があるため「暫定」表示です）"
+        : `復旧が必要な辞書はありません（${res.alreadyOk.length}辞書は正常）。`;
+      new Notice(msg, 15000);
+      return msg;
+    } catch (err) {
+      const msg = `辞書の修復に失敗: ${String(err instanceof Error ? err.message : err)}`;
+      new Notice(msg, 12000);
+      return msg;
+    } finally {
+      this.conversionRunning = null;
+      notice.hide();
+    }
+  }
+
+  /** What is installed, for the settings list. Cheap: one meta.json each. */
+  async listBigDictionaries(): Promise<Array<{
+    title: string; headwords: number; frames: number; dir: string;
+    partial: boolean; revision: string;
+  }>> {
+    await this.bigDict.refresh();
+    return this.bigDict.installed();
   }
 
   /**
@@ -3113,6 +3209,7 @@ export default class JPCollocationsPlugin extends Plugin {
    * deleting the folder.
    */
   async convertBigDictionary(): Promise<string> {
+    if (this.conversionRunning) return this.refuseSecondConversion();
     const folder = this.settings.bigDict?.exportFolder?.trim();
     if (!folder) {
       new Notice("設定 → 大型辞書 に、展開したYomitan辞書フォルダのパスを入力してください。", 8000);
@@ -3126,6 +3223,7 @@ export default class JPCollocationsPlugin extends Plugin {
       return String(err);
     }
 
+    this.conversionRunning = "辞書";
     const notice = new Notice("辞書変換の準備中…", 0);
     let cancelled = false;
     // Coalesce the ~242,000 shard appends into a few dozen large writes —
@@ -3154,6 +3252,7 @@ export default class JPCollocationsPlugin extends Plugin {
       new Notice(msg, 12000);
       return msg;
     } finally {
+      this.conversionRunning = null;
       notice.hide();
     }
   }

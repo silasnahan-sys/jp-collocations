@@ -15,6 +15,11 @@ import type { HyogenScraper } from "../scraper/HyogenScraper.ts";
 type SettingsHost = Plugin & {
   convertBigDictionary?: () => Promise<string>;
   convertDexieBackup?: () => Promise<string>;
+  repairBigDictionaries?: () => Promise<string>;
+  listBigDictionaries?: () => Promise<Array<{
+    title: string; headwords: number; frames: number; dir: string;
+    partial: boolean; revision: string;
+  }>>;
 };
 
 export class SettingsTab extends PluginSettingTab {
@@ -38,6 +43,86 @@ export class SettingsTab extends PluginSettingTab {
     this.store = store;
     this.getScraper = getScraper;
     this.onSettingsChange = onSettingsChange;
+  }
+
+  /**
+   * The installed-dictionary receipt.
+   *
+   * A conversion that writes 2.36M headwords and then changes nothing visible
+   * anywhere is indistinguishable from one that silently failed — which is how
+   * a completely successful 英辞郎 run was actually read. This is the surface
+   * that answers "did it work", and it answers it from the files themselves
+   * rather than from a remembered result.
+   *
+   * Discovery reads one meta.json per folder, so the block paints a placeholder
+   * and fills in. A dictionary whose meta is `partial` is shown as 暫定 and
+   * never as a finished install (§12: machine output looks provisional).
+   */
+  private renderInstalledDictionaries(containerEl: HTMLElement): void {
+    const wrap = containerEl.createDiv({ cls: "jpc-bigdict-installed" });
+    wrap.createEl("h4", { text: "変換済みの辞書" });
+    const list = wrap.createDiv({ cls: "jpc-bigdict-list" });
+    list.createEl("p", { text: "読み込み中…", cls: "setting-item-description" });
+
+    const paint = async (): Promise<void> => {
+      list.empty();
+      let dicts: Awaited<ReturnType<NonNullable<SettingsHost["listBigDictionaries"]>>> = [];
+      try {
+        dicts = (await this.host.listBigDictionaries?.()) ?? [];
+      } catch (err) {
+        list.createEl("p", {
+          text: `辞書一覧を読めませんでした: ${String(err instanceof Error ? err.message : err)}`,
+          cls: "setting-item-description",
+        });
+        return;
+      }
+      if (!dicts.length) {
+        list.createEl("p", {
+          text: "変換済みの辞書はまだありません。上のボタンで変換してください。"
+            + "フォルダにシャード(head-000.jsonl など)があるのに表示されない場合は「修復」を押してください。",
+          cls: "setting-item-description",
+        });
+        return;
+      }
+      const total = dicts.reduce((s, d) => s + d.headwords, 0);
+      list.createEl("p", {
+        text: `${dicts.length}辞書 ・ 見出し ${total.toLocaleString()}語`,
+        cls: "setting-item-description",
+      });
+      for (const d of dicts) {
+        const row = list.createDiv({ cls: "jpc-bigdict-row" });
+        const name = row.createDiv({ cls: "jpc-bigdict-name" });
+        name.createSpan({ text: d.title });
+        if (d.partial) name.createSpan({ text: "暫定", cls: "jpc-bigdict-partial" });
+        row.createDiv({
+          cls: "jpc-bigdict-count",
+          text: `${d.headwords.toLocaleString()}語 / ${d.frames.toLocaleString()}フレーム`,
+        });
+      }
+      if (dicts.some((d) => d.partial)) {
+        list.createEl("p", {
+          text: "「暫定」＝ 変換が最後まで終わったか確認できない辞書です（変換中、または修復で復元したもの）。"
+            + "検索はそのまま使えます。",
+          cls: "setting-item-description",
+        });
+      }
+    };
+
+    new Setting(wrap)
+      .setName("見つからない辞書を修復")
+      .setDesc("シャードはあるのに meta.json が無いフォルダを探して作り直します（中断した変換の復旧）。")
+      .addButton(b => b
+        .setButtonText("修復")
+        .onClick(async () => {
+          b.setDisabled(true).setButtonText("修復中…");
+          try { await this.host.repairBigDictionaries?.(); await paint(); }
+          finally { b.setDisabled(false).setButtonText("修復"); }
+        }))
+      .addButton(b => b
+        .setButtonText("再読み込み")
+        .onClick(async () => { await paint(); }));
+
+    void paint();
   }
 
   display(): void {
@@ -316,6 +401,12 @@ export class SettingsTab extends PluginSettingTab {
           try { await this.host.convertBigDictionary?.(); }
           finally { b.setDisabled(false).setButtonText("変換を実行"); }
         }));
+
+    // ── What is actually installed ────────────────────────────────────────
+    // A conversion that writes 2.36M headwords and then shows nothing anywhere
+    // is indistinguishable from one that did nothing — which is exactly how a
+    // fully successful 英辞郎 run was read. The list is the receipt.
+    this.renderInstalledDictionaries(containerEl);
 
     containerEl.createEl("h3", { text: "音声クリップ (yt-dlp) — デスクトップ限定" });
     const audio = this.settings.audioExtraction;

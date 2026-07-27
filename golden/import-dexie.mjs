@@ -229,5 +229,61 @@ console.log('\n══ cancellation lands what it read ══');
   ok(total === res.rows, 'every row read reached a sidecar', `(${total}/${res.rows})`);
 }
 
+// ── The all-or-nothing golden (added after 30 dictionaries went missing) ────
+// meta.json used to be written only after the WHOLE 12.7GB pass. Discovery
+// requires a meta, so the run that died at 19:20 on 2026-07-26 left 31 folders,
+// 2.44GB of correct shards — and exactly ONE readable dictionary. The rows were
+// all there; nothing could see them. Meta is now written per batch.
+console.log('\n══ a dictionary is READABLE before the pass finishes ══');
+{
+  const io = memIO();
+  let calls = 0;
+  const res = await importDexie(io, chunks(doc(), 400), {
+    shards: 8, root: 'JP Dictionaries', bufferRows: 12, now: () => 7,
+    shouldStop: () => ++calls > 6,
+  });
+  ok(res.stopped === true, 'the run was cancelled', `(rows ${res.rows})`);
+
+  // The real test: discovery, which is what actually failed on the vault.
+  const store = new BigDictStore(io, 'JP Dictionaries');
+  const found = await store.refresh();
+  ok(found.length === res.dictionaries.length && found.length > 0,
+    'EVERY dictionary written so far is discoverable after an interrupted run',
+    `(${found.length}/${res.dictionaries.length})`);
+  ok(store.installed().every((d) => d.partial),
+    'and each is marked 暫定 — a cancelled run must not claim to be finished');
+  const totalHeads = store.installed().reduce((a, d) => a + d.headwords, 0);
+  ok(totalHeads === res.rows,
+    'the running counts in meta match the rows actually converted',
+    `(${totalHeads}/${res.rows})`);
+}
+
+console.log('\n══ a completed pass clears 暫定 ══');
+{
+  const io = memIO();
+  await importDexie(io, chunks(doc()), {
+    shards: 8, root: 'JP Dictionaries', bufferRows: 12, now: () => 0,
+  });
+  const store = new BigDictStore(io, 'JP Dictionaries');
+  await store.refresh();
+  ok(store.installed().length === 2, 'both dictionaries installed');
+  ok(store.installed().every((d) => !d.partial),
+    'a run that finished leaves NO dictionary marked partial');
+}
+
+console.log('\n══ skip: an already-converted dictionary is not rebuilt ══');
+{
+  const io = memIO();
+  const res = await importDexie(io, chunks(doc()), {
+    shards: 8, root: 'JP Dictionaries', bufferRows: 12, now: () => 0,
+    skip: skipTitles([KENKYUSHA]),
+  });
+  ok(res.skipped.includes(KENKYUSHA), 'the skip is REPORTED, not silent', `(${res.skipped})`);
+  ok(res.dictionaries.every((d) => d.title !== KENKYUSHA), 'and it was not converted');
+  ok(!(await io.exists(`JP Dictionaries/${KENKYUSHA}/head-000.jsonl`)),
+    'its folder was never touched — a finished conversion is not dropped and redone');
+  ok(res.dictionaries.some((d) => d.title === '大辞泉'), 'the others still convert');
+}
+
 console.log(`\n${fail ? '✗' : '✓'} import-dexie: ${n - fail}/${n} checks passed`);
 process.exit(fail ? 1 : 0);
