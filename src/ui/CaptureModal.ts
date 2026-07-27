@@ -355,13 +355,14 @@ export class CaptureModal extends Modal {
     const s = this.ctx.source;
     // §22 scene passthrough: medium + address ride on the attestation so the
     // context renderer can re-manifest the scene medium-natively.
-    const scene = (s.sourceName || s.loc || s.image || (s.url && s.medium))
+    const scene = (s.sourceName || s.loc || s.image || s.audio || (s.url && s.medium))
       ? {
         ...(s.sourceName ? { sourceName: s.sourceName } : {}),
         ...(s.loc ? { loc: s.loc } : {}),
         ...(s.url ? { deepLink: s.url } : {}),
         ...(s.image ? { image: s.image } : {}),
         ...(s.bbox ? { bbox: s.bbox } : {}),
+        ...(s.audio ? { audio: s.audio } : {}),
       }
       : undefined;
     const base = {

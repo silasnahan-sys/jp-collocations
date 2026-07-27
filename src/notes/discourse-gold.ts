@@ -33,9 +33,15 @@ export interface GoldSource {
   medium?: 'yt' | 'podcast' | 'tv' | 'manga' | 'book' | 'note' | 'x' | 'web' | 'dict' | 'corpus';
   sourceName?: string;
   loc?: string;
-  /** manga: the panel image (vault path) + bubble bbox (0–1000 normalized). */
+  /** manga: the panel image (vault path) + bubble bbox (0–1000 normalized).
+   *  TV: the still frame cut at the mark. */
   image?: string;
   bbox?: [number, number, number, number];
+  /** vault path of an audio clip cut at this moment (podcast mp3, Plex cut).
+   *  Without this the cutter writes a clip into the vault and the noticing it
+   *  was cut FOR never learns it exists — the scene is unreachable from the
+   *  capture that caused it. `SceneRef.audio` has always had a slot for it. */
+  audio?: string;
 }
 
 export interface GoldExample {

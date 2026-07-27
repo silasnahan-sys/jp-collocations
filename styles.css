@@ -5320,3 +5320,43 @@ body {
   font-size: 0.7rem; color: var(--text-muted); flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
+
+/* ── 📺 Plex ライブラリ ─────────────────────────────────────────────────────
+   Dense index rows, separation by whitespace not borders (§20.1 monokakido).
+   Touch targets stay ≥40px because this is used on a phone, on a sofa. */
+.jp-plexbrowse-search input {
+  width: 100%; padding: 8px 10px; font-size: 0.95rem;
+  border-radius: 8px; border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+.jp-plexbrowse-crumb {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px;
+  margin: 8px 0 4px; font-size: 0.72rem; color: var(--text-muted);
+}
+.jp-plexbrowse-crumb-item { cursor: pointer; }
+.jp-plexbrowse-crumb-item:hover { text-decoration: underline; }
+.jp-plexbrowse-crumb-item.is-current { color: var(--text-normal); cursor: default; }
+.jp-plexbrowse-crumb-item.is-current:hover { text-decoration: none; }
+.jp-plexbrowse-sep { color: var(--text-faint); }
+.jp-plexbrowse-list {
+  display: flex; flex-direction: column;
+  max-height: 58vh; overflow-y: auto; margin-top: 2px;
+}
+.jp-plexbrowse-row {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 40px; padding: 6px 8px; border-radius: 8px; cursor: pointer;
+}
+.jp-plexbrowse-row:hover { background: var(--background-secondary); }
+.jp-plexbrowse-row.is-busy { opacity: 0.6; pointer-events: none; }
+.jp-plexbrowse-row.is-leaf .jp-plexbrowse-title { font-variant-numeric: tabular-nums; }
+.jp-plexbrowse-main { min-width: 0; flex: 1; }
+.jp-plexbrowse-title {
+  font-size: 0.9rem; line-height: 1.4;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.jp-plexbrowse-sub { font-size: 0.68rem; color: var(--text-muted); }
+.jp-plexbrowse-busy { font-size: 0.72rem; color: var(--text-muted); }
+.jp-plexbrowse-empty, .jp-plexbrowse-error {
+  padding: 14px 8px; font-size: 0.8rem; color: var(--text-muted); text-align: center;
+}
+.jp-plexbrowse-error { color: var(--text-error); text-align: left; line-height: 1.5; }

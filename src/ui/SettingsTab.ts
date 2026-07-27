@@ -1,7 +1,7 @@
 import { PluginSettingTab, Setting, Notice, Platform, requestUrl } from "obsidian";
 import type { App } from "obsidian";
 import { detectTools } from "../notes/audio-extractor.ts";
-import { parsePlexSessions, plexSessionsUrl } from "../notes/plex.ts";
+import { parsePlexSessions, plexSessionsUrl, describeSubtitles } from "../notes/plex.ts";
 import { normalizeCookieInput, cookieValue, YtHistoryClient } from "../notes/yt-history-client.ts";
 import { detectSpeechTools } from "../notes/voice-lab.ts";
 import { USERSCRIPT_SOURCE } from "../x/mobile-capture.ts";
@@ -16,6 +16,8 @@ type SettingsHost = Plugin & {
   convertBigDictionary?: () => Promise<string>;
   convertDexieBackup?: () => Promise<string>;
   repairBigDictionaries?: () => Promise<string>;
+  plexSubtitleToTranscript?: () => Promise<string>;
+  openPlexBrowse?: () => void;
   listBigDictionaries?: () => Promise<Array<{
     title: string; headwords: number; frames: number; dir: string;
     partial: boolean; revision: string;
@@ -557,8 +559,34 @@ export class SettingsTab extends PluginSettingTab {
         const res = parsePlexSessions(resp.status, resp.text ?? "");
         if (!res.ok) { new Notice(`Plex: ${res.error}`, 8000); return; }
         if (!res.sessions.length) { new Notice("Plex: 接続OK — 再生中の項目はありません。", 6000); return; }
-        new Notice("Plex 接続OK:\n" + res.sessions.map(s => `${s.paused ? "⏸" : "▶"} ${s.title} @${Math.floor(s.viewOffsetSec)}s`).join("\n"), 9000);
+        // Also list the subtitle tracks. plex.ts says to verify field names
+        // against a real server before trusting them, and this is where that
+        // happens: if the track you expect is missing here, the transcript
+        // step will not find it either.
+        const lines = res.sessions.map(s => {
+          const head = `${s.paused ? "⏸" : "▶"} ${s.title} @${Math.floor(s.viewOffsetSec)}s`;
+          const subs = describeSubtitles(s.streams);
+          return subs.length ? `${head}\n  ${subs.join("\n  ")}` : `${head}\n  （字幕トラック情報なし）`;
+        });
+        new Notice("Plex 接続OK:\n" + lines.join("\n"), 15000);
       }));
+
+    new Setting(containerEl)
+      .setName("字幕からトランスクリプトを作る")
+      .setDesc(
+        "Plex が持っている字幕をそのまま取り込みます。jimaku から .srt を探して貼り付ける手間がなくなり、" +
+        "照合・走査・談話モード・⚡ がそのまま使えます。",
+      )
+      .addButton(b => b
+        .setButtonText("再生中から")
+        .onClick(async () => {
+          b.setDisabled(true).setButtonText("取得中…");
+          try { await this.host.plexSubtitleToTranscript?.(); }
+          finally { b.setDisabled(false).setButtonText("再生中から"); }
+        }))
+      .addButton(b => b
+        .setButtonText("ライブラリから選ぶ")
+        .onClick(() => { this.host.openPlexBrowse?.(); }));
 
     // ── Transcript + history ingestion (DESIGN §8 Step 2) ─────────
     containerEl.createEl("h3", { text: "文字起こし取得（YouTube）" });

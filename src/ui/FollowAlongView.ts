@@ -23,6 +23,9 @@ import type { MatcherLine } from '../notes/local-matcher.ts';
 import { fmtStamp } from '../notes/srt.ts';
 import { syncClock, pauseClock, resumeClock, clockPosition, currentLineIndex, type FollowClock } from '../notes/follow.ts';
 import { pickPlexSession, type PlexSessionsResult } from '../notes/plex.ts';
+
+/** Stable identity for a mark across re-renders (the objects are rebuilt). */
+const markKey = (m: SessionMark): string => `${m.kind}:${m.tSec ?? ''}:${m.lineIndex ?? ''}`;
 import {
   SPEAK_MODES, newSession, newMark, sessionPoints, speakMarks,
   type SpeakStore, type SpeakSession, type SpeakMode, type SpeakConstraint, type SessionMark,
@@ -101,6 +104,12 @@ export class FollowAlongView extends ItemView {
 
   private listEl: HTMLElement | null = null;
 
+  /**
+   * Clips cut at a mark, so the capture made from that mark can carry them.
+   * Keyed by the mark's own coordinates rather than object identity, because
+   * the mark objects are rebuilt from the session store on every render.
+   */
+  private clipAt = new Map<string, { audio?: string; still?: string }>();
   // §25.4 Plex clock (b): when on, the transcript follows the server's playback.
   private plexSyncOn = false;
   private plexPollId: number | null = null;
@@ -790,21 +799,39 @@ export class FollowAlongView extends ItemView {
         this.renderRatingRow(card, s, mark, () => { /* stays open in debrief */ });
       }
       const act = card.createDiv('jp-follow-debrief-actions');
-      const cap = act.createEl('button', { text: '🏷️ 分類', cls: 'jp-follow-btn' });
-      cap.onclick = () => this.captureAt(idx >= 0 ? idx : this.nowIdx, mark.lineText ?? '');
+      const key = markKey(mark);
+      const cap = act.createEl('button', { cls: 'jp-follow-btn' });
+      const paintCap = (): void => {
+        const c = this.clipAt.get(key);
+        cap.setText(c ? '🏷️ 分類 🎬' : '🏷️ 分類');
+        cap.title = c
+          ? `切り出した場面をこの気づきに添付します（${[c.still && '静止画', c.audio && '音声'].filter(Boolean).join('・')}）`
+          : '';
+      };
+      paintCap();
+      cap.onclick = () => this.captureAt(
+        idx >= 0 ? idx : this.nowIdx, mark.lineText ?? '', this.clipAt.get(key));
       // §25.4: cut the 📺 scene at this mark from the still-synced Plex session.
       if (this.deps.plexClip && this.plexPartKey && mark.tSec != null) {
         const clip = act.createEl('button', { text: '🎬 クリップ', cls: 'jp-follow-btn' });
         clip.onclick = async () => {
           clip.disabled = true; clip.setText('…');
           const r = await this.deps.plexClip!(this.plexPartKey!, mark.tSec!, mark.seed || mark.lineText || 'mark').catch(() => null);
+          // REMEMBER the cut. Previously these paths were dropped on the floor:
+          // the clip landed in the vault and the noticing it was cut for never
+          // learned it existed, so the scene was unreachable from the capture
+          // that caused it. SceneRef.audio/image have always had a slot for it.
+          if (r?.audio || r?.still) this.clipAt.set(key, r);
           clip.setText(r?.audio || r?.still ? '✓ 切り出し' : '✗ 失敗');
+          paintCap();
         };
       }
     }
   }
 
-  private captureAt(idx: number, fallbackText: string): void {
+  private captureAt(
+    idx: number, fallbackText: string, clip?: { audio?: string; still?: string },
+  ): void {
     const line = idx >= 0 && idx < this.lines.length ? this.lines[idx] : null;
     const before = line ? this.lines.slice(Math.max(0, idx - 3), idx) : [];
     const after = line ? this.lines.slice(idx + 1, idx + 4) : [];
@@ -815,8 +842,16 @@ export class FollowAlongView extends ItemView {
       contextAfter: after.map((l) => l.text),
       speakers: line ? [...before, line, ...after].map((l) => l.speaker ?? null) : undefined,
       source: {
+        // `kind` is the COARSE bucket and 'yt' here means "backed by a
+        // timestamped transcript", not YouTube — context-tree.ts reads it to
+        // decide clipEligible/swept. The real medium (tv, podcast…) rides on
+        // `medium` and is what the scene renderer dispatches on. Do not
+        // "correct" this to 'tv': there is no such bucket, and changing it
+        // silently disables clips for every TV capture.
         kind: 'yt', file: this.filePath ?? undefined, tStartSec: line?.tStartSec ?? null,
         medium: this.medium, sourceName: this.sourceName,
+        ...(clip?.still ? { image: clip.still } : {}),
+        ...(clip?.audio ? { audio: clip.audio } : {}),
       },
     });
   }

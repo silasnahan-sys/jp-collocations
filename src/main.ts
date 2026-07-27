@@ -75,7 +75,8 @@ import { renderCatalogJsonl, renderCatalogMd, parseCatalogJsonl } from "./notes/
 import { buildReconCards, renderCardsFile } from "./notes/cards";
 import { parseYouTubeId, deepLinkProvider } from "./notes/audio-provider";
 import { downloadFullAudio, clipFromLocal, clipWindow, detectTools, clipNameFor, nodeRuntimeAvailable, requireStrategy, probeBinary, nodeReq, run as runTool, ffmpegBinFrom } from "./notes/audio-extractor";
-import { parsePlexSessions, pickPlexSession, plexSessionsUrl, plexPartUrl, buildPlexClipArgs, buildPlexStillArgs, type PlexSessionsResult } from "./notes/plex";
+import { parsePlexSessions, pickPlexSession, plexSessionsUrl, plexPartUrl, buildPlexClipArgs, buildPlexStillArgs, plexStreamUrl, plexMetadataUrl, parseStreams, pickSubtitleStream, subtitleRefusal, describeSubtitles, parsePlexItems, plexSectionsUrl, plexSectionItemsUrl, plexLeavesUrl, plexSearchUrl, episodeLabel, type PlexSessionsResult, type PlexStream, type PlexItemsResult } from "./notes/plex";
+import { PlexBrowseModal } from "./ui/PlexBrowseModal";
 import { YouTubeTranscriptAdapter, TranscriptError, type HttpClient, type Transcript, type TranscriptFetchConfig, type YtdlpTranscriptConfig } from "./notes/transcript";
 import { ocrImage, mergeOcrPhrases, imageHash, ocrMarker, planTiles, tileUpscale } from "./notes/ocr-reconciler";
 import { detectSpeechTools, enrichClip, voiceSyncSidecarName, extractRefWav, DEFAULT_VOICE_SYNC, type VoiceSyncData } from "./notes/voice-lab";
@@ -1103,6 +1104,18 @@ export default class JPCollocationsPlugin extends Plugin {
       callback: async () => { await this.repairBigDictionaries(); },
     });
 
+    this.addCommand({
+      id: "plex-subtitle-transcript",
+      name: "📺 Plex: 再生中のエピソードの字幕 → トランスクリプト",
+      callback: async () => { await this.plexSubtitleToTranscript(); },
+    });
+
+    this.addCommand({
+      id: "plex-browse",
+      name: "📺 Plex: ライブラリから選ぶ（字幕 → トランスクリプト）",
+      callback: () => { this.openPlexBrowse(); },
+    });
+
     // §27.0.2 — record a want you cannot yet say. The one place the plugin
     // holds a HOLE rather than a catch.
     this.addCommand({
@@ -2050,6 +2063,187 @@ export default class JPCollocationsPlugin extends Plugin {
       return { ok: false, error: `Plex サーバーに接続できません: ${(e as Error).message}` };
     }
     return parsePlexSessions(resp.status, resp.text ?? "");
+  }
+
+  /**
+   * §25.4 — the subtitle of what is playing, as a transcript note.
+   *
+   * This is the piece the Plex integration was missing. The server knows which
+   * episode is on AND carries its subtitle tracks; until now nothing asked, so
+   * Plex contributed a clock and a clip cutter over a transcript you had to
+   * source from jimaku by hand and paste into a modal. That manual step was the
+   * seam: everything downstream — reconcile, sweep, 談話モード, ⚡ — already
+   * worked, but only if you had already done the one thing the plugin could
+   * have done for you.
+   *
+   * No new transcript machinery: `srtToNote` produces the same note the manual
+   * import does, so a Plex episode is not a different kind of object. The
+   * server's ids go into its frontmatter, which is what lets the note find its
+   * media again tomorrow instead of only while it happens to be playing.
+   */
+  async plexSubtitleToTranscript(): Promise<string> {
+    const { baseUrl, token } = this.settings.plex;
+    if (!baseUrl.trim() || !token.trim()) {
+      new Notice("設定 → Plex に baseUrl と X-Plex-Token を入力してください。", 8000);
+      return "plex not configured";
+    }
+    const notice = new Notice("Plex: 再生中のエピソードを探しています…", 0);
+    try {
+      const res = await this.fetchPlexSessions();
+      if (!res.ok) { new Notice(res.error, 10000); return res.error; }
+      if (!res.sessions.length) {
+        const m = "Plex で再生中の作品がありません。再生してからもう一度実行してください。";
+        new Notice(m, 8000); return m;
+      }
+      // One session → that one. Several → the one matching the open note.
+      const active = this.app.workspace.getActiveFile();
+      const cache = active ? this.app.metadataCache.getFileCache(active)?.frontmatter : undefined;
+      const session = pickPlexSession(res.sessions, {
+        title: (cache?.title as string) ?? active?.basename,
+        show: cache?.show as string | undefined,
+      }) ?? (res.sessions.length === 1 ? res.sessions[0] : null);
+      if (!session) {
+        const m = `Plex で${res.sessions.length}件再生中です。どれか判別できないので、`
+          + `対象のノートを開いてから実行してください（${res.sessions.map((s) => s.title).join("、")}）。`;
+        new Notice(m, 12000); return m;
+      }
+
+      return await this.plexTranscriptFor({
+        ratingKey: session.ratingKey,
+        title: session.title,
+        show: session.show,
+        partKey: session.partKey,
+        streams: session.streams,
+      }, notice);
+    } finally {
+      notice.hide();
+    }
+  }
+
+  /**
+   * Subtitle → transcript note for ONE episode, however it was chosen: the
+   * live session, or a pick out of the library browser. Shared deliberately —
+   * two ways in must not mean two kinds of transcript note (§28 S5, one road).
+   */
+  async plexTranscriptFor(
+    ep: { ratingKey?: string; title: string; show?: string; partKey?: string; streams?: PlexStream[] },
+    notice?: Notice,
+  ): Promise<string> {
+    const { baseUrl, token } = this.settings.plex;
+    const say = (m: string): void => { notice?.setMessage(m); };
+
+    // A session response does not always carry Part.Stream[]; the metadata
+    // endpoint does. Ask the cheap source first, then the authoritative one.
+    let streams = ep.streams ?? [];
+    if (!streams.some((s) => s.streamType === 3) && ep.ratingKey) {
+      say("Plex: 字幕トラックを問い合わせ中…");
+      streams = await this.fetchPlexStreams(ep.ratingKey);
+    }
+
+    const langPref = (this.settings.notes.langPref || "ja")
+      .split(",").map((s) => s.trim()).filter(Boolean);
+    const pick = pickSubtitleStream(streams, { langPref: [...langPref, "jpn", "japanese"] });
+    if (!pick?.key) {
+      // Say WHICH tracks exist and why none was usable — an empty transcript
+      // with no explanation is the failure this replaces (§28 S6).
+      const why = subtitleRefusal(streams) ?? "字幕を選べませんでした。";
+      const list = describeSubtitles(streams);
+      const m = `${ep.title}: ${why}` + (list.length ? `\n${list.join("\n")}` : "");
+      new Notice(m, 20000);
+      return m;
+    }
+
+    say(`Plex: 字幕を取得中… (${pick.languageCode ?? pick.language ?? "?"}/${pick.codec ?? "?"})`);
+    let body: string;
+    try {
+      const r = await requestUrl({
+        url: plexStreamUrl(baseUrl, pick.key, token), method: "GET", throw: false,
+      });
+      if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
+      body = r.text ?? "";
+    } catch (e) {
+      const m = `字幕の取得に失敗: ${(e as Error).message}`;
+      new Notice(m, 10000); return m;
+    }
+
+    const title = ep.title || "Plex episode";
+    const { content, cueCount } = srtToNote({
+      srt: body, title, sourceName: ep.show, subSource: "plex",
+      plex: {
+        ratingKey: ep.ratingKey, partKey: ep.partKey,
+        lang: pick.languageCode ?? pick.language,
+      },
+    });
+    if (cueCount < 5) {
+      const m = `字幕を解析できませんでした（${cueCount}行）。形式: ${pick.codec ?? "不明"}。`
+        + "別のトラックを選ぶか、.srt を手動で取り込んでください。";
+      new Notice(m, 15000); return m;
+    }
+
+    const folder = this.settings.notes.transcriptFolder || "Transcripts";
+    if (!this.app.vault.getAbstractFileByPath(folder)) {
+      await this.app.vault.createFolder(folder).catch(() => {});
+    }
+    const safe = `${ep.show ? `${ep.show} — ` : ""}${title}`.replace(/[\\/:*?"<>|]/g, "");
+    let path = `${folder}/${safe}.md`;
+    if (this.app.vault.getAbstractFileByPath(path)) {
+      // Never clobber a transcript that may already carry marks.
+      path = `${folder}/${safe} (${new Date().toISOString().slice(11, 16).replace(":", "")}).md`;
+    }
+    await this.app.vault.create(path, content);
+    void this.app.workspace.openLinkText(path, "", false);
+    const msg = `📺 ${cueCount}行のトランスクリプトを作成: ${path}`;
+    new Notice(msg, 8000);
+    return msg;
+  }
+
+  /** §25.4 — pick an episode from the library instead of from live playback. */
+  openPlexBrowse(): void {
+    const { baseUrl, token } = this.settings.plex;
+    if (!baseUrl.trim() || !token.trim()) {
+      new Notice("設定 → Plex に baseUrl と X-Plex-Token を入力してください。", 8000);
+      return;
+    }
+    const get = async (url: string): Promise<PlexItemsResult> => {
+      try {
+        const r = await requestUrl({
+          url, method: "GET", headers: { Accept: "application/json" }, throw: false,
+        });
+        return parsePlexItems(r.status, r.text ?? "");
+      } catch (e) {
+        return { ok: false, error: `Plex サーバーに接続できません: ${(e as Error).message}` };
+      }
+    };
+    new PlexBrowseModal(this.app, {
+      sections: () => get(plexSectionsUrl(baseUrl, token)),
+      sectionItems: (key) => get(plexSectionItemsUrl(baseUrl, key, token)),
+      episodes: (ratingKey) => get(plexLeavesUrl(baseUrl, ratingKey, token)),
+      search: (q) => get(plexSearchUrl(baseUrl, q, token)),
+      openEpisode: (item) => this.plexTranscriptFor({
+        ratingKey: item.ratingKey,
+        title: item.type === "episode" ? episodeLabel(item) : item.title,
+        show: item.grandparentTitle,
+      }),
+    }).open();
+  }
+
+  /** `/library/metadata/{ratingKey}` → the Part's streams. */
+  async fetchPlexStreams(ratingKey: string): Promise<PlexStream[]> {
+    const { baseUrl, token } = this.settings.plex;
+    try {
+      const r = await requestUrl({
+        url: plexMetadataUrl(baseUrl, ratingKey, token), method: "GET",
+        headers: { Accept: "application/json" }, throw: false,
+      });
+      if (r.status !== 200) return [];
+      const json = JSON.parse(r.text ?? "{}") as {
+        MediaContainer?: { Metadata?: Array<{ Media?: Array<{ Part?: Array<{ Stream?: unknown }> }> }> };
+      };
+      const part = json?.MediaContainer?.Metadata?.[0]?.Media?.[0]?.Part?.[0];
+      return parseStreams(part?.Stream);
+    } catch {
+      return [];
+    }
   }
 
   /** §25.4 clip cutting at a mark: cut an audio clip (+still frame) from the Plex
