@@ -210,5 +210,91 @@ console.log('══ search modes (§20.1): 前方一致 / 含む / 用例全文 
   check('default mode stays contains (back-compat)', dflt.length === 1);
 }
 
+console.log('══ §22.7 the frozen 語法 profile is INDEXED ══');
+{
+  // The defect: `unifiedSearch` scored a pattern on key/note/lemma/frame/parts
+  // and nothing else, so up to 144 measured collocates frozen onto an entry
+  // were visible in the 語法 box and unreachable from the search box that box
+  // sits behind. A profile you cannot search is a reference book with no index.
+  const goho = {
+    fetchedAt: 1, source: 'NINJAL-LWP for TWC', collocates: [],
+    frames: [
+      { pos: '名詞', direction: 'head-initial', label: '風＋助詞', total: 2, items: ['風を', '風が'],
+        measured: [{ text: '風を', freq: 145, mi: 4.11, logDice: -2.83 }, { text: '風が', freq: 60, mi: 3, logDice: -3 }] },
+      { pos: '名詞', direction: 'head-final', label: '名詞＋の＋風', total: 2, items: ['クーラーの風', '子供の風'],
+        measured: [{ text: 'クーラーの風', freq: 3, mi: 9.2, logDice: -5 }, { text: '子供の風', freq: 2, mi: 8, logDice: -6 }] },
+    ],
+    sourced: [{ text: '子どものかぜが移ってしまった。', source: '育児日記', url: 'http://x/y', kind: 'attested', frame: '名詞＋の＋風', collocate: '子供の風' }],
+    examples: ['子どものかぜが移ってしまった。'],
+  };
+  const kaze = pat('g1', 'collocation', '風', [att('yt', 'T/A.md', 1, '風が強いね')], { goho });
+  const other = pat('g2', 'serifu', 'まったく別の語', [att('yt', 'T/B.md', 2, '関係のない話')]);
+  const patterns = [kaze, other];
+
+  const hit = US.unifiedSearch({ patterns, collocations: [], query: 'クーラーの風' });
+  check('a corpus collocate finds its entry', hit.length === 1 && hit[0].id === 'g1',
+    hit.map((h) => h.id).join(','));
+  check('and the row says the match came from the corpus, not from you',
+    hit[0].viaCorpus === true);
+  check('the grammar itself is searchable too',
+    US.unifiedSearch({ patterns, collocations: [], query: '名詞＋の＋風' }).some((r) => r.id === 'g1'));
+
+  // §28 stratum order, as arithmetic: a corpus hit can make an entry findable;
+  // it can never make it outrank an entry the user named themselves.
+  const rival = pat('g3', 'collocation', 'クーラーの風', [att('yt', 'T/C.md', 3, 'クーラーの風が寒い')]);
+  const both = US.unifiedSearch({ patterns: [...patterns, rival], collocations: [], query: 'クーラーの風' });
+  check('the entry you NAMED that ranks first', both[0].id === 'g3', both.map((b) => `${b.id}:${b.score}`).join(','));
+  check('…and the corpus-only match still appears, below it',
+    both.some((b) => b.id === 'g1' && b.viaCorpus));
+  check('a corpus hit never reaches the substring tier',
+    both.find((b) => b.id === 'g1').score < both.find((b) => b.id === 'g3').score);
+
+  // An entry matched on its OWN text is not mislabelled as a corpus hit.
+  const own = US.unifiedSearch({ patterns, collocations: [], query: '風' });
+  check('an own-key match is not flagged viaCorpus',
+    own.find((r) => r.id === 'g1')?.viaCorpus === undefined);
+
+  // 用例全文 promised to search example text and searched only half of it.
+  const q = US.unifiedSearch({ patterns, collocations: [], query: 'かぜが移って', mode: 'quotes' });
+  check('用例 mode reaches corpus sentences', q.length === 1 && q[0].id === 'g1');
+  check('and marks them as corpus', q[0].viaCorpus === true);
+  const ownQuote = US.unifiedSearch({ patterns, collocations: [], query: '風が強い', mode: 'quotes' });
+  check('your own confirmed quote still wins its own mode',
+    ownQuote[0].id === 'g1' && ownQuote[0].viaCorpus === undefined);
+
+  // A corpus-only row shows the corpus sentence, so it explains its presence.
+  check('a corpus-only row carries a line saying why it is here',
+    !!hit[0].example, hit[0].example);
+
+  // Autocomplete is headword-only and must not start suggesting collocates.
+  check('autocomplete stays headword-only',
+    US.autocomplete({ patterns, collocations: [], query: 'クーラー' }).length === 0);
+
+  // An entry with no profile behaves exactly as before (§28 S1).
+  check('no profile → no corpus scoring, no flag',
+    US.unifiedSearch({ patterns, collocations: [], query: '別の語' }).every((r) => r.viaCorpus === undefined));
+
+  // The budget spends itself across frames, not on the first one.
+  const wide = pat('g4', 'collocation', 'ひろい', [], {
+    goho: { fetchedAt: 1, source: 's', collocates: [], examples: [], frames: [
+      { pos: '', direction: 'head-initial', label: 'A', total: 60, items: Array.from({ length: 60 }, (_, i) => `a${i}`) },
+      { pos: '', direction: 'head-final', label: 'B', total: 60, items: Array.from({ length: 60 }, (_, i) => `b${i}`) },
+    ] },
+  });
+  const surfaces = US.corpusSurfaces(wide);
+  check(`indexed surfaces are capped at ${US.CORPUS_INDEX_CAP}`, surfaces.length <= US.CORPUS_INDEX_CAP, `${surfaces.length}`);
+  check('and both frames get a share of the budget',
+    surfaces.some((s) => s.startsWith('a')) && surfaces.some((s) => s.startsWith('b')));
+  check('a deep second frame is still reachable',
+    US.unifiedSearch({ patterns: [wide], collocations: [], query: 'b0' }).length === 1);
+
+  // Legacy flat profiles (frozen before frames existed) still reach the index.
+  const flat = pat('g5', 'collocation', 'ふるい', [], {
+    goho: { fetchedAt: 1, source: 'hyogen', collocates: ['むかしの語'], examples: [] },
+  });
+  check('a legacy flat profile is indexed too',
+    US.unifiedSearch({ patterns: [flat], collocations: [], query: 'むかしの語' }).length === 1);
+}
+
 console.log(`\n${fail ? '✗' : '✓'} lexicon: ${pass}/${pass + fail}`);
 process.exitCode = fail ? 1 : 0;

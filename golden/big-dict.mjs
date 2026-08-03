@@ -22,8 +22,11 @@ const url = (js) => 'data:text/javascript;base64,' + Buffer.from(js).toString('b
 const framesUrl = url(tsc(readFileSync(join(SRCDIR, 'frames.ts'), 'utf8')));
 const eijiroUrl = url(tsc(readFileSync(join(SRCDIR, 'eijiro.ts'), 'utf8'))
   .replace(/from ['"]\.\/frames\.ts['"]/g, `from '${framesUrl}'`));
+const genPartsUrl = url(tsc(readFileSync(join(SRCDIR, 'entry-parts.ts'), 'utf8'))
+  .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`));
 const genUrl = url(tsc(readFileSync(join(SRCDIR, 'generic-yomitan.ts'), 'utf8'))
   .replace(/from ['"]\.\/frames\.ts['"]/g, `from '${framesUrl}'`)
+  .replace(/from ['"]\.\/entry-parts\.ts['"]/g, `from '${genPartsUrl}'`)
   .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`));
 const sidecarUrl = url(tsc(readFileSync(join(SRCDIR, 'sidecar.ts'), 'utf8'))
   .replace(/from ['"]\.\/frames\.ts['"]/g, `from '${framesUrl}'`)
@@ -32,13 +35,18 @@ const importUrl = url(tsc(readFileSync(join(SRCDIR, 'import-eijiro.ts'), 'utf8')
   .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`)
   .replace(/from ['"]\.\/generic-yomitan\.ts['"]/g, `from '${genUrl}'`)
   .replace(/from ['"]\.\/sidecar\.ts['"]/g, `from '${sidecarUrl}'`));
+const partsUrl = url(tsc(readFileSync(join(SRCDIR, 'entry-parts.ts'), 'utf8'))
+  .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`));
+const deinflectUrl = url(tsc(readFileSync(join(SRCDIR, 'deinflect.ts'), 'utf8')));
 const bigUrl = url(tsc(readFileSync(join(SRCDIR, 'big-dict.ts'), 'utf8'))
   .replace(/from ['"]\.\/frames\.ts['"]/g, `from '${framesUrl}'`)
   .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`)
+  .replace(/from ['"]\.\/entry-parts\.ts['"]/g, `from '${partsUrl}'`)
+  .replace(/from ['"]\.\/deinflect\.ts['"]/g, `from '${deinflectUrl}'`)
   .replace(/from ['"]\.\/sidecar\.ts['"]/g, `from '${sidecarUrl}'`));
 
 const { importEijiro } = await import(importUrl);
-const { BigDictStore } = await import(bigUrl);
+const { BigDictStore, bigHitToLookupResult, senseLine, dedupeAgainst, interleave } = await import(bigUrl);
 
 let fail = 0, n = 0;
 const ok = (cond, msg, extra = '') => {
@@ -122,6 +130,50 @@ console.log('\n══ a headword converted is a headword findable ══');
   ok((await store.lookup('')).length === 0, 'empty query is []');
 }
 
+console.log('\n══ AUDIT-PARTS §6 — running text is INFLECTED ══');
+// A sharded store is exact-match by construction: the shard is picked by
+// hashing the key, so a form you have not computed cannot be probed. The whole
+// converted shelf was therefore reachable only from the citation form — the one
+// form you already know — while the small imported store had deinflected since
+// it shipped. These are the forms text actually arrives in.
+{
+  const vio = memIO();
+  const verb = (expr, reading, gloss) =>
+    [expr, reading, '', '', 0, [{ type: 'structured-content', content: `<div class="sense">${gloss}</div>` }], 1, ''];
+  await importEijiro(vio, {
+    async index() { return { title: '動詞テスト辞典', revision: '1', sourceLanguage: 'ja', targetLanguage: 'en' }; },
+    async bankNames() { return ['b1']; },
+    async bank() {
+      return [
+        verb('食べる', 'たべる', 'to eat'),
+        verb('面白い', 'おもしろい', 'interesting'),
+        verb('言う', 'いう', 'to say'),
+      ];
+    },
+  }, { shards: SHARDS, root: ROOT, now: () => 0 });
+  const store = new BigDictStore(vio, ROOT);
+
+  ok((await store.lookup('食べる')).length === 1, 'the citation form still hits exactly');
+
+  for (const [q, want] of [['食べた', '食べる'], ['食べて', '食べる'], ['食べない', '食べる'], ['面白かった', '面白い']]) {
+    const hits = await store.lookup(q);
+    ok(hits.length > 0 && hits[0].entry.expression === want,
+      `「${q}」 reaches 「${want}」`, `(${hits.map((h) => h.entry.expression).join(',') || 'nothing'})`);
+    ok(hits[0]?.deinflection?.length > 0,
+      `「${q}」 carries its trail, so the 〈…〉 badge can say how`, JSON.stringify(hits[0]?.deinflection));
+  }
+
+  // An exact hit must never be labelled derived, and a real miss stays a miss.
+  ok((await store.lookup('食べる'))[0].deinflection === undefined, 'an exact hit carries NO trail');
+  ok((await store.lookup('ぜんぜんちがう語')).length === 0, 'a real miss is still []');
+
+  // The fallback must stay bounded: shards are FILE READS here, not Map hits.
+  const before = vio.reads();
+  await store.lookup('たべさせられたくなかった');
+  const spent = vio.reads() - before;
+  ok(spent <= 4, 'a deep miss reads at most MAX_DEINFLECT_CANDIDATES shards per dictionary', `(${spent})`);
+}
+
 console.log('\n══ THE REACH-FOR QUERY (§27.2) ══');
 {
   const store = new BigDictStore(io, ROOT);
@@ -203,6 +255,86 @@ console.log('\n══ invalidate() picks up a re-convert ══');
   store.invalidate();
   ok((await store.lookup('$__ in arrears')).length === 1,
     'after invalidate() it does');
+}
+
+// The 辞書 view only ever queried DictionaryStore, so 31 converted dictionaries
+// and 6.1M headwords were unreachable from the surface named after them — a §28
+// seam (a lookup losing REACHABILITY across a subsystem boundary). The adapter
+// is what closes it, and it closes it by making a sidecar hit the SAME object
+// the view already renders rather than teaching the view a second shape.
+console.log('\n══ a sidecar hit renders as an ordinary dictionary entry ══');
+{
+  const store = new BigDictStore(io, ROOT);
+  const [hit] = await store.lookup('$__ in arrears');
+  const r = bigHitToLookupResult(hit, 0);
+  ok(r.term.expression === '$__ in arrears', 'expression survives');
+  ok(r.dictionary === '英辞郎 v144', 'the 辞書 badge names the source dictionary');
+  ok(typeof r.term.definitions[0] === 'string' && r.term.definitions[0].length > 0,
+    'senses become renderable definition lines', `(${JSON.stringify(r.term.definitions[0])})`);
+  ok(r.term.reading === r.term.expression,
+    'a reading-less entry reads as its expression (so the card hides the row)');
+  ok(Array.isArray(r.tags), 'tags is an array — the card slices it unconditionally');
+  ok(r.term.sequence === hit.entry.sequence, 'sequence survives (groupResults keys on it)');
+}
+
+console.log('\n══ 〔…〕 stays a production-CONDITION, not a gloss (§27.1) ══');
+{
+  ok(senseLine({ pos: '名', gloss: '破綻', situation: '経営が', note: 'かたい' })
+    === '【名】 破綻 〔経営が〕 ◆かたい',
+    'pos / gloss / situation / note keep their own marks');
+  ok(senseLine({ gloss: 'x' }) === 'x', 'a bare gloss stays bare');
+  ok(senseLine({ gloss: '' }) === '', 'an empty sense is empty (filtered out upstream)');
+}
+
+console.log('\n══ nothing appears twice, and nothing distinct collapses ══');
+{
+  const store = new BigDictStore(io, ROOT);
+  const hits = await store.lookup('$__ in arrears');
+  const asLocal = hits.map((h, i) => bigHitToLookupResult(h, i));
+  ok(dedupeAgainst(hits, asLocal).length === 0,
+    'a dictionary that was imported AND converted is not shown twice');
+  ok(dedupeAgainst(hits, []).length === hits.length, 'with nothing local, every hit is kept');
+
+  // 英辞郎 genuinely has many entries per expression; a key of expression+dict
+  // alone would silently collapse them into the first one.
+  const same = [
+    { dictionary: 'D', entry: { expression: '同', pos: [], senses: [{ gloss: 'a' }], xrefs: [], sequence: 1 } },
+    { dictionary: 'D', entry: { expression: '同', pos: [], senses: [{ gloss: 'b' }], xrefs: [], sequence: 2 } },
+  ];
+  ok(dedupeAgainst(same, []).length === 2,
+    'two distinct entries sharing one expression both survive');
+  ok(dedupeAgainst([same[0], same[0]], []).length === 1, 'but a true duplicate is dropped');
+}
+
+console.log('\n══ breadth before depth: the limit spreads across books ══');
+{
+  // The shipped bug, in miniature. `metas` is sorted biggest-first, so walking
+  // it in order and returning at `limit` spent the whole budget on the largest
+  // books. Measured on the real vault (35 installed, limit 40): 「気」 answered
+  // from 11 dictionaries while 17 held it, and the six dropped were the small
+  // specialist ones — 用例.jp, 類語例解, 現代国語例解, NHK アクセント, 斎藤和英,
+  // WISDOM. Exactly the books you open BECAUSE the word is common.
+  const big = Array.from({ length: 9 }, (_, i) => `大辞林-${i}`);
+  const mid = ['明鏡-0', '明鏡-1'];
+  const small = ['用例.jp-0'];
+  const groups = [big, mid, small];
+
+  ok(interleave(groups, 40).length === 12, 'under the limit, nothing is lost');
+  const capped = interleave(groups, 4);
+  ok(capped.length === 4, 'the cap is still a cap');
+  ok(capped.includes('用例.jp-0'),
+    'the smallest book gets its one entry in even at limit 4', JSON.stringify(capped));
+  ok(JSON.stringify(capped) === JSON.stringify(['大辞林-0', '明鏡-0', '用例.jp-0', '大辞林-1']),
+    'round 1 is one-per-book, in store order; round 2 starts only after',
+    JSON.stringify(capped));
+  // The old behaviour, for contrast: [大辞林-0..3] and nothing else.
+  ok(!capped.includes('大辞林-3'), 'no book reaches its 4th entry before others reach their 1st');
+
+  ok(interleave([], 10).length === 0, 'no groups → nothing');
+  ok(interleave(groups, 0).length === 0, 'limit 0 → nothing');
+  ok(interleave([[], ['a']], 5).join() === 'a', 'an empty group is skipped, not counted');
+  ok(interleave([['a', 'b'], ['c']], 99).join() === 'a,c,b',
+    'a group that runs out drops out of later rounds');
 }
 
 console.log(`\n${fail ? '✗' : '✓'} big-dict: ${n - fail}/${n} checks passed`);

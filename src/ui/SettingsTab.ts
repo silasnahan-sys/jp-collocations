@@ -1,7 +1,8 @@
 import { PluginSettingTab, Setting, Notice, Platform, requestUrl } from "obsidian";
 import type { App } from "obsidian";
 import { detectTools } from "../notes/audio-extractor.ts";
-import { parsePlexSessions, plexSessionsUrl, describeSubtitles } from "../notes/plex.ts";
+import { parsePlexSessions, plexSessionsUrl, describeSubtitles, explainPlexTransportError } from "../notes/plex.ts";
+import { describeJimakuEntry, type JimakuEntriesResult } from "../notes/jimaku.ts";
 import { normalizeCookieInput, cookieValue, YtHistoryClient } from "../notes/yt-history-client.ts";
 import { detectSpeechTools } from "../notes/voice-lab.ts";
 import { USERSCRIPT_SOURCE } from "../x/mobile-capture.ts";
@@ -18,6 +19,9 @@ type SettingsHost = Plugin & {
   repairBigDictionaries?: () => Promise<string>;
   plexSubtitleToTranscript?: () => Promise<string>;
   openPlexBrowse?: () => void;
+  /** §25.4b jimaku — search (for the connection test) and the picker. */
+  jimakuSearch?: (query: string) => Promise<JimakuEntriesResult>;
+  openJimakuPicker?: (seed: { query?: string; episode?: number; season?: number }) => void;
   listBigDictionaries?: () => Promise<Array<{
     title: string; headwords: number; frames: number; dir: string;
     partial: boolean; revision: string;
@@ -555,7 +559,12 @@ export class SettingsTab extends PluginSettingTab {
         let resp;
         try {
           resp = await requestUrl({ url: plexSessionsUrl(plex.baseUrl, plex.token), method: "GET", headers: { Accept: "application/json" }, throw: false });
-        } catch (e) { new Notice(`Plex 接続失敗: ${(e as Error).message}`, 8000); return; }
+        } catch (e) {
+          // Never let a transport failure read as an auth failure — a stale
+          // token gets a 401 from a server that answered, not a dead socket.
+          new Notice(explainPlexTransportError(plex.baseUrl, (e as Error).message), 15000);
+          return;
+        }
         const res = parsePlexSessions(resp.status, resp.text ?? "");
         if (!res.ok) { new Notice(`Plex: ${res.error}`, 8000); return; }
         if (!res.sessions.length) { new Notice("Plex: 接続OK — 再生中の項目はありません。", 6000); return; }
@@ -574,8 +583,8 @@ export class SettingsTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("字幕からトランスクリプトを作る")
       .setDesc(
-        "Plex が持っている字幕をそのまま取り込みます。jimaku から .srt を探して貼り付ける手間がなくなり、" +
-        "照合・走査・談話モード・⚡ がそのまま使えます。",
+        "Plex が持っている字幕をそのまま取り込みます。日本語トラックが無い作品は下の jimaku から取得します。" +
+        "どちらから来ても同じ標準トランスクリプトなので、照合・走査・談話モード・⚡ がそのまま使えます。",
       )
       .addButton(b => b
         .setButtonText("再生中から")
@@ -587,6 +596,65 @@ export class SettingsTab extends PluginSettingTab {
       .addButton(b => b
         .setButtonText("ライブラリから選ぶ")
         .onClick(() => { this.host.openPlexBrowse?.(); }));
+
+    // ── jimaku.cc (DESIGN §25.4b — 日本語字幕の入手先) ─────────────
+    containerEl.createEl("h3", { text: "jimaku.cc（日本語字幕の取得）" });
+    const jm = this.settings.jimaku;
+    const jmDesc = containerEl.createEl("p", { cls: "setting-item-description" });
+    jmDesc.innerHTML =
+      "Plex が出せるのはファイルに入っている字幕だけで、実写ドラマや古いアニメには日本語トラックが無いことが普通です。" +
+      "その場合に jimaku.cc から字幕を取得します（Plex の項目IDは残るので、🎬クリップも Plex同期もそのまま動きます）。<br>" +
+      "<b>API キーは端末内のみ（同期される blob には保存されません）。</b>";
+
+    new Setting(containerEl)
+      .setName("API キー")
+      .setDesc("jimaku.cc にログイン → プロフィール → API キーを発行して貼り付け。空欄なら jimaku は使いません。")
+      .addText(t => {
+        t.setValue(jm.apiKey).setPlaceholder("jimaku API key").onChange(async v => {
+          jm.apiKey = v.trim(); await this.onSettingsChange();
+        });
+        t.inputEl.type = "password";
+      });
+
+    new Setting(containerEl)
+      .setName("いつ jimaku を使うか")
+      .setDesc(
+        "「Plex に無い時だけ」= 内蔵字幕を優先（映像と必ず同期しています）。" +
+        "「常に jimaku を優先」= 内蔵が英語のみ/部分的な作品向け（ズレたら鑑賞モードの ⌖ で合わせます）。",
+      )
+      .addDropdown(d => d
+        .addOption("fallback", "Plex に無い時だけ")
+        .addOption("always", "常に jimaku を優先")
+        .addOption("off", "使わない")
+        .setValue(jm.mode)
+        .onChange(async v => {
+          jm.mode = v as typeof jm.mode;
+          await this.onSettingsChange();
+        }));
+
+    let testQuery = "";
+    new Setting(containerEl)
+      .setName("接続テスト / 手動で探す")
+      .setDesc("作品名で jimaku を検索します（アニメ・実写の両方）。選択画面からそのままトランスクリプトを作れます。")
+      .addText(t => t.setPlaceholder("例: 相棒 / 進撃の巨人").onChange(v => { testQuery = v.trim(); }))
+      .addButton(b => b.setButtonText("検索").onClick(async () => {
+        if (!jm.apiKey.trim()) { new Notice("API キーを入力してください。"); return; }
+        if (!testQuery) { new Notice("作品名を入力してください。"); return; }
+        b.setDisabled(true).setButtonText("検索中…");
+        try {
+          const res = await this.host.jimakuSearch?.(testQuery);
+          if (!res) return;
+          if (!res.ok) { new Notice(`jimaku: ${res.error}`, 10000); return; }
+          if (!res.entries.length) { new Notice(`jimaku: 「${testQuery}」は見つかりません。`, 8000); return; }
+          new Notice(
+            `jimaku 接続OK — ${res.entries.length}件:\n`
+            + res.entries.slice(0, 8).map(e => `・${describeJimakuEntry(e)}`).join("\n"),
+            15000,
+          );
+        } finally { b.setDisabled(false).setButtonText("検索"); }
+      }))
+      .addButton(b => b.setButtonText("選択画面を開く")
+        .onClick(() => { this.host.openJimakuPicker?.({ query: testQuery || undefined }); }));
 
     // ── Transcript + history ingestion (DESIGN §8 Step 2) ─────────
     containerEl.createEl("h3", { text: "文字起こし取得（YouTube）" });

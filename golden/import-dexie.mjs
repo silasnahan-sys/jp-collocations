@@ -26,8 +26,11 @@ const url = (js) => 'data:text/javascript;base64,' + Buffer.from(js).toString('b
 const framesUrl = url(tsc(readFileSync(join(SRCDIR, 'frames.ts'), 'utf8')));
 const eijiroUrl = url(tsc(readFileSync(join(SRCDIR, 'eijiro.ts'), 'utf8'))
   .replace(/from ['"]\.\/frames\.ts['"]/g, `from '${framesUrl}'`));
+const genPartsUrl = url(tsc(readFileSync(join(SRCDIR, 'entry-parts.ts'), 'utf8'))
+  .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`));
 const genUrl = url(tsc(readFileSync(join(SRCDIR, 'generic-yomitan.ts'), 'utf8'))
   .replace(/from ['"]\.\/frames\.ts['"]/g, `from '${framesUrl}'`)
+  .replace(/from ['"]\.\/entry-parts\.ts['"]/g, `from '${genPartsUrl}'`)
   .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`));
 const sidecarUrl = url(tsc(readFileSync(join(SRCDIR, 'sidecar.ts'), 'utf8'))
   .replace(/from ['"]\.\/frames\.ts['"]/g, `from '${framesUrl}'`)
@@ -45,9 +48,14 @@ const dexieUrl = url(tsc(readFileSync(join(SRCDIR, 'import-dexie.ts'), 'utf8'))
   .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`));
 
 const { importDexie, skipTitles } = await import(dexieUrl);
+const partsUrl = url(tsc(readFileSync(join(SRCDIR, 'entry-parts.ts'), 'utf8'))
+  .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`));
+const deinflectUrl = url(tsc(readFileSync(join(SRCDIR, 'deinflect.ts'), 'utf8')));
 const bigUrl = url(tsc(readFileSync(join(SRCDIR, 'big-dict.ts'), 'utf8'))
   .replace(/from ['"]\.\/frames\.ts['"]/g, `from '${framesUrl}'`)
   .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`)
+  .replace(/from ['"]\.\/entry-parts\.ts['"]/g, `from '${partsUrl}'`)
+  .replace(/from ['"]\.\/deinflect\.ts['"]/g, `from '${deinflectUrl}'`)
   .replace(/from ['"]\.\/sidecar\.ts['"]/g, `from '${sidecarUrl}'`));
 const { BigDictStore } = await import(bigUrl);
 

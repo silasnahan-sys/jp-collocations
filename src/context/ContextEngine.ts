@@ -29,7 +29,9 @@ import type { DictionaryStore } from '../dictionary/DictionaryStore';
 import type { CollocationStore } from '../data/CollocationStore';
 import type { SurferBridge } from '../surfer-bridge';
 import type { XCorpusStore } from '../x/XCorpusStore';
+import type { PatternStore } from '../notes/pattern-store';
 import { emptyQuery } from '../x/x-types';
+import { normalizeJapanese } from '../utils/japanese';
 import type { DictLookupResult } from '../dictionary/types';
 import type { CollocationEntry } from '../types';
 import type { SurferCollocationEntry } from '../surfer-types';
@@ -63,7 +65,10 @@ export interface VaultOccurrence {
 /** An example from any source */
 export interface UnifiedExample {
   text: string;
-  source: 'vault' | 'dictionary' | 'collocation' | 'surfer' | 'manual' | 'x';
+  /** `corpus` — a sentence from a frozen §22.7 語法 profile (NINJAL-LWP for TWC
+   *  or Hyogen). Kept as its own source rather than folded into `collocation`
+   *  because it carries a checkable citation the others do not. */
+  source: 'vault' | 'dictionary' | 'collocation' | 'surfer' | 'manual' | 'x' | 'corpus';
   sourceDetail: string; // file path, dict name, entry id
   /** Discourse patterns detected within this example */
   patterns: PatternMatch[];
@@ -175,6 +180,15 @@ export class ContextEngine {
   private surferBridge: SurferBridge;
   /** X tweet corpus — contributes real-usage examples when present. */
   private xCorpus: XCorpusStore | null;
+  /**
+   * The catalog — consulted for its frozen §22.7 語法 profiles.
+   *
+   * The engine's whole claim is that it joins every source in the plugin for a
+   * word, and it was joining every source except the one built specifically to
+   * answer "how does this word actually get used": a profile fetched once and
+   * frozen onto the entry was reachable from exactly one box in one panel.
+   */
+  private patternStore: PatternStore | null;
 
   /** Sidecar-aware relations resolver, built from the bridge at construction. */
   private resolver: RelationsResolver;
@@ -189,13 +203,51 @@ export class ContextEngine {
     collocationStore: CollocationStore,
     surferBridge: SurferBridge,
     xCorpus: XCorpusStore | null = null,
+    patternStore: PatternStore | null = null,
   ) {
     this.app = app;
     this.dictStore = dictStore;
     this.collocationStore = collocationStore;
     this.surferBridge = surferBridge;
     this.xCorpus = xCorpus;
+    this.patternStore = patternStore;
     this.resolver = makeRelationsResolver(surferBridge);
+  }
+
+  /**
+   * §22.7 corpus sentences for a word, from whatever profile is frozen on the
+   * catalog entry that IS that word.
+   *
+   * Matched on the entry key (and `payload.lemma`), never on "some entry whose
+   * corpus profile happens to list this string" — the second would answer a
+   * lookup of 風 with every entry the corpus mentions 風 under, which is a flood,
+   * not context.
+   */
+  private corpusExamples(query: string): UnifiedExample[] {
+    if (!this.patternStore) return [];
+    const want = normalizeJapanese(query).replace(/\s+/g, '');
+    if (!want) return [];
+    const out: UnifiedExample[] = [];
+    for (const p of this.patternStore.all()) {
+      const goho = p.payload.goho;
+      if (!goho) continue;
+      const keys = [p.key, p.payload.lemma ?? ''].map((k) => normalizeJapanese(k).replace(/\s+/g, ''));
+      if (!keys.includes(want)) continue;
+      const sourced = goho.sourced?.length
+        ? goho.sourced
+        : goho.examples.map((text) => ({ text } as { text: string; source?: string; url?: string }));
+      for (const ex of sourced) {
+        out.push({
+          text: ex.text,
+          source: 'corpus',
+          // The citation, so a corpus sentence never arrives anonymous (§28 S2).
+          sourceDetail: [ex.source, ex.url].filter(Boolean).join(' ') || goho.source,
+          patterns: detectPatterns(ex.text),
+          relations: this.resolver(ex.text).relations,
+        });
+      }
+    }
+    return out;
   }
 
   // ── Main query: get full context for any term ──────────
@@ -240,6 +292,17 @@ export class ContextEngine {
 
     // 5. Collect all examples from all sources
     card.examples = this.collectExamples(query, card);
+
+    // 5a. §22.7 語法 — corpus sentences, ahead of the X sweep because they are
+    // the only examples in the card that arrive with a citable document.
+    {
+      const seen = new Set(card.examples.map(e => e.text));
+      for (const ex of this.corpusExamples(query)) {
+        if (seen.has(ex.text)) continue;
+        seen.add(ex.text);
+        card.examples.push(ex);
+      }
+    }
 
     // 5b. X corpus usage examples (real tweets containing the query)
     if (this.xCorpus && this.xCorpus.size() > 0) {

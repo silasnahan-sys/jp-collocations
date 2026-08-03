@@ -1,0 +1,128 @@
+{
+ "headword": "風",
+ "total": 0,
+ "page": 1,
+ "records": 1,
+ "rows": [
+  {
+   "id": "J001",
+   "name": "風＋助詞",
+   "freq": 284,
+   "percentage": 88.2
+  },
+  {
+   "id": "A005",
+   "name": "風を...",
+   "freq": 153,
+   "percentage": 47.5
+  },
+  {
+   "id": "H002",
+   "name": "風＋名詞・接尾",
+   "freq": 51,
+   "percentage": 15.8
+  },
+  {
+   "id": "A001",
+   "name": "風が...",
+   "freq": 44,
+   "percentage": 13.7
+  },
+  {
+   "id": "H009",
+   "name": "並立",
+   "freq": 38,
+   "percentage": 11.8
+  },
+  {
+   "id": "A006",
+   "name": "風に...",
+   "freq": 23,
+   "percentage": 7.1
+  },
+  {
+   "id": "A008",
+   "name": "風で...",
+   "freq": 18,
+   "percentage": 5.6
+  },
+  {
+   "id": "H007",
+   "name": "名詞＋の＋風",
+   "freq": 17,
+   "percentage": 5.3
+  },
+  {
+   "id": "C001",
+   "name": "風が＋形容詞",
+   "freq": 6,
+   "percentage": 1.9
+  },
+  {
+   "id": "K001",
+   "name": "風＋助動詞",
+   "freq": 4,
+   "percentage": 1.2
+  },
+  {
+   "id": "H001",
+   "name": "風＋名詞",
+   "freq": 3,
+   "percentage": 0.9
+  },
+  {
+   "id": "A002",
+   "name": "風は...",
+   "freq": 3,
+   "percentage": 0.9
+  },
+  {
+   "id": "B002",
+   "name": "動詞連用形＋風",
+   "freq": 2,
+   "percentage": 0.6
+  },
+  {
+   "id": "I001",
+   "name": "接頭辞＋風",
+   "freq": 2,
+   "percentage": 0.6
+  },
+  {
+   "id": "C005",
+   "name": "風に＋形容詞",
+   "freq": 2,
+   "percentage": 0.6
+  },
+  {
+   "id": "H006",
+   "name": "名詞＋風",
+   "freq": 1,
+   "percentage": 0.3
+  },
+  {
+   "id": "A012",
+   "name": "風より＋動詞",
+   "freq": 1,
+   "percentage": 0.3
+  },
+  {
+   "id": "A004",
+   "name": "風の...",
+   "freq": 1,
+   "percentage": 0.3
+  },
+  {
+   "id": "H003",
+   "name": "風＋の＋名詞",
+   "freq": 1,
+   "percentage": 0.3
+  },
+  {
+   "id": "C002",
+   "name": "風は＋形容詞",
+   "freq": 1,
+   "percentage": 0.3
+  }
+ ]
+}

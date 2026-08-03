@@ -14,7 +14,8 @@
 
 import { Modal, Notice } from 'obsidian';
 import type { App } from 'obsidian';
-import { episodeLabel, playableItems, type PlexItem, type PlexItemsResult } from '../notes/plex.ts';
+import { episodeLabel, playableItems, sortPlexItems, watchState, type PlexItem, type PlexItemsResult } from '../notes/plex.ts';
+import { fmtDur } from '../notes/srt.ts';
 
 export interface PlexBrowseDeps {
   /** library sections (TV / films). */
@@ -25,6 +26,8 @@ export interface PlexBrowseDeps {
   episodes: (ratingKey: string) => Promise<PlexItemsResult>;
   /** server-side search across the library. */
   search: (query: string) => Promise<PlexItemsResult>;
+  /** So the browser can flag episodes already transcribed, before the click. */
+  hasTranscript?: (ratingKey: string) => boolean;
   /** the point of the whole thing: subtitle → transcript note. */
   openEpisode: (item: PlexItem) => Promise<string>;
 }
@@ -40,6 +43,8 @@ export class PlexBrowseModal extends Modal {
   private crumbEl!: HTMLElement;
   private searchEl!: HTMLInputElement;
   private token = 0;
+  /** keyboard cursor into the visible rows (§23.5). */
+  private focusIdx = -1;
 
   constructor(app: App, private deps: PlexBrowseDeps) { super(app); }
 
@@ -68,8 +73,57 @@ export class PlexBrowseModal extends Modal {
 
     this.crumbEl = contentEl.createDiv('jp-plexbrowse-crumb');
     this.listEl = contentEl.createDiv('jp-plexbrowse-list');
+    // §23.5 same keyboard hand as every other list surface: j/k walks, ⏎ opens,
+    // ⌫ goes back up a level. Twenty-six episodes is a lot of mouse travel.
+    this.scope.register([], 'ArrowDown', () => { this.walk(1); return false; });
+    this.scope.register([], 'ArrowUp', () => { this.walk(-1); return false; });
+    contentEl.addEventListener('keydown', (e) => this.onKey(e));
+    const hints = contentEl.createDiv('jp-dm-keys jp-plexbrowse-keys');
+    for (const [key, label] of [['j/k', '移動'], ['⏎', '開く'], ['⌫', '戻る']] as const) {
+      const chip = hints.createSpan('jp-dm-key');
+      chip.createEl('kbd', { text: key });
+      chip.createSpan({ text: label });
+    }
     this.reset();
     window.setTimeout(() => this.searchEl.focus(), 0);
+  }
+
+  private onKey(e: KeyboardEvent): void {
+    const t = e.target as HTMLElement | null;
+    const typing = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    // ⌫ in an empty search box means "up a level", not "delete nothing".
+    if (e.key === 'Backspace' && (!typing || !this.searchEl.value)) {
+      if (this.stack.length > 1) { e.preventDefault(); this.stack.pop(); void this.paint(); }
+      return;
+    }
+    if (typing) {
+      if (e.key === 'Enter' && this.focusIdx >= 0) { e.preventDefault(); this.activate(); }
+      return;
+    }
+    const k = e.key.toLowerCase();
+    if (k === 'j' || k === 'k') { e.preventDefault(); this.walk(k === 'j' ? 1 : -1); return; }
+    if (e.key === 'Enter') { e.preventDefault(); this.activate(); }
+  }
+
+  private rows(): HTMLElement[] {
+    return Array.from(this.listEl.querySelectorAll<HTMLElement>('.jp-plexbrowse-row'));
+  }
+
+  private walk(delta: number): void {
+    const rows = this.rows();
+    if (!rows.length) return;
+    const from = this.focusIdx ?? -1;
+    const next = Math.max(0, Math.min(rows.length - 1,
+      from < 0 ? (delta > 0 ? 0 : rows.length - 1) : from + delta));
+    rows.forEach((r) => r.removeClass('is-focus'));
+    rows[next].addClass('is-focus');
+    rows[next].scrollIntoView({ block: 'nearest' });
+    this.focusIdx = next;
+  }
+
+  private activate(): void {
+    this.rows()[this.focusIdx ?? -1]?.click();
   }
 
   onClose(): void { this.contentEl.empty(); }
@@ -108,29 +162,61 @@ export class PlexBrowseModal extends Modal {
     }
     // Sections come back as directories; content as metadata. Keep the ones
     // that lead somewhere, in a stable, readable order.
-    const items = this.stack.length === 1 && this.searchEl.value.trim() === ''
+    const raw = this.stack.length === 1 && this.searchEl.value.trim() === ''
       ? res.items.filter((i) => i.type === 'show' || i.type === 'movie' || !!i.key)
       : playableItems(res.items).length ? playableItems(res.items) : res.items;
+    // /allLeaves comes back in library-scan order, which interleaves seasons and
+    // puts episode 10 before episode 2.
+    const items = sortPlexItems(raw);
 
     if (!items.length) {
       this.listEl.createDiv({ text: '該当なし', cls: 'jp-plexbrowse-empty' });
       return;
     }
-    for (const item of items) this.renderRow(item);
+    // Season dividers, so a three-season show reads as three seasons.
+    let season: number | null = null;
+    for (const item of items) {
+      if (item.type === 'episode' && item.parentIndex != null && item.parentIndex !== season) {
+        season = item.parentIndex;
+        this.listEl.createDiv({ text: `シーズン ${season}`, cls: 'jp-plexbrowse-season' });
+      }
+      this.renderRow(item);
+    }
+    this.focusIdx = -1;
   }
 
   private renderRow(item: PlexItem): void {
     const isEpisode = item.type === 'episode' || item.type === 'movie';
     const row = this.listEl.createDiv('jp-plexbrowse-row' + (isEpisode ? ' is-leaf' : ''));
     const main = row.createDiv('jp-plexbrowse-main');
-    main.createDiv({
+    const titleRow = main.createDiv('jp-plexbrowse-title');
+    titleRow.createSpan({
       text: isEpisode ? episodeLabel(item) : item.title,
-      cls: 'jp-plexbrowse-title',
+      cls: 'jp-plexbrowse-titletext',
     });
+    /**
+     * §25.4 — the two things worth knowing before you click: have I already made
+     * a transcript from this, and have I already watched it. Without the first,
+     * picking an episode you already did costs a round trip that ends in
+     * 「既にあります」 — an avoidable dead end, and the most common one here.
+     */
+    if (isEpisode && item.ratingKey && this.deps.hasTranscript?.(item.ratingKey)) {
+      const flag = titleRow.createSpan({ text: '📄', cls: 'jp-plexbrowse-flag is-have' });
+      flag.title = 'このエピソードのトランスクリプトは既にあります（開きます）';
+    }
+    const seen = isEpisode ? watchState(item) : null;
+    if (seen) {
+      const flag = titleRow.createSpan({
+        text: seen === 'seen' ? '✓' : '◐',
+        cls: 'jp-plexbrowse-flag is-' + seen,
+      });
+      flag.title = seen === 'seen' ? '視聴済み' : `途中（${fmtDur(item.viewOffsetSec || 0)}）`;
+    }
     const sub: string[] = [];
     if (item.grandparentTitle && isEpisode) sub.push(item.grandparentTitle);
     if (item.year) sub.push(String(item.year));
     if (item.leafCount != null) sub.push(`${item.leafCount}話`);
+    if (isEpisode && item.durationSec) sub.push(fmtDur(item.durationSec));
     if (sub.length) main.createDiv({ text: sub.join(' · '), cls: 'jp-plexbrowse-sub' });
 
     row.onclick = async () => {
@@ -140,8 +226,10 @@ export class PlexBrowseModal extends Modal {
         try {
           const msg = await this.deps.openEpisode(item);
           // The notice carries the outcome; closing on success gets the modal
-          // out of the way of the note that just opened.
-          if (/トランスクリプト/.test(msg)) this.close();
+          // out of the way of the note that just opened. 📺 marks every
+          // outcome that took over the screen — a created note, an existing
+          // one reopened, or the jimaku picker now waiting for a choice.
+          if (msg.startsWith('📺')) this.close();
           else label.setText('');
         } catch (e) {
           new Notice(String(e instanceof Error ? e.message : e), 10000);

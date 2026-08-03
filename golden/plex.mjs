@@ -288,5 +288,105 @@ console.log('\n══ browse URLs ══');
     P.plexSearchUrl(B, '進撃 の', 'T').includes('query=%E9%80%B2%E6%92%83%20%E3%81%AE'));
 }
 
+// A connection failure and an auth failure are DIFFERENT code paths, and the
+// old message blurred them: it said only "接続できません: <raw>", so the first
+// thing suspected was the token — which cannot produce this branch at all.
+console.log('\n══ a transport failure is never an auth failure ══');
+{
+  check('a home LAN address is recognised', P.isLanAddress('http://10.0.0.162:32400'));
+  check('192.168 too', P.isLanAddress('http://192.168.1.50:32400'));
+  check('172.16–31 too', P.isLanAddress('http://172.20.0.5:32400'));
+  check('but 172.32 is public', !P.isLanAddress('http://172.32.0.5:32400'));
+  check('link-local too', P.isLanAddress('http://169.254.1.1:32400'));
+  check('.local too', P.isLanAddress('http://tv.local:32400'));
+  check('a bare hostname resolves only on the LAN', P.isLanAddress('http://tower:32400'));
+  check('a real domain is not LAN-only', !P.isLanAddress('https://plex.example.com:32400'));
+  check('a public IP is not LAN-only', !P.isLanAddress('http://203.0.113.7:32400'));
+
+  const lan = P.explainPlexTransportError('http://10.0.0.162:32400', 'net::ERR_CONNECTION_TIMED_OUT');
+  check('it says outright that the token is not the cause', lan.includes('トークンの問題ではありません'), lan);
+  check('and names 401 as what a stale token would actually look like', lan.includes('401'), lan);
+  check('a LAN address explains the different-network case',
+    lan.includes('同じネットワーク'), lan);
+  check('the raw error is still there to read', lan.includes('ERR_CONNECTION_TIMED_OUT'), lan);
+  check('the address is echoed back', lan.includes('10.0.0.162'), lan);
+
+  const wan = P.explainPlexTransportError('https://plex.example.com', 'boom');
+  check('a public address gets the server/URL advice instead',
+    wan.includes('URL とポート') && !wan.includes('同じネットワーク'), wan);
+  check('and still clears the token of blame', wan.includes('トークンの問題ではありません'), wan);
+
+  // The other branch must stay the auth branch.
+  const four01 = P.parsePlexSessions(401, '');
+  check('HTTP 401 still points AT the token',
+    !four01.ok && four01.error.includes('X-Plex-Token'), JSON.stringify(four01));
+}
+
+console.log('══ §25.4b the metadata endpoint: partKey + episode number ══');
+{
+  // The browse path used to call this endpoint only for streams and throw the
+  // rest away — which quietly cost every library-picked episode its clip door
+  // (partKey) and its episode number (what jimaku has to be asked for).
+  const metaBody = JSON.stringify({
+    MediaContainer: {
+      Metadata: [{
+        ratingKey: 55123,
+        title: '檻の中の少女',
+        grandparentTitle: '相棒',
+        index: 4,
+        parentIndex: 21,
+        duration: 2700000,
+        Media: [{
+          Part: [{
+            key: '/library/parts/9876/1700000000/episode.mkv',
+            Stream: [
+              { streamType: 1, codec: 'h264' },
+              { streamType: 2, codec: 'aac', languageCode: 'jpn' },
+              { streamType: 3, codec: 'srt', languageCode: 'eng', key: '/library/streams/1' },
+            ],
+          }],
+        }],
+      }],
+    },
+  });
+  const m = P.parsePlexMediaMeta(200, metaBody);
+  check('metadata parses', !!m, JSON.stringify(m));
+  check('partKey survives — the 🎬 clip door for an episode that is not playing',
+    m?.partKey === '/library/parts/9876/1700000000/episode.mkv', m?.partKey);
+  check('episode number read (index)', m?.episodeIndex === 4, String(m?.episodeIndex));
+  check('season number read (parentIndex)', m?.seasonIndex === 21, String(m?.seasonIndex));
+  check('show read', m?.show === '相棒', m?.show);
+  check('streams still come through', m?.streams.length === 3, String(m?.streams.length));
+  check('duration ms → seconds', m?.durationSec === 2700, String(m?.durationSec));
+
+  check('a non-200 is null, not a half-built object', P.parsePlexMediaMeta(500, '') === null);
+  check('garbage is null', P.parsePlexMediaMeta(200, 'not json') === null);
+  const bare = P.parsePlexMediaMeta(200, JSON.stringify({ MediaContainer: { Metadata: [{ title: 'x' }] } }));
+  check('a Part-less item degrades to a title, never a crash',
+    bare?.title === 'x' && bare?.streams.length === 0 && bare?.partKey === undefined, JSON.stringify(bare));
+}
+
+console.log('══ §25.4b sessions carry the episode number too ══');
+{
+  const body = playingBody.replace('"type":"episode"', '"type":"episode","index":7,"parentIndex":2');
+  const s = P.parsePlexSessions(200, body).sessions[0];
+  check('index → episodeIndex', s.episodeIndex === 7, String(s.episodeIndex));
+  check('parentIndex → seasonIndex', s.seasonIndex === 2, String(s.seasonIndex));
+  const plain = P.parsePlexSessions(200, playingBody).sessions[0];
+  check('absent numbers stay absent rather than becoming 0',
+    plain.episodeIndex === undefined && plain.seasonIndex === undefined);
+}
+
+console.log('══ §25.4b episodeLabel prefers parentIndex ══');
+{
+  check('parentIndex wins over the season display title',
+    P.episodeLabel({ title: 'x', index: 4, parentIndex: 21, parentTitle: 'シーズン 1' }) === 'S21E04 — x',
+    P.episodeLabel({ title: 'x', index: 4, parentIndex: 21, parentTitle: 'シーズン 1' }));
+  check('parentTitle digits are still the fallback',
+    P.episodeLabel({ title: 'x', index: 4, parentTitle: 'Season 3' }) === 'S03E04 — x');
+  check('no season → episode only',
+    P.episodeLabel({ title: 'x', index: 4 }) === 'E04 — x');
+}
+
 console.log(fail ? `\n✗ plex: ${fail} failed (${pass} passed)` : `\n✓ plex: all ${pass} pass`);
 process.exit(fail ? 1 : 0);

@@ -14,7 +14,7 @@
  *   - Mobile-first with 48px touch targets, iOS safe areas
  */
 
-import { ItemView, WorkspaceLeaf, Notice, Modal, Setting } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, Modal, Setting, Menu } from 'obsidian';
 import type { App } from 'obsidian';
 import { DictionaryStore } from '../dictionary/DictionaryStore';
 import type {
@@ -28,6 +28,13 @@ import type {
   YomitanTag,
 } from '../dictionary/types';
 import { YomitanImporter } from '../dictionary/YomitanImporter';
+import { dedupeAgainst, type BigDictHit } from '../dictionary/big-dict';
+import { renderEntryParts, renderEntryNodes } from './entry-grammar';
+import {
+  offeredBy, statedRelation, buildCapture, RELATION_SPECS,
+  classifyCollocation, COLLOCATION_KINDS,
+  type Selection, type SaveRelation,
+} from '../dictionary/savable';
 import { isExampleLine, exampleJapanese } from '../dictionary/example-capture';
 import { ContextEngine } from '../context/ContextEngine';
 import type { ContextCard, VaultOccurrence } from '../context/ContextEngine';
@@ -37,6 +44,8 @@ import { JP_COLLOCATIONS_VIEW_TYPE, CollocationView } from './CollocationView';
 import { HoverPeek, definitionsPreview } from './hover-peek';
 import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
 import { classBadge } from './class-grammar';
+import { armDrops, mountSurfaceBar, thumbDock, type ViewChrome } from './view-chrome';
+import { makeDraggable } from './drag-out';
 
 export const JP_DICTIONARY_VIEW_TYPE = 'jp-dictionary-view';
 
@@ -52,7 +61,7 @@ export class DictionaryView extends ItemView {
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private currentQuery = '';
   /** Lookup history for recursive navigation */
-  private lookupHistory: string[] = [];
+  private lookupHistory: Array<{ word: string; scroll: number; via?: SaveRelation }> = [];
   private onImport: () => Promise<void>;
   private onSaveEntry: (expression: string, reading: string, exampleSentence?: string) => void;
   /** Universal classify-capture (6分類 → pattern catalog; DESIGN §13). */
@@ -69,6 +78,32 @@ export class DictionaryView extends ItemView {
   patternsIn: ((text: string) => Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }>) | null = null;
   /** §28 S4 — the door back into the lexicon. */
   openPattern: ((id: string) => void) | null = null;
+  /** §29 / §26.3 — the drag road and the identity bar. Late-bound like the
+   *  two above, for the same reason: the constructor is already six deep. */
+  onDrop: ViewChrome['onDrop'];
+  dropCan: ViewChrome['dropCan'];
+  openSurface: ViewChrome['openSurface'];
+  surfaceBadge: ViewChrome['surfaceBadge'];
+  /**
+   * §27.5 — the CONVERTED dictionaries (vault sidecars), asynchronous.
+   *
+   * Without this the 辞書 view searched only `DictionaryStore`, so 31
+   * dictionaries and 6.1M headwords that the settings screen happily listed as
+   * 変換済み were unreachable from the one surface named after them. Assigned by
+   * main.ts, like `patternsIn` — the constructor is already six params deep.
+   */
+  bigDict: {
+    lookup: (q: string, limit?: number) => Promise<BigDictHit[]>;
+    installed: () => Promise<Array<{ title: string; headwords: number; partial: boolean }>>;
+  } | null = null;
+  /**
+   * Bumped on every search. A sidecar read is one file per installed
+   * dictionary, so it can land after the user has typed the next character —
+   * the late result must then be dropped rather than painted over the new one.
+   */
+  private searchGen = 0;
+  /** Installed sidecars, cached after the first look so the home screen is sync. */
+  private bigInstalled: Array<{ title: string; headwords: number; partial: boolean }> = [];
 
   constructor(
     leaf: WorkspaceLeaf,
@@ -93,6 +128,9 @@ export class DictionaryView extends ItemView {
   async onOpen(): Promise<void> {
     this.buildUI();
     this.renderHome();
+    // Which sidecars exist is a vault-folder question, so it is async and the
+    // home screen above is drawn before the answer; refreshBigInstalled redraws.
+    void this.refreshBigInstalled();
     // §23.5 keyboard hand: / focuses search; j/k walk the capturable example
     // rows; t (🏷️) captures the focused one — the same verbs as elsewhere.
     this.contentEl.setAttr('tabindex', '0');
@@ -115,6 +153,65 @@ export class DictionaryView extends ItemView {
       };
     });
     this.peek.attach(this.contentEl, '.jp-dict-clickable-word');
+  }
+
+  /**
+   * A dictionary's own media path → something the webview can load.
+   *
+   * The extractor writes each file under the book's sidecar folder using the
+   * publisher's own relative path, so no mapping table is needed — and a vault
+   * where the images were never extracted simply resolves to undefined, which
+   * the renderer treats as "draw nothing" rather than a broken image.
+   */
+  private mediaMisses = new Set<string>();
+  private resolveDictMedia(dictionary: string, src: string): string | undefined {
+    const root = 'JP Dictionaries';
+    const safe = String(dictionary).replace(/[\\/:*?"<>|#^[\]]/g, '_').trim();
+    const path = `${root}/${safe}/media/${src}`;
+    if (this.mediaMisses.has(path)) return undefined;
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!file) { this.mediaMisses.add(path); return undefined; }
+    return this.app.vault.adapter.getResourcePath(path);
+  }
+
+  /**
+   * Offer the relations THIS selection can honestly become.
+   *
+   * Not a fixed menu: `offeredBy` reads the shape the thing was sitting in, so
+   * a synonym from a 語群 offers 類語/使い分け/対義語, a comparison cell offers a
+   * 判定, and a corpus citation offers 実例 but never 用例 — because provenance
+   * is the difference between them. A relation the SOURCE already stated
+   * (`⇔うんと`) is applied directly instead of being asked about again.
+   */
+  private offerCapture(sel: Selection, evt: MouseEvent): void {
+    const stated = statedRelation(sel.text);
+    if (stated) {
+      this.commitCapture({ ...sel, text: stated.target }, stated.relation);
+      return;
+    }
+    const offers = offeredBy(sel);
+    if (offers.length === 1) { this.commitCapture(sel, offers[0]); return; }
+    const menu = new Menu();
+    for (const rel of offers) {
+      menu.addItem((i) => i
+        .setTitle(`${rel} — ${RELATION_SPECS[rel].hint}`)
+        .onClick(() => this.commitCapture(sel, rel)));
+    }
+    menu.showAtMouseEvent(evt);
+  }
+
+  private commitCapture(sel: Selection, rel: SaveRelation): void {
+    const cap = buildCapture(sel, rel);
+    // The existing capture spine takes (expression, example, dictMeta); the
+    // relation and its evidence ride along so nothing the book asserted is lost
+    // on the way into the lexicon.
+    this.onClassify?.(
+      cap.subject,
+      [cap.relation, cap.object ? `↔ ${cap.object}` : '', cap.evidence ?? '', cap.cite ?? '']
+        .filter(Boolean).join(' · '),
+      { dict: sel.dictionary ?? '', headword: sel.headword ?? cap.subject },
+    );
+    new Notice(`${rel}：${cap.subject}${cap.object ? ` ↔ ${cap.object}` : ''}`);
   }
 
   private onExampleKey(e: KeyboardEvent): void {
@@ -165,21 +262,56 @@ export class DictionaryView extends ItemView {
    * Recursive lookup: push current query to history, then look up new word.
    * Used when tapping on Japanese text inside definitions.
    */
-  private recursiveLookup(word: string): void {
+  private recursiveLookup(word: string, via?: SaveRelation): void {
     if (this.currentQuery && this.currentQuery !== word) {
-      this.lookupHistory.push(this.currentQuery);
+      // Remember WHERE you were reading, not just what you were reading.
+      // Coming back to the top of a 600-sense entry you had scrolled halfway
+      // through is the same as not coming back at all.
+      this.lookupHistory.push({
+        word: this.currentQuery,
+        scroll: this.resultsEl?.scrollTop ?? 0,
+        via,
+      });
     }
+    this.lastVia = via;
     this.lookupWord(word);
     this.renderBreadcrumbs();
   }
 
-  /** Navigate back in lookup history */
+  /** The edge that brought us to the CURRENT word. */
+  private lastVia: SaveRelation | undefined;
+
+  /** Navigate back, landing exactly where you left. */
   private goBack(): void {
     const prev = this.lookupHistory.pop();
-    if (prev) {
-      this.lookupWord(prev);
-      this.renderBreadcrumbs();
-    }
+    if (!prev) return;
+    this.lookupWord(prev.word);
+    this.restoreScroll(prev.scroll);
+    this.renderBreadcrumbs();
+  }
+
+  /**
+   * Put the scroll position back after the results have actually been painted.
+   *
+   * A sidecar lookup is asynchronous, so setting scrollTop straight after
+   * `lookupWord` sets it on the OLD content and the new render resets it to 0 —
+   * which is exactly the "returning doesn't get you back to where you were"
+   * symptom. Two frames is enough for the synchronous store; the generation
+   * check stops a late sidecar result from yanking the view after the user has
+   * started scrolling again.
+   */
+  private restoreScroll(top: number): void {
+    if (!top) return;
+    const gen = this.searchGen;
+    let tries = 0;
+    const put = (): void => {
+      if (gen !== this.searchGen || !this.resultsEl) return;
+      this.resultsEl.scrollTop = top;
+      if (++tries < 4 && Math.abs(this.resultsEl.scrollTop - top) > 2) {
+        requestAnimationFrame(put);
+      }
+    };
+    requestAnimationFrame(put);
   }
 
   /** Render breadcrumb navigation for recursive lookups */
@@ -201,19 +333,33 @@ export class DictionaryView extends ItemView {
     });
     backBtn.addEventListener('click', () => this.goBack());
 
-    // History trail
+    // The trail is a PATH THROUGH THE RELATION GRAPH, not a list of words.
+    // You did not merely arrive at 痛快 — you got there from 爽快 along 類語,
+    // and that edge is the most useful thing on the screen: it is the same
+    // vocabulary you save with, so the trail reads as lexical reasoning
+    // rather than as browser history.
     for (let i = 0; i < this.lookupHistory.length; i++) {
+      const hop = this.lookupHistory[i];
       const crumb = this.breadcrumbEl.createEl('span', {
-        text: this.lookupHistory[i],
+        text: hop.word,
         cls: 'jp-dict-breadcrumb-item',
       });
+      crumb.title = `${hop.word} に戻る（読んでいた位置まで）`;
       crumb.addEventListener('click', () => {
-        // Jump to this point in history
         const target = this.lookupHistory[i];
         this.lookupHistory = this.lookupHistory.slice(0, i);
-        this.lookupWord(target);
+        this.lookupWord(target.word);
+        this.restoreScroll(target.scroll);
         this.renderBreadcrumbs();
       });
+      // The edge you travelled, named. `via` belongs to the hop you LEFT, so
+      // it labels the arrow leaving it.
+      const next = this.lookupHistory[i + 1];
+      const via = (next ? next.via : this.lastVia) ?? undefined;
+      if (via) {
+        const e = this.breadcrumbEl.createSpan({ cls: 'jp-dict-breadcrumb-via', text: via });
+        e.title = RELATION_SPECS[via]?.hint ?? '';
+      }
       this.breadcrumbEl.createSpan({ text: ' → ', cls: 'jp-dict-breadcrumb-sep' });
     }
 
@@ -251,7 +397,22 @@ export class DictionaryView extends ItemView {
           const span = document.createElement('span');
           span.textContent = part;
           span.className = 'jp-dict-clickable-word';
+          // A tap that ENDS a selection is not a request to navigate. Every
+          // run of Japanese in the entry is a lookup target, so trying to
+          // select a phrase — drag across it, release — used to land on
+          // whichever word you released over and throw the entry away.
+          // Selecting must beat navigating, or the text is not selectable.
+          span.addEventListener('pointerdown', (e) => {
+            (e.currentTarget as HTMLElement).dataset.jpDownX = String(e.clientX);
+            (e.currentTarget as HTMLElement).dataset.jpDownY = String(e.clientY);
+          });
           span.addEventListener('click', (e) => {
+            const sel = window.getSelection?.();
+            if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) return;
+            const el = e.currentTarget as HTMLElement;
+            const dx = Math.abs(e.clientX - Number(el.dataset.jpDownX ?? e.clientX));
+            const dy = Math.abs(e.clientY - Number(el.dataset.jpDownY ?? e.clientY));
+            if (dx > 6 || dy > 6) return;             // a drag, not a tap
             e.preventDefault();
             e.stopPropagation();
             this.recursiveLookup(part);
@@ -271,9 +432,20 @@ export class DictionaryView extends ItemView {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass('jp-dict-view');
+    // §29 — a word carried in from anywhere gets looked up; a video link
+    // carried in is still a video (drop-intent decides, not the surface).
+    // Paste is routed here too: the search box keeps its own ⌘V, everywhere
+    // else in the view a paste means "do something with this".
+    armDrops(container, this, 'dict', { paste: true });
+
+    // §26.3 — on a phone the search box, its suggestions and the identity bar
+    // all live under the thumb instead of at the top of the screen. `dock` is
+    // null everywhere else, so each `dock ?? header` below is the old code.
+    const dock = thumbDock(container);
 
     // Header
     const header = container.createDiv('jp-dict-header');
+    mountSurfaceBar(dock ?? header, this, 'dict');
     const titleRow = header.createDiv('jp-dict-title-row');
     titleRow.createEl('h4', { text: '辞書', cls: 'jp-dict-title' });
     this.headerActionsEl = titleRow.createDiv('jp-dict-header-actions');
@@ -295,7 +467,7 @@ export class DictionaryView extends ItemView {
     manageBtn.addEventListener('click', () => this.showManageDialog());
 
     // Search bar
-    const searchRow = header.createDiv('jp-dict-search-row');
+    const searchRow = (dock ?? header).createDiv('jp-dict-search-row');
     this.searchInput = searchRow.createEl('input', {
       type: 'search',
       placeholder: '検索… (漢字・ひらがな・カタカナ)',
@@ -334,8 +506,10 @@ export class DictionaryView extends ItemView {
     this.breadcrumbEl = container.createDiv('jp-dict-breadcrumbs');
     this.breadcrumbEl.style.display = 'none';
 
-    // Suggestions dropdown
-    this.suggestionsEl = container.createDiv('jp-dict-suggestions');
+    // Suggestions dropdown. In the dock too when there is one: a list of
+    // completions that opens at the top of the screen while you are typing at
+    // the bottom of it is a list you have to look away to read.
+    this.suggestionsEl = (dock ?? container).createDiv('jp-dict-suggestions');
     this.suggestionsEl.style.display = 'none';
 
     // Stats
@@ -373,6 +547,7 @@ export class DictionaryView extends ItemView {
   private performLiveSearch(query: string): void {
     this.hideSuggestions();
     if (!this.resultsEl || !this.statsEl) return;
+    const gen = ++this.searchGen;
 
     // Use substring search for fuzzy live results
     const results = this.dictStore.substringSearch(query, 20);
@@ -391,28 +566,85 @@ export class DictionaryView extends ItemView {
       }
     }
 
-    this.statsEl.empty();
-
-    if (!this.dictStore.hasDictionaries()) {
+    if (!this.hasAnyDictionary()) {
+      this.statsEl.empty();
       this.statsEl.createSpan({ text: 'No dictionaries imported yet', cls: 'jp-dict-stat-text' });
       this.renderEmpty('Import a Yomitan dictionary to get started. Tap "＋ Import" above.');
       return;
     }
 
+    // "Not found" is only true once the sidecars have answered too, so the
+    // placeholder goes up as a PROVISIONAL state that appendBigResults clears.
     if (merged.length === 0) {
-      this.statsEl.createSpan({ text: `"${query}" — no results`, cls: 'jp-dict-stat-text' });
       this.renderEmpty(`"${query}" が見つかりませんでした`);
-      return;
+    } else {
+      this.resultsEl.empty();
+      for (const group of this.groupResults(merged)) {
+        this.renderEntryCard(this.resultsEl, group);
+      }
     }
+    this.setStats(query, merged.length, !!this.bigDict);
+    void this.appendBigResults(query, gen, merged);
+  }
 
-    const grouped = this.groupResults(merged);
+  // ── the converted (sidecar) dictionaries ───────────────────
+
+  /** Any dictionary at all — imported into the blob OR converted to a sidecar. */
+  private hasAnyDictionary(): boolean {
+    return this.dictStore.hasDictionaries() || this.bigInstalled.length > 0;
+  }
+
+  /** One stats line for both halves; `pending` marks a sidecar read in flight. */
+  private setStats(query: string, count: number, pending: boolean): void {
+    if (!this.statsEl) return;
+    this.statsEl.empty();
     this.statsEl.createSpan({
-      text: `${merged.length} entries for "${query}"`,
+      text: count === 0 && !pending ? `"${query}" — no results` : `${count} entries for "${query}"`,
       cls: 'jp-dict-stat-text',
     });
+    if (pending) {
+      this.statsEl.createSpan({ text: ' · 変換済み辞書を検索中…', cls: 'jp-dict-stat-pending' });
+    }
+  }
 
-    this.resultsEl.empty();
-    for (const group of grouped) {
+  /** Ask which sidecars are installed, then redraw the home screen with them. */
+  private async refreshBigInstalled(): Promise<void> {
+    if (!this.bigDict) return;
+    try { this.bigInstalled = await this.bigDict.installed(); }
+    catch (e) { console.error('[jp-collocations] sidecar list failed:', e); return; }
+    if (!this.currentQuery) this.renderHome();
+  }
+
+  /**
+   * Append the converted dictionaries' hits under whatever the in-memory store
+   * already rendered.
+   *
+   * A sidecar lookup reads one shard file PER installed dictionary, so it can
+   * easily land after the user has typed the next character. `gen` is what
+   * makes that safe: a late answer for a query that is no longer on screen is
+   * dropped rather than painted over the current one.
+   */
+  private async appendBigResults(
+    query: string, gen: number, local: DictLookupResult[],
+  ): Promise<void> {
+    if (!this.bigDict) return;
+    let hits: BigDictHit[];
+    try {
+      hits = await this.bigDict.lookup(query, 40);
+    } catch (e) {
+      console.error('[jp-collocations] sidecar lookup failed:', e);
+      if (gen === this.searchGen) this.setStats(query, local.length, false);
+      return;
+    }
+    if (gen !== this.searchGen || !this.resultsEl || !this.statsEl) return;
+
+    const extra = dedupeAgainst(hits, local);
+    this.setStats(query, local.length + extra.length, false);
+    if (!extra.length) return;
+
+    // The placeholder was provisional — these entries are the answer to it.
+    if (!local.length) this.resultsEl.empty();
+    for (const group of this.groupResults(extra)) {
       this.renderEntryCard(this.resultsEl, group);
     }
   }
@@ -464,33 +696,28 @@ export class DictionaryView extends ItemView {
   private performLookup(query: string): void {
     this.hideSuggestions();
     if (!this.resultsEl || !this.statsEl) return;
+    const gen = ++this.searchGen;
 
     const results = this.dictStore.lookup(query);
-    this.statsEl.empty();
 
-    if (!this.dictStore.hasDictionaries()) {
+    if (!this.hasAnyDictionary()) {
+      this.statsEl.empty();
       this.statsEl.createSpan({ text: 'No dictionaries imported yet', cls: 'jp-dict-stat-text' });
       this.renderEmpty('Import a Yomitan dictionary to get started. Tap "＋ Import" above.');
       return;
     }
 
     if (results.length === 0) {
-      this.statsEl.createSpan({ text: `"${query}" — no results`, cls: 'jp-dict-stat-text' });
       this.renderEmpty(`"${query}" が見つかりませんでした`);
-      return;
+    } else {
+      // Group by sequence & expression for merging related senses
+      this.resultsEl.empty();
+      for (const group of this.groupResults(results)) {
+        this.renderEntryCard(this.resultsEl, group);
+      }
     }
-
-    // Group by sequence & expression for merging related senses
-    const grouped = this.groupResults(results);
-    this.statsEl.createSpan({
-      text: `${results.length} entries for "${query}"`,
-      cls: 'jp-dict-stat-text',
-    });
-
-    this.resultsEl.empty();
-    for (const group of grouped) {
-      this.renderEntryCard(this.resultsEl, group);
-    }
+    this.setStats(query, results.length, !!this.bigDict);
+    void this.appendBigResults(query, gen, results);
   }
 
   // ── Group results ──────────────────────────────────────────
@@ -520,7 +747,26 @@ export class DictionaryView extends ItemView {
     const card = parent.createDiv('jp-dict-card');
 
     // ── Header: expression + reading ─────────────────────────
+    //
+    // §29: the header is also the grip. Drag the headword onto the 語彙 view
+    // and it opens capture already holding the word AND a real sense line — the
+    // 辞書→台帳 road that used to be "select, remember it, switch view, retype".
+    // The header only, never the definition body: senses are selectable text
+    // and selection is this view's own capture verb.
     const headerRow = card.createDiv('jp-dict-card-header');
+    makeDraggable(headerRow, () => {
+      const sense = this.extractExampleFromDefs(group);
+      return {
+        kind: 'dict',
+        text: sense ? `${primary.term.expression}\n${sense}` : primary.term.expression,
+        label: primary.term.expression,
+        sub: primary.term.reading !== primary.term.expression ? primary.term.reading : primary.dictionary,
+        html: `<b>${primary.term.expression}</b>` +
+          (primary.term.reading !== primary.term.expression ? `（${primary.term.reading}）` : '') +
+          (sense ? `<br>${sense}` : '') + `<br><small>— ${primary.dictionary}</small>`,
+        meta: { dictionary: primary.dictionary, headword: primary.term.expression, reading: primary.term.reading },
+      };
+    });
 
     const exprEl = headerRow.createSpan({
       text: primary.term.expression,
@@ -578,6 +824,42 @@ export class DictionaryView extends ItemView {
 
     let defIndex = 0;
     for (const result of group) {
+      // §26.1 — when the source gave us real structure, typeset it: senses
+      // numbered, 〔context〕/《register》 as their own marks, examples as
+      // blocks. Only a dictionary whose tree was flattened at conversion falls
+      // through to the prose path, and it SHOULD look worse — that is the
+      // honest signal that it still needs re-converting (§28 S6).
+      const renderOpts = {
+        highlight: this.currentQuery,
+        onLookup: (w: string) => this.recursiveLookup(w),
+        // The book's own illustrations, if they were extracted. Returning
+        // undefined when the file is not there is what makes an un-extracted
+        // vault show nothing instead of a broken frame (§28 S6).
+        resolveMedia: (src: string) => this.resolveDictMedia(result.dictionary, src),
+        headword: result.term.expression,
+        // ONE capture verb for everything in the entry — a sense's example, a
+        // synonym, a judgement cell and a citation all arrive here, and
+        // `offeredBy` decides what each can honestly become. The old
+        // example-only callback is deliberately not passed: two capture
+        // behaviours on one screen is the drift this design prevents.
+        onCapture: (sel: Selection, evt: MouseEvent) => this.offerCapture({
+          ...sel, dictionary: result.dictionary, headword: result.term.expression,
+        }, evt),
+      };
+      if (result.entryBlocks?.length) {
+        renderEntryParts(defsSection, result.entryBlocks, renderOpts);
+        // The book's RELATIONS, when it has any a sense list cannot hold — a
+        // 類語対比表, a 語群, a corpus citation set. Drawn under the senses
+        // because they are about the entry as a whole, not about one sense.
+        if (result.entryNodes?.length) {
+          renderEntryNodes(defsSection, result.entryNodes, renderOpts);
+        }
+        continue;
+      }
+      if (result.entryNodes?.length) {
+        renderEntryNodes(defsSection, result.entryNodes, renderOpts);
+        continue;
+      }
       for (const def of result.term.definitions) {
         defIndex++;
         const defRow = defsSection.createDiv('jp-dict-def-row');
@@ -701,23 +983,43 @@ export class DictionaryView extends ItemView {
 
   private fillContextPanel(el: HTMLElement, ctx: ContextCard, expression: string): void {
     // ── Collocations ─────────────────────────────────────────
-    if (ctx.collocations.length > 0 || ctx.surferEntries.length > 0) {
+    // Grouped by RELATION, not by which store it came out of.
+    //
+    // "コロケーション (12)" as one flat list is the same mistake as a flat sense
+    // list: 順番を待つ, 雨が降るのを待つ, 待ち受ける and じっと待つ are four different
+    // facts about how 待つ combines, and the grouping is what makes any of them
+    // reusable. Within a group the order is EVIDENTIAL (§20.3) — what you
+    // actually met comes before what a book asserted.
+    const bucket = new Map<SaveRelation, Array<{ surface: string; ex?: string; attested: boolean }>>();
+    const put = (surface: string, ex: string | undefined, attested: boolean): void => {
+      if (!surface) return;
+      const rel = classifyCollocation(surface, expression);
+      const list = bucket.get(rel) ?? [];
+      list.push({ surface, ex, attested });
+      bucket.set(rel, list);
+    };
+    for (const c of ctx.collocations) put(c.headword, c.exampleSentences?.[0], false);
+    for (const s of ctx.surferEntries) put(s.surface, s.exampleSentences?.[0]?.text, true);
+
+    // Specific relations first; plain co-occurrence last, where it belongs.
+    const order = [...COLLOCATION_KINDS];
+    for (const rel of order) {
+      const list = bucket.get(rel);
+      if (!list?.length) continue;
+      list.sort((a, b) => Number(b.attested) - Number(a.attested));
       const sec = el.createDiv('jp-dict-ctx-section');
-      sec.createDiv({ text: `コロケーション (${ctx.collocations.length + ctx.surferEntries.length})`, cls: 'jp-dict-ctx-section-title' });
-      for (const c of ctx.collocations.slice(0, 6)) {
+      const title = sec.createDiv({ text: `${rel} (${list.length})`, cls: 'jp-dict-ctx-section-title' });
+      title.title = RELATION_SPECS[rel].hint;
+      for (const it of list.slice(0, 6)) {
         const row = sec.createDiv('jp-dict-ctx-colloc-row');
-        row.createSpan({ text: c.headword, cls: 'jp-dict-ctx-hw' });
-        if (c.headwordReading) row.createSpan({ text: c.headwordReading, cls: 'jp-dict-ctx-rd' });
-        if (c.exampleSentences.length > 0) {
-          row.createDiv({ text: c.exampleSentences[0], cls: 'jp-dict-ctx-example' });
-        }
-      }
-      for (const s of ctx.surferEntries.slice(0, 4)) {
-        const row = sec.createDiv('jp-dict-ctx-colloc-row');
-        row.createSpan({ text: s.surface, cls: 'jp-dict-ctx-hw' });
-        if (s.exampleSentences && s.exampleSentences.length > 0) {
-          row.createDiv({ text: s.exampleSentences[0].text.slice(0, 100), cls: 'jp-dict-ctx-example' });
-        }
+        // 実 = you met this; 辞 = a dictionary asserted it. The distinction is
+        // the whole point of the cascade, so it is visible per row.
+        row.createSpan({
+          cls: `jp-dict-ctx-evid jp-dict-ctx-evid--${it.attested ? 'lived' : 'curated'}`,
+          text: it.attested ? '実' : '辞',
+        }).title = it.attested ? '自分が出会った例' : '辞書が挙げた例';
+        row.createSpan({ text: it.surface, cls: 'jp-dict-ctx-hw' });
+        if (it.ex) row.createDiv({ text: it.ex.slice(0, 100), cls: 'jp-dict-ctx-example' });
       }
     }
 
@@ -795,6 +1097,34 @@ export class DictionaryView extends ItemView {
         chip.style.borderLeft = `3px solid ${color}`;
         chip.createSpan({ text: cp.surface, cls: 'jp-dict-ctx-copat-surface' });
         chip.createSpan({ text: `×${cp.count}`, cls: 'jp-dict-ctx-copat-count' });
+      }
+    }
+
+    // ── 語法 corpus examples (§22.7) ──────────────────────────
+    //
+    // Above 𝕏 because these are the only sentences on this card that arrive
+    // with a document behind them. The 辞書 could already show you tweets
+    // using a word and could not show you the corpus profile frozen onto your
+    // own entry for it — the data was one join away from here the whole time.
+    const corpusExamples = ctx.examples.filter(e => e.source === 'corpus');
+    if (corpusExamples.length > 0) {
+      const sec = el.createDiv('jp-dict-ctx-section');
+      sec.createDiv({ text: `📊 語法 用例 (${corpusExamples.length})`, cls: 'jp-dict-ctx-section-title' });
+      for (const ex of corpusExamples.slice(0, 6)) {
+        const row = sec.createDiv('jp-dict-ctx-x-row');
+        row.createDiv({ text: ex.text.slice(0, 140), cls: 'jp-dict-ctx-x-text' });
+        const meta = row.createDiv('jp-dict-ctx-x-meta');
+        // The citation, always — a corpus sentence with no visible source
+        // cannot be told from an invented one (§28 S3).
+        if (ex.sourceDetail) {
+          const cite = meta.createSpan({ text: ex.sourceDetail.slice(0, 60), cls: 'jp-dict-ctx-corpus-cite' });
+          cite.title = ex.sourceDetail;
+          const url = ex.sourceDetail.match(/https?:\/\/\S+/)?.[0];
+          if (url) {
+            cite.addClass('jp-dict-ctx-x-link');
+            cite.addEventListener('click', () => window.open(url, '_blank'));
+          }
+        }
       }
     }
 
@@ -1170,7 +1500,7 @@ export class DictionaryView extends ItemView {
     this.statsEl.empty();
     this.resultsEl.empty();
 
-    if (!this.dictStore.hasDictionaries()) {
+    if (!this.hasAnyDictionary()) {
       this.statsEl.createSpan({ text: 'No dictionaries loaded', cls: 'jp-dict-stat-text' });
 
       const empty = this.resultsEl.createDiv('jp-dict-empty-state');
@@ -1188,11 +1518,16 @@ export class DictionaryView extends ItemView {
       return;
     }
 
-    // Show dictionary stats
+    // Show dictionary stats — BOTH halves. The converted dictionaries are the
+    // overwhelming majority of what is installed here (6.1M headwords against
+    // the imported store's tens of thousands); a count that omitted them would
+    // be the same lie the search results used to tell.
     const dicts = this.dictStore.getDictionaryList();
     const total = this.dictStore.getTotalTermCount();
+    const bigTerms = this.bigInstalled.reduce((n, d) => n + d.headwords, 0);
+    const nDicts = dicts.length + this.bigInstalled.length;
     this.statsEl.createSpan({
-      text: `${dicts.length} dict${dicts.length !== 1 ? 's' : ''} · ${total.toLocaleString()} terms`,
+      text: `${nDicts} dict${nDicts !== 1 ? 's' : ''} · ${(total + bigTerms).toLocaleString()} terms`,
       cls: 'jp-dict-stat-text',
     });
 
@@ -1202,6 +1537,30 @@ export class DictionaryView extends ItemView {
       text: 'Type to search across all imported dictionaries.',
       cls: 'jp-dict-home-hint',
     });
+
+    // §27.5 the converted sidecars, biggest first (BigDictStore's order).
+    for (const d of this.bigInstalled) {
+      const card = home.createDiv('jp-dict-info-card');
+      const row = card.createDiv('jp-dict-info-row');
+      row.createSpan({ text: '🗄️', cls: 'jp-dict-info-icon' });
+      const info = row.createDiv('jp-dict-info-text');
+      info.createEl('strong', { text: d.title });
+      info.createSpan({
+        text: ` · ${d.headwords.toLocaleString()} 語`,
+        cls: 'jp-dict-info-count',
+      });
+      const badges = card.createDiv('jp-dict-info-badges');
+      badges.createSpan({ text: '変換済み', cls: 'jp-dict-info-badge' });
+      // §12: a repaired or still-converting meta holds a RUNNING total, so it
+      // must not be presented as a settled install.
+      if (d.partial) {
+        badges.createSpan({
+          text: '暫定（変換中/修復済み）',
+          cls: 'jp-dict-info-badge jp-dict-info-badge--partial',
+          attr: { title: '件数は途中経過です。変換が完了すると確定します。' },
+        });
+      }
+    }
 
     for (const meta of dicts) {
       const dictCard = home.createDiv('jp-dict-info-card');

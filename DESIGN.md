@@ -1564,6 +1564,66 @@ failures even if technically available.
   secret-stored like the other tokens), confirmation the iPad can reach the
   server on LAN.
 
+### 25.4b Where the Japanese subtitle comes from (jimaku) — SHIPPED 2026-07-28
+
+The bullet above says "jimaku `.srt` → `import-srt` (shipped) → the episode
+transcript note exists", and 25.4's first shipped increment made Plex read out
+its own muxed track so that step could be skipped. **Both were conditional on a
+premise that is false for a real library: that a Japanese subtitle exists
+inside the file.** For live-action drama, older anime, and anything ripped from
+a stream that shipped English-only, Plex has nothing to offer, and the pipeline
+answered 「この作品には字幕トラックがありません」 — a correct, useless refusal.
+Everything downstream (照合・走査・談話モード・⚡) already worked; the chain
+simply had no way to start.
+
+**The seam is the SOURCE of the text, and it is now behind one road.** Two
+sources, one `writeTranscriptNote`, one note shape:
+
+1. **Plex's muxed track** — first by default, because it is guaranteed to be
+   in sync with the video it came out of.
+2. **jimaku.cc** — when Plex has no usable Japanese text track (or always, per
+   setting, for files whose muxed track is partial/English-only).
+
+The transcript that results is the same object either way; nothing downstream
+knows or asks which source it came from. What changes is only its provenance
+line: `sub_source`, `jimaku_entry`, `jimaku_file`.
+
+**Auto only where auto is honest.** A wrong entry or a signs-only file yields a
+complete, plausible, WRONG transcript — the §12 failure mode that reads as
+success. So the machine proceeds unasked only when there is nothing else it
+could reasonably be: one clearly-matching work AND one file naming the wanted
+episode with no non-signs rival. Everything else — sibling season entries, two
+uploaders' releases of episode 4, a season known only to the filename — goes to
+the picker, which shows the same ranking the auto path would have used, with
+the top row labelled 推定 rather than chosen. Refusals name what exists and
+why none of it was usable (archives cannot be unpacked here; these are the
+episodes this entry actually has).
+
+**Provenance survives the source change (§28).** A jimaku-sourced note still
+carries `plex_rating_key` / `plex_part_key`, so 📺Plex同期 and the 🎬 clip
+cutter keep working on a transcript whose text never touched the server. This
+is also what closed three quieter losses in the same path: the library-browse
+door was discarding `partKey` (no clips for any episode not currently playing),
+the episode NUMBER was never read off `index`/`parentIndex` (the one thing an
+external source must be asked for), and a second import of the same episode
+silently forked the note, orphaning every mark made against the first.
+
+**⌖ ズレ — the offset is a hand gesture, not a guess.** A subtitle that did not
+come out of the video file can be timed to a different release: a distributor
+logo, a different intro, ad breaks. Ten seconds out makes 鑑賞モード useless
+while still looking like it works, and no amount of cleverness can detect it
+from the text. So `sub_offset_sec` lives in the note's frontmatter (present at
+zero for fetched subs — a field you can see is a field you can fix), the Plex
+clock subtracts it, and 鑑賞モード grows a ⌖ chip *only while the server owns
+the clock*: arm it, tap the line you hear, and the gap between the video's
+position and that line's stamp IS the offset. One tap, one number, written back
+to the note. Deliberately its own mode rather than an overloaded tap — a tap
+already means 📍マーク, and a gesture meaning two things depending on hidden
+state scatters marks at wrong timestamps.
+
+Needs from you: a jimaku.cc API key (Settings → jimaku; secret-stored
+device-local like the Plex token, never in the synced blob).
+
 ### 25.5 YouTube なりきりスピーキング — the practice becomes a first-class mode
 
 The 本質, extracted from your description: **responsive production under

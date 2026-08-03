@@ -158,5 +158,33 @@ console.log('\n══ the transcript note ══');
   ok(!content.includes('plex_rating_key'), 'a hand-imported note carries no Plex keys');
 }
 
+// ── §25.4b: a jimaku-sourced note is the SAME note, plus its provenance ──────
+{
+  const jm = S.srtToNote({
+    srt: ASS,
+    title: '相棒 S21E04',
+    sourceName: '相棒',
+    subSource: 'jimaku',
+    episode: { season: 21, episode: 4 },
+    plex: { ratingKey: '55123', partKey: '/library/parts/1/f.mkv' },
+    jimaku: { entryId: 771, fileName: '[G] Aibou - 04.srt' },
+    subOffsetSec: 0,
+  });
+  ok(jm.content.includes('sub_source: jimaku'), 'the source of the text is recorded');
+  ok(jm.content.includes('jimaku_entry: 771') && jm.content.includes('jimaku_file: "[G] Aibou - 04.srt"'),
+    'WHICH release it was is recorded — the one thing about it that can be wrong');
+  ok(jm.content.includes('plex_rating_key: "55123"') && jm.content.includes('plex_part_key:'),
+    'and it still knows its Plex media, so 🎬 clips and Plex同期 keep working');
+  ok(jm.content.includes('season: 21') && jm.content.includes('episode: 4'),
+    'the episode number survives into the note');
+  ok(jm.content.includes('sub_offset_sec: 0'),
+    'the offset field is PRESENT at zero — a field you can see is a field you can fix');
+
+  const embedded = S.srtToNote({ srt: ASS, title: "x", subSource: "plex" });
+  ok(!embedded.content.includes('sub_offset_sec'),
+    'a muxed subtitle needs no offset field: it cannot disagree with its own video');
+  ok(!embedded.content.includes('jimaku_'), 'and carries no jimaku provenance');
+}
+
 console.log(`\n${fail ? '✗' : '✓'} srt: ${n - fail}/${n} checks passed`);
 process.exit(fail ? 1 : 0);

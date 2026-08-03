@@ -95,5 +95,50 @@ console.log('══ §26.2 rejected examples feed the personal ❗ box ══');
   check('rejected attestations removed from the entry', e.attestations.length === 0);
 }
 
+console.log('══ AUDIT-PARTS §3 — untimed media keep every sighting ══');
+// The key was `file|tStartSec|source`. Prose and tweets have no tStartSec, so
+// every sighting inside ONE Kindle note or ONE long-form post collapsed to the
+// same key and `upsertEntry` silently dropped all but the first — a book with
+// 40 sightings stored one, forever. The quote is what distinguishes them.
+{
+  const store = new P.PatternStore(async () => {});
+  const book = (q) => ({ source: 'web', medium: 'book', file: '読書/夜は短し.md', tStartSec: null, quote: q, status: 'suggested', addedAt: 1 });
+  const quotes = ['気になる人がいた', 'それが気になるところだ', '気になるなら聞けばいい'];
+  await store.record('気になる', book(quotes[0]), 1);
+  const id = store.all()[0].id;
+  await store.addAttestations(quotes.slice(1).map((q) => ({ id, att: book(q) })), 2);
+  const e = store.byId(id);
+  check('three sightings in ONE untimed note all survive', e.attestations.length === 3, `${e.attestations.length}`);
+  check('their keys are distinct', new Set(e.attestations.map(P.attestationKey)).size === 3);
+
+  // …but a genuine duplicate — same file, same second, same quote — still dedupes.
+  await store.addAttestations([{ id, att: book(quotes[0]) }], 3);
+  check('an identical re-sighting still dedupes', store.byId(id).attestations.length === 3, `${store.byId(id).attestations.length}`);
+
+  // Timestamped media are unchanged: same file+second, different quote is still
+  // two sightings; that was already true and must stay true.
+  const vid = (t, q) => ({ source: 'yt', file: 'T.md', tStartSec: t, quote: q, status: 'suggested', addedAt: 1 });
+  await store.addAttestations([{ id, att: vid(10, 'a') }, { id, att: vid(20, 'b') }], 4);
+  check('timestamped sightings unaffected', store.byId(id).attestations.length === 5, `${store.byId(id).attestations.length}`);
+}
+
+console.log('══ AUDIT-PARTS §3 — a ✕ written under the OLD key still blocks ══');
+// rejectedAtts persists across the key change. Re-proposing everything the user
+// had already rejected would be worse than the bug being fixed.
+{
+  const store = new P.PatternStore(async () => {});
+  const att = { source: 'web', medium: 'book', file: 'B.md', tStartSec: null, quote: 'これは違う', status: 'suggested', addedAt: 1 };
+  await store.record('気になる', { ...att, quote: 'seed' }, 1);
+  const id = store.all()[0].id;
+  const e = store.byId(id);
+  e.rejectedAtts = [P.legacyAttestationKey(att)];        // as written before the fix
+  check('legacy key is the old 3-part shape', P.legacyAttestationKey(att) === 'B.md||web', P.legacyAttestationKey(att));
+  check('the new key differs from it', P.attestationKey(att) !== P.legacyAttestationKey(att));
+  check('isRejected honours the legacy key', P.isRejected(e, att));
+  await store.addAttestations([{ id, att }], 2);
+  check('a legacy-rejected sighting is NOT re-added',
+    !store.byId(id).attestations.some((a) => a.quote === 'これは違う'));
+}
+
 console.log(`\n${fail === 0 ? '✓' : '✗'} patternstore: ${pass}/${pass + fail} checks passed`);
 process.exitCode = fail === 0 ? 0 : 1;

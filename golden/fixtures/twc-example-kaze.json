@@ -1,0 +1,29 @@
+{
+ "page": 1,
+ "total": 1,
+ "rows": [
+  {
+   "example": "子どものかぜを診察するときには、マイコプラズマ感染を常に忘れてはならないでしょう。",
+   "subcorpus": "",
+   "source": "(気管支炎・肺炎)",
+   "fileid": "001-020.011.49131",
+   "sentenceid": "S53",
+   "length": 48,
+   "bold_start": 0,
+   "bold_end": 6,
+   "url": "http://www.miyake-naika.or.jp/03_katei/syoni_kikansien_haien.html\r"
+  },
+  {
+   "example": "子供のかぜが増える冬場など、予約以前にまずは病状を医師と電話で話し合うことになり、その時点で診察は必要ないと拒否されることもある。",
+   "subcorpus": "",
+   "source": "(ホームドクターでも、専門医でもイタリアっ子は待つのがお得意？ ＜ 世界の医療 | 健康かけいぼ)",
+   "fileid": "001-020.013.22076",
+   "sentenceid": "S45",
+   "length": 72,
+   "bold_start": 0,
+   "bold_end": 5,
+   "url": "http://www.sawai.co.jp/kenko-kakeibo/world/vol13.html\r"
+  }
+ ],
+ "records": 2
+}

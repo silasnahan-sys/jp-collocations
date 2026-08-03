@@ -1,0 +1,41 @@
+{
+ "page": 1,
+ "total": 1,
+ "rows": [
+  {
+   "id": 918,
+   "headword_id": "AN.00040",
+   "headword": "風",
+   "yomi_display": "フウ",
+   "yomi1": "フウ",
+   "yomi2": "",
+   "yomi3": "",
+   "romaji_display": "fuu",
+   "romaji1": "fuu",
+   "romaji2": "",
+   "romaji3": "",
+   "sortkey": "フウ-フウ",
+   "freq": 80779,
+   "basicword": false,
+   "checked": false
+  },
+  {
+   "id": 38333,
+   "headword_id": "N.25644",
+   "headword": "風",
+   "yomi_display": "カゼ",
+   "yomi1": "カゼ",
+   "yomi2": "",
+   "yomi3": "",
+   "romaji_display": "kaze",
+   "romaji1": "kaze",
+   "romaji2": "",
+   "romaji3": "",
+   "sortkey": "カセ-カゼ",
+   "freq": 322,
+   "basicword": false,
+   "checked": false
+  }
+ ],
+ "records": 2
+}

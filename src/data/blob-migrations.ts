@@ -20,6 +20,7 @@ export interface SecretValues {
   ytCookie?: string;
   ocrApiKey?: string;
   plexToken?: string;
+  jimakuApiKey?: string;
 }
 
 /** Device-local storage keys, one per secret. */
@@ -29,6 +30,7 @@ export const SECRET_LS_KEYS: Record<keyof SecretValues, string> = {
   ytCookie: 'jpc-secret-yt-cookie',
   ocrApiKey: 'jpc-secret-ocr-api-key',
   plexToken: 'jpc-secret-plex-token',
+  jimakuApiKey: 'jpc-secret-jimaku-api-key',
 };
 
 /** Strip the persisted derived indexes. Returns true if the blob changed. */
@@ -62,6 +64,7 @@ export function extractSecrets(blob: Record<string, unknown>): { changed: boolea
   take(blob.ytHistory, 'cookie', 'ytCookie');
   take(blob.notes, 'ocrApiKey', 'ocrApiKey');
   take(blob.plex, 'token', 'plexToken');
+  take(blob.jimaku, 'apiKey', 'jimakuApiKey');
   return { changed, secrets };
 }
 
@@ -80,6 +83,7 @@ export function scrubSettingsForPersist<T extends Record<string, unknown>>(
     ytHistory: s.ytHistory ? { ...s.ytHistory } : s.ytHistory,
     notes: s.notes ? { ...s.notes } : s.notes,
     plex: s.plex ? { ...s.plex } : s.plex,
+    jimaku: s.jimaku ? { ...s.jimaku } : s.jimaku,
   };
   const secrets: SecretValues = {
     xAuthToken: s.x?.authToken || undefined,
@@ -87,10 +91,12 @@ export function scrubSettingsForPersist<T extends Record<string, unknown>>(
     ytCookie: s.ytHistory?.cookie || undefined,
     ocrApiKey: s.notes?.ocrApiKey || undefined,
     plexToken: s.plex?.token || undefined,
+    jimakuApiKey: s.jimaku?.apiKey || undefined,
   };
   if (scrubbed.x) { scrubbed.x.authToken = ''; scrubbed.x.csrfToken = ''; }
   if (scrubbed.ytHistory) scrubbed.ytHistory.cookie = '';
   if (scrubbed.notes) scrubbed.notes.ocrApiKey = '';
   if (scrubbed.plex) scrubbed.plex.token = '';
+  if (scrubbed.jimaku) scrubbed.jimaku.apiKey = '';
   return { scrubbed: scrubbed as T, secrets };
 }

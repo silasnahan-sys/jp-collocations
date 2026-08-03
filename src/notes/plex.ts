@@ -36,6 +36,19 @@ export interface PlexSession {
   durationSec?: number;
   /** library id of the episode — how a note finds this media again later. */
   ratingKey?: string;
+  /** `index` — episode number. Needed to ask an external subtitle source for
+   *  the right episode, so it is read here rather than re-derived from a title. */
+  episodeIndex?: number;
+  /** `parentIndex` — season number. */
+  seasonIndex?: number;
+  /**
+   * §25.4c — who is playing it. `machineIdentifier` is the address the server
+   * needs to relay a pause/seek back to that client, so carrying it here is what
+   * turns the sync chip into an actual transport.
+   */
+  playerId?: string;
+  playerName?: string;
+  playerProduct?: string;
   /** every stream on the chosen Part. Subtitles are why this is here. */
   streams: PlexStream[];
 }
@@ -89,6 +102,47 @@ export function plexPartUrl(baseUrl: string, partKey: string, token: string): st
 }
 
 /**
+ * True for an address only reachable from inside one particular LAN.
+ * RFC1918 / link-local / loopback / mDNS / bare hostname — the shapes a Plex
+ * server's local address actually takes.
+ */
+export function isLanAddress(baseUrl: string): boolean {
+  const host = normalizePlexBaseUrl(baseUrl)
+    .replace(/^[a-z]+:\/\//i, '').split('/')[0].split('@').pop() ?? '';
+  const name = host.replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase();
+  if (!name) return false;
+  if (name === 'localhost' || name.endsWith('.local') || name.endsWith('.lan')) return true;
+  const m = /^(\d+)\.(\d+)\.\d+\.\d+$/.exec(name);
+  if (m) {
+    const a = Number(m[1]), b = Number(m[2]);
+    return a === 10 || a === 127 || (a === 192 && b === 168)
+      || (a === 172 && b >= 16 && b <= 31) || (a === 169 && b === 254);
+  }
+  // A bare hostname with no dots resolves only on the local network.
+  return !name.includes('.');
+}
+
+/**
+ * Explain a TRANSPORT failure — the request never reached a Plex server at all.
+ *
+ * This exists because the old message (`接続できません: <raw>`) sent the user
+ * looking at their X-Plex-Token, which cannot possibly be the cause: a wrong or
+ * expired token is answered by a *reachable* server with HTTP 401, which is a
+ * different branch entirely (`parsePlexSessions`). Saying so is not a guess —
+ * it is what the two code paths mean — and for a LAN address the real cause is
+ * almost always that this device is on a different network right now.
+ */
+export function explainPlexTransportError(baseUrl: string, raw: string): string {
+  const head = `Plex サーバーに到達できません（${normalizePlexBaseUrl(baseUrl) || 'URL未設定'}）。`;
+  const notToken = 'トークンの問題ではありません — トークンが古い場合、サーバーは応答した上で HTTP 401 を返します。';
+  const why = isLanAddress(baseUrl)
+    ? 'このアドレスは宅内LAN用なので、同じネットワークに接続している時だけ届きます。'
+      + '外出先・別のWi-Fiからは繋がりません（VPN か Plex のリモートアクセスが必要です）。'
+    : 'サーバーが起動しているか、URL とポートが正しいかを確認してください。';
+  return `${head}${why}\n${notToken}\n(${raw})`;
+}
+
+/**
  * Parse a /status/sessions response body. PURE — takes the HTTP status and raw
  * text so the transport stays in main.ts and this stays golden-testable. Auth
  * failures and non-200s surface a verbatim, actionable error; an empty server
@@ -126,6 +180,12 @@ export function parsePlexSessions(status: number, body: string): PlexSessionsRes
       ...(durationSec ? { durationSec } : {}),
       ...(str(m.ratingKey) || typeof m.ratingKey === 'number'
         ? { ratingKey: String(m.ratingKey) } : {}),
+      ...(num(m.index) != null ? { episodeIndex: num(m.index) } : {}),
+      ...(num(m.parentIndex) != null ? { seasonIndex: num(m.parentIndex) } : {}),
+      // §25.4c — the client identity, so a command can be relayed back to it.
+      ...(str(player?.machineIdentifier) ? { playerId: str(player?.machineIdentifier) } : {}),
+      ...(str(player?.title) ? { playerName: str(player?.title) } : {}),
+      ...(str(player?.product) ? { playerProduct: str(player?.product) } : {}),
       streams: parseStreams(part?.Stream),
     });
   }
@@ -165,6 +225,50 @@ export function parseStreams(raw: unknown): PlexStream[] {
 export function plexMetadataUrl(baseUrl: string, ratingKey: string, token: string): string {
   return `${normalizePlexBaseUrl(baseUrl)}/library/metadata/${encodeURIComponent(ratingKey)}`
     + `?X-Plex-Token=${encodeURIComponent(token.trim())}`;
+}
+
+/**
+ * Everything `/library/metadata/{ratingKey}` knows about one episode.
+ *
+ * The metadata call used to be made only to recover subtitle streams, and it
+ * threw the rest of the response away. That silently cost the library-browse
+ * path two things: the `partKey` (so a transcript made by browsing could never
+ * cut a clip — the 🎬 door was closed for every episode not currently playing)
+ * and the episode NUMBER, which is what an external subtitle source has to be
+ * asked for. Both were already in the bytes; nothing read them.
+ */
+export interface PlexMediaMeta {
+  ratingKey?: string;
+  title?: string;
+  show?: string;
+  /** `index` — the episode number within its season. */
+  episodeIndex?: number;
+  /** `parentIndex` — the season number. */
+  seasonIndex?: number;
+  partKey?: string;
+  durationSec?: number;
+  streams: PlexStream[];
+}
+
+export function parsePlexMediaMeta(status: number, body: string): PlexMediaMeta | null {
+  if (status !== 200) return null;
+  let json: { MediaContainer?: { Metadata?: unknown } };
+  try { json = JSON.parse(body); } catch { return null; }
+  const m = asArray(json?.MediaContainer?.Metadata)[0] as Record<string, unknown> | undefined;
+  if (!m) return null;
+  const part = (asArray(asArray(m.Media)[0] && (asArray(m.Media)[0] as Record<string, unknown>).Part)[0]) as
+    Record<string, unknown> | undefined;
+  const durationSec = msToSec(m.duration);
+  return {
+    ...(str(m.ratingKey) || typeof m.ratingKey === 'number' ? { ratingKey: String(m.ratingKey) } : {}),
+    ...(str(m.title) ? { title: str(m.title) } : {}),
+    ...(str(m.grandparentTitle) ? { show: str(m.grandparentTitle) } : {}),
+    ...(num(m.index) != null ? { episodeIndex: num(m.index) } : {}),
+    ...(num(m.parentIndex) != null ? { seasonIndex: num(m.parentIndex) } : {}),
+    ...(part && str(part.key) ? { partKey: str(part.key) } : {}),
+    ...(durationSec ? { durationSec } : {}),
+    streams: parseStreams(part?.Stream),
+  };
 }
 
 /** The body of one stream — the subtitle file itself. */
@@ -275,6 +379,9 @@ export interface PlexItem {
   type?: string;
   /** episode or season number. */
   index?: number;
+  /** season number of an episode — the reliable one (`parentTitle` is a
+   *  display string like 「シーズン 1」 or 「Miniseries」). */
+  parentIndex?: number;
   /** season title for an episode; show title for a season. */
   parentTitle?: string;
   /** show title for an episode. */
@@ -282,6 +389,13 @@ export interface PlexItem {
   year?: number;
   /** episodes under a show/season. */
   leafCount?: number;
+  /**
+   * §25.4 — how far through it you are, so the picker can say 「見た」 and
+   * 「途中」 instead of listing 24 identical rows.
+   */
+  viewCount?: number;
+  viewOffsetSec?: number;
+  durationSec?: number;
 }
 
 export type PlexItemsResult =
@@ -352,18 +466,55 @@ export function parsePlexItems(status: number, body: string): PlexItemsResult {
       ...(str(o.key) ? { key: str(o.key) } : {}),
       ...(str(o.type) ? { type: str(o.type) } : {}),
       ...(num(o.index) != null ? { index: num(o.index) } : {}),
+      ...(num(o.parentIndex) != null ? { parentIndex: num(o.parentIndex) } : {}),
       ...(str(o.parentTitle) ? { parentTitle: str(o.parentTitle) } : {}),
       ...(str(o.grandparentTitle) ? { grandparentTitle: str(o.grandparentTitle) } : {}),
       ...(num(o.year) != null ? { year: num(o.year) } : {}),
       ...(num(o.leafCount) != null ? { leafCount: num(o.leafCount) } : {}),
+      // §25.4 — watch progress, so the picker can distinguish 24 identical rows.
+      ...(num(o.viewCount) != null ? { viewCount: num(o.viewCount) } : {}),
+      ...(msToSec(o.viewOffset) ? { viewOffsetSec: msToSec(o.viewOffset) } : {}),
+      ...(msToSec(o.duration) ? { durationSec: msToSec(o.duration) } : {}),
     });
   }
   return { ok: true, items };
 }
 
-/** `S01E04 — タイトル` when the numbers are there, else just the title. */
+/**
+ * §25.4 — season/episode order, because the server's own order is not it.
+ *
+ * `/allLeaves` comes back in whatever order the library scan produced, which for
+ * a multi-season show interleaves seasons and puts episode 10 before episode 2.
+ * Sorting by (season, episode) is what makes the list usable as a list of
+ * episodes rather than a pile of files.
+ */
+export function sortPlexItems(items: PlexItem[]): PlexItem[] {
+  const key = (i: PlexItem): [number, number, number] => [
+    i.parentIndex ?? Number.MAX_SAFE_INTEGER,
+    i.index ?? Number.MAX_SAFE_INTEGER,
+    i.year ?? 0,
+  ];
+  return [...items].sort((a, b) => {
+    const ka = key(a), kb = key(b);
+    return ka[0] - kb[0] || ka[1] - kb[1] || kb[2] - ka[2] || a.title.localeCompare(b.title, 'ja');
+  });
+}
+
+/** 「見た」 / 「途中」 / null — the third is the interesting one. */
+export function watchState(item: PlexItem): 'seen' | 'partial' | null {
+  const off = item.viewOffsetSec ?? 0;
+  const dur = item.durationSec ?? 0;
+  if (off > 0 && (!dur || off < dur * 0.95)) return 'partial';
+  if (item.viewCount) return 'seen';
+  return null;
+}
+
+/** `S01E04 — タイトル` when the numbers are there, else just the title.
+ *  `parentIndex` is preferred over digits scraped out of the season's display
+ *  title, which is 「シーズン 1」 on a Japanese server and 「Miniseries」 on
+ *  some shows — neither of which yields the right number. */
 export function episodeLabel(item: PlexItem): string {
-  const season = item.parentTitle?.match(/(\d+)/)?.[1];
+  const season = item.parentIndex != null ? String(item.parentIndex) : item.parentTitle?.match(/(\d+)/)?.[1];
   const ep = item.index;
   const code = season && ep != null
     ? `S${String(season).padStart(2, '0')}E${String(ep).padStart(2, '0')}`
@@ -400,6 +551,51 @@ export function pickPlexSession(
     if (byShow) return byShow.s;
   }
   return null;
+}
+
+/**
+ * §25.4c — a playback command relayed to the client that owns the session.
+ *
+ * Plex Companion works by asking the SERVER to forward the command to a client
+ * named by `X-Plex-Target-Client-Identifier`; the client has to have remote
+ * control enabled and not every product does. `commandID` has to increment per
+ * command or clients quietly ignore repeats, hence the counter.
+ *
+ * Callers must treat failure as normal: the local clock is the surface that
+ * always works, and this only ever adds convenience on top of it.
+ */
+let plexCommandSeq = 0;
+
+export type PlexCommand = 'play' | 'pause' | 'seekTo' | 'stepForward' | 'stepBack';
+
+export function plexControlUrl(
+  baseUrl: string,
+  command: PlexCommand,
+  token: string,
+  targetId: string,
+  params: Record<string, string | number | undefined> = {},
+): string {
+  const q = new URLSearchParams({
+    type: 'video',
+    commandID: String(++plexCommandSeq),
+    'X-Plex-Target-Client-Identifier': targetId,
+    'X-Plex-Token': token.trim(),
+  });
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null) q.set(k, String(v));
+  }
+  return `${normalizePlexBaseUrl(baseUrl)}/player/playback/${command}?${q.toString()}`;
+}
+
+/** Headers a Companion command needs to be accepted as coming from a client. */
+export function plexControlHeaders(): Record<string, string> {
+  return {
+    Accept: 'application/json',
+    'X-Plex-Client-Identifier': 'obsidian-jp-collocations',
+    'X-Plex-Device-Name': 'Obsidian',
+    'X-Plex-Product': 'JP Collocations',
+    'X-Plex-Version': '1.0',
+  };
 }
 
 /** ffmpeg args to cut ONE audio clip from a (network) source URL at [start,end].

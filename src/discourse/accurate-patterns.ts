@@ -24,10 +24,13 @@ import type { EngineComposite } from './engine/structure.mjs';
 import { OP_BY_ID } from './engine/lexicon.mjs';
 import {
   PATTERN_BY_ID,
+  PATTERNS_BY_SURFACE,
   ALL_PATTERNS,
   CATEGORY_LABELS,
   type DiscoursePatternDef,
   type PatternCategory,
+  type PatternPosition,
+  type PatternRegister,
   type PragmaticFunction,
 } from './discourse-patterns';
 
@@ -169,33 +172,129 @@ function fnOf(engineCategory: string): PragmaticFunction {
   return FULL_FN[engineCategory] ?? PREFIX_FN[engineCategory.split('.')[0]] ?? 'stance-marking';
 }
 
-// ── Register engine operators as pattern defs (module load) ─────────────
+// ── The annotation join (AUDIT-PARTS §1) ───────────────────────────────
+//
+// The engine LOCATES; `discourse-patterns.ts` ANNOTATES. Phase 2 replaced the
+// locator and kept the annotation SHAPE while filling it with constants —
+// `register:'any'`, `position:'any'`, `frequencyTier:2`, `coOccurrence:[]` on
+// every synthesized def. Since `detectPatternsAccurate` only ever emits defs
+// from this map, that made all 515 hand-authored definitions (212 casual /
+// 196 neutral / 24 formal) unreachable through the one function that produces
+// matches — and every downstream consumer read a constant without erroring:
+//
+//   estimateRegister({any: N}) → weights.any = 0 → score 0 → ALWAYS '普通体'
+//
+// so a slangy tweet, an NHK bulletin and a drunk podcast all reported the same
+// register, on every SRS card body, every `…/register/…` card tag, every
+// context card and every variation tree.
+//
+// The fix is a join, not a deletion: the 515 defs are the asset. An operator
+// inherits the four annotations from the legacy def that shares its trigger
+// surface, and the constants survive only as the fallback for engine-only
+// operators that no hand-authored def covers.
+
+/** The most-frequent def among candidates — same rule `pickBestPattern` uses
+ *  (tier 1 = very common). Several defs can share one surface; the common
+ *  reading is the right default when the engine has already decided the op. */
+function mostFrequent(defs: DiscoursePatternDef[]): DiscoursePatternDef | null {
+  if (!defs.length) return null;
+  return defs.reduce((a, b) => (a.frequencyTier <= b.frequencyTier ? a : b));
+}
+
+/**
+ * The legacy def backing an operator, found through ANY of its trigger
+ * surfaces — not just `triggers[0]`. An operator's triggers are written forms
+ * of one construction, and the hand-authored catalogue may only carry one.
+ *
+ * This is the OPERATOR-level default only. Register in particular does not
+ * belong to an operator, it belongs to the surface that was actually said:
+ * CONCESSIVE-CONTRAST fires on both しかし (formal) and でも (casual), and
+ * taking the first trigger reported every でも as formal. `annotate()` below
+ * refines per hit; this is what a hit falls back to when its own surface is
+ * not in the catalogue.
+ */
+function legacyDefFor(op: { triggers?: Array<{ surface?: string }> }): DiscoursePatternDef | null {
+  for (const t of op.triggers ?? []) {
+    const s = t?.surface;
+    if (!s) continue;
+    const hit = mostFrequent(PATTERNS_BY_SURFACE.get(s) ?? []);
+    if (hit) return hit;
+  }
+  return null;
+}
 
 const ENGINE_DEF_BY_OP = new Map<string, DiscoursePatternDef>();
+
+/** How many engine operators found a hand-authored def to inherit from.
+ *  Exposed so the health check can report the join rather than assume it. */
+let annotated = 0;
 
 for (const op of OP_BY_ID.values()) {
   const cat = letterOf(op.category);
   const surface = op.triggers?.[0]?.surface ?? op.id;
+  const legacy = legacyDefFor(op);
+  if (legacy) annotated++;
   const def: DiscoursePatternDef = {
     id: op.id,
     surface,
     tokens: [surface],
+    // Category, gloss and pragmatic function stay ENGINE-derived: the engine's
+    // own taxonomy is what decided this hit, and overriding it with the legacy
+    // def's would silently re-label matches the engine made on its own terms.
+    // Only the four annotations the engine has no opinion about are inherited.
     category: cat,
-    position: 'any',
-    register: 'any',
     pragmaticFunction: fnOf(op.category),
-    coOccurrence: [],
     categoryLabel: CATEGORY_LABELS[cat],
     subcategory: op.category,
     gloss: op.gloss_ja ?? op.id,
     glossEn: op.gloss_en ?? op.cognitive_effect ?? op.id,
-    frequencyTier: 2,
+    // ── inherited, with the old constants as the honest fallback ──
+    position: (legacy?.position ?? 'any') as PatternPosition,
+    register: (legacy?.register ?? 'any') as PatternRegister,
+    coOccurrence: legacy?.coOccurrence ?? [],
+    frequencyTier: legacy?.frequencyTier ?? 2,
   };
   ENGINE_DEF_BY_OP.set(op.id, def);
   if (!PATTERN_BY_ID.has(op.id)) {
     PATTERN_BY_ID.set(op.id, def);
     ALL_PATTERNS.push(def);
   }
+}
+
+/** Operators that inherited a hand-authored annotation, out of the total.
+ *  A number, not a boolean: the join is partial by nature (the engine has
+ *  operators the catalogue never named) and pretending otherwise is the
+ *  failure this fix exists to undo. */
+export const ENGINE_ANNOTATED = { annotated, total: ENGINE_DEF_BY_OP.size };
+
+/**
+ * Per-HIT annotation. The operator-level def is the default; when the surface
+ * this hit actually matched has its own hand-authored def, that one's
+ * register / position / tier / co-occurrence win.
+ *
+ * This is the difference between "しかし and でも are the same operator" (true,
+ * and the engine's job) and "しかし and でも are the same register" (false, and
+ * the catalogue's job). Memoized per (op, surface) so the hot path allocates
+ * one def per distinct pair rather than one per hit.
+ */
+const annotatedDefs = new Map<string, DiscoursePatternDef>();
+
+function annotate(base: DiscoursePatternDef, surface: string): DiscoursePatternDef {
+  const memoKey = `${base.id}|${surface}`;
+  const memo = annotatedDefs.get(memoKey);
+  if (memo) return memo;
+  const legacy = mostFrequent(PATTERNS_BY_SURFACE.get(surface) ?? []);
+  const def = legacy
+    ? {
+        ...base,
+        position: legacy.position,
+        register: legacy.register,
+        coOccurrence: legacy.coOccurrence,
+        frequencyTier: legacy.frequencyTier,
+      }
+    : base;
+  annotatedDefs.set(memoKey, def);
+  return def;
 }
 
 // ── Raw-text sentence splitting (exact offsets, no normalization) ────────
@@ -276,7 +375,7 @@ export function detectPatternsAccurate(text: string): AdapterMatch[] {
       const surface = h.surface ?? '';
       if (!def || !surface) continue;
       const offset = typeof h.offset === 'number' && h.offset >= 0 ? seg.start + h.offset : seg.start;
-      out.push({ pattern: def, offset, matchedText: surface });
+      out.push({ pattern: annotate(def, surface), offset, matchedText: surface });
     }
   }
   out.sort((a, b) => a.offset - b.offset || (b.matchedText.length - a.matchedText.length));

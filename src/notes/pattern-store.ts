@@ -22,6 +22,7 @@
  */
 
 import { normalizeJapanese } from '../utils/japanese.ts';
+import type { GohoProfile } from '../scraper/goho.ts';
 import { splitPatternParts } from './pipeline.ts';
 import type { NoteClass } from './note-types.ts';
 
@@ -109,7 +110,11 @@ export interface PatternEntry {
      * (invariant §2.4). Collocates + real corpus examples; examples are
      * capturable as `corpus`-stratum attestations.
      */
-    goho?: { fetchedAt: number; source: string; collocates: string[]; examples: string[] };
+    // ONE type, defined next to the normalizer that builds it. This used to be
+    // an inline structural copy, so widening the profile with the grammatical
+    // half (frames / facets / totals — §22.7) type-errored at every consumer
+    // while the data was already there.
+    goho?: GohoProfile;
     /**
      * 生成 scaffold (§20.3 Tier C): LLM-drafted example sentences for a
      * pattern with ZERO confirmed attestations, so it stays drillable until
@@ -210,8 +215,53 @@ export function deriveClassified(
   return { ...d, suggestedClass: cls, payload: { ...d.payload, ...payload } };
 }
 
-/** Attestation identity — one sighting per (file, second). */
-export const attestationKey = (a: Attestation): string => `${a.file ?? ''}|${a.tStartSec ?? ''}|${a.source}`;
+/**
+ * Attestation identity.
+ *
+ * Was `file|tStartSec|source` — "one sighting per (file, second)", which is
+ * right for captioned video and DEGENERATE for everything else. Prose and
+ * tweets have no second: `medium-lines.ts` produces lines with no `tStartSec`,
+ * so every sighting in one Kindle note or one long-form post collapsed to the
+ * same key. `upsertEntry` has no branch for "same key, both suggested", so the
+ * duplicates were silently discarded — a book with 40 sightings of 「気になる」
+ * stored ONE, permanently, and re-found and re-dropped the other 39 on every
+ * later sweep. That capped the whole medium-lines road at 1/40th of its
+ * measured recall (AUDIT-PARTS §3).
+ *
+ * The quote is what distinguishes two sightings inside one untimed source, so
+ * the quote is in the key — hashed, because these keys are persisted in
+ * `rejectedAtts` and a raw quote would bloat the blob for no gain.
+ *
+ * Timestamped media are unaffected in practice: two sightings at the same
+ * second in the same file with the SAME quote still collapse, which is the
+ * dedupe the old key was actually there for.
+ */
+export const attestationKey = (a: Attestation): string =>
+  `${a.file ?? ''}|${a.tStartSec ?? ''}|${a.source}|${fnv1a(a.quote ?? '')}`;
+
+/**
+ * The pre-2026-08-01 key. Kept ONLY to read `rejectedAtts` written before the
+ * quote entered the key: a ✕ is the user's own negative-example gold, and
+ * silently re-proposing everything they had already rejected would be a worse
+ * bug than the one being fixed. Never written.
+ */
+export const legacyAttestationKey = (a: Attestation): string =>
+  `${a.file ?? ''}|${a.tStartSec ?? ''}|${a.source}`;
+
+/** True when this sighting has been ✕'d, in either key generation. */
+export function isRejected(e: Pick<PatternEntry, 'rejectedAtts'>, a: Attestation): boolean {
+  const list = e.rejectedAtts;
+  if (!list?.length) return false;
+  return list.includes(attestationKey(a)) || list.includes(legacyAttestationKey(a));
+}
+
+/** FNV-1a, base36 — the same recipe used for ids across the plugin. */
+function fnv1a(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
+
 const attKey = attestationKey;
 
 /** PURE upsert: returns the next entry state given a sighting. */
@@ -236,7 +286,7 @@ export function upsertEntry(
   };
   e.note = note;
   e.updatedAt = now;
-  if (att && !(e.rejectedAtts ?? []).includes(attKey(att))) {
+  if (att && !isRejected(e, att)) {
     const i = e.attestations.findIndex((x) => attKey(x) === attKey(att));
     if (i < 0) {
       e.attestations.push(att);

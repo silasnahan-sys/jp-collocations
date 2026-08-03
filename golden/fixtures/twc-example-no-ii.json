@@ -1,0 +1,73 @@
+{
+ "page": 1,
+ "total": 9,
+ "rows": [
+  {
+   "example": "いいのいいの！",
+   "subcorpus": "",
+   "source": "(オートレースイラストコラム：AUTORACE（オートレース）ビギナーズ)",
+   "fileid": "001-020.008.04819",
+   "sentenceid": "S650",
+   "length": 14,
+   "bold_start": 2,
+   "bold_end": 5,
+   "url": "http://www.autorace-sp.jp/column/index.html\r"
+  },
+  {
+   "example": "いいのいいの。",
+   "subcorpus": "",
+   "source": "(「殺すな、死ぬな！」吉岡忍 INTERVIEW)",
+   "fileid": "001-020.011.31610",
+   "sentenceid": "S122",
+   "length": 14,
+   "bold_start": 2,
+   "bold_end": 5,
+   "url": "http://www.loft-prj.co.jp/lovepeace/0306/yoshioka.html\r"
+  },
+  {
+   "example": "「いいのいいの。",
+   "subcorpus": "",
+   "source": "(家族計画SS『司のいない高屋敷家／高屋敷家にいない司』)",
+   "fileid": "061-080.008.47578",
+   "sentenceid": "S215",
+   "length": 15,
+   "bold_start": 3,
+   "bold_end": 6,
+   "url": "http://www3.ocn.ne.jp/~umadura/SSk04.html\r"
+  },
+  {
+   "example": "こういうのいいなあ。",
+   "subcorpus": "",
+   "source": "(2011年GW無茶計画　実行後レポート - ろーかるねっと)",
+   "fileid": "041-060.004.19339",
+   "sentenceid": "S134",
+   "length": 17,
+   "bold_start": 4,
+   "bold_end": 7,
+   "url": "http://rocalnet.org/memo/2011gw2.html\r"
+  },
+  {
+   "example": "変化を求めるのいい。",
+   "subcorpus": "",
+   "source": "(成長経済は、経済の状態なのか)",
+   "fileid": "081-100.006.18203",
+   "sentenceid": "S116",
+   "length": 17,
+   "bold_start": 6,
+   "bold_end": 9,
+   "url": "http://www.fujitsubame.com/industryb-3-3.html\r"
+  },
+  {
+   "example": "こういうのいいよな。",
+   "subcorpus": "",
+   "source": "(分け入つても分け入つても本の山  底辺労働日記)",
+   "fileid": "061-080.009.06093",
+   "sentenceid": "S963",
+   "length": 17,
+   "bold_start": 4,
+   "bold_end": 7,
+   "url": "http://yondance.blog25.fc2.com/blog-category-39.html\r"
+  }
+ ],
+ "records": 161
+}

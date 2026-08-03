@@ -33,7 +33,7 @@ await esbuild.build({
   outfile,
   logLevel: 'silent',
 });
-const { detectPatterns, detectPatternsLegacy } = require(outfile);
+const { detectPatterns, detectPatternsLegacy, analyzeUtterance } = require(outfile);
 
 let failures = 0;
 let checks = 0;
@@ -131,6 +131,74 @@ check(engineTotal < legacyTotal, `engine fires less than the over-firing legacy 
 check(engineMs < 30000, `sweep under 30s (${engineMs.toFixed(0)}ms)`);
 const perLine = engineMs / Math.max(1, lines.length);
 check(perLine < 100, `per-line cost UI-safe (${perLine.toFixed(1)}ms/line, cold cache)`);
+
+// ── AUDIT-PARTS §1: the annotations must not be constants ────────────────
+//
+// Phase 2 swapped the LOCATOR and kept the ANNOTATION shape filled with
+// constants — register:'any', position:'any', frequencyTier:2,
+// coOccurrence:[] on every synthesized def — and since detectPatterns emits
+// only those defs, all 515 hand-authored definitions became unreachable. It
+// errored nowhere. estimateRegister({any:N}) scores 0 and returns 普通体, so
+// EVERY text in the plugin reported the same register: every SRS card body,
+// every …/register/… card tag, every context card, every variation tree.
+//
+// These checks fail the moment the join is broken again, which is the only
+// way this defect is ever noticed from the outside.
+// ── AUDIT-PARTS §2: って is the te-form 25% of the time ──────────────────
+//
+// TOPIC-PRESENT is 21.6% of every engine hit on the two fixtures, and
+// `scope:'after-noun'` cannot separate the topic particle って from the て-form
+// of a godan う/つ/る verb, because both are っ+て and the scope predicate
+// accepts any Japanese character. Measured: 286 of 1,134 hits were 思って /
+// 持って / 取って / 使って. The `not_after` guard took that to 29 of 959 (3.0%),
+// and the residual is the ambiguous stems deliberately left out.
+console.log('\n══ って: topic particle vs verb te-form (AUDIT-PARTS §2) ══');
+{
+  const fires = (s) => detectPatterns(s).some((m) => m.pattern.id === 'TOPIC-PRESENT');
+  // Real topic marks — including the noun-ending stems the guard must NOT eat.
+  for (const s of ['これって難しいよね。', 'それってどうなの。', '日本ってすごい。',
+                   '大会ってどうだった。', '期待ってあるじゃん。', '銀座って行った。']) {
+    check(fires(s), `topic って still fires: 「${s}」`);
+  }
+  // Verb te-forms — the measured false-positive class.
+  for (const s of ['ずっと思ってるんです。', 'スキルを持って会社を。', 'コミュニケーション取っているの。',
+                   'サービスを使ってみんな。', '調子に乗ってるの。', '条件を知っているっぽい。']) {
+    check(!fires(s), `te-form って does NOT fire: 「${s}」`);
+  }
+}
+
+console.log('\n══ annotations are inherited, not constant (AUDIT-PARTS §1) ══');
+{
+  const CASUAL = 'でもさ、それってやっぱりおかしいんじゃないですか。';
+  const ms = detectPatterns(CASUAL);
+  check(ms.length > 0, 'the sample matches at all');
+
+  const regs = new Set(ms.map((m) => m.pattern.register));
+  check(!(regs.size === 1 && regs.has('any')),
+    `register is not the constant 'any' (${[...regs].join(',')})`);
+  const poss = new Set(ms.map((m) => m.pattern.position));
+  check(!(poss.size === 1 && poss.has('any')),
+    `position is not the constant 'any' (${[...poss].join(',')})`);
+  const tiers = new Set(ms.map((m) => m.pattern.frequencyTier));
+  check(tiers.size > 1 || !tiers.has(2),
+    `frequencyTier is not the constant 2 (${[...tiers].join(',')})`);
+
+  // Register belongs to the SURFACE, not the operator: CONCESSIVE-CONTRAST
+  // fires on both しかし (formal) and でも (casual), and annotating per
+  // operator reported every でも as formal.
+  const demo = detectPatterns('でも、それは違う。').find((m) => m.matchedText === 'でも');
+  const shikashi = detectPatterns('しかし、それは違う。').find((m) => m.matchedText === 'しかし');
+  if (demo && shikashi && demo.pattern.id === shikashi.pattern.id) {
+    check(demo.pattern.register !== shikashi.pattern.register,
+      `one operator, two surfaces, two registers (でも=${demo.pattern.register} しかし=${shikashi.pattern.register})`);
+  }
+
+  // …and the whole point: the estimate has to be able to MOVE.
+  const casual = analyzeUtterance(CASUAL).estimatedRegister;
+  const polite = analyzeUtterance('しかしながら、そのように申し上げております。').estimatedRegister;
+  check(casual !== polite,
+    `estimateRegister distinguishes casual from formal (${casual} vs ${polite})`);
+}
 
 console.log(`\n${failures ? '✗' : '✓'} ${checks - failures}/${checks} checks pass`);
 process.exit(failures ? 1 : 0);

@@ -31,6 +31,10 @@ import { detectPatterns, CATEGORY_COLORS, CATEGORY_LABELS } from '../discourse/d
 import type { PatternCategory } from '../discourse/discourse-patterns';
 import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
 import { classBadge } from './class-grammar';
+import { armDrops, mountSurfaceBar, thumbDock, type ViewChrome } from './view-chrome';
+import { buildXUsage } from '../x/usage';
+import { renderXUsage } from './x-usage-panel';
+import { makeDraggable } from './drag-out';
 
 type SortMode = 'latest' | 'likes' | 'retweets';
 
@@ -61,6 +65,13 @@ export interface XViewDeps {
   patternsIn?: (text: string) => Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }>;
   /** Open a catalog pattern in the lexicon (the door back — §28 S4). */
   openPattern?: (id: string) => void;
+  /** §29.2 — capture one concordance line (not the whole tweet) as a 用例. */
+  onCaptureLine?: (quote: string, url: string, handle: string) => void;
+  /** §29 the drag road + §26.3 the identity bar (see ui/view-chrome.ts). */
+  onDrop?: ViewChrome['onDrop'];
+  dropCan?: ViewChrome['dropCan'];
+  openSurface?: ViewChrome['openSurface'];
+  surfaceBadge?: ViewChrome['surfaceBadge'];
 }
 
 export class XSearchView extends ItemView {
@@ -122,9 +133,18 @@ export class XSearchView extends ItemView {
     const container = this.containerEl.children[1] as HTMLElement;
     container.empty();
     container.addClass('jp-x-view');
+    // §29 — drop a post URL here and it joins the corpus; drop a phrase and it
+    // becomes the query. Paste too: this view's whole job is "here, look at
+    // this", and ⌘V is that sentence on a keyboard.
+    armDrops(container, this.deps, 'x', { paste: true });
+
+    // §26.3 — the query row and the identity bar belong under the thumb on a
+    // phone. Null on every other device, so `dock ?? header` is the old code.
+    const dock = thumbDock(container);
 
     // Header
     const header = container.createDiv('jp-x-header');
+    mountSurfaceBar(dock ?? header, this.deps, 'x');
     const titleRow = header.createDiv('jp-x-title-row');
     titleRow.createEl('h4', { text: '𝕏 検索辞書', cls: 'jp-x-title' });
     const actions = titleRow.createDiv('jp-x-header-actions');
@@ -158,7 +178,7 @@ export class XSearchView extends ItemView {
     importBtn.addEventListener('click', () => this.openCorpusModal());
 
     // Main search row
-    const searchRow = header.createDiv('jp-x-search-row');
+    const searchRow = (dock ?? header).createDiv('jp-x-search-row');
     this.mainInput = searchRow.createEl('input', {
       type: 'search',
       placeholder: '語をスペース区切りで（AND）… 例: 以前の でさえ',
@@ -189,8 +209,10 @@ export class XSearchView extends ItemView {
       void this.runLive(true);
     });
 
-    // Required-term chips
-    this.chipsEl = header.createDiv('jp-x-chips');
+    // Required-term chips — they belong WITH the input that produces them, so
+    // they travel to the dock with it. 並び替え and 詳細検索 stay in the header:
+    // they are set once and then read, not touched while typing.
+    this.chipsEl = (dock ?? header).createDiv('jp-x-chips');
 
     // Sort control
     const sortRow = header.createDiv('jp-x-sortrow');
@@ -374,6 +396,33 @@ export class XSearchView extends ItemView {
       return;
     }
 
+    /**
+     * §29.2 — the corpus panel, above the feed.
+     *
+     * The view is named 検索辞書 and behaved like a search box: a reverse-
+     * chronological list of whole tweets, which is what Twitter already is.
+     * What this local corpus has that Twitter does not is that it is FROZEN
+     * and COUNTABLE — so it can say how often, with what, in what shape, and
+     * by how many different people. The KWIC alignment underneath is the part
+     * a card feed structurally cannot do: stacked on the phrase, the recurring
+     * left and right environment becomes visible at a glance.
+     *
+     * Only for a single-term query. Two terms have no single column to align
+     * on, and faking one would put the concordance's whole claim on a
+     * coin-flip about which term mattered.
+     */
+    const single = this.query.allTerms.length === 1 && !this.query.anyTerms.length
+      ? this.query.allTerms[0].trim() : '';
+    if (single) {
+      const u = buildXUsage(this.deps.corpus.getAll(), single, total);
+      renderXUsage(this.resultsEl, u, {
+        openUrl: (url) => window.open(url, '_blank'),
+        onCapture: this.deps.onCaptureLine
+          ? (quote, url, handle) => this.deps.onCaptureLine!(quote, url, handle)
+          : undefined,
+      });
+    }
+
     const terms = highlightTerms(this.query);
     for (const t of results) this.renderTweetCard(this.resultsEl, t, terms);
   }
@@ -538,8 +587,21 @@ export class XSearchView extends ItemView {
   private renderTweetCard(parent: HTMLElement, t: XTweet, terms: string[]): void {
     const card = parent.createDiv('jp-x-card');
 
-    // Header: author + handle + date
+    // Header: author + handle + date — and the drag handle.
+    //
+    // Deliberately the HEAD and not the card: `draggable` suppresses starting a
+    // text selection inside the element, and selecting a run of a tweet is this
+    // view's primary capture verb (`selectionWithin`). A header grip keeps both.
     const head = card.createDiv('jp-x-card-head');
+    makeDraggable(head, () => ({
+      kind: 'tweet',
+      text: t.text,
+      label: t.text,
+      sub: `@${t.authorHandle}`,
+      html: `<blockquote>${t.text.replace(/&/g, '&amp;').replace(/</g, '&lt;')}` +
+        `<br><small>— <a href="${t.url}">@${t.authorHandle}</a></small></blockquote>`,
+      meta: { tweetId: t.id, url: t.url, handle: t.authorHandle },
+    }));
     const who = head.createDiv('jp-x-card-who');
     who.createSpan({ text: t.authorName || t.authorHandle, cls: 'jp-x-card-name' });
     const handle = who.createSpan({ text: '@' + t.authorHandle, cls: 'jp-x-card-handle' });

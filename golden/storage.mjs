@@ -165,12 +165,27 @@ console.log('══ scrubSettingsForPersist: live object keeps secrets ══');
     x: { authToken: 'AT', csrfToken: 'CT', bearerToken: 'B' },
     ytHistory: { cookie: 'YTC' },
     notes: { ocrApiKey: 'KEY' },
+    plex: { baseUrl: 'http://10.0.0.162:32400', token: 'PLEXTOK' },
+    jimaku: { apiKey: 'JIMAKUKEY', mode: 'fallback' },
   };
   const { scrubbed, secrets } = MIG.scrubSettingsForPersist(live);
   check('persisted copy is scrubbed', scrubbed.x.authToken === '' && scrubbed.x.csrfToken === '' && scrubbed.ytHistory.cookie === '' && scrubbed.notes.ocrApiKey === '');
   check('secrets returned for localStorage', secrets.xAuthToken === 'AT' && secrets.ocrApiKey === 'KEY');
   check('LIVE settings object untouched', live.x.authToken === 'AT' && live.notes.ocrApiKey === 'KEY');
   check('non-secret fields survive scrub', scrubbed.maxResults === 20 && scrubbed.x.bearerToken === 'B');
+  // AUDIT §2: every credential, including the newest one, stays out of the
+  // blob that syncs with the vault.
+  check('the Plex token is scrubbed', scrubbed.plex.token === '' && secrets.plexToken === 'PLEXTOK');
+  check('the jimaku API key is scrubbed too',
+    scrubbed.jimaku.apiKey === '' && secrets.jimakuApiKey === 'JIMAKUKEY', JSON.stringify(scrubbed.jimaku));
+  check('and the non-secret jimaku settings survive', scrubbed.jimaku.mode === 'fallback');
+  check('the live jimaku key is untouched', live.jimaku.apiKey === 'JIMAKUKEY');
+
+  // The one-time migration for a blob written before the key existed.
+  const blob = { jimaku: { apiKey: 'OLD', mode: 'always' }, plex: { token: 'P' } };
+  const ex = MIG.extractSecrets(blob);
+  check('an already-persisted jimaku key is migrated OUT of the blob',
+    ex.changed && ex.secrets.jimakuApiKey === 'OLD' && blob.jimaku.apiKey === '', JSON.stringify(blob));
 }
 
 console.log(fail ? `\n✗ storage: ${fail} failed (${pass} passed)` : `\n✓ storage: all ${pass} pass`);

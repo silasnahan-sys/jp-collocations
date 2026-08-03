@@ -25,6 +25,11 @@
  * PURE — no Obsidian, no store, no I/O. Golden: golden/reach.mjs.
  */
 
+// The ONE frame key space (frames.ts is itself pure). A second normalization
+// here would mean a want and the dictionary's reach-for query could never agree
+// about what shape they were both circling.
+import { toFrame } from '../dictionary/frames.ts';
+
 /** Why an offer was made. Weak by design; none of these is a claim of meaning. */
 export type OfferReason =
   | 'token'      // shares a written token with the want
@@ -94,6 +99,49 @@ export function wantTokens(want: string): string[] {
     .filter((t) => t.length >= 2 && !STOP.has(t));
 }
 
+/**
+ * The want, read as a FRAME — when it is shaped like one.
+ *
+ * A hole is often written with its shape already in it: 「〜のタイミングで」,
+ * 「○○が有効な反論」. `toFrame` is the plugin's single frame key space
+ * (frames.ts), the same one `BigDictStore.frame()` — the reach-for query — and
+ * the 💠/🟠 catalog keys live in, so a want circling a shape and a phrase that
+ * realizes it can meet without a second normalization.
+ *
+ * Returns null for a want with no slot in it: a frame offer is only honest when
+ * there is a frame to have been circling.
+ */
+function frameOfWant(r: Pick<Reach, 'want' | 'gloss'>): string | null {
+  for (const raw of [r.want, r.gloss]) {
+    if (!raw?.trim()) continue;
+    const f = toFrame(raw);
+    if (!f.fixed && f.key) return f.key;
+  }
+  return null;
+}
+
+/**
+ * Two frame keys "touch" when one contains the other.
+ *
+ * Deliberately loose, and deliberately not a similarity score. §27.0.2's rule
+ * is JUXTAPOSE, DON'T TELL: an offer sets two things side by side so the
+ * recognition can happen: it is not a ranked verdict, so a threshold would be
+ * inventing a precision the mechanism does not have.
+ *
+ * The previous test was `item.frameKey.includes(r.gloss)` — the gloss is prose
+ * ("that feeling when…") and a frame key is a slotted Japanese shape, so it was
+ * false in essentially every real case. Together with the fact that no caller
+ * ever supplied `frameKey`, the entire `frame` reason was unreachable.
+ */
+function framesTouch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  // A bare slot matches everything and would make every arrival a frame offer.
+  const bare = (s: string) => s.replace(/[～＿\s]/g, '').length === 0;
+  if (bare(a) || bare(b)) return false;
+  return a.includes(b) || b.includes(a);
+}
+
 export interface Incoming {
   surface: string;
   source?: ReachOffer['source'];
@@ -126,6 +174,7 @@ export function collide(
     if (!isOpen(r)) continue;
     const seen = new Set(r.offers.map((o) => o.surface));
     const tokens = wantTokens(r.want + (r.gloss ? ' ' + r.gloss : ''));
+    const wantFrame = frameOfWant(r);
     let jux = 0;
 
     for (const item of incoming) {
@@ -139,7 +188,7 @@ export function collide(
       if (hit) {
         reason = 'token';
         why = `「${hit}」を含みます（意味ではなく表記の一致）`;
-      } else if (item.frameKey && r.gloss && item.frameKey.includes(r.gloss.trim())) {
+      } else if (item.frameKey && wantFrame && framesTouch(wantFrame, item.frameKey)) {
         reason = 'frame';
         why = `あなたが回っていた型を実現しています: ${item.frameKey}`;
       } else if (jux < juxLimit) {

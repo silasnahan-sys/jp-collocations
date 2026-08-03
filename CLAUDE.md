@@ -44,6 +44,82 @@ Two consequences that catch agents out:
    ratifiable in place. Never claim machine output is correct — see
    DESIGN §12 and the sweep-precision rule.
 
+## The HOLE — read this before touching 願い, frames, or the sweep
+
+This is the concept most often flattened into something conventional, and doing
+so quietly removes the reason the project exists. Source: **DESIGN §27.0.2**
+(and §27.0.1, which it corrects). Both are short. Read them.
+
+A hole is **negative space that is held open on purpose**. It is not a TODO, not
+a coverage gap, not a missing feature, not an empty state to fill with a
+placeholder. §27.0.2's exact words: *"The HOLES are as real as the nodes, and
+more alive."*
+
+The governing case is the donor essay's: the user wanted to say **"at some
+point"**, found no phrase that captured it, carried the want around
+un-externalized, and later *heard* a podcaster say **どっかのタイミングで** and
+recognized it instantly. Three things about that story are load-bearing:
+
+- **The WANT came first**, before any surface existed to look up.
+- **The finding came by hearing**, not by searching.
+- **The event was the COLLISION** — not the entry, not the storage.
+
+### The same shape at three scales
+
+Once you see it, it is everywhere in this codebase, and they are one idea:
+
+| scale | the hole | where |
+|---|---|---|
+| a meaning you cannot yet say | a **Reach** — a felt want in your own words | `notes/reach.ts`, `ReachModal`, `open-reach` |
+| an utterance with its word taken out | a **frame** — `gapFrame(sentence, word)`; **the key IS the absence** | `dictionary/frames.ts`, `BigDictStore.frame()` |
+| a phrase you are rebuilding from memory | a **cloze blank** (穴埋め) | `SelectionModes` `'blank'`, `generatePhraseInContextCard` |
+
+**This is what makes the plugin unconventional, in one sentence: every other
+dictionary is entered by a string you have; all three of these are entered by
+something you don't have.** The unit of study is a hole, not an item.
+`BigDictStore.frame()` is called "THE REACH-FOR QUERY" for that reason — you
+hand it a shape with a gap and it returns what other people put in the gap.
+
+### The four rules, and how each gets broken
+
+1. **The machine never fills a hole; it OFFERS.** Every offer carries a `why`
+   that states its own weak, skeletal reason (*"shares a written token"*), never
+   *"this means that"*. Only the user's felt recognition fills it.
+   → *Broken by:* ranking offers into a verdict, auto-filling a best match,
+   or writing a `why` that asserts equivalence. `golden/reach.mjs` pins this.
+2. **Juxtapose, don't tell.** §27.0.2: *never print "逆に = actually", set the
+   scenes side by side and let the flash happen.* The 似ている表現 box (§26.2) is
+   this move; so is the cross-lingual case.
+   → *Broken by:* adding a translation field, a gloss row, or an "equivalent".
+3. **A filled hole stays visible.** `recognize()` sets `filled` and keeps the
+   reach and every offer. The trace of how you came to it is the record —
+   deleting on fill throws away the only evidence the collision happened.
+   → *Broken by:* treating `filled` as "done" and hiding or removing the row.
+4. **Success is not coverage — it is how often the artifact makes another flash
+   happen.** A hole is not progress toward being closed.
+   → *Broken by:* any metric of the form "N% of reaches answered", and by the
+   volume-is-not-evidence failure generally (§28 gimmick test).
+
+### The corollary that keeps getting missed
+
+**A hole is starved by anything that shrinks the incoming attested stream**,
+because a collision needs arrivals to collide with. So bugs that look like
+plumbing are hole bugs — all three of these were, and all three are fixed
+(2026-08-01):
+
+- `attestationKey` dropped the quote, capping every untimed source at ONE
+  sighting. Fewer arrivals, fewer collisions.
+- `watchReaches` was called from **`sweepCatalog` only** — the full sweep the
+  audit established nobody runs — so an open 願い sat for weeks while captures
+  landed past it daily. Now also called from `autoSweepAfterCapture`, i.e. on
+  arrival, via `incomingFrom()`.
+- The `frame` offer reason was **unreachable**: no caller supplied `frameKey`,
+  and the test was `frameKey.includes(gloss)` (prose against a slotted Japanese
+  shape — false in every real case). `incomingFrom()` now derives a frameKey
+  from 💠/🟠 payloads through `toFrame`, and `collide` compares frame keys in
+  that one key space. `golden/reach.mjs` pins it — the branch was dead because
+  it was the only one never tested.
+
 ## Build & module conventions
 
 - Bundled by `esbuild.config.mjs` from the single entry point `src/main.ts`. `obsidian`, `electron`, and all `@codemirror/*` / `@lezer/*` packages are marked **external** (provided by the Obsidian runtime) — never bundle them.
@@ -52,7 +128,7 @@ Two consequences that catch agents out:
 
 ## Architecture
 
-`main.ts` (`JPCollocationsPlugin`) wires everything in `onload()`: it constructs the data stores, registers two sidebar views, the settings tab, ~20 commands, two ribbon icons, an editor CodeMirror extension, and a reading-mode markdown post-processor.
+`main.ts` (`JPCollocationsPlugin`, ~6,100 lines) wires everything in `onload()`: it constructs the data stores, registers **9 views**, the settings tab, **68 commands**, ONE ribbon icon (it opens the tray; right-click is the whole-surface menu), two `obsidian://` protocol handlers, two status-bar items, an editor CodeMirror extension, and a reading-mode markdown post-processor.
 
 Four data/logic layers, all owned by the plugin instance:
 
@@ -67,13 +143,137 @@ State persistence is split: `CollocationStore` writes its own JSON file; everyth
 
 `main.ts` exposes a large public method surface (`analyzeText`, `findCollocationsInText`, `searchKWIC`, `generatePhraseCard`, etc.) intended to be called by a separate **`jp-sentence-surfer`** plugin via `app.plugins.plugins['jp-collocations'].method(...)`. These are an external contract, not dead code — don't remove them just because nothing in this repo calls them.
 
+### Four invariants fixed 2026-08-01 — each was silent, each has a golden
+
+Full writeup: `AUDIT-PARTS-2026-08-01.md`. Each of these failed with **no error
+and no empty state**, which is why they survived three audits. If you change
+code near one, run its golden.
+
+1. **The engine LOCATES; the catalogue ANNOTATES — keep them joined.**
+   `accurate-patterns.ts` synthesizes a `DiscoursePatternDef` per engine
+   operator. It used to hard-code `register:'any'`, `position:'any'`,
+   `frequencyTier:2`, `coOccurrence:[]`, and since `detectPatternsAccurate`
+   emits only those defs, all 515 hand-authored defs became unreachable and
+   `estimateRegister({any:N})` returned **`普通体` for every text in the plugin** —
+   every SRS card body, every `…/register/…` tag, every context card.
+   Now `annotate()` inherits those four fields from the def matching **the
+   surface that actually fired** (not the operator: CONCESSIVE-CONTRAST is
+   formal as しかし and casual as でも). 57/126 operators inherit; the constants
+   remain only as the fallback. → `golden/patterns.mjs`
+2. **`attestationKey` includes the quote.** It was `file|tStartSec|source`.
+   Prose and tweets have no `tStartSec`, so every sighting in one Kindle note or
+   one long-form post collapsed to one key and `upsertEntry` silently dropped the
+   rest — a book with 40 sightings stored ONE. `legacyAttestationKey` +
+   `isRejected()` keep pre-existing ✕ rejections working; never write the legacy
+   form. → `golden/patternstore.mjs`
+3. **`BigDictStore.lookup` deinflects.** A sharded store is exact-match by
+   construction, so the 35 converted books were reachable only from the citation
+   form. Fallback runs only on a miss, candidates are sorted by (trail length,
+   **term length** — `deinflect` overgenerates and the right answer is the
+   shortest, not the first), capped at `MAX_DEINFLECT_CANDIDATES`, and
+   `lookupKeys` groups by shard so N candidates cost N *unique* shard reads.
+   Hits carry `deinflection` for the 〈…〉 badge. → `golden/big-dict.mjs`
+4. **`frontmatterSources` is plural, or singular-with-a-wikilink.** The key
+   regex was `sources?`, which also matched the medium tag every transcript
+   carries (`source: tv`), so the ⚡ gate accepted every transcript and then
+   failed at `getFirstLinkpathDest('tv')`. The two cases differ by SHAPE: a
+   reference is a `[[wikilink]]`, a medium tag is a bare word. Use
+   `frontmatterMedium()` for the latter and `isCaptureNote()` for the test.
+   `ensureSourceFrontmatter` now writes the plural list form.
+   → `golden/capture-rung.mjs`
+
+### Corpus adapters (`scraper/`) — the 語法プロフィール, §22.7
+
+Two sources feed the one frozen `payload.goho`. Both are **enrichment**: one
+user-initiated word at a time, fetched once, frozen (`§2.4` — a later site change
+cannot alter past entries). Neither crawls. Parsing is pure and fixture-tested;
+only the transport touches the network.
+
+- **NINJAL-LWP for TWC** (`TsukubaWebCorpusScraper.ts` + `twc-parse.ts`,
+  `golden/twc.mjs`) — preferred when `twcEnabled`. Four POST endpoints:
+  `/headwordlist_all/` (a jqGrid `filters` rule resolves 風 in ONE request —
+  never walk the 5,028 pages), `/patternfreqorder/<hwId>/` (every way the word
+  attaches, with freq + share; 87 for 走る), `/collocation/<hwId>.<patId>/`
+  (that way's collocates with freq / MI / logDice), and
+  `/example/<hwId>.<patId>.<rank>/` (attested sentences, each with its document
+  title AND url). The pattern ids from `/patternfreqorder/` are the complete
+  enumeration — they include the `C###` group ids and all of them key the
+  collocation endpoint. **The example endpoint's body field is
+  `headword_collocation_id`, not `collocation_id`** despite taking a collocation
+  id — from `loadExample` in the site's own JS.
+
+  Two traps in the example layer. Identity is verified on **`records` == the
+  collocate's `freq`** (exact across three orders of magnitude), *not* on the
+  highlighted text: the collocation list is lemmatised while sentences are
+  surface, so 「子供の風」 is really attested as 「子どものかぜ」 and string
+  matching would reject correct data. And `bold_start`/`bold_end` are the
+  corpus's own [start, end) offsets into the sentence — use them, don't search.
+
+  **Homographs are not collapsed.** 風 is two words here: 形容動詞 フウ (80,779)
+  and 名詞 カゼ (322). `resolve()` returns both ranked by the corpus's own
+  frequency, `profile()` takes the top one and hands back `alternates`, which
+  become facet buttons. Do not "fix" this by preferring 名詞 — that would be
+  overriding measured data with a guess.
+- **Hyogen** (`HyogenScraper.ts` + `hyogen-parse.ts`, `golden/hyogen.mjs`) —
+  fallback, and the only source with 青空文庫 example phrases.
+
+**The method must be POST.** This is the entire difference and it is the reason
+TWC produced nothing for years. `GET /collocation/N.25644.J001/` with identical
+parameters returns **HTTP 200 with well-formed JSON** — the global first page of
+a 43-million-row table, every row belonging to こと, for every word you ask
+about. There is no error, no empty result, and no signal of any kind. Measured
+2026-08-02: no cookie, no CSRF token and no extra headers are needed (`GET /`
+sets no cookie and the pages carry no `csrfmiddlewaretoken`), so do not add a
+handshake — POST alone is load-bearing. `parseCollocates` re-checks
+`headword_collocation_id` on every row so this lie cannot reach the store again;
+`golden/twc.mjs` keeps the real bad response as a fixture.
+
+Two more measured facts worth not rediscovering: the site **403s on bursts**
+("temporarily unavailable"), so every request is spaced by `rateLimit` — and the
+collocation grid **sorts globally across pages**, so `rows=100` really does give
+the true top 100 by frequency rather than an arbitrary page re-sorted.
+
+Envelope metadata is junk and nothing trusts it: the pattern response says
+`"total": 0, "records": 1` for every word, and the collocation response's `total`
+is a **page** count. Counts are what was actually returned; `GohoFrame.atLeast`
+marks a total that is only a floor, so "24 / 1,000+件" never renders as a
+confident 1,000.
+
 ### Resolver injection
 
 A single sidecar-aware `RelationsResolver` (`makeRelationsResolver`) is built in `onload()` and pushed into the editor decorations, card generator, grammar-set engine, reading-mode highlighter, and collocation view via `setXxxResolver(...)` setters. This is how the discourse subsystem shares one source of truth; if you add a consumer of relations, inject the same resolver rather than building a new one.
 
 ### `discourse/` subsystem (caveats)
 
-This is the largest and least-mature area. Per prior analysis: the discourse pattern matcher is largely **naive substring matching** (it over-fires), the dictionary has **no deinflection**, and transcript speaker detection over-segments. A meaningful fraction of the subsystem (parts of the citation L1–L5 pipeline and rhetorical-construction modules, plus some duplicate SRS files — note both `chunk-extractor.ts`/`ChunkExtractor.ts` and `card-generator.ts`/`CardGenerator.ts` exist) is **unreachable dead code**. Before extending or relying on any `discourse/` module, verify it's actually reached from `main.ts` → `SurferBridge`/`ContextEngine`, and prefer the lower-cased file in a duplicate pair (those are the ones imported).
+This is the largest and least-mature area. **The three caveats that used to be
+here are out of date and were sending agents to re-fix fixed things** — the
+substring matcher was replaced (PARSER-AUDIT Phase 2), `DictionaryStore` and now
+`BigDictStore` both deinflect, and the duplicate cased files
+(`ChunkExtractor.ts` / `CardGenerator.ts`) no longer exist. Dead code is also
+not this subsystem's problem: measured 2026-08-01, **191 of 192 modules are
+reachable** from `src/main.ts` (only `discourse/calculus/handmarks.mjs` is
+orphaned). What is true today:
+
+- **`detectPatterns` is one line**: `return detectPatternsAccurate(text)`
+  (`discourse-grammar.ts`). The engine (`discourse/engine/`, 39 `.mjs`, ~11k LOC,
+  126 operators) LOCATES; `discourse-patterns.ts` (515 hand-authored defs)
+  ANNOTATES. **These two must stay joined** — see the §1 warning below.
+- `detectPatternsLegacy` still exists and still runs: `analyzeUtterance` uses it
+  for `detectLogicalFlows`. Both matchers execute on every utterance.
+- Measured coverage on 4,937 sentences of real conversation: **97 of 126
+  operators ever fire; 7 produce 50% of all hits.** `TOPIC-PRESENT` (「って」)
+  alone is 21.6%, and ~25% of those are verb te-forms (思って/持って/取って)
+  because `scope:'after-noun'` is implemented as "the previous character is
+  Japanese" (`match.mjs` `isAfterKanjiOrKatakana`). Only 20 of 576 triggers carry
+  any lexical guard. **Do not quote the operator count as a capability.**
+- Speaker attribution is still text-guessed (`R4:floor-continues` decides 94% of
+  turns); `components.ts` is wired to `DiscourseModeView` as suggestion pills but
+  **not** under the calculus, and its `_componentGold` has no reader and no
+  exporter.
+
+Before extending any `discourse/` module, check what actually reaches it —
+`scoreboard.mjs`/`moves.mjs` are used only by `FollowAlongView`, `concordance.mjs`
+only by `main.ts`, and `engine.ts`'s `analyzeDiscourse` only by a health probe.
 
 ### `src/x/` — X (Twitter) advanced-search dictionary
 

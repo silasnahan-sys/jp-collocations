@@ -1,0 +1,142 @@
+{
+ "page": 1,
+ "total": 1,
+ "rows": [
+  {
+   "id": 42003962,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00001",
+   "collocation": "子供の{風}",
+   "freq": 2,
+   "mi": 7.63,
+   "logdice": -3.37
+  },
+  {
+   "id": 42003963,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00002",
+   "collocation": "性の{風}",
+   "freq": 2,
+   "mi": 6.92,
+   "logdice": -4.07
+  },
+  {
+   "id": 42003964,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00003",
+   "collocation": "クーラーの{風}",
+   "freq": 1,
+   "mi": 13.8,
+   "logdice": 2.79
+  },
+  {
+   "id": 42003965,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00004",
+   "collocation": "タイムの{風}",
+   "freq": 1,
+   "mi": 11.22,
+   "logdice": 0.22
+  },
+  {
+   "id": 42003966,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00005",
+   "collocation": "一般の{風}",
+   "freq": 1,
+   "mi": 7.72,
+   "logdice": -3.28
+  },
+  {
+   "id": 42003967,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00006",
+   "collocation": "全ての{風}",
+   "freq": 1,
+   "mi": 7.11,
+   "logdice": -3.89
+  },
+  {
+   "id": 42003968,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00007",
+   "collocation": "全国の{風}",
+   "freq": 1,
+   "mi": 8.88,
+   "logdice": -2.11
+  },
+  {
+   "id": 42003969,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00008",
+   "collocation": "具合の{風}",
+   "freq": 1,
+   "mi": 10.63,
+   "logdice": -0.36
+  },
+  {
+   "id": 42003970,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00009",
+   "collocation": "冬の{風}",
+   "freq": 1,
+   "mi": 10.26,
+   "logdice": -0.74
+  },
+  {
+   "id": 42003971,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00010",
+   "collocation": "台風の{風}",
+   "freq": 1,
+   "mi": 11.83,
+   "logdice": 0.83
+  },
+  {
+   "id": 42003972,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00011",
+   "collocation": "命の{風}",
+   "freq": 1,
+   "mi": 8.44,
+   "logdice": -2.56
+  },
+  {
+   "id": 42003973,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00012",
+   "collocation": "安らぎの{風}",
+   "freq": 1,
+   "mi": 13.49,
+   "logdice": 2.49
+  },
+  {
+   "id": 42003974,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00013",
+   "collocation": "持病の{風}",
+   "freq": 1,
+   "mi": 14.69,
+   "logdice": 3.68
+  },
+  {
+   "id": 42003975,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00014",
+   "collocation": "皆の{風}",
+   "freq": 1,
+   "mi": 8.15,
+   "logdice": -2.84
+  },
+  {
+   "id": 42003976,
+   "headword_collocation_id": "N.25644.H007",
+   "collocation_id": "H007.00015",
+   "collocation": "詰まりの{風}",
+   "freq": 1,
+   "mi": 12.85,
+   "logdice": 1.85
+  }
+ ],
+ "records": 15
+}

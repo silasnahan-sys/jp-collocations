@@ -13,6 +13,8 @@
  * nothing where hover doesn't exist.
  */
 
+import { pointerDragActive } from './pointer-drag.ts';
+
 export interface PeekData {
   headword: string;
   reading?: string;
@@ -34,6 +36,9 @@ export class HoverPeek {
   attach(container: HTMLElement, hitSelector: string): void {
     const overOrMove = (e: PointerEvent) => {
       if (e.pointerType === 'touch') return;
+      // A Pencil carrying something across the surface is aiming, not reading.
+      // Popping definitions under the pill would obscure the targets.
+      if (pointerDragActive()) { this.cancel(); return; }
       const t = e.target as HTMLElement | null;
       if (t?.closest?.(hitSelector)) this.schedule(e.clientX, e.clientY);
       else this.cancel();

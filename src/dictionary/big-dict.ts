@@ -25,17 +25,39 @@
  *     imported dictionaries; this is additive.
  */
 
-import type { DictHeadword, ReachCandidate } from './eijiro.ts';
+import type { DictHeadword, DictSense, ReachCandidate } from './eijiro.ts';
+import type { DictLookupResult, YomitanTag } from './types.ts';
 import {
   readMeta, lookupHead, lookupFrame, normalizeLookupKey, headPath, framePath,
   decodeLines, hashKey, type SidecarIO, type SidecarMeta, type HeadLine, type FrameLine,
 } from './sidecar.ts';
 import { normalizeFrame } from './frames.ts';
+import { deinflect } from './deinflect.ts';
+import { partsOfEntry } from './entry-parts.ts';
 
 export interface BigDictHit {
   dictionary: string;
+  /** the normalized headword key this hit matched — the deinflected form when
+   *  the query was inflected, so the caller can say which form it landed on. */
+  key: string;
   entry: Omit<DictHeadword, 'reachFor'>;
+  /** the inflection trail, when the query only matched after deinflection
+   *  (食べた → 食べる). Absent on an exact hit. Rendered as the 〈…〉 badge. */
+  deinflection?: string[];
 }
+
+/**
+ * How many deinflected candidates a miss is allowed to probe.
+ *
+ * `deinflect` returns up to 64. In `DictionaryStore` each candidate is a Map
+ * lookup and 64 is free; here each distinct shard is a FILE READ per installed
+ * dictionary, so the same number would be ~2,200 reads on a total miss. Four
+ * covers the real cases — the common trails (past / te-form / negative /
+ * polite / passive-causative chains) all surface within the first few once
+ * candidates are sorted by trail length — and bounds a miss at 4 unique shards
+ * per dictionary, which the byte-capped cache absorbs.
+ */
+const MAX_DEINFLECT_CANDIDATES = 4;
 
 export interface BigFrameHit {
   dictionary: string;
@@ -83,6 +105,28 @@ class ShardCache {
   clear(): void { this.map.clear(); this.bytes = 0; }
   get size(): number { return this.map.size; }
   get heldBytes(): number { return this.bytes; }
+}
+
+/**
+ * Round-robin `groups` into one capped list: every group's 1st item, then every
+ * group's 2nd, and so on. Group order is preserved within each round, so the
+ * store's own ordering still decides who speaks first — it just no longer
+ * decides who speaks *at all*.
+ *
+ * PURE — golden: golden/big-dict.mjs.
+ */
+export function interleave<T>(groups: T[][], limit: number): T[] {
+  const out: T[] = [];
+  if (limit <= 0) return out;
+  const deepest = groups.reduce((n, g) => Math.max(n, g.length), 0);
+  for (let round = 0; round < deepest; round++) {
+    for (const g of groups) {
+      if (round >= g.length) continue;
+      out.push(g[round]);
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
 }
 
 export class BigDictStore {
@@ -147,21 +191,101 @@ export class BigDictStore {
   /**
    * Look a headword up across every installed dictionary.
    * One shard read per dictionary, cached — never a scan.
+   *
+   * BREADTH BEFORE DEPTH (fixed 2026-08-01). This used to walk the dictionaries
+   * in order and `return` the moment `limit` was reached. `metas` is sorted
+   * biggest-first, so the limit was spent on whichever books happened to be
+   * largest and the tail was never read at all. Measured on this vault
+   * (35 installed, `limit: 40`): 「気」 returned 40 hits from 11 dictionaries
+   * while 17 actually hold it — and the six silently dropped were
+   * 用例.jp, 使い方の分かる類語例解辞典, 現代国語例解辞典, NHK日本語発音アクセント新辞典,
+   * NEW斎藤和英大辞典 and WISDOM. Sorting by headword count is a proxy for size,
+   * not for worth, and it had inverted itself: the small specialist books this
+   * plugin exists to reach (例文, 使い分け, アクセント) were exactly the ones cut,
+   * on exactly the high-frequency words where you most want a second opinion.
+   *
+   * So: gather per dictionary, then interleave. Every book that holds the word
+   * gets its first entry in before any book gets its second. The extra cost is
+   * near zero — 3.5MB of shard reads for a full sweep of this install, inside a
+   * 24MB (8MB mobile) cache, and the early return only ever fired for the
+   * handful of words where it did the damage.
    */
   async lookup(expression: string, limit = 20): Promise<BigDictHit[]> {
     await this.ready();
     const k = normalizeLookupKey(expression);
     if (!k) return [];
-    const out: BigDictHit[] = [];
-    for (const { dir, meta } of this.metas) {
-      const body = await this.shard(headPath(dir, hashKey(k) % meta.shards));
-      for (const l of decodeLines<HeadLine>(body)) {
-        if (l.k !== k) continue;
-        out.push({ dictionary: meta.title, entry: l.e });
-        if (out.length >= limit) return out;
-      }
+    const exact = await this.lookupKeys([k], limit);
+    if (exact.length) return exact;
+
+    // ── deinflection fallback (AUDIT-PARTS §6) ──────────────────────────────
+    //
+    // A sharded store is exact-match BY CONSTRUCTION: the shard is chosen by
+    // hashing the key, so a form you have not computed cannot be probed for.
+    // That made the whole converted shelf — 35 books, 6.4M headwords —
+    // reachable only from the citation form, which is the one form you already
+    // know. Running text never arrives that way: 食べた, 面白かった,
+    // 言われている, 持ってきて all returned nothing while the small imported
+    // Yomitan store (which has deinflected since it shipped) answered.
+    //
+    // Same contract as `DictionaryStore.lookup`: exact first and cheap, then
+    // candidates as PROPOSALS validated against the real shards, shortest trail
+    // first, hits tagged with their trail so the UI's 〈…〉 badge can say how it
+    // got there. `lookupKeys` groups candidates by shard so N candidates cost
+    // at most N *unique* shard reads per dictionary rather than N.
+    // Ordering decides correctness here, not just cost. `deinflect` deliberately
+    // OVERGENERATES — that is free for `DictionaryStore`, where every candidate
+    // is validated by a Map lookup, and it is not free here, where validation is
+    // a file read. So the true candidate has to be inside the cap.
+    //
+    // Sort by (trail length, then term length). Shorter term = the rule consumed
+    // more of the inflectional tail, i.e. explained more of the surface, which is
+    // exactly what a correct deinflection does. 面白かった generates five trail-1
+    // candidates — 面白かう / 面白かつ / 面白かる / 面白かっる / 面白い — and the real
+    // one is enumerated LAST but is the shortest; by count alone a cap of 4 threw
+    // away the only right answer.
+    const trailOf = new Map<string, string[]>();
+    for (const d of deinflect(k).sort(
+      (a, b) => a.trail.length - b.trail.length || a.term.length - b.term.length,
+    )) {
+      const key = normalizeLookupKey(d.term);
+      if (!key || key === k || trailOf.has(key)) continue;
+      trailOf.set(key, d.trail);                       // shortest trail wins
+      if (trailOf.size >= MAX_DEINFLECT_CANDIDATES) break;
     }
-    return out;
+    if (!trailOf.size) return [];
+    const hits = await this.lookupKeys([...trailOf.keys()], limit);
+    return hits.map((h) => ({ ...h, deinflection: trailOf.get(h.key) }));
+  }
+
+  /**
+   * Look several keys up at once, breadth-first across dictionaries.
+   *
+   * Keys are grouped by the shard they hash into, so a dictionary is read once
+   * per distinct shard rather than once per key — the deinflection fallback
+   * proposes up to `MAX_DEINFLECT_CANDIDATES` forms and most of a query's
+   * candidates collide into a handful of shards.
+   *
+   * The breadth-before-depth rule of `lookup` is preserved: gather per
+   * dictionary, then interleave, so every book that holds the word gets its
+   * first entry in before any book gets its second.
+   */
+  private async lookupKeys(keys: string[], limit: number): Promise<BigDictHit[]> {
+    const want = new Set(keys);
+    if (!want.size) return [];
+    const perDict: BigDictHit[][] = [];
+    for (const { dir, meta } of this.metas) {
+      const shards = new Set<number>();
+      for (const k of want) shards.add(hashKey(k) % meta.shards);
+      const found: BigDictHit[] = [];
+      for (const s of shards) {
+        const body = await this.shard(headPath(dir, s));
+        for (const l of decodeLines<HeadLine>(body)) {
+          if (want.has(l.k)) found.push({ dictionary: meta.title, key: l.k, entry: l.e });
+        }
+      }
+      if (found.length) perDict.push(found);
+    }
+    return interleave(perDict, limit);
   }
 
   /**
@@ -173,13 +297,17 @@ export class BigDictStore {
     await this.ready();
     const k = normalizeFrame(frame);
     if (!k) return [];
-    const out: BigFrameHit[] = [];
+    // Same breadth-before-depth rule as `lookup`, and it matters more here: a
+    // frame is a question about how OTHER PEOPLE fill this shape, so hearing
+    // one book forty times is the wrong answer by construction.
+    const perDict: BigFrameHit[][] = [];
     for (const { dir, meta } of this.metas) {
       const body = await this.shard(framePath(dir, hashKey(normalizeLookupKey(k)) % meta.shards));
+      const found: BigFrameHit[] = [];
       for (const l of decodeLines<FrameLine>(body)) {
         if (l.k !== k) continue;
         for (const c of l.c) {
-          out.push({
+          found.push({
             dictionary: meta.title,
             candidate: {
               surface: c.s, intention: c.i,
@@ -189,11 +317,11 @@ export class BigDictStore {
               slots: (k.match(/[～＿]/g) ?? []).length,
             },
           });
-          if (out.length >= limit) return out;
         }
       }
+      if (found.length) perDict.push(found);
     }
-    return out;
+    return interleave(perDict, limit);
   }
 
   /** Uninstall detection / manual invalidation after a re-convert. */
@@ -207,3 +335,98 @@ export class BigDictStore {
 
 /** Re-exported so callers need only this module. */
 export { lookupHead, lookupFrame };
+
+// ── adapting to the dictionary UI ────────────────────────────────────────────
+
+/**
+ * One sidecar sense as one displayable definition line.
+ *
+ * The bracket is kept as a bracket on purpose. §27.1: `situation` is a
+ * production-CONDITION ("when you would say this"), not a gloss, and Eijiro
+ * writes it 〔…〕 — flattening it into the definition text would lose the one
+ * thing that makes the entry answer a reach-for question rather than a
+ * look-up one.
+ */
+export function senseLine(s: DictSense): string {
+  const parts: string[] = [];
+  if (s.pos) parts.push(`【${s.pos}】`);
+  if (s.gloss) parts.push(s.gloss);
+  if (s.situation) parts.push(`〔${s.situation}〕`);
+  if (s.note) parts.push(`◆${s.note}`);
+  return parts.join(' ').trim();
+}
+
+/**
+ * A sidecar hit in the shape `DictionaryView` already renders.
+ *
+ * The 31 converted dictionaries were invisible in the 辞書 view because that
+ * view only ever queried `DictionaryStore` — 6.1M headwords sat on disk with
+ * no way in, which is precisely the §28 seam (a lookup losing REACHABILITY
+ * crossing a subsystem boundary). Adapting here rather than teaching the view
+ * a second entry shape is what keeps ONE visual grammar: a sidecar hit gets
+ * the same card, the same 辞書 badge, the same 🏷️ capture road and the same
+ * class marks as an imported one, because it IS the same object by the time
+ * the view sees it.
+ *
+ * PURE — golden: golden/big-dict.mjs.
+ */
+export function bigHitToLookupResult(hit: BigDictHit, id = 0): DictLookupResult {
+  const e = hit.entry;
+  const tags: YomitanTag[] = (e.pos ?? []).slice(0, 5).map((p, i) => ({
+    name: p, category: 'partOfSpeech', order: i, notes: p, score: 0,
+  }));
+  return {
+    term: {
+      id,
+      expression: e.expression,
+      // The card hides the reading row when it equals the expression, which is
+      // the right look for an entry that never carried one.
+      reading: e.reading || e.expression,
+      definitionTags: [],
+      rules: [],
+      score: 0,
+      definitions: e.senses.map(senseLine).filter(Boolean),
+      sequence: e.sequence,
+      termTags: e.pos ?? [],
+    },
+    dictionary: hit.dictionary,
+    tags,
+    // §26.1 — the same senses, as typeset parts. `definitions` above stays
+    // populated as the fallback (and for anything that reads plain text, like
+    // the capture path), so this is additive rather than a second source.
+    entryBlocks: partsOfEntry(e, hit.dictionary),
+    // Carried straight through: the walker already decided WHICH relations this
+    // book has; nothing here may reinterpret them.
+    ...(e.nodes?.length ? { entryNodes: e.nodes } : {}),
+    // How the query reached this entry, when it only did so after deinflection.
+    // Dropping it here would show 食べる for 食べた with nothing saying why —
+    // the 〈…〉 badge is the honesty (§28 S6) that this is a derived hit.
+    ...(hit.deinflection?.length ? { deinflection: hit.deinflection } : {}),
+  };
+}
+
+/**
+ * Drop sidecar hits the local store already rendered, so a dictionary that was
+ * both imported AND converted does not appear twice.
+ *
+ * The key carries `sequence` because one expression legitimately has MANY
+ * entries in one dictionary — 英辞郎 especially — and a key of
+ * expression+dictionary alone would silently collapse them into the first one.
+ */
+export function dedupeAgainst(
+  hits: BigDictHit[], already: DictLookupResult[],
+): DictLookupResult[] {
+  const key = (expr: string, reading: string, seq: number, dict: string) =>
+    `${expr}|${reading}|${seq}|${dict}`;
+  const seen = new Set(already.map((r) =>
+    key(r.term.expression, r.term.reading, r.term.sequence, r.dictionary)));
+  const out: DictLookupResult[] = [];
+  hits.forEach((h, i) => {
+    const e = h.entry;
+    const k = key(e.expression, e.reading || e.expression, e.sequence, h.dictionary);
+    if (seen.has(k)) return;
+    seen.add(k);
+    out.push(bigHitToLookupResult(h, i));
+  });
+  return out;
+}

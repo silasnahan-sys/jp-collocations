@@ -3,6 +3,8 @@
  * Supports format versions 1–3.
  */
 
+import type { SenseBlock } from './entry-parts.ts';
+
 // ── Index (index.json) ──────────────────────────────────────
 
 export interface YomitanIndex {
@@ -189,4 +191,22 @@ export interface DictLookupResult {
    * back to the queried surface (e.g. ['progressive', 'past'] for 食べていた).
    */
   deinflection?: string[];
+  /**
+   * §26.1 — the entry as typeset PARTS (sense / 〔context〕 / 《register》 /
+   * gloss / example / note / xref) rather than as one prose blob.
+   *
+   * Present when the source could supply structure; absent for a dictionary
+   * whose tree was flattened at conversion, in which case the view falls back
+   * to `term.definitions` and the entry reads as a paragraph — visibly worse,
+   * which is the honest signal that that dictionary still needs re-converting.
+   */
+  entryBlocks?: SenseBlock[];
+  /**
+   * The entry's RELATIONS, when the book has any a sense list cannot hold — a
+   * 類語対比表, a 語群, a POS grouping, a set of corpus attestations.
+   *
+   * Additive like `entryBlocks`: a dictionary with no relations simply has none
+   * here, and every surface that reads senses keeps working unchanged.
+   */
+  entryNodes?: import('./entry-parts.ts').EntryNode[];
 }

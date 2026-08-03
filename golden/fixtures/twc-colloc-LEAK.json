@@ -1,0 +1,61 @@
+{
+ "page": 1,
+ "total": 437012,
+ "rows": [
+  {
+   "id": 1,
+   "headword_collocation_id": "N.00001.A001",
+   "collocation_id": "A001.00001",
+   "collocation": "{こと}ができる",
+   "freq": 896141,
+   "mi": 7.4,
+   "logdice": 12.47
+  },
+  {
+   "id": 2,
+   "headword_collocation_id": "N.00001.A001",
+   "collocation_id": "A001.00002",
+   "collocation": "{こと}がある",
+   "freq": 338039,
+   "mi": 5.06,
+   "logdice": 10.38
+  },
+  {
+   "id": 3,
+   "headword_collocation_id": "N.00001.A001",
+   "collocation_id": "A001.00003",
+   "collocation": "{こと}が分かる",
+   "freq": 93501,
+   "mi": 6.17,
+   "logdice": 10.2
+  },
+  {
+   "id": 4,
+   "headword_collocation_id": "N.00001.A001",
+   "collocation_id": "A001.00004",
+   "collocation": "{こと}がなる",
+   "freq": 74900,
+   "mi": 3,
+   "logdice": 8.29
+  },
+  {
+   "id": 5,
+   "headword_collocation_id": "N.00001.A001",
+   "collocation_id": "A001.00005",
+   "collocation": "{こと}がいる",
+   "freq": 42772,
+   "mi": 9.8,
+   "logdice": 9.62
+  },
+  {
+   "id": 6,
+   "headword_collocation_id": "N.00001.A001",
+   "collocation_id": "A001.00006",
+   "collocation": "{こと}がくる",
+   "freq": 20185,
+   "mi": 11.44,
+   "logdice": 8.55
+  }
+ ],
+ "records": 43701174
+}

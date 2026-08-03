@@ -540,7 +540,23 @@ export const OPERATORS = [
     cognitive_effect: '「Xって」で対象を話題として相手の前に立てる (口語の取り上げ)',
     triggers: [
       // 名詞直後の って。引用動詞・命題化・整列マーカー (いう/言/思/聞/書/考/話/こと/ね/さ) は除外。
+      //
+      // AUDIT-PARTS §2 — the te-form guard. `scope:'after-noun'` resolves to
+      // `isAfterKanjiOrKatakana`, which accepts ANY Japanese character, so it
+      // cannot tell the topic particle って from the て-form of a godan う/つ/る
+      // verb (思って・持って・取って・使って — both are っ+て). Measured over
+      // 4,937 sentences of the two fixtures, TOPIC-PRESENT is 21.6% of ALL
+      // engine hits and **25.2% of those were verb te-forms**.
+      //
+      // `not_after` is the existing declarative mechanism and it was unused
+      // here. The list is deliberately the HIGH-PRECISION subset: stems that are
+      // overwhelmingly verbal in this position, and NOT ones that end common
+      // nouns (会 loses 大会って, 待 loses 期待って, 立 loses 対立って,
+      // 座 loses 銀座って, 切 loses 大切って, 作 loses 名作って) — a guard that
+      // buys precision by silently eating real topic marks is the trade this
+      // project refuses (the sweep-prefilter decision, AUDIT §6.7-1).
       { surface: 'って', scope: 'after-noun',
+        not_after: ['思', '持', '取', '使', '乗', '買', '帰', '走', '笑', '知', '振', '送', '渡', '拾', '払', '登', '習', '洗', '違'],
         not_before: ['言', 'いう', 'いっ', 'い、', '思', 'おも', '聞', '書', '考', '話', 'はな', 'こと', 'ね', 'さ'] },
     ],
     opens_span: 'topic-stage',

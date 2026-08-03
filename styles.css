@@ -4523,10 +4523,37 @@
 }
 .jp-lex-row:hover { background: var(--background-secondary); }
 .jp-lex-row-rail { flex-shrink: 0; width: 3px; align-self: stretch; border-radius: 2px; }
-.jp-lex-row-hw { font-size: 17px; font-weight: 650; line-height: 1.3; color: var(--text-normal); }
+/**
+ * A headword is a headword, even when the data says otherwise.
+ *
+ * Nothing bounded this, so a catalog entry whose key is a whole ASR sentence
+ * ("業界に応行った由表見方切りが…") rendered as eight lines of 17px bold and
+ * shoved every neighbouring row off the screen. Clamping to two lines keeps a
+ * bad row merely bad instead of destroying the page around it — and `anywhere`
+ * is required because Japanese runs have no spaces to break at.
+ */
+.jp-lex-row-hw {
+  font-size: 17px; font-weight: 650; line-height: 1.3; color: var(--text-normal);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere; min-width: 0;
+}
 .jp-lex-row-reading { font-size: 11px; color: var(--text-faint); margin-left: 6px; }
-.jp-lex-row-gloss { font-size: 12px; color: var(--text-muted); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.jp-lex-row-ex { font-size: 11.5px; color: var(--text-faint); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Two lines, then clamp — a single nowrap line cut a gloss off mid-word at the
+   exact point where it started to say something ("〜に対する反発を…"). Two lines
+   of Japanese is usually the whole thought, and the row height is bounded. */
+.jp-lex-row-gloss {
+  font-size: 12px; color: var(--text-muted); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
+.jp-lex-row-ex {
+  font-size: 11.5px; color: var(--text-faint); line-height: 1.45;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere;
+}
+
+/* Sort row, group headers and ゆったり live at the END of this file — a second
+   .jp-lex-row block further down would otherwise win on source order. */
 /* あかさたな scrubber rail */
 .jp-lex-rail {
   flex-shrink: 0; width: 20px; display: flex; flex-direction: column;
@@ -4560,6 +4587,115 @@
 .jp-lex-goho-chip { font-size: 11.5px; padding: 2px 9px; border-radius: 11px; cursor: pointer; }
 .jp-lex-goho-ex { display: flex; align-items: baseline; gap: 6px; padding: 2px 0; }
 
+/* One block per way the word attaches (風～ / ～風 / 複合). The rail is what
+   makes them read as separate GRAMMATICAL positions rather than one long list —
+   which is the entire difference between a corpus profile and a bag of strings. */
+.jp-lex-goho-frame {
+  border-left: 2px solid var(--background-modifier-border);
+  padding-left: 8px;
+  margin: 8px 0 4px;
+}
+.jp-lex-goho-frame-head {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px;
+  font-size: 11.5px; margin-bottom: 3px;
+}
+.jp-lex-goho-arrow {
+  font-weight: 600; font-size: 13px;
+  font-family: var(--font-interface);
+  color: var(--text-normal);
+}
+.jp-lex-goho-pos,
+.jp-lex-goho-sense {
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 3px; padding: 0 4px; font-size: 10.5px;
+}
+/* The grammar as the corpus states it (「風＋助詞」「名詞＋の＋風」) — more
+   specific than the arrow, so it reads as a caption rather than a heading. */
+.jp-lex-goho-label { color: var(--text-muted); font-size: 11px; }
+/* The share IS the ranking, so unlike the count it is allowed to look like a
+   number worth comparing. */
+.jp-lex-goho-share {
+  color: var(--text-accent); font-weight: 600; font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+/* The count is muted on purpose: "24 / 12,147件" is an honesty note about the
+   cap, not a score to compare frames by. */
+.jp-lex-goho-count { color: var(--text-faint); font-size: 10.5px; margin-left: auto; }
+/* The corpus's own highlight inside an attested sentence — where the
+   collocation actually sits. Weight, not colour: the sentence is the thing
+   being read, and a coloured run would pull the eye out of it. */
+.jp-lex-goho-hit { font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
+/* The citation. Quiet, but present on every sentence — an example whose source
+   is not visible is indistinguishable from one that was invented (§28 S3). */
+.jp-lex-goho-cite {
+  color: var(--text-faint); font-size: 10px; margin-left: 6px;
+}
+.jp-lex-goho-cite.jp-lex-tappable:hover {
+  color: var(--text-accent); text-decoration: underline; cursor: pointer;
+}
+/* Per-collocate frequency, subordinate to the word itself — it qualifies the
+   chip, it is not the chip. MI/logDice stay in the tooltip: three numbers on a
+   chip is a spreadsheet, not a reading surface. */
+.jp-lex-goho-chip-freq {
+  margin-left: 5px; color: var(--text-faint); font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+}
+.jp-lex-goho-facets { display: flex; flex-wrap: wrap; align-items: baseline; gap: 5px; margin-top: 8px; }
+.jp-lex-goho-facets-label { color: var(--text-faint); font-size: 10.5px; }
+.jp-lex-goho-facet {
+  font-size: 11px; padding: 1px 8px; border-radius: 10px; cursor: pointer;
+  background: transparent; border: 1px dashed var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+/* 頻度 / 結合度. Two ways of reading the SAME rows, so it is a segmented pair
+   rather than a menu — the choice is binary and both options stay visible. */
+.jp-lex-goho-sort { display: flex; gap: 0; margin: 2px 0 6px; }
+.jp-lex-goho-sortbtn {
+  font-size: 10.5px; padding: 1px 9px; cursor: pointer;
+  background: transparent; color: var(--text-faint);
+  border: 1px solid var(--background-modifier-border);
+}
+.jp-lex-goho-sortbtn:first-child { border-radius: 9px 0 0 9px; }
+.jp-lex-goho-sortbtn:last-child { border-radius: 0 9px 9px 0; border-left: none; }
+.jp-lex-goho-sortbtn.is-on {
+  background: var(--background-modifier-hover); color: var(--text-normal); font-weight: 600;
+}
+
+/* 用例 header — says how many, and how many carry a checkable citation. The
+   second number is the honest one; without it "8件" reads as eight citations. */
+.jp-lex-goho-exhead {
+  color: var(--text-faint); font-size: 10.5px;
+  margin: 8px 0 2px; padding-top: 6px;
+  border-top: 1px dashed var(--background-modifier-border);
+}
+/* The way-of-attaching a sentence is evidence FOR. Right-aligned against the
+   citation so the row reads quote → what it shows → where it came from. */
+.jp-lex-goho-exframe {
+  color: var(--text-faint); font-size: 9.5px; margin-left: auto;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 3px; padding: 0 4px; white-space: nowrap;
+}
+/* ATTESTED vs PHRASE — the two are different evidential claims (§28 S3) and the
+   difference is carried by the brackets in the markup (「」 vs 〈〉) plus this
+   rail. A listed phrase gets the dashed rail the plugin already uses everywhere
+   for "provisional / not a located sighting"; a cited sentence gets a solid one. */
+.jp-lex-goho-ex--attested { border-left: 2px solid var(--background-modifier-border); padding-left: 6px; }
+.jp-lex-goho-ex--phrase { border-left: 2px dashed var(--background-modifier-border); padding-left: 6px; }
+.jp-lex-goho-ex--phrase .jp-lex-leaf-quote { color: var(--text-muted); }
+
+/* A list row that matched only through its corpus profile. Faint, because the
+   badge qualifies the row — it is not a feature of the entry. */
+.jp-lex-row-corpus { font-size: 10px; opacity: 0.75; margin-left: 3px; }
+.jp-lex-row-ex--corpus { color: var(--text-faint); font-style: italic; }
+
+/* The citation on a 語法 用例 in the dictionary's context panel. */
+.jp-dict-ctx-corpus-cite {
+  color: var(--text-faint); font-size: 10px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+}
+
 /* ── §22.8 収集トレイ ── */
 .jp-tray { display: flex; flex-direction: column; gap: 10px; padding: 8px; }
 .jp-tray-zone {
@@ -4572,6 +4708,28 @@
 .jp-tray-zone-sub { font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
 .jp-tray-paste { font-size: 11px; margin-top: 8px; cursor: pointer; }
 .jp-tray-zone-btns { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+
+/* §30 THE DOORS — the roads made visible on the surface you are already on.
+   A wrapping grid rather than a menu: a menu would have reproduced the command
+   palette's problem one level down. Sized so a phone shows 3 per row. */
+.jp-tray-doors { margin: 10px 0 4px; }
+.jp-tray-doors-head { display: flex; align-items: baseline; gap: 6px; margin: 8px 2px 5px; }
+.jp-tray-doors-title { font-size: 11px; font-weight: 700; color: var(--text-muted); letter-spacing: 0.04em; }
+.jp-tray-doors-hint { font-size: 10px; color: var(--text-faint); }
+.jp-tray-doors-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 5px; }
+.jp-tray-door {
+  display: flex; align-items: center; gap: 5px; min-height: 38px; padding: 5px 8px;
+  border-radius: 9px; cursor: pointer; text-align: left; font-size: 11px; line-height: 1.2;
+  background: var(--background-secondary); border: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+}
+.jp-tray-door:hover { background: var(--background-modifier-hover); }
+.jp-tray-door-ic { display: inline-flex; flex: 0 0 auto; }
+.jp-tray-door-ic svg { width: 15px; height: 15px; }
+.jp-tray-door-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A door that cannot run here is shown WITH ITS REASON (title), never hidden. */
+.jp-tray-door--off { opacity: 0.45; cursor: not-allowed; }
+.jp-tray-door--off:hover { background: var(--background-secondary); }
 /* §25.7 読書セッション: shots of one sitting grouped under a quiet header */
 .jp-tray-session { border-radius: 12px; border: 1px solid var(--background-modifier-border); padding: 6px; display: flex; flex-direction: column; gap: 8px; }
 .jp-tray-session-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px; }
@@ -4582,6 +4740,17 @@
 .jp-tray-mark-stamp { font-size: 11px; font-family: var(--font-monospace); color: var(--text-muted); }
 .jp-tray-mark-seed { font-size: 15px; font-weight: 600; }
 .jp-tray-mark-seed--none { font-weight: 400; color: var(--text-faint); font-size: 12px; }
+/* A note can be several lines now, so it gets a block that keeps its breaks. */
+.jp-tray-mark-note {
+  font-size: 14px; font-weight: 500; line-height: 1.6; white-space: pre-wrap;
+  margin-top: 3px;
+}
+/* §25.4 the cut scene, shown on the card that owns it. */
+.jp-tray-clip { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.jp-tray-clip-still { max-width: 100%; border-radius: 6px; cursor: pointer; display: block; }
+.jp-tray-clip-audio { width: 100%; height: 32px; }
+.jp-tray-noteedit { margin-top: 6px; }
+.jp-tray-noteedit-input { width: 100%; font-size: 13px; line-height: 1.5; resize: vertical; }
 
 /* ══ §25.2 鑑賞モード (FollowAlong) — glanceable, silent, co-viewing safe ══ */
 .jp-follow { display: flex; flex-direction: column; height: 100%; padding: 0 8px calc(8px + env(safe-area-inset-bottom)); position: relative; }
@@ -4597,6 +4766,12 @@
 .jp-follow-plexchip { max-width: 42vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .jp-follow-plexchip.is-on { background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 600; }
 .jp-follow-plexchip.is-warn { color: var(--text-warning, #c98a1b); }
+/* §25.4b ⌖ ズレ — appears only while Plex owns the clock; loud while armed,
+   because the next tap means something other than 📍. */
+.jp-follow-alignchip { font-variant-numeric: tabular-nums; }
+.jp-follow-alignchip.is-on {
+  background: var(--text-warning, #c98a1b); color: var(--text-on-accent); font-weight: 600;
+}
 .jp-follow-warn { font-size: 11px; color: var(--text-warning, #c98a1b); padding: 2px 6px; }
 .jp-follow-list { flex: 1; overflow-y: auto; padding: 8px 2px 40vh; }
 .jp-follow-line { display: flex; align-items: baseline; gap: 8px; padding: 7px 10px; border-radius: 8px; cursor: pointer; line-height: 1.55; transition: background 120ms; min-height: 34px; }
@@ -4640,6 +4815,76 @@
 .jp-follow-debrief-label { font-size: 10px; color: var(--text-faint); margin-bottom: 2px; }
 .jp-follow-debrief-actualline { font-size: 13px; display: flex; gap: 6px; }
 .jp-follow-debrief-actions { margin-top: 4px; }
+
+/* ── §25.4c transport: where the clock is, to scale ───────── */
+.jp-follow-transport { display: flex; align-items: center; gap: 8px; padding: 2px 4px 6px; }
+.jp-follow-tp-time {
+  font-size: 11px; font-family: var(--font-monospace); color: var(--text-muted);
+  font-variant-numeric: tabular-nums; flex-shrink: 0; min-width: 8.5em;
+}
+.jp-follow-tp-bar {
+  position: relative; flex: 1; min-width: 60px; height: 16px; cursor: pointer;
+  display: flex; align-items: center;
+}
+/* The track is drawn as a child pseudo so the hit area can stay finger-sized
+   while the line itself reads as thin. */
+.jp-follow-tp-bar::before {
+  content: ""; position: absolute; left: 0; right: 0; height: 4px;
+  border-radius: 2px; background: var(--background-modifier-border);
+}
+.jp-follow-tp-fill {
+  position: absolute; left: 0; height: 4px; border-radius: 2px; width: 0;
+  background: var(--text-muted); transition: width 240ms linear;
+}
+.jp-follow-transport.is-live .jp-follow-tp-fill { background: var(--interactive-accent); }
+.jp-follow-transport.is-paused .jp-follow-tp-fill { background: var(--text-faint); transition: none; }
+.jp-follow-tp-bar:hover::before { background: var(--background-modifier-border-hover, var(--background-modifier-border)); }
+.jp-follow-tp-acts { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.jp-follow-tp-btn { font-size: 13px; min-width: 36px; min-height: 32px; cursor: pointer; border-radius: 8px; }
+.jp-follow-tp-player { font-size: 10px; color: var(--text-faint); max-width: 9em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jp-follow-nudge { display: inline-flex; gap: 2px; }
+.jp-follow-nudgebtn {
+  font-size: 10px; min-width: 30px; min-height: 30px; cursor: pointer;
+  border-radius: 6px; font-variant-numeric: tabular-nums; padding: 0 4px;
+}
+
+/* ── the live-session picker ──────────────────────────────── */
+.jp-follow-picker { border: 1px solid var(--background-modifier-border); border-radius: 12px; padding: 8px 10px; margin: 6px 0; }
+.jp-follow-picker-title { font-size: 12px; font-weight: 700; margin-bottom: 4px; }
+.jp-follow-picker-empty { font-size: 11px; color: var(--text-faint); padding: 4px 0; }
+.jp-follow-picker-row { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-top: 1px solid var(--background-modifier-border); }
+.jp-follow-picker-main { flex: 1; min-width: 0; }
+.jp-follow-picker-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jp-follow-picker-sub { font-size: 10.5px; color: var(--text-faint); }
+
+/* ── §25.1 the marks made while watching ──────────────────── */
+.jp-follow-markschip.is-on { background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 600; }
+.jp-follow-marks {
+  border: 1px solid var(--background-modifier-border); border-radius: 12px;
+  padding: 8px 10px; margin: 6px 0; max-height: 42vh; overflow-y: auto;
+}
+.jp-follow-marks-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.jp-follow-marks-title { font-size: 12px; font-weight: 700; flex: 1; min-width: 6em; }
+.jp-follow-marks-empty { font-size: 11.5px; color: var(--text-faint); line-height: 1.65; padding: 4px 0; }
+.jp-follow-mark { border-top: 1px solid var(--background-modifier-border); padding: 6px 0; }
+.jp-follow-mark-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.jp-follow-mark-stamp {
+  font-size: 10px; font-family: var(--font-monospace); cursor: pointer;
+  background: transparent; border: none; box-shadow: none; padding: 0;
+  color: var(--text-accent); min-height: 0;
+}
+.jp-follow-mark-seed { font-size: 13px; font-weight: 650; white-space: pre-wrap; }
+.jp-follow-mark-has { font-size: 11px; opacity: 0.8; }
+.jp-follow-mark-line { font-size: 12.5px; color: var(--text-muted); line-height: 1.5; margin: 2px 0; }
+.jp-follow-mark-acts { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 3px; }
+.jp-follow-mark-acts .jp-follow-btn { min-height: 32px; font-size: 11.5px; }
+
+/* The note editor is a textarea now — one word or five lines, same gesture. */
+.jp-follow-seed-input {
+  font-size: 13px; width: min(26em, 92%); line-height: 1.5;
+  resize: vertical; min-height: 3.2em;
+}
+
 .jp-tray-list { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
 .jp-tray-empty { font-size: 12px; color: var(--text-faint); text-align: center; padding: 16px 8px; line-height: 1.6; }
 .jp-tray-card { border-radius: 10px; background: var(--background-secondary); padding: 8px 10px; }
@@ -4818,6 +5063,53 @@
 }
 .jp-srs-btn--cta { background: var(--interactive-accent); color: var(--text-on-accent); font-weight: 600; border: none; }
 
+/* ── 照合 — one judgement after a graded card (AUDIT §6.5) ──
+   It must NOT read as "another card": no top accent bar, a quieter surface,
+   and buttons that are wide enough for a thumb but visibly not the grade row. */
+.jp-srs-probe {
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--text-accent);
+  border-radius: 10px; padding: 16px; outline: none;
+  background: var(--background-secondary);
+}
+.jp-srs-probe-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.jp-srs-probe-tag {
+  font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em;
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--text-accent); color: var(--text-on-accent);
+}
+.jp-srs-probe-covers { font-size: 0.74rem; font-weight: 600; color: var(--text-accent); }
+.jp-srs-probe-again { font-size: 0.7rem; color: var(--text-muted); margin-left: auto; }
+.jp-srs-probe-q { font-size: 1.02rem; line-height: 1.7; margin-bottom: 8px; }
+.jp-srs-probe-ev {
+  font-size: 0.86rem; line-height: 1.65; color: var(--text-muted);
+  padding: 6px 10px; margin-bottom: 4px;
+  border-left: 2px solid var(--background-modifier-border);
+}
+.jp-srs-probe-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.jp-srs-probe-btn {
+  flex: 1; min-width: 120px; min-height: 48px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--background-modifier-border); background: var(--background-primary);
+}
+.jp-srs-probe-btn-label { font-size: 0.86rem; font-weight: 600; }
+.jp-srs-probe-btn-hint { font-size: 0.68rem; color: var(--text-muted); font-family: var(--font-monospace); }
+.jp-srs-probe--yes { border-color: var(--jp-srs-good); }
+.jp-srs-probe--no { border-color: var(--jp-srs-again); }
+.jp-srs-probe--skip { color: var(--text-muted); }
+.jp-srs-probe--drop { color: var(--text-error); border-color: var(--background-modifier-error-hover); }
+.jp-srs-probe-foot { font-size: 0.72rem; color: var(--text-muted); margin-top: 10px; text-align: center; }
+.jp-srs-probe-classes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.jp-srs-probe-class {
+  cursor: pointer; padding: 9px 12px; min-height: 44px; border-radius: 8px;
+  border: 1px solid var(--background-modifier-border); background: var(--background-primary);
+  font-size: 0.86rem;
+}
+.jp-srs-open { margin-top: 14px; padding-top: 10px; border-top: 1px dashed var(--background-modifier-border); }
+.jp-srs-open-line { font-size: 0.8rem; color: var(--text-normal); }
+.jp-srs-open-hint { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+
 /* phone: grades pin to the bottom of the scroll area, thumb-reachable */
 @media (max-width: 600px) {
   .jp-srs-grades {
@@ -4856,20 +5148,29 @@
 .jp-lex-chip--active { font-weight: 600; }
 .jp-lex-stats { font-size: 0.74rem; color: var(--text-muted); }
 
-.jp-lex-list { display: flex; flex-direction: column; }
-.jp-lex-row {
-  display: flex; align-items: center; gap: 9px; padding: 9px 6px; cursor: pointer;
-  border-bottom: 1px solid var(--background-modifier-border);
-}
-.jp-lex-row:hover { background: var(--background-modifier-hover); }
+/**
+ * A BLOCK list, not a flex column.
+ *
+ * This was `display: flex; flex-direction: column`, and that is what produced
+ * the overlapping rows. An explicit `min-height` on a flex item REPLACES its
+ * automatic content-based minimum, so `.jp-lex-row { min-height: 44px }` above
+ * gave the browser permission to squash a row to 44px — and a row whose
+ * headword is a 200-character ASR run-on is eight lines tall, which then painted
+ * straight over the four rows beneath it. Block layout has no such rule: a row
+ * is as tall as its content, always.
+ */
+.jp-lex-list { display: block; }
+/* NOTE: `.jp-lex-row`, `:hover`, `-hw` and `-reading` are deliberately NOT
+   redefined here. They belong to the §20.1 block near the top of this file, and
+   a second copy at this depth silently won on source order — which is why the
+   rail sat centred against multi-line rows and ゆったり's padding overrides
+   (written against §20.1's box) had nothing matching to override. */
 .jp-lex-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 .jp-lex-row-legacy { font-size: 0.9rem; opacity: 0.6; }
 .jp-lex-row-main { flex: 1; min-width: 0; }
-.jp-lex-row-top { display: flex; align-items: baseline; gap: 7px; }
-.jp-lex-row-hw { font-size: 1.02rem; font-weight: 600; }
-.jp-lex-row-reading { font-size: 0.78rem; color: var(--text-muted); }
+.jp-lex-row-top { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
 .jp-lex-deinflect { font-size: 0.72rem; color: var(--text-accent); }
-.jp-lex-row-gloss { font-size: 0.8rem; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* (`.jp-lex-row-gloss` is the §20.1 clamp near the top of this file — one copy.) */
 .jp-lex-row-meta { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .jp-lex-row-src { font-size: 0.76rem; opacity: 0.75; }
 .jp-lex-row-count { font-size: 0.72rem; color: var(--text-muted); font-family: var(--font-monospace); }
@@ -4906,7 +5207,11 @@
 .jp-lex-leaf-btn svg { width: 15px; height: 15px; }
 
 /* embedded just-enough example under a row (context is meaning) */
-.jp-lex-row-ex { font-size: 0.78rem; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.5; }
+.jp-lex-row-ex {
+  font-size: 0.81rem; color: var(--text-faint); line-height: 1.55;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; white-space: normal; overflow-wrap: anywhere;
+}
 .jp-lex-row-merged { font-size: 0.72rem; }
 .jp-lex-legacy-block { border: 1px solid var(--background-modifier-border); border-radius: 8px; padding: 8px 10px; margin-bottom: 8px; }
 .jp-lex-legacy-block .jp-lex-row-ex { white-space: normal; }
@@ -5023,12 +5328,19 @@
 .jp-flow-video { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 8px 12px; border-radius: 10px; cursor: pointer; border: 1px solid var(--background-modifier-border); }
 .jp-flow-video--sel { border-color: var(--interactive-accent); background: var(--background-secondary); }
 .jp-flow-video-title { flex: 1; font-size: 0.88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Selection is a set now — the tick is what says "several may be on at once". */
+.jp-flow-video-tick { flex: 0 0 auto; width: 1.2em; font-size: 0.95rem; color: var(--text-faint); }
+.jp-flow-video--sel .jp-flow-video-tick { color: var(--interactive-accent); }
+.jp-flow-mini-wide { width: 100%; min-height: 34px; margin-top: 6px; border-radius: 8px; cursor: pointer; font-size: 0.82rem; background: var(--background-secondary); border: 1px solid var(--background-modifier-border); color: var(--text-muted); }
 .jp-flow-video-marks { display: flex; gap: 3px; font-size: 0.8rem; flex-shrink: 0; }
 .jp-flow-empty { color: var(--text-muted); font-size: 0.85rem; padding: 10px 0; }
 .jp-flow-warn { color: var(--text-warning, #d80); font-size: 0.8rem; margin-top: 8px; }
 .jp-flow-run { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 52px; border-radius: 12px; font-size: 1.05rem; font-weight: 700; cursor: pointer; background: var(--interactive-accent); color: var(--text-on-accent); border: none; }
 .jp-flow-run:active { transform: scale(0.99); }
+/* Not-ready is now a real `disabled`, so the cursor must stop promising a click. */
 .jp-flow-run--off { opacity: 0.45; }
+.jp-flow-run:disabled { cursor: not-allowed; }
+.jp-flow-run:disabled:active { transform: none; }
 .jp-flow-run svg { width: 19px; height: 19px; }
 
 /* ═══════════════ 談話モード (DiscourseModeView, DESIGN §17) ═══════════════
@@ -5122,6 +5434,12 @@
 .jp-follow-drill-ok { color: var(--color-green, #2e7d32); font-weight: 700; }
 .jp-follow-drill-ng { color: var(--color-red, #c62828); font-weight: 700; }
 .jp-follow-drill-line { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+/* The floors (DISCOURSE-VERDICT §4): a score is never rendered without them. */
+.jp-follow-drill-floor {
+  font-size: 11px; color: var(--text-faint); margin-top: 6px;
+  padding-top: 5px; border-top: 1px solid var(--background-modifier-border);
+  line-height: 1.5;
+}
 .jp-follow-drill-acts { display: flex; gap: 6px; margin-top: 6px; }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -5348,15 +5666,926 @@ body {
 }
 .jp-plexbrowse-row:hover { background: var(--background-secondary); }
 .jp-plexbrowse-row.is-busy { opacity: 0.6; pointer-events: none; }
+.jp-plexbrowse-row.is-focus {
+  background: var(--background-secondary);
+  outline: 2px solid var(--interactive-accent); outline-offset: -2px;
+}
 .jp-plexbrowse-row.is-leaf .jp-plexbrowse-title { font-variant-numeric: tabular-nums; }
 .jp-plexbrowse-main { min-width: 0; flex: 1; }
 .jp-plexbrowse-title {
-  font-size: 0.9rem; line-height: 1.4;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: flex; align-items: baseline; gap: 6px;
+  font-size: 0.9rem; line-height: 1.4; min-width: 0;
 }
+/* Flags sit after the title and must never push it out of the row. */
+.jp-plexbrowse-titletext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jp-plexbrowse-flag { font-size: 0.72rem; flex-shrink: 0; }
+.jp-plexbrowse-flag.is-have { opacity: 0.95; }
+.jp-plexbrowse-flag.is-seen { color: var(--text-faint); }
+.jp-plexbrowse-flag.is-partial { color: var(--text-accent); }
+.jp-plexbrowse-season {
+  position: sticky; top: 0; z-index: 1;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em;
+  color: var(--text-faint); padding: 7px 8px 3px;
+  background: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.jp-plexbrowse-keys { margin-top: 4px; opacity: 0.75; }
 .jp-plexbrowse-sub { font-size: 0.68rem; color: var(--text-muted); }
 .jp-plexbrowse-busy { font-size: 0.72rem; color: var(--text-muted); }
 .jp-plexbrowse-empty, .jp-plexbrowse-error {
   padding: 14px 8px; font-size: 0.8rem; color: var(--text-muted); text-align: center;
 }
 .jp-plexbrowse-error { color: var(--text-error); text-align: left; line-height: 1.5; }
+
+/* §25.4b jimaku picker — same rows as the Plex browser (one road), plus the
+   episode box, the one field that decides which file is the right one. */
+.jp-jimaku-eprow {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px;
+}
+.jp-jimaku-eplabel { font-size: 0.72rem; color: var(--text-muted); flex-shrink: 0; }
+.jp-jimaku-epinput {
+  width: 5.5em; padding: 6px 8px; font-size: 0.9rem;
+  border-radius: 8px; border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary); font-variant-numeric: tabular-nums;
+}
+
+/* ══ §26.1 entry grammar — the typeset ARTICLE ═══════════════════════════════
+   Sibling of the 6-class grammar and deliberately orthogonal to it: the
+   TAXONOMY owns hue (NOTE_TYPES colors are reserved), the ENTRY grammar owns
+   shape and weight. Hence not one hex here — only theme variables — so a
+   連語-blue class dot and a 英辞郎 register badge can never be confused.
+   §26.1: "zero chrome inside the content area; hierarchy is typography alone."
+   Every part is drawn by ui/entry-grammar.ts and nowhere else.            */
+
+.jp-entry { display: flex; flex-direction: column; gap: 7px; }
+.jp-entry-sense { display: flex; gap: 7px; align-items: baseline; }
+.jp-entry-sense-body { flex: 1; min-width: 0; line-height: 1.62; }
+
+/* the sense number — a boxed ordinal, the article's only structural furniture */
+.jp-part--sense {
+  flex: 0 0 auto; min-width: 1.35em; height: 1.35em;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; font-variant-numeric: tabular-nums;
+  color: var(--text-faint);
+  border: 1px solid var(--background-modifier-border); border-radius: 4px;
+}
+
+/* the gloss is the answer: normal prose weight, full contrast */
+.jp-part--gloss { color: var(--text-normal); }
+
+/* the apparatus — outlined (a CONDITION) vs filled (a LABEL), never colored.
+   context = when you reach for it; frame = what it combines with;
+   register = who says it. Three questions, three shapes, one hue. */
+.jp-part--context, .jp-part--frame, .jp-part--register, .jp-part--pos,
+.jp-part--level, .jp-part--alt {
+  display: inline-block; font-size: 0.74rem; white-space: nowrap;
+  margin-right: 5px; vertical-align: 0.05em;
+}
+.jp-part--context {                       /* outlined: a production-condition */
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 3px; padding: 0 4px;
+}
+.jp-part--frame {                              /* dashed: a combinatory shape */
+  color: var(--text-muted);
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 3px; padding: 0 4px;
+}
+.jp-part--register {                                    /* filled: who/where */
+  color: var(--text-on-accent);
+  background: var(--text-faint);
+  border-radius: 3px; padding: 0 5px; font-size: 0.7rem;
+}
+.jp-part--pos, .jp-part--level {
+  color: var(--text-faint); font-size: 0.7rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 3px; padding: 0 4px;
+}
+.jp-part--alt { color: var(--text-muted); }
+
+/* the example — a block with a hairline, the thing the eye skips to */
+.jp-part-example {
+  display: block; margin: 5px 0 3px; padding: 2px 0 2px 9px;
+  border-left: 2px solid var(--background-modifier-border);
+  position: relative;
+}
+.jp-part-example-en { color: var(--text-muted); font-size: 0.88rem; }
+.jp-part-example-ja { color: var(--text-normal); font-size: 0.92rem; }
+.jp-part-hit { font-weight: 700; color: var(--text-normal); }
+
+/* §28 S4 — capturable where it sits; appears on hover/focus, never chrome */
+.jp-part-capture {
+  position: absolute; top: 0; right: 0;
+  background: none; border: none; cursor: pointer; padding: 0 3px;
+  font-size: 0.8rem; opacity: 0; transition: opacity 90ms;
+}
+.jp-part-example:hover .jp-part-capture,
+.jp-part-capture:focus-visible { opacity: 0.85; }
+
+.jp-part--note {
+  display: block; margin-top: 3px;
+  color: var(--text-faint); font-size: 0.82rem;
+}
+.jp-part--note::before { content: '◆'; margin-right: 3px; }
+.jp-part--xref { font-size: 0.84rem; }
+.jp-part-xref-link { color: var(--text-accent); cursor: pointer; }
+.jp-part-xref-link::before { content: '⇒ '; color: var(--text-faint); }
+
+/* touch: the capture affordance cannot depend on hover (§26.0 c, three hands) */
+body.is-mobile .jp-part-capture { opacity: 0.55; position: static; margin-left: 4px; }
+
+/* a flattened entry reads as prose AND says why (§28 S6) */
+.jp-entry-flat-note {
+  font-size: 0.72rem; color: var(--text-faint);
+  border-left: 2px dashed var(--background-modifier-border);
+  padding-left: 7px; margin-bottom: 5px;
+}
+.jp-entry-sense-body--flat .jp-part--gloss { color: var(--text-muted); }
+
+/* ── entry SHAPES (§27.4 v2) ──────────────────────────────────────────────────
+   One block per RELATION, drawn identically in all 35 dictionaries. Like
+   entry-grammar's parts, these carry NO hex: the 6-class taxonomy owns hue, the
+   entry grammar owns shape and weight, so a shape can never collide with a
+   class dot. §26.1 — hierarchy is typography; the only grid is the comparison,
+   where the grid IS the information.                                          */
+.jp-shapes { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+.jp-shape { display: flex; flex-direction: column; gap: 5px; }
+.jp-shape-label {
+  font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em;
+  color: var(--text-muted); text-transform: none;
+}
+.jp-shape-tag { align-self: flex-start; }
+.jp-shape-text { font-size: 0.95rem; color: var(--text-normal); }
+
+/* a POS grouping indents what it governs — the badge scopes the senses below */
+.jp-shape--pos-group { border-left: 2px solid var(--background-modifier-border); padding-left: 9px; }
+.jp-shape--senses { padding-left: 2px; }
+
+/* 語群 / 派生形 — a SET, so the members read as one row of siblings */
+.jp-shape-members { display: flex; flex-direction: column; gap: 3px; }
+.jp-shape-member { display: flex; gap: 6px; align-items: baseline; flex-wrap: wrap; }
+.jp-shape-member-head { font-weight: 600; }
+
+/* 使い分け — ordered, because the book ordered it */
+.jp-shape-distinctions { margin: 0; padding-left: 1.25em; font-size: 0.9rem; }
+.jp-shape-distinctions li { margin: 2px 0; }
+
+/* 実例 — attested corpus citations, keyword in context */
+.jp-shape-attestations { display: flex; flex-direction: column; gap: 4px; }
+.jp-shape-attestation {
+  font-size: 0.88rem; line-height: 1.5;
+  border-left: 2px solid var(--background-modifier-border); padding-left: 8px;
+}
+.jp-shape-cite { font-size: 0.68rem; color: var(--text-faint); font-variant-numeric: tabular-nums; }
+
+/* 対比表 / スケール — the grid IS the information (§26.0(e)) */
+.jp-shape-table {
+  border-collapse: collapse; font-size: 0.82rem; display: block;
+  overflow-x: auto; max-width: 100%;
+}
+.jp-shape-table th, .jp-shape-table td {
+  border: 1px solid var(--background-modifier-border);
+  padding: 3px 7px; text-align: center; white-space: nowrap;
+}
+.jp-shape-frame { font-weight: 500; color: var(--text-muted); }
+.jp-shape-item { text-align: left; font-weight: 600; }
+.jp-shape-cell { font-variant-numeric: tabular-nums; }
+.jp-shape-cell--yes { font-weight: 700; }
+.jp-shape-cell--maybe { opacity: 0.75; }
+.jp-shape-cell--no { color: var(--text-faint); }
+
+/* the book's own illustration — sized to the column, never cropped */
+.jp-shape-image { max-width: 100%; height: auto; border-radius: 3px; display: block; }
+/* a sense that HAS sub-senses: the children are indented under their parent,
+   because the lettering is what says "these are varieties of one thing" */
+.jp-shape--senses .jp-shape--senses { padding-left: 12px; }
+
+/* a comparison CELL is the smallest real claim in the entry — this word, in
+   this frame, gets this judgement. Make it a target without making it noisy. */
+.jp-shape-cell--live { cursor: pointer; }
+.jp-shape-cell--live:hover { background: var(--background-modifier-hover); }
+/* the 🏷️ sits at the end of whatever it captures and stays out of the reading
+   line until the row is touched (§26.1 — the entry is an article, not a UI) */
+.jp-shape-member .jp-part-capture,
+.jp-shape-attestation .jp-part-capture,
+.jp-shape-distinctions li .jp-part-capture { opacity: 0; margin-left: 6px; }
+.jp-shape-member:hover .jp-part-capture,
+.jp-shape-attestation:hover .jp-part-capture,
+.jp-shape-distinctions li:hover .jp-part-capture,
+.jp-part-capture:focus-visible { opacity: 1; }
+
+/* the breadcrumb is a PATH THROUGH THE RELATION GRAPH — the edge you travelled
+   is named with the same vocabulary you save with, so the trail reads as
+   lexical reasoning rather than as browser history */
+.jp-dict-breadcrumb-via {
+  font-size: 0.66rem; padding: 0 5px; margin: 0 2px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 8px; color: var(--text-muted); white-space: nowrap;
+}
+.jp-dict-breadcrumb-item { cursor: pointer; }
+.jp-dict-breadcrumb-item:hover { text-decoration: underline; }
+
+/* the book's headword-substitution mark, expanded in place: still reads as the
+   dictionary's abbreviation, not as text it wrote out */
+.jp-part-headmark { color: var(--text-muted); font-weight: 500; }
+
+/* evidential strength, per row: 実 = you met it, 辞 = a book asserted it.
+   §20.3 orders the whole example cascade by exactly this distinction. */
+.jp-dict-ctx-evid {
+  font-size: 0.62rem; padding: 0 4px; margin-right: 5px; border-radius: 3px;
+  border: 1px solid var(--background-modifier-border); color: var(--text-muted);
+}
+.jp-dict-ctx-evid--lived { border-style: solid; font-weight: 700; color: var(--text-normal); }
+.jp-dict-ctx-evid--curated { border-style: dashed; }
+
+/* ══════════════════════════════════════════════════════════════
+   §20.1 LEXICON: order, grouping and reading density
+
+   Deliberately last in the file. There are two .jp-lex-row blocks
+   above (an early "dense rail" pass and a later one) and the later
+   one wins on source order, so anything meant to hold has to come
+   after both rather than fight specificity.
+   ══════════════════════════════════════════════════════════════ */
+
+/* ── the sort row ─────────────────────────────────────────── */
+.jp-lex-sortrow {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  padding: 2px 4px 5px;
+}
+.jp-lex-sortlabel { font-size: 10px; color: var(--text-faint); margin-right: 2px; }
+.jp-lex-sort {
+  font-size: 11px; min-height: 30px; padding: 0 9px; border-radius: 15px;
+  cursor: pointer; color: var(--text-muted); background: transparent;
+  border: 1px solid var(--background-modifier-border); box-shadow: none;
+}
+.jp-lex-sort:hover { background: var(--background-modifier-hover); }
+.jp-lex-sort--active {
+  color: var(--text-on-accent); background: var(--interactive-accent);
+  border-color: var(--interactive-accent); font-weight: 600;
+}
+.jp-lex-sort--roomy { margin-left: auto; }
+
+/* ── group headers: what the あかさたな rail points AT ────── */
+.jp-lex-group {
+  position: sticky; top: 0; z-index: 2;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  color: var(--text-faint); padding: 6px 8px 3px;
+  background: var(--background-primary);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* ── clamped rather than cut ──────────────────────────────── */
+.jp-lex-row-gloss,
+.jp-lex-row-ex {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  white-space: normal; overflow: hidden; overflow-wrap: anywhere;
+}
+.jp-lex-row-gloss { font-size: 0.83rem; line-height: 1.5; }
+.jp-lex-row-ex { font-size: 0.81rem; line-height: 1.55; }
+
+/* ── ゆったり: for reading, not scanning ──────────────────── */
+.jp-lex--roomy .jp-lex-row { padding: 10px 10px 10px 0; min-height: 56px; gap: 10px; }
+.jp-lex--roomy .jp-lex-row-top { gap: 9px; }
+.jp-lex--roomy .jp-lex-row-hw { font-size: 1.28rem; line-height: 1.45; }
+.jp-lex--roomy .jp-lex-row-reading { font-size: 0.92rem; }
+.jp-lex--roomy .jp-lex-row-gloss { font-size: 1rem; line-height: 1.75; -webkit-line-clamp: 3; }
+.jp-lex--roomy .jp-lex-row-ex { font-size: 0.95rem; line-height: 1.75; -webkit-line-clamp: 3; }
+.jp-lex--roomy .jp-lex-group { font-size: 13px; padding: 9px 10px 5px; }
+.jp-lex--roomy .jp-lex-detail-hw { font-size: 1.7rem; }
+.jp-lex--roomy .jp-lex-detail-reading { font-size: 1rem; }
+/* The attested lines are the part you actually read, so they get the most air. */
+.jp-lex--roomy .jp-lex-leaf-quote { font-size: 1.05rem; line-height: 1.95; }
+.jp-lex--roomy .jp-lex-leaf-ctx { font-size: 0.92rem; line-height: 1.8; }
+.jp-lex--roomy .jp-lex-legacy-ex { font-size: 0.98rem; line-height: 1.85; }
+.jp-lex--roomy .jp-lex-dict-row .jp-lex-row-gloss { -webkit-line-clamp: 4; }
+
+/* ── §20.1 使われ方: a frequency word answered as a distribution ───────────
+   These entries have no confirmed 用例 and never will — 「ですね」 is not a thing
+   you noticed, it is a thing the language does. The bar exists because 53% and
+   4% do not separate at a glance as digits, and the glance is the whole point. */
+.jp-lex-usage-pos {
+  font-size: 0.78rem; color: var(--text-muted); margin-bottom: 8px;
+  padding-bottom: 6px; border-bottom: 1px solid var(--background-modifier-border);
+}
+.jp-lex-usage-row { margin-bottom: 9px; }
+.jp-lex-usage-head { display: flex; align-items: baseline; gap: 8px; }
+.jp-lex-usage-label { font-size: 0.86rem; font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.jp-lex-usage-count {
+  font-size: 0.74rem; color: var(--text-muted);
+  font-family: var(--font-monospace); font-variant-numeric: tabular-nums; flex-shrink: 0;
+}
+.jp-lex-usage-bar {
+  height: 3px; border-radius: 2px; margin: 3px 0 4px;
+  background: var(--background-modifier-border); overflow: hidden;
+}
+.jp-lex-usage-fill { height: 100%; background: var(--interactive-accent); border-radius: 2px; }
+.jp-lex-usage-ex {
+  font-size: 0.8rem; color: var(--text-faint); line-height: 1.6;
+  padding-left: 10px; overflow-wrap: anywhere;
+}
+.jp-lex--roomy .jp-lex-usage-label { font-size: 1.02rem; }
+.jp-lex--roomy .jp-lex-usage-ex { font-size: 0.95rem; line-height: 1.85; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   §29 THE DRAG ROAD — the surface opens when you carry something over it
+   ══════════════════════════════════════════════════════════════════════════
+
+   The gesture: iPad, Stage Manager, Apple Notes on the left. You select a line
+   with the Pencil, drag it across the seam, and this side BLOOMS — soft glass,
+   two to four big targets, the one under your nib lifted and ringed. Let go and
+   a ring fires at the exact point of release.
+
+   Everything here serves that being physical rather than dialog-ish: the veil
+   fades in over 120ms (fast enough to feel caused, slow enough to see), cards
+   rise with a 28ms per-card stagger so the rack reads as OPENING, and the armed
+   card gains scale + a ring rather than a background change, because depth is
+   what a finger believes. Nothing transitions longer than 180ms — past that it
+   stops being a response and becomes an animation you wait for.
+
+   The targets are 88px tall, not 44px: a nib is precise, a wrist in mid-air is
+   not. `prefers-reduced-motion` kills every transform below. */
+
+.jp-drop-host { position: relative; }
+
+.jp-drop-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: color-mix(in srgb, var(--background-primary) 78%, transparent);
+  backdrop-filter: blur(9px) saturate(1.15);
+  -webkit-backdrop-filter: blur(9px) saturate(1.15);
+  animation: jp-drop-veil-in 120ms ease-out;
+}
+@keyframes jp-drop-veil-in { from { opacity: 0; } to { opacity: 1; } }
+
+.jp-drop-sheet {
+  width: min(440px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.jp-drop-title {
+  text-align: center;
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+}
+
+.jp-drop-cards { display: flex; flex-direction: column; gap: 9px; }
+
+/* A target. 88px because it is aimed at from the air, and because a card that
+   is merely tappable reads as a list — this must read as a PLACE. */
+.jp-drop-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 88px;
+  padding: 14px 18px;
+  text-align: left;
+  border: 1.5px dashed var(--background-modifier-border);
+  border-radius: 16px;
+  background: var(--background-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  cursor: copy;
+  transition: transform 150ms cubic-bezier(0.2, 0.9, 0.3, 1.2),
+              box-shadow 150ms ease, border-color 120ms ease;
+  animation: jp-drop-card-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1.1) backwards;
+  animation-delay: calc(var(--jp-drop-i, 0) * 28ms);
+}
+/* The card is the drop target. A pointer landing on the icon instead of the
+   button would report the wrong element and the aim would be lost. */
+.jp-drop-card * { pointer-events: none; }
+
+@keyframes jp-drop-card-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* The default target — what a drop on empty space does. Solid, not dashed:
+   this one is a real answer, the others are alternatives. */
+.jp-drop-card--default {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+}
+
+/* Under the nib. Lift + ring, never a fill: depth is what reads as "this one". */
+.jp-drop-card--armed {
+  transform: translateY(-2px) scale(1.02);
+  border-style: solid;
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--interactive-accent) 22%, transparent),
+              0 8px 22px rgba(0, 0, 0, 0.16);
+}
+
+.jp-drop-card-icon { font-size: 1.7rem; line-height: 1; flex-shrink: 0; width: 34px; text-align: center; }
+.jp-drop-card-body { flex: 1; min-width: 0; }
+.jp-drop-card-label { font-size: 1rem; font-weight: 650; color: var(--text-normal); }
+.jp-drop-card-detail {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Cmd-V uses the same rack, but a paste is a CHOICE, not an aim — so the cards
+   are clickable and the default is not pre-blessed. */
+.jp-drop-veil--paste .jp-drop-card { cursor: pointer; }
+.jp-drop-veil--paste .jp-drop-card:hover {
+  transform: translateY(-2px) scale(1.01);
+  border-color: var(--interactive-accent);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+}
+
+/* The landing. Fired at the release point BEFORE any async work starts, so it
+   can never be misread as a spinner. */
+.jp-drop-flash {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border-radius: 50%;
+  border: 2px solid var(--interactive-accent);
+  pointer-events: none;
+  z-index: 70;
+  animation: jp-drop-flash 500ms cubic-bezier(0.15, 0.7, 0.3, 1) forwards;
+}
+@keyframes jp-drop-flash {
+  from { transform: scale(0.4); opacity: 0.95; }
+  to   { transform: scale(5.5); opacity: 0; }
+}
+
+/* ── the other direction: things you can carry OUT ─────────────────────────
+   No permanent affordance — a grip icon on every row would be visual debt paid
+   forever for a gesture used occasionally. The cursor on hover is the whole
+   hint on desktop; on iPad, long-press-and-move is already the system verb. */
+.jp-draggable { cursor: grab; }
+.jp-draggable:active { cursor: grabbing; }
+.jp-draggable--lifted { opacity: 0.45; transition: opacity 90ms ease; }
+
+/* What follows the nib. The browser default is a translucent screenshot of the
+   whole row — accurate, and unreadable at arm's length. */
+.jp-drag-pill {
+  position: fixed;
+  top: -1000px;
+  left: -1000px;
+  max-width: 260px;
+  padding: 8px 13px;
+  border-radius: 11px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+}
+.jp-drag-pill-main {
+  font-size: 0.95rem; font-weight: 640; line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.jp-drag-pill-sub {
+  font-size: 0.72rem; opacity: 0.82; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* The synthetic path positions this by hand instead of handing it to
+   `setDragImage`, which iOS ignores. Above the drop veil (z-index 60) because
+   the thing you are carrying must never go behind the targets you are aiming
+   at; `pointer-events: none` is inherited from the base rule and is what lets
+   `elementFromPoint` see the surface underneath rather than the pill. */
+.jp-drag-pill--live { z-index: 100; }
+
+/* The press is being taken seriously — shown BEFORE the carry commits, so a
+   long press is never a dead hold.
+
+   A ring rather than a transform on purpose: these same rows carry
+   `bindSwipe`, which drives `style.transform` directly, and two things
+   animating one property would fight over it. */
+.jp-draggable--arming {
+  box-shadow: inset 0 0 0 2px var(--interactive-accent);
+  border-radius: 8px;
+  transition: box-shadow 160ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jp-draggable--arming { transition: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jp-drop-veil, .jp-drop-card, .jp-drop-flash { animation: none; }
+  .jp-drop-card { transition: border-color 120ms ease; }
+  .jp-drop-card--armed { transform: none; }
+  .jp-drop-flash { display: none; }
+}
+
+/* Phone: the rack IS the screen. Targets go full-bleed and the sheet sits at
+   the BOTTOM — a drop on a phone ends at the thumb, not at the eye. */
+@media (max-width: 600px) {
+  .jp-drop-veil { align-items: flex-end; padding: 10px; }
+  .jp-drop-sheet { width: 100%; }
+  .jp-drop-card { min-height: 76px; border-radius: 14px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   §26.3 step 5 — THE IDENTITY BAR (five surfaces, one app)
+   ══════════════════════════════════════════════════════════════════════════
+   Until this existed the only road between 語彙 / 辞書 / 𝕏 / トレイ / 復習 was
+   the command palette, which on an iPad means: put the Pencil down. The bar is
+   deliberately quiet — a floor, not a headline — and it carries live counts
+   because §26.0 says a box must carry data. A zero renders as nothing. */
+
+.jp-surfbar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--background-secondary);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.jp-surfbar::-webkit-scrollbar { display: none; }
+
+.jp-surfbar-btn {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 46px;
+  min-height: 38px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 5px 4px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.jp-surfbar-btn:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.jp-surfbar-btn--on {
+  background: var(--background-primary);
+  color: var(--text-normal);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.jp-surfbar-glyph { display: flex; align-items: center; justify-content: center; font-size: 0.95rem; line-height: 1; }
+.jp-surfbar-glyph .svg-icon { width: 17px; height: 17px; }
+.jp-surfbar-label { font-size: 0.62rem; letter-spacing: 0.02em; }
+
+.jp-surfbar-badge {
+  position: absolute;
+  top: 2px;
+  right: max(2px, 18%);
+  min-width: 15px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Phone: the bar is the floor. ACE CROWN's law (§26.3) — every actionable
+   element in the thumb zone, the reading zone left alone above it. */
+.jp-surfbar--foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  margin: 8px -8px 0;
+  border-radius: 12px 12px 0 0;
+  background: color-mix(in srgb, var(--background-secondary) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--background-modifier-border);
+}
+.jp-surfbar--foot .jp-surfbar-btn { min-height: 48px; }
+@supports (padding: env(safe-area-inset-bottom)) {
+  .jp-surfbar--foot { padding-bottom: calc(3px + env(safe-area-inset-bottom)); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   §26.3 — THE THUMB DOCK (phone only)
+   ══════════════════════════════════════════════════════════════════════════
+   ACE CROWN's layout law: reading zone on top, every actionable element in the
+   thumb zone. `order: 99` rather than DOM position, so a view can keep building
+   its controls in the sequence that reads well in source and still land them at
+   the foot; `flex-shrink: 0` so the results area yields the space instead.
+
+   `position: sticky` does the work only where the dock's parent is itself
+   inside a scroller (LexiconPanel, mounted into `.jp-col-results`). In a
+   `height: 100%` flex column whose results pane is `flex: 1` — 辞書 and 𝕏 —
+   being the last flex child already pins it, and sticky is inert. One rule
+   covers both rather than each view learning its own. */
+.jp-thumbdock {
+  order: 99;
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: color-mix(in srgb, var(--background-primary) 94%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* Bottom-up reading order: navigation lowest (the thumb's home), the box you
+   are typing in directly above it, and whatever that box is producing above
+   that. Set here rather than by call order so the views stay readable. */
+.jp-thumbdock > .jp-dict-suggestions,
+.jp-thumbdock > .jp-x-chips { order: 0; }
+.jp-thumbdock > .jp-lex-searchrow,
+.jp-thumbdock > .jp-dict-search-row,
+.jp-thumbdock > .jp-x-search-row { order: 1; }
+.jp-thumbdock > .jp-surfbar { order: 2; }
+
+/* The bar is already IN a docked footer, so its own sticky-footer costume —
+   which never worked from inside a top header anyway — is removed rather than
+   layered on top of this one. */
+.jp-thumbdock > .jp-surfbar--foot {
+  position: static;
+  margin: 0;
+  padding-bottom: 0;
+  border-top: none;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* 16px is the threshold below which iOS zooms the page on focus, which then
+   leaves the view scrolled somewhere you did not ask for. 44px is the Apple
+   minimum touch target and the floor §26.3 already applies elsewhere. */
+.jp-thumbdock input {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+/* Completions open UPWARD from a docked box — downward would be off-screen. */
+.jp-thumbdock .jp-lex-ac {
+  top: auto;
+  bottom: calc(100% + 2px);
+}
+.jp-thumbdock > .jp-dict-suggestions { max-height: 40vh; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   §26.3 step 4 — THE SELECTION ECHO
+   ══════════════════════════════════════════════════════════════════════════
+   Highlight a phrase inside a plugin view and the verbs come to it. Same
+   classifier as the drag road, so 「⚡ 分類して台帳へ」 means one thing in all
+   three input modes — drop it in, paste it in, or select it in place.
+
+   Styled as a floating TOOL, not a popup: opaque, tight, no chrome around it,
+   arriving in 110ms. A menu would imply a decision; this is a hand reaching
+   for something already decided. */
+
+/* The echo bar is placed against its view, so the view must be a positioning
+   context in its own right rather than borrowing `.jp-drop-host`'s. */
+.jp-echo-host { position: relative; }
+
+.jp-echo {
+  position: absolute;
+  z-index: 55;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 11px;
+  background: var(--background-secondary-alt, var(--background-secondary));
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+  animation: jp-echo-in 110ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+  max-width: calc(100% - 16px);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.jp-echo::-webkit-scrollbar { display: none; }
+
+@keyframes jp-echo-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+
+.jp-echo-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 6px 11px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-normal);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 110ms ease;
+}
+.jp-echo-btn:hover { background: var(--background-modifier-hover); }
+.jp-echo-icon { font-size: 0.95rem; line-height: 1; }
+.jp-echo-label { font-weight: 550; }
+
+/* Phone: §26.3's device law — an action at the selection is an action under
+   your own thumb, where you cannot see it. So it pins to the floor instead,
+   full width, and the labels get room to be read rather than guessed at. */
+.jp-echo--foot {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  max-width: none;
+  justify-content: space-around;
+  border-radius: 14px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.jp-echo--foot .jp-echo-btn { flex: 1 1 0; min-height: 48px; justify-content: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .jp-echo { animation: none; }
+}
+
+/* The 鑑賞モード empty state now says what you can drop on it, because an
+   empty view that only names a command is a dead end (§28 S6). */
+.jp-follow-empty-hint {
+  margin-top: 8px;
+  font-size: 0.82rem;
+  color: var(--text-faint);
+  line-height: 1.6;
+  text-align: center;
+}
+
+/* ── §29.1 paradigm families ───────────────────────────────────────────────
+   Six spellings of one move, shown as one row that opens into the six. The
+   family row is deliberately QUIETER than an entry row, not louder: it is a
+   lens over rows that already exist, and reading as a heavier object would
+   imply it is a different kind of thing than its own members. */
+.jp-lex-par { cursor: pointer; }
+.jp-lex-par-twisty {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  width: 11px;
+  flex-shrink: 0;
+}
+.jp-lex-par-hw {
+  font-weight: 560;                 /* lighter than a real headword's 650 */
+  color: var(--text-muted);
+}
+.jp-lex-par-count {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 7px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+/* Why these are together, in words. A grouping the reader cannot audit is one
+   they have to take on trust, and §12 says never to ask for that. */
+.jp-lex-par-why {
+  font-size: 0.76rem;
+  color: var(--text-faint);
+  margin-top: 2px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+/* The members, indented under their family and railed so the nesting is
+   structural rather than decorative. */
+.jp-lex-par-kids {
+  margin-left: 14px;
+  padding-left: 10px;
+  border-left: 2px solid var(--background-modifier-border);
+  animation: jp-lex-par-open 140ms ease-out;
+}
+@keyframes jp-lex-par-open {
+  from { opacity: 0; transform: translateY(-3px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jp-lex-par-kids { animation: none; }
+}
+
+/* ── §29.2 the X corpus panel ──────────────────────────────────────────────
+   Rendered identically in the 𝕏 view and inside a catalog entry. */
+.jp-xu-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+  font-size: 0.78rem;
+}
+/* Descriptive, never evaluative — `narrow` means "look at who", not "bad". */
+.jp-xu-spread--spread { color: var(--text-muted); }
+.jp-xu-spread--narrow { color: var(--text-warning, var(--text-accent)); }
+.jp-xu-spread--thin   { color: var(--text-faint); }
+.jp-xu-span { color: var(--text-faint); margin-left: auto; }
+
+.jp-xu-env {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 5px;
+}
+.jp-xu-env-label {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  min-width: 2.6em;
+}
+.jp-xu-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--background-modifier-hover);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.jp-xu-chip-n { font-size: 0.66rem; color: var(--text-faint); }
+
+/* The concordance. Its whole value is the ALIGNMENT: the phrase in a fixed
+   column so the recurring left and right environment stack up visibly. That
+   needs a horizontal scroll rather than wrapping — a wrapped KWIC row is just
+   a sentence again, and the column it belonged to is gone. */
+.jp-xu-kwic {
+  margin-top: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+.jp-xu-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0 4px;
+  min-width: max-content;
+  padding: 4px 0;
+  font-size: 0.84rem;
+  line-height: 1.55;
+  border-bottom: 1px solid var(--background-modifier-border-hover, transparent);
+}
+.jp-xu-row:last-child { border-bottom: none; }
+.jp-xu-left {
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+.jp-xu-hit {
+  white-space: nowrap;
+  font-weight: 650;
+  color: var(--text-normal);
+  background: color-mix(in srgb, var(--text-accent) 14%, transparent);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+.jp-xu-right { white-space: nowrap; color: var(--text-muted); }
+.jp-xu-acts {
+  display: flex;
+  gap: 2px;
+  padding-left: 8px;
+  position: sticky;
+  right: 0;                            /* stays reachable while the row scrolls */
+  background: var(--background-primary);
+}
+.jp-xu-btn {
+  min-height: 26px;
+  min-width: 26px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.jp-xu-btn:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.jp-xu-more {
+  margin-top: 6px;
+  font-size: 0.74rem;
+  color: var(--text-faint);
+}
+
+/* Thumb-sized rows and a scroll hint where the pointer is a finger. */
+@media (hover: none) and (pointer: coarse) {
+  .jp-xu-row { padding: 7px 0; font-size: 0.88rem; }
+  .jp-xu-btn { min-height: 34px; min-width: 34px; }
+}

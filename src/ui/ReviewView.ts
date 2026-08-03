@@ -14,10 +14,11 @@
 import { ItemView, WorkspaceLeaf, Notice } from 'obsidian';
 import type { PatternEntry, Attestation } from '../notes/pattern-store.ts';
 import type { GoldExample } from '../notes/discourse-gold.ts';
-import { NOTE_TYPES, type NoteClass } from '../notes/note-types.ts';
+import { NOTE_TYPES, NOTE_CLASSES, type NoteClass } from '../notes/note-types.ts';
 import type { SrsStore } from '../srs/srs-store.ts';
 import { previewIntervals, type Grade, type CardState } from '../srs/scheduler.ts';
 import { buildReviewCard, isReviewable, type ReviewCard } from '../srs/review-cards.ts';
+import { DISPOSE, type Probe, type Verdict, type OpenCounts } from '../study/ratify.ts';
 
 export const JP_REVIEW_VIEW_TYPE = 'jp-srs-review-view';
 
@@ -31,6 +32,17 @@ export interface ReviewDeps {
   /** open the source of an attestation (transcript block / tweet / web). */
   openAttestation: (att: Attestation) => Promise<void>;
   newPerSession: () => number;
+  /**
+   * AUDIT §6.5 — at most ONE judgement to offer about this pattern, or null.
+   * `seq` is how many probes the session has already shown; it decides which
+   * sampling stratum a sighting is drawn from, so it must count *offers*, not
+   * answers, or the split stops being one-in-N.
+   */
+  nextProbe?: (p: PatternEntry, seq: number) => Probe | null;
+  /** Apply an answer. Returns a sentence worth showing, or null. */
+  answerProbe?: (probe: Probe, verdict: Verdict, answer?: string) => Promise<string | null>;
+  /** How much is still open across the catalog — shown on the home screen. */
+  openCounts?: () => OpenCounts;
 }
 
 interface Session {
@@ -39,12 +51,27 @@ interface Session {
   graded: number;
   again: number;
   startedFresh: number;
+  /** probes OFFERED this session — drives the sampling stratum (see deps). */
+  probes: number;
+  /** probes actually answered (yes/no/skip all count as an answer). */
+  answered: number;
 }
 
 export class ReviewView extends ItemView {
   private session: Session | null = null;
   private revealed = false;
   private audio: HTMLAudioElement | null = null;
+  /**
+   * The judgement offered after the current card was graded (AUDIT §6.5).
+   *
+   * It replaces the card for one beat rather than sitting beside it: the card
+   * is finished, and a question that shares the screen with a finished card is
+   * a thing to scroll past. Any key that would have advanced still advances.
+   */
+  private probe: Probe | null = null;
+  /** the class picker, opened by ✕ on a class probe so a disagreement can
+   *  COMPLETE here instead of becoming an errand somewhere else. */
+  private probeRetype = false;
 
   constructor(leaf: WorkspaceLeaf, private deps: ReviewDeps) {
     super(leaf);
@@ -82,7 +109,7 @@ export class ReviewView extends ItemView {
       this.render();
       return;
     }
-    this.session = { queue, pos: 0, graded: 0, again: 0, startedFresh: 0 };
+    this.session = { queue, pos: 0, graded: 0, again: 0, startedFresh: 0, probes: 0, answered: 0 };
     this.revealed = false;
     this.render();
   }
@@ -92,8 +119,105 @@ export class ReviewView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass('jp-srs-view');
-    if (this.session) this.renderCard(root);
+    if (this.session && this.probe) this.renderProbe(root, this.probe);
+    else if (this.session) this.renderCard(root);
     else this.renderHome(root);
+  }
+
+  // ── the byproduct judgement (AUDIT §6.5) ──
+
+  /**
+   * One question, on the pattern just graded, answerable in one keystroke.
+   *
+   * Everything here is shaped by why the standalone ✓/✕ queue never once
+   * completed: no queue (one probe, then the next card), no modal (Enter walks
+   * past it), no ambiguity about what ✓ commits to (both verdicts are spelled
+   * out on their buttons), and evidence trimmed to something judgeable at a
+   * glance rather than a 400-character concordance window.
+   */
+  private renderProbe(root: HTMLElement, probe: Probe): void {
+    const sess = this.session!;
+    const bar = root.createDiv('jp-srs-progress');
+    bar.createDiv('jp-srs-progress-fill').style.width = `${(sess.pos / sess.queue.length) * 100}%`;
+
+    const box = root.createDiv('jp-srs-probe');
+    const head = box.createDiv('jp-srs-probe-head');
+    head.createSpan({ text: '照合', cls: 'jp-srs-probe-tag' });
+    // A move claim settles hundreds of sightings at once; saying so is the
+    // difference between "another question" and "the best minute of the day".
+    if (probe.covers > 1) head.createSpan({ text: `この1問で ${probe.covers}件`, cls: 'jp-srs-probe-covers' });
+    if (probe.asks > 0) head.createSpan({ text: `${probe.asks + 1}回目`, cls: 'jp-srs-probe-again' });
+
+    box.createDiv({ text: probe.question, cls: 'jp-srs-probe-q' });
+    for (const e of probe.evidence) box.createDiv({ text: `「${e}」`, cls: 'jp-srs-probe-ev' });
+
+    if (this.probeRetype) { this.renderRetype(box, probe); return; }
+
+    const acts = box.createDiv('jp-srs-probe-acts');
+    const btn = (label: string, hint: string, cls: string, run: () => void) => {
+      const b = acts.createEl('button', { cls: `jp-srs-probe-btn ${cls}` });
+      b.createDiv({ text: label, cls: 'jp-srs-probe-btn-label' });
+      b.createDiv({ text: hint, cls: 'jp-srs-probe-btn-hint' });
+      b.onclick = run;
+      return b;
+    };
+    btn(`✓ ${probe.yes}`, 'y', 'jp-srs-probe--yes', () => void this.answer('yes'));
+    btn(`✕ ${probe.no}`, 'n', 'jp-srs-probe--no', () => {
+      if (probe.kind === 'class') { this.probeRetype = true; this.render(); return; }
+      void this.answer('no');
+    });
+    btn('わからない', '↵ / space', 'jp-srs-probe--skip', () => void this.answer('skip'));
+
+    box.createDiv({
+      cls: 'jp-srs-probe-foot',
+      text: 'わからない、で構いません — 同じ問いは次の復習でまた出ます。',
+    });
+
+    box.tabIndex = -1;
+    box.focus();
+    box.onkeydown = (e) => {
+      const k = e.key.toLowerCase();
+      if (k === 'y') { e.preventDefault(); void this.answer('yes'); }
+      else if (k === 'n') {
+        e.preventDefault();
+        if (probe.kind === 'class') { this.probeRetype = true; this.render(); }
+        else void this.answer('no');
+      } else if (e.key === 'Enter' || e.key === ' ' || k === '?') { e.preventDefault(); void this.answer('skip'); }
+    };
+  }
+
+  /** ✕ on a class probe → pick the right one, here. */
+  private renderRetype(box: HTMLElement, probe: Probe): void {
+    box.createDiv({ text: 'ではどれですか？', cls: 'jp-srs-probe-q' });
+    const row = box.createDiv('jp-srs-probe-classes');
+    for (const c of NOTE_CLASSES) {
+      if (c === probe.subject) continue;         // the one they just refused
+      const d = NOTE_TYPES[c];
+      const b = row.createEl('button', { text: `${d.emoji} ${d.label}`, cls: 'jp-srs-probe-class' });
+      b.style.borderColor = d.color;
+      b.onclick = () => void this.answer('no', c);
+    }
+    const back = box.createDiv('jp-srs-probe-acts');
+    // Much of the class queue is ASR wreckage captured as if it were a phrase;
+    // "which of six classes is 「け情勢によって」" has no right answer. Disposal
+    // routes to the same deletePattern the 語彙 panel's 🗑 uses, and is reachable
+    // only from here — after a deliberate ✕.
+    const drop = back.createEl('button', { text: '🗑 これは要らない', cls: 'jp-srs-probe-btn jp-srs-probe--drop' });
+    drop.onclick = () => void this.answer('no', DISPOSE);
+    const skip = back.createEl('button', { text: 'やめる', cls: 'jp-srs-probe-btn jp-srs-probe--skip' });
+    skip.onclick = () => void this.answer('skip');
+  }
+
+  private async answer(verdict: Verdict, answer?: string): Promise<void> {
+    const probe = this.probe;
+    this.probe = null;
+    this.probeRetype = false;
+    if (probe && this.deps.answerProbe) {
+      this.session!.answered++;
+      const msg = await this.deps.answerProbe(probe, verdict, answer);
+      if (msg) new Notice(msg, 4000);
+    }
+    this.advance(true);
   }
 
   // ── home / deck overview ──
@@ -159,6 +283,36 @@ export class ReviewView extends ItemView {
     const start = wrap.createEl('button', { text: `${total}枚を復習する`, cls: 'jp-srs-btn jp-srs-btn--cta' });
     start.onclick = () => this.startSession(false);
     this.renderClassBreakdown(wrap, deck);
+    this.renderOpen(wrap, total);
+  }
+
+  /**
+   * What is still unjudged, stated before the session rather than after.
+   *
+   * The number is deliberately the HONEST one and not the raw sighting backlog:
+   * 「ですね」 alone holds 3,565 machine suggestions, and a home screen reading
+   * "17,891 to confirm" is how a ✓/✕ queue becomes something you never open.
+   * A move claim is one question worth hundreds, and it is counted as one.
+   */
+  private renderOpen(wrap: HTMLElement, thisSession: number): void {
+    const o = this.deps.openCounts?.();
+    if (!o || o.total === 0) return;
+    const row = wrap.createDiv('jp-srs-open');
+    const bits: string[] = [];
+    if (o.move) bits.push(`語法 ${o.move}`);
+    if (o.class) bits.push(`分類 ${o.class}`);
+    if (o.sighting) bits.push(`実例 ${o.sighting}`);
+    row.createDiv({ text: `照合待ち ${o.total}問 — ${bits.join('・')}`, cls: 'jp-srs-open-line' });
+    if (o.covered) {
+      row.createDiv({
+        cls: 'jp-srs-open-hint',
+        text: `うち語法の ${o.move}問だけで、${o.covered.toLocaleString()}件の実例が決まります。`,
+      });
+    }
+    row.createDiv({
+      cls: 'jp-srs-open-hint',
+      text: `1枚採点するごとに1問だけ出ます（この回で最大 ${thisSession}問）。別途の作業はありません。`,
+    });
   }
 
   private renderClassBreakdown(wrap: HTMLElement, deck: PatternEntry[]): void {
@@ -184,7 +338,7 @@ export class ReviewView extends ItemView {
       queue = this.deps.srs.buildQueue(ids, Date.now(), this.deps.newPerSession());
     }
     if (queue.length === 0) { new Notice('復習するカードがありません'); return; }
-    this.session = { queue, pos: 0, graded: 0, again: 0, startedFresh: 0 };
+    this.session = { queue, pos: 0, graded: 0, again: 0, startedFresh: 0, probes: 0, answered: 0 };
     this.revealed = false;
     this.render();
   }
@@ -306,6 +460,20 @@ export class ReviewView extends ItemView {
     await this.deps.srs.review(p.id, g);
     this.session!.graded++;
     if (g === 1) this.session!.again++;
+
+    // §6.5: the judgement is offered HERE, at the one moment the pattern has
+    // just been reconstructed from memory and the expensive cognitive work is
+    // already paid for. `probes` counts offers, not answers — the sampling
+    // split has to hold whether or not the user chooses to answer.
+    const probe = this.deps.nextProbe?.(p, this.session!.probes) ?? null;
+    if (probe) {
+      this.session!.probes++;
+      this.probe = probe;
+      this.probeRetype = false;
+      this.stopAudio();
+      this.render();
+      return;
+    }
     this.advance(true);
   }
 
@@ -314,6 +482,8 @@ export class ReviewView extends ItemView {
     const sess = this.session!;
     sess.pos++;
     this.revealed = false;
+    this.probe = null;
+    this.probeRetype = false;
     if (sess.pos >= sess.queue.length) { this.endSession(true); return; }
     this.render();
   }
@@ -321,12 +491,17 @@ export class ReviewView extends ItemView {
   private endSession(completed = false): void {
     const sess = this.session;
     this.session = null;
+    this.probe = null;
+    this.probeRetype = false;
     this.stopAudio();
     this.render();
     if (sess && sess.graded > 0) {
+      // The ratifications are named in the same breath as the reps, because
+      // that is the claim: they happened as part of studying, not instead of it.
+      const also = sess.answered ? `・照合 ${sess.answered}件` : '';
       new Notice(completed
-        ? `✅ セッション完了 — ${sess.graded}枚（もう一度 ${sess.again}）`
-        : `中断 — ${sess.graded}枚を採点`, 5000);
+        ? `✅ セッション完了 — ${sess.graded}枚（もう一度 ${sess.again}）${also}`
+        : `中断 — ${sess.graded}枚を採点${also}`, 5000);
     }
   }
 

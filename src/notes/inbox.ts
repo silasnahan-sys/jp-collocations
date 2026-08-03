@@ -26,6 +26,13 @@ export interface MarkRef {
   wallClock: number;
 }
 
+/** §25.4 — a cut scene, as vault-relative paths. Either half may be missing:
+ *  a still with no audio is still worth showing. */
+export interface MarkClip {
+  audio?: string;
+  still?: string;
+}
+
 export interface InboxCard {
   id: string;
   kind: InboxKind;
@@ -37,6 +44,8 @@ export interface InboxCard {
   bubbles?: Array<{ text: string; bbox: [number, number, number, number] }>;
   /** mark: the §25.1 pointer. */
   mark?: MarkRef;
+  /** mark: §25.4 the scene cut at it — vault paths, not blobs. */
+  clip?: MarkClip;
   createdAt: number;
   /** where it came from, best-effort (drop metadata / URL host). */
   origin?: string;
@@ -186,5 +195,37 @@ export class InboxStore {
     c.bubbles = bubbles;
     await this.persist();
     return true;
+  }
+
+  /**
+   * §25.4 — remember the clip cut at a mark, so classifying it later still has
+   * the scene. Deliberately re-writable, unlike bubbles: a clip can be cut again
+   * with different padding, and the newest cut is the one you meant.
+   */
+  async setMarkClip(id: string, clip: MarkClip): Promise<boolean> {
+    const c = this.cards.get(id);
+    if (!c || c.kind !== 'mark') return false;
+    c.clip = { ...clip };
+    await this.persist();
+    return true;
+  }
+
+  /** §25.1 — edit the note on a mark after the fact. Watching is a bad time to
+   *  write, so what you wrote then must not be frozen. */
+  async setMarkNote(id: string, text: string): Promise<boolean> {
+    const c = this.cards.get(id);
+    if (!c || c.kind !== 'mark') return false;
+    c.content = text;
+    if (c.mark) c.mark = { ...c.mark, seed: text || undefined };
+    await this.persist();
+    return true;
+  }
+
+  /** Mark cards standing against one transcript note, oldest first. */
+  marksForFile(path: string | undefined): InboxCard[] {
+    if (!path) return [];
+    return [...this.cards.values()]
+      .filter((c) => c.kind === 'mark' && c.mark?.file === path)
+      .sort((a, b) => a.createdAt - b.createdAt);
   }
 }

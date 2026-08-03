@@ -98,12 +98,32 @@ export function frontmatterSource(md: string): string | null {
 /**
  * ALL transcript references in the frontmatter — one handwritten page often
  * spans several videos. Accepted shapes:
- *   source: [[A]]
- *   source: [[A]], [[B]]
+ *   sources: [[A]]
  *   sources: [[A]], [[B]]
  *   sources:
  *     - [[A]]
  *     - [[B]]
+ *   source: [[A]]            ← LEGACY, and only when the value is a wikilink
+ *
+ * ## Why the singular key is conditional
+ *
+ * The key regex used to be `sources?(_transcript)?:`, which matched the
+ * SINGULAR `source:` unconditionally. That was deliberate — `ensureSourceFrontmatter`
+ * writes `source: [[basename]]`, and golden/capture-frontmatter.mjs pins that
+ * those notes must keep resolving. But the same key is ALSO the medium tag that
+ * every transcript this plugin writes carries: `source: yt` / `tv` (Plex,
+ * jimaku) / `podcast` / `book` / `note`.
+ *
+ * So the ⚡ gate accepted every transcript in the vault as a capture note and
+ * then failed downstream at `getFirstLinkpathDest('tv')` — or, in a vault
+ * holding a note actually named `tv`/`yt`/`book`, resolved it and reconciled a
+ * transcript against something unrelated. `captureNoteFromTranscript` had to
+ * hand-roll a plural-only regex to dodge it rather than fix this function.
+ *
+ * The two cases are distinguishable by SHAPE, not by key: a note reference is a
+ * `[[wikilink]]`; a medium tag is a bare word. So the singular is accepted only
+ * when it carries a wikilink. Legacy capture notes keep working, transcripts
+ * stop being mistaken for them, and `frontmatterMedium` reads the other case.
  */
 export function frontmatterSources(md: string): string[] {
   const fm = md.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/);
@@ -120,13 +140,43 @@ export function frontmatterSources(md: string): string[] {
     }
     if (v) out.push(v);
   };
-  // horizontal whitespace ONLY after the colon — `\s*` would swallow the
-  // newline and make an empty `sources:` (list form) capture the next line
-  const inline = fm[1].match(/^\s*sources?(?:_transcript)?:[^\S\r\n]*(\S.*?)\s*$/m);
-  if (inline) for (const part of inline[1].split(',')) push(part);
-  const list = fm[1].match(/^\s*sources?(?:_transcript)?:\s*$\r?\n((?:\s*-\s*.+\r?\n?)+)/m);
-  if (list) for (const ln of list[1].split('\n')) push(ln.replace(/^\s*-\s*/, ''));
+  const collect = (key: RegExp, linkOnly: boolean) => {
+    // horizontal whitespace ONLY after the colon — `\s*` would swallow the
+    // newline and make an empty `sources:` (list form) capture the next line
+    const inline = fm[1].match(new RegExp(`^\\s*${key.source}:[^\\S\\r\\n]*(\\S.*?)\\s*$`, 'm'));
+    if (inline && (!linkOnly || inline[1].includes('[['))) {
+      for (const part of inline[1].split(',')) push(part);
+    }
+    const list = fm[1].match(new RegExp(`^\\s*${key.source}:\\s*$\\r?\\n((?:\\s*-\\s*.+\\r?\\n?)+)`, 'm'));
+    // A list under either key is a reference list by construction — a medium tag
+    // is never written as a one-item YAML sequence.
+    if (list) for (const ln of list[1].split('\n')) push(ln.replace(/^\s*-\s*/, ''));
+  };
+  collect(/sources(?:_transcript)?/, false);
+  collect(/source(?:_transcript)?/, true);
   return [...new Set(out)];
+}
+
+/**
+ * The SINGULAR `source:` read as what it is on a transcript — the MEDIUM tag
+ * (`yt` / `tv` / `podcast` / `book` / `note` / `x` / `web`). Returns null when
+ * the value is a wikilink, because that is the legacy capture-note shape and
+ * belongs to `frontmatterSources`, not here.
+ */
+export function frontmatterMedium(md: string): string | null {
+  const fm = md.match(/^﻿?---\r?\n([\s\S]*?)\r?\n---/);
+  if (!fm) return null;
+  const m = fm[1].match(/^\s*source:[^\S\r\n]*(\S.*?)\s*$/m);
+  if (!m) return null;
+  const v = m[1].replace(/^["']|["']$/g, '').trim();
+  return !v || v.includes('[[') ? null : v;
+}
+
+/** True when this note is a CAPTURE note — it names other notes as sources.
+ *  The one test `captureNoteFromTranscript` needs, so it no longer has to
+ *  re-implement the frontmatter parse to avoid the singular-key bug. */
+export function isCaptureNote(md: string): boolean {
+  return frontmatterSources(md).length > 0;
 }
 
 /** Read a single scalar `key: value` from the leading YAML frontmatter block.
@@ -150,6 +200,65 @@ export function frontmatterAny(md: string, keys: string[]): string | null {
   return null;
 }
 
+/**
+ * Beyond this a line is a paragraph, not a phrase you reach for.
+ *
+ * Measured against the real catalog rather than guessed: 95% of genuine
+ * noticings are ≤25 characters and the longest defensible one is 136. The
+ * ceiling sits well clear of that so it only ever catches pathological input —
+ * a 343-character ASR run-on that had been stored as a single headword, and was
+ * wide enough on screen to paint over four rows beneath it.
+ */
+const MAX_PHRASE_LEN = 160;
+
+/**
+ * Lines this plugin wrote itself, which must never come back in as noticings.
+ *
+ * `⚡ 照合` scans a notes file for phrases; nothing stopped it scanning a file
+ * the plugin GENERATED. So the anchors, correction marks and cloze fronts that
+ * `cards.ts` and this module emit were read back as things the user had
+ * noticed, and 11.5% of the catalog became furniture: `⏱原文:![[Transcripts/…]]`
+ * standing as a headword, `▶YouTube(156:11):https://…` as another.
+ *
+ * Every pattern here matches a string THIS CODEBASE emits, so it is a closed
+ * set rather than a guess about Japanese. Each one is anchored and specific: a
+ * bare `▶` or `📄` is left alone, because a person may well write one.
+ */
+const GENERATED_LINE: RegExp[] = [
+  /^⏱\s*原文\s*[:：]/u,                                   // cards.ts renderAnchor
+  /^▶\s*YouTube\s*[（(]/u,                                 // cards.ts deep link
+  /^メモ\(raw\)\s*[:：]/u,                                  // cards.ts / this module
+  /^⚠️?\s*(?:同音校正|漢字違い|相違)\s*[:：]/u,              // correction marks
+  /^続き\s*[:：]/u,                                         // discourse card back
+  /【_+】/u,                                                // a cloze card's blank
+  /^\?$/u,                                                  // the cloze separator
+  /^(?:成分|型|レンマ|ハロー)\s*[:：]/u,                     // payload lines (scaffold.ts)
+];
+
+/**
+ * Is this line the plugin's own output, or otherwise structurally incapable of
+ * being a noticing? Exported because the ingest gate and the retroactive
+ * cleanup MUST agree — a rule that only runs on new data leaves the old junk
+ * sitting in the index forever, and two copies of the rule drift apart.
+ */
+export function looksGenerated(line: string): boolean {
+  const t = line.trim();
+  if (!t) return true;
+  if (t.length > MAX_PHRASE_LEN) return true;
+  if (GENERATED_LINE.some((re) => re.test(t))) return true;
+  // An embed or a URL ANYWHERE, not merely as the whole line: the junk keys all
+  // carried a prefix (`⏱原文:![[…]]`), which is exactly how they slipped past
+  // the old whole-line test.
+  if (/!?\[\[[^\]]*\]\]/.test(t) || /https?:\/\//.test(t)) return true;
+  // A tweet body, pasted whole. The X join stores the post as its own card; the
+  // first line of one is not a pattern.
+  if (/^@[A-Za-z0-9_]{2,15}[「（\s]/u.test(t)) return true;
+  // OCR'd English with its spaces eaten ("Asheadofthesalessection…"). Latin,
+  // unbroken, and far past any real word — a scan artefact, not a phrase.
+  if (t.length > 40 && /^[\x20-\x7E]+$/.test(t) && !/\s/.test(t)) return true;
+  return false;
+}
+
 /** Extract candidate note phrases from a notes file: plain text lines, list
  *  items, and callout bodies — skipping frontmatter, headings, and blockquotes. */
 export function extractNotePhrases(md: string): string[] {
@@ -160,9 +269,9 @@ export function extractNotePhrases(md: string): string[] {
     if (!t || t.startsWith('#') || t.startsWith('>') || t.startsWith('---') || t.startsWith('```')) continue;
     t = t.replace(/^[-*+]\s+/, '').replace(/^\d+[.)]\s+/, '').replace(/^\[[ x]\]\s+/, '');
     t = t.replace(/[*_`~]/g, '').trim();
-    // Not notes: image/file embeds, bare links, %%comments%% — a notes file
-    // legitimately carries its handwriting image and the video URLs.
-    if (/^!?\[\[[^\]]*\]\]$/.test(t) || t.startsWith('![') || /^https?:\/\/\S+$/.test(t) || /^%%.*%%$/.test(t)) continue;
+    // Not notes: image/file embeds, bare links, %%comments%%, and — the reason
+    // this gate exists — anything the plugin printed itself.
+    if (/^%%.*%%$/.test(t) || looksGenerated(t)) continue;
     if (t.length >= 2) out.push(t);
   }
   return out;

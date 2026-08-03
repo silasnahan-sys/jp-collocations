@@ -145,6 +145,30 @@ export const DEFAULT_PLEX_SETTINGS: PlexSettings = {
   clipPostSec: 4,
 };
 
+/**
+ * §25.4b jimaku.cc — Japanese subtitles for the shows whose files do not carry
+ * them. Plex can only offer what is muxed into the media, which for most
+ * live-action and a lot of older anime is nothing; this is the other source.
+ * The KEY is a SECRET, kept device-local exactly like the Plex token.
+ */
+export interface JimakuSettings {
+  /** ⚠ SECRET — jimaku.cc API key. '' = the whole adapter stays dormant. */
+  apiKey: string;
+  /**
+   * `fallback` — ask jimaku only when Plex has no usable Japanese track
+   * (the default: the muxed track is guaranteed to be in sync).
+   * `always`   — prefer jimaku even when Plex has one (better transcripts for
+   *              shows whose muxed track is a burned-in-style or partial rip).
+   * `off`      — never reach the network for subtitles.
+   */
+  mode: 'fallback' | 'always' | 'off';
+}
+
+export const DEFAULT_JIMAKU_SETTINGS: JimakuSettings = {
+  apiKey: '',
+  mode: 'fallback',
+};
+
 export interface PluginSettings {
   hyogenEnabled: boolean;
   hyogenRateLimit: number;
@@ -174,6 +198,8 @@ export interface PluginSettings {
   speak: SpeakSettings;
   /** §25.4 Plex/TV co-viewing adapter (clock (b) + clip cutting). */
   plex: PlexSettings;
+  /** §25.4b jimaku.cc — the subtitle source for media that carries none. */
+  jimaku: JimakuSettings;
   /**
    * §27.5 big-dictionary sidecars. Absolute path to an EXTRACTED Yomitan export
    * folder (index.json + term_bank_*.json) — desktop only, and deliberately
@@ -220,6 +246,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
     goalPoints: 30,
   },
   plex: { ...DEFAULT_PLEX_SETTINGS },
+  jimaku: { ...DEFAULT_JIMAKU_SETTINGS },
   bigDict: { exportFolder: '', root: 'JP Dictionaries', backupFile: '' },
 };
 

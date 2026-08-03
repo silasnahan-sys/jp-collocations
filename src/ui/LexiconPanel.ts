@@ -26,11 +26,46 @@ import { NOTE_TYPES, NOTE_CLASSES, type NoteClass } from '../notes/note-types.ts
 import { classChips, classDot, applyClassRail, classColor } from './class-grammar.ts';
 import type { BigDictHit, BigFrameHit } from '../dictionary/big-dict.ts';
 import { unifiedSearch, autocomplete, linkLegacy, type UnifiedEntry, type SearchMode } from '../lexicon/unified-search.ts';
-import { buildContextTree, type ContextTree, type ContextLeaf } from '../lexicon/context-tree.ts';
+import { buildContextTree, buildUsageProfile, type ContextTree, type ContextLeaf, type UsageProfile } from '../lexicon/context-tree.ts';
+import { foldParadigms, paradigmSurface, type Paradigm } from '../lexicon/paradigm.ts';
+import { renderXUsage } from './x-usage-panel.ts';
+import type { XUsage } from '../x/usage.ts';
 import { knowledgeBox } from './knowledge-box.ts';
 import { HoverPeek, definitionsPreview } from './hover-peek.ts';
+import { attachDropRouter } from './drop-router.ts';
+import { attachSelectionEcho } from './selection-echo.ts';
+import { thumbDock } from './view-chrome.ts';
+import { pointerDragActive } from './pointer-drag.ts';
+import { makeDraggable } from './drag-out.ts';
+import type { DropIntent } from '../notes/drop-intent.ts';
+import type { GohoFrame, GohoMeasured, GohoExample } from '../scraper/goho.ts';
+
+/** Host of a URL, for citing a corpus sentence whose document has no title. */
+const hostOf = (url?: string): string => {
+  if (!url) return '';
+  try { return new URL(url).host.replace(/^www\d*\./, ''); } catch { return ''; }
+};
 
 type SrcFilter = 'yt' | 'x' | 'web' | 'manual';
+
+/**
+ * How many rows one list render will build.
+ *
+ * Not a performance number — an honesty number. Whatever it is, hitting it
+ * means the list is showing a PREFIX, and the stat line has to say so rather
+ * than printing the cap as if it were the total (§28 S6). 600 clears the
+ * current catalog with room to grow; the day it stops doing so, the line above
+ * the list will be the thing that says it.
+ */
+const LIST_LIMIT = 600;
+
+/** What the 並び row offers. `auto` defers to whether a query is running. */
+type SortMode = 'auto' | 'kana' | 'new' | 'count' | 'cls';
+
+/** How the 語法 box ranks its collocate chips. */
+type GohoSort = 'freq' | 'dice';
+/** `auto` resolved against the current query — never `auto` itself. */
+type EffectiveSort = 'kana' | 'new' | 'count' | 'cls' | 'score';
 
 export interface LexiconDeps {
   patterns: () => PatternEntry[];
@@ -52,9 +87,24 @@ export interface LexiconDeps {
   loadSeg: (path: string) => SegLike | null;
   /** §22.2 manga: OCR'd bubbles of a stored panel (for the manga context renderer). */
   bubblesFor?: (imagePath: string) => Array<{ text: string; bbox: [number, number, number, number] }> | null;
-  /** §23.5 cross-surface drop: a tray card (or any text) dropped ONTO the 語彙
-   *  view opens capture over it. */
-  onDropCapture?: (text: string, sourceName?: string) => void;
+  /**
+   * §29 — the drag road. Anything carried onto this panel (from Apple Notes
+   * across a Stage Manager seam, from Safari, from another plugin surface) is
+   * classified by `drop-intent` and executed by main.ts. The panel's only
+   * contribution is `where`: which entry the nib was over, because that is the
+   * one fact the executor cannot derive.
+   */
+  onDrop?: (intent: DropIntent, files: File[], where?: { patternId?: string }) => void;
+  /** Capabilities, so a target that cannot run is never drawn (§28 S6). */
+  dropCan?: () => { ocr?: boolean; x?: boolean };
+  /**
+   * §29.2 — the 𝕏 corpus panel for this entry. Absent (or null) when the
+   * corpus has nothing on it, which renders as no box rather than an empty one.
+   */
+  xUsage?: (p: PatternEntry) => XUsage | null;
+  /** Attach ONE concordance line as a 用例 — a window, never a whole tweet. */
+  attachXLine?: (p: PatternEntry, quote: string, url: string, handle: string) => void;
+  openUrl?: (url: string) => void;
   /** ── §20.3: the 用例 finder cascade ── */
   /** Tier A: run every finder for this entry NOW; returns NEW suggestion counts. */
   findExamples: (p: PatternEntry) => Promise<{ swept: number; x: number }>;
@@ -65,7 +115,12 @@ export interface LexiconDeps {
   /** §22.7: fetch + freeze the 語法プロフィール (absent = corpus disabled). */
   fetchGoho?: (p: PatternEntry) => Promise<boolean>;
   /** §22.7: capture a corpus example as a curated-stratum attestation. */
-  captureCorpus?: (p: PatternEntry, example: string) => void;
+  captureCorpus?: (
+    p: PatternEntry,
+    example: string,
+    /** the document the sentence actually came from, when the source said. */
+    prov?: { sourceName?: string; url?: string },
+  ) => void;
   /**
    * §27.5 — the big vault-sidecar dictionaries. ASYNC by nature: each query is
    * a file read, so the panel renders first and fills this in when it lands.
@@ -82,10 +137,25 @@ export interface LexiconDeps {
 export class LexiconPanel {
   private query = '';
   private mode: SearchMode = 'prefix';       // monokakido default: 前方一致
+  /**
+   * §20.1 — how the list is ordered, as an explicit choice rather than an
+   * emergent property of whether the search box happens to be empty.
+   *
+   * `auto` keeps the old behaviour (relevance while searching, 五十音 while
+   * browsing) because that is the right default; the other modes exist because
+   * the two questions a catalog gets asked most — "what did I add lately" and
+   * "what have I actually seen a lot of" — had no answer at all before.
+   */
+  private sort: SortMode = 'auto';
+  /** Roomier type for reading rather than scanning (§20.1 readability). */
+  private roomy = false;
   private classes = new Set<NoteClass>();
   private sources = new Set<SrcFilter>();
   private selectedId: string | null = null;
   private debounce: ReturnType<typeof setTimeout> | null = null;
+  /** §29.1 — which paradigm families are expanded. Ids, not indices, so the
+   *  state survives re-sorting and re-filtering. */
+  private openParadigms = new Set<string>();
   /** list scroll position, restored on back-from-detail (§20.1). */
   private listScroll = 0;
   private restoreScroll = false;
@@ -98,6 +168,9 @@ export class LexiconPanel {
   private container: HTMLElement | null = null;
   private audio: HTMLAudioElement | null = null;
   private playingKey: string | null = null;
+  /** §22.7 — how the 語法 box ranks its chips. Defaults to what the source
+   *  shipped; see the toggle for why it is offered rather than applied. */
+  private gohoSort: GohoSort = 'freq';
 
   constructor(private app: App, private deps: LexiconDeps) {}
 
@@ -106,27 +179,31 @@ export class LexiconPanel {
     this.container = container;
     container.empty();
     container.addClass('jp-lex');
+    container.toggleClass('jp-lex--roomy', this.roomy);
     // §23.5 keyboard hand: attach once per container
     const c = container as HTMLElement & { _lexKeys?: boolean };
     if (!c._lexKeys) {
       c._lexKeys = true;
       container.tabIndex = 0;
       container.addEventListener('keydown', (e) => this.onKey(e));
-      // §23.5 Pencil hand: a tray card dragged onto the 語彙 view = capture
-      if (this.deps.onDropCapture) {
-        container.addEventListener('dragover', (e) => {
-          if (!e.dataTransfer?.types.includes('text/plain')) return;
-          e.preventDefault();
-          container.addClass('jp-lex--dropover');
+      // §29 Pencil hand: the surface blooms into targets when you carry
+      // something over it. On a detail it can take the phrase as a 用例; on the
+      // list it classifies; a YouTube link is a video wherever it lands.
+      if (this.deps.onDrop) {
+        const surface = (): 'entry' | 'lexicon' => (this.selectedId ? 'entry' : 'lexicon');
+        const entryKey = (): string | undefined =>
+          this.selectedId ? this.deps.patterns().find((p) => p.id === this.selectedId)?.key : undefined;
+        const can = (): { ocr?: boolean; x?: boolean } => this.deps.dropCan?.() ?? {};
+        attachDropRouter(container, {
+          surface, entryKey, can,
+          run: (intent, files) => this.deps.onDrop!(intent, files, { patternId: this.selectedId ?? undefined }),
         });
-        container.addEventListener('dragleave', () => container.removeClass('jp-lex--dropover'));
-        container.addEventListener('drop', (e) => {
-          container.removeClass('jp-lex--dropover');
-          const text = e.dataTransfer?.getData('text/plain')?.trim();
-          if (!text) return;
-          e.preventDefault();
-          const origin = e.dataTransfer?.getData('application/x-jpc-tray') || undefined;
-          this.deps.onDropCapture!(text, origin);
+        // §26.3 step 4 — highlight part of a 用例 and act on it in place. The
+        // detail view is full of other people's sentences; the useful unit is
+        // usually a fragment of one, and there was no verb for a fragment.
+        attachSelectionEcho(container, {
+          surface, entryKey, can,
+          run: (intent) => this.deps.onDrop!(intent, [], { patternId: this.selectedId ?? undefined }),
         });
       }
       // §26.3 hover peek — the mouse/Pencil-hover superpower: dwell over a
@@ -210,13 +287,9 @@ export class LexiconPanel {
       sources: [...this.sources],
       query: this.query,
       mode: this.mode,
-      limit: 300,
+      limit: LIST_LIMIT,
     });
-    if (!this.query.trim()) {
-      results = [...results].sort((a, b) =>
-        this.kanaGroup(a.headword).localeCompare(this.kanaGroup(b.headword), 'ja') ||
-        a.headword.localeCompare(b.headword, 'ja'));
-    }
+    results = this.sortedResults(results, !this.query.trim());
     const pats = results.filter((r) => r.kind === 'pattern');
     const i = pats.findIndex((r) => r.id === id);
     if (i < 0) return {};
@@ -261,6 +334,10 @@ export class LexiconPanel {
       let claimed = false;
       const onMove = (ev: PointerEvent) => {
         if (ev.pointerId !== pid) return;
+        // A carry has taken this press. Both gestures drive the row's
+        // transform, and two things animating one property fight over it —
+        // the carry started first and it wins.
+        if (pointerDragActive()) { row.style.transform = ''; return; }
         const dx = ev.clientX - x0, dy = ev.clientY - y0;
         if (!claimed) {
           if (Math.abs(dx) < 12 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
@@ -301,8 +378,11 @@ export class LexiconPanel {
 
   // ── list view ──────────────────────────────────────────────
   private renderList(root: HTMLElement): void {
-    // search row
-    const searchRow = root.createDiv('jp-lex-searchrow');
+    // search row — §26.3: docked under the thumb on a phone, where the most
+    // used control on this surface belongs. `thumbDock` is null everywhere
+    // else, so on desktop and iPad this is the row exactly where it was.
+    const dock = thumbDock(root);
+    const searchRow = (dock ?? root).createDiv('jp-lex-searchrow');
     const input = searchRow.createEl('input', {
       type: 'search',
       cls: 'jp-lex-search',
@@ -340,6 +420,7 @@ export class LexiconPanel {
     // facets
     const facets = root.createDiv('jp-lex-facets');
     this.renderFacets(facets);
+    this.renderSortRow(root);
 
     // §23.5: the keyboard hand, discoverable in place
     this.renderKeyHints(root, [['/', '検索'], ['j/k', '移動'], ['⏎', '開く']]);
@@ -383,6 +464,97 @@ export class LexiconPanel {
   private rerenderListOnly(root: HTMLElement): void {
     const r = root as HTMLElement & { _lexBody?: HTMLElement; _lexStats?: HTMLElement };
     if (r._lexBody && r._lexStats) this.fillList(r._lexBody, r._lexStats, r._lexBody.parentElement ?? undefined);
+  }
+
+  /**
+   * §20.1 — the order, said out loud.
+   *
+   * The list used to be sorted one way while searching and another way while
+   * browsing, with no way to ask for either deliberately. That is fine as a
+   * default and useless as the only option: "the twelve things I added this
+   * week" and "the things I have actually met twenty times" are the two views a
+   * catalog of your own noticing is for, and neither was reachable.
+   */
+  private renderSortRow(root: HTMLElement): void {
+    const row = root.createDiv('jp-lex-sortrow');
+    row.createSpan({ text: '並び', cls: 'jp-lex-sortlabel' });
+    const defs: Array<[SortMode, string, string]> = [
+      ['auto', '既定', '検索中は関連度、一覧は五十音'],
+      ['kana', '五十音', '見出しの読み順（漢字始まりは末尾の 漢 に）'],
+      ['new', '新着', '最近さわったものから'],
+      ['count', '用例', '確定用例の多いものから'],
+      ['cls', '分類', 'レンズごとにまとめ、その中は五十音'],
+    ];
+    for (const [id, label, title] of defs) {
+      const b = row.createEl('button', {
+        text: label,
+        attr: { title },
+        cls: 'jp-lex-sort' + (this.sort === id ? ' jp-lex-sort--active' : ''),
+      });
+      b.onclick = () => { this.sort = id; this.rerender(); };
+    }
+    // Reading vs scanning. Same rows, bigger type and more air — the catalog is
+    // read on a tablet as often as it is scanned on a laptop.
+    const roomy = row.createEl('button', {
+      text: this.roomy ? '👁 ゆったり' : '👁 標準',
+      attr: { title: '字を大きく、行間を広く（読むとき向け）' },
+      cls: 'jp-lex-sort jp-lex-sort--roomy' + (this.roomy ? ' jp-lex-sort--active' : ''),
+    });
+    roomy.onclick = () => { this.roomy = !this.roomy; this.rerender(); };
+  }
+
+  /** Rank order for 分類 grouping — the lens order the rest of the UI uses. */
+  private clsRank(cls?: NoteClass): number {
+    const i = cls ? NOTE_CLASSES.indexOf(cls) : -1;
+    return i < 0 ? NOTE_CLASSES.length : i;
+  }
+
+  /** When this entry was last touched, for 新着. */
+  private touchedAt(e: UnifiedEntry): number {
+    const p = e.pattern;
+    if (p) return p.updatedAt ?? p.createdAt ?? Math.max(0, ...(p.attestations ?? []).map((a) => a.addedAt ?? 0));
+    // The legacy lexicon stamps updatedAt/createdAt, not addedAt — reading the
+    // latter gave every collocation the same 0 and sorted them arbitrarily.
+    return e.collocation?.updatedAt ?? e.collocation?.createdAt ?? 0;
+  }
+
+  /**
+   * The effective order. `auto` means two different things depending on whether
+   * there is a query, and everything downstream — the comparator, the group
+   * headers, the あかさたな rail — has to agree about which one is in force. One
+   * function, so they cannot drift: headers keyed off a different answer than
+   * the sort produces scatter 「か」 through relevance-ordered results.
+   */
+  private resolveSort(browse: boolean): EffectiveSort {
+    return this.sort === 'auto' ? (browse ? 'kana' : 'score') : this.sort;
+  }
+
+  /**
+   * One place that decides list order, so the visible list and the h/l
+   * neighbour walk cannot disagree — a detail pane that says "next: X" and then
+   * a list that puts X somewhere else is worse than no neighbours at all.
+   */
+  private sortedResults(results: UnifiedEntry[], browse: boolean): UnifiedEntry[] {
+    const kana = (a: UnifiedEntry, b: UnifiedEntry) =>
+      this.kanaGroup(a.headword).localeCompare(this.kanaGroup(b.headword), 'ja') ||
+      a.headword.localeCompare(b.headword, 'ja');
+    const mode = this.resolveSort(browse);
+    if (mode === 'score') return results;      // unifiedSearch already ranked it
+    const out = [...results];
+    if (mode === 'kana') out.sort(kana);
+    else if (mode === 'new') out.sort((a, b) => this.touchedAt(b) - this.touchedAt(a) || kana(a, b));
+    else if (mode === 'count') out.sort((a, b) => b.attestationCount - a.attestationCount || kana(a, b));
+    else if (mode === 'cls') out.sort((a, b) => this.clsRank(a.cls) - this.clsRank(b.cls) || kana(a, b));
+    return out;
+  }
+
+  /** Section header text for the current grouping, or null when ungrouped.
+   *  Relevance order has no headers: the sequence is not grouped by anything. */
+  private groupOf(e: UnifiedEntry, browse: boolean): string | null {
+    const mode = this.resolveSort(browse);
+    if (mode === 'kana') return this.kanaGroup(e.headword);
+    if (mode === 'cls') return e.cls ? `${NOTE_TYPES[e.cls].emoji} ${NOTE_TYPES[e.cls].label}` : '— 未分類';
+    return null;
   }
 
   private renderFacets(facets: HTMLElement): void {
@@ -440,27 +612,68 @@ export class LexiconPanel {
       sources: [...this.sources],
       query: this.query,
       mode: this.mode,
-      limit: 300,
+      limit: LIST_LIMIT,
     });
-    // browse mode = the monokakido INDEX: gojūon order + scrubber rail
-    if (browse) {
-      results = [...results].sort((a, b) =>
-        this.kanaGroup(a.headword).localeCompare(this.kanaGroup(b.headword), 'ja') ||
-        a.headword.localeCompare(b.headword, 'ja'));
-    }
+    results = this.sortedResults(results, browse);
 
     // dictionary hits (only when actively querying and no class/source facet)
     const dict = this.query.trim() && this.classes.size === 0 && this.sources.size === 0
       ? this.deps.dictLookup(this.query.trim()) : [];
 
-    stats.createSpan({ text: `${results.length}語` + (dict.length ? ` ・ 辞書 ${dict.length}` : ''), cls: 'jp-lex-stat-text' });
+    // §28 S6 — a count that silently reports the CAP as the answer is a number
+    // counting a failure as a result. `unifiedSearch` stops at LIST_LIMIT, so
+    // landing exactly on it means there may be more and the line has to say so.
+    const capped = results.length >= LIST_LIMIT;
+    stats.createSpan({
+      text: (capped ? `${LIST_LIMIT}語以上（上位のみ）` : `${results.length}語`) +
+        (dict.length ? ` ・ 辞書 ${dict.length}` : ''),
+      cls: 'jp-lex-stat-text',
+    });
 
     if (results.length === 0 && dict.length === 0) {
       body.createDiv({ cls: 'jp-lex-empty', text: this.query ? '該当なし' : 'まだ何もありません。台帳にパターンを貯めるか、辞書を取り込んでください。' });
       return;
     }
 
-    for (const e of results) this.renderRow(body, e);
+    /**
+     * Section headers, sticky at the top of the list.
+     *
+     * The 五十音 rail already existed and already scrolled to `data-kana`
+     * anchors — but there was nothing to land ON, so tapping か dropped you into
+     * an undifferentiated wall of rows with no way to tell you had arrived. The
+     * header is the thing the rail was always pointing at.
+     */
+    /**
+     * §29.1 — the 談話 shelf, folded.
+     *
+     * 31 of the catalog's 32 discourse entries are sentence-final variants of
+     * five or six things (ですね/んですね/ますね/ですよね/よね/だよね/…), and as
+     * a flat list they read as noise. `foldParadigms` groups them on what the
+     * user's OWN concordance says each form does, with a short declared
+     * spelling table as a second axis and the corpus vetoing it on
+     * disagreement. Only while BROWSING: once there is a query, the flat list
+     * of matches is the answer and folding it would hide the hit.
+     */
+    const fold = browse ? foldParadigms(results) : null;
+    const rows: Array<UnifiedEntry | Paradigm> = fold
+      ? [...fold.paradigms, ...fold.loose].sort((a, b) => {
+        const key = (x: UnifiedEntry | Paradigm): UnifiedEntry => 'members' in x ? x.members[0] : x;
+        return results.indexOf(key(a)) - results.indexOf(key(b));
+      })
+      : results;
+
+    let group: string | null = null;
+    for (const r of rows) {
+      const lead = 'members' in r ? r.members[0] : r;
+      const g = this.groupOf(lead, browse);
+      if (g && g !== group) {
+        group = g;
+        const h = body.createDiv({ text: g, cls: 'jp-lex-group' });
+        h.setAttribute('data-kana', g);
+      }
+      if ('members' in r) this.renderParadigm(body, r);
+      else this.renderRow(body, r);
+    }
 
     if (dict.length) {
       const dsec = body.createDiv('jp-lex-dictsec');
@@ -478,8 +691,9 @@ export class LexiconPanel {
       void this.fillBigDict(slot, this.query.trim());
     }
 
-    // あかさたな scrubber (browse mode only)
-    if (browse && listWrap && results.length > 8) {
+    // あかさたな scrubber. The rail belongs to 五十音 order, whether that came
+    // from the default or from asking for it — not to "the search box is empty".
+    if (this.resolveSort(browse) === 'kana' && listWrap && results.length > 8) {
       const rail = listWrap.createDiv('jp-lex-rail');
       const present = new Set(results.map((e) => this.kanaGroup(e.headword)));
       for (const g of ['あ', 'か', 'さ', 'た', 'な', 'は', 'ま', 'や', 'ら', 'わ', '漢']) {
@@ -498,6 +712,46 @@ export class LexiconPanel {
     }
   }
 
+  /**
+   * A family row: one line for what six spellings all do, opening into the six.
+   *
+   * Deliberately NOT a merged entry. Every member keeps its id, its ✓/✕ history
+   * and its own detail page (§28 S1) — this row is a lens, and tapping it just
+   * shows you the rows that were always there. The basis is printed because a
+   * grouping the user cannot audit is a grouping they have to trust blindly,
+   * and §12 says never to ask for that.
+   */
+  private renderParadigm(body: HTMLElement, p: Paradigm): void {
+    const open = this.openParadigms.has(p.id);
+    const row = body.createDiv('jp-lex-row jp-lex-par');
+    row.setAttribute('data-kana', this.kanaGroup(p.members[0].headword));
+    const rail = row.createSpan({ cls: 'jp-lex-row-rail' });
+    rail.style.background = classColor('discourse');
+    const main = row.createDiv('jp-lex-row-main');
+    const top = main.createDiv('jp-lex-row-top');
+    top.createSpan({ text: open ? '▾' : '▸', cls: 'jp-lex-par-twisty' });
+    top.createSpan({ text: paradigmSurface(p), cls: 'jp-lex-row-hw jp-lex-par-hw' });
+    top.createSpan({ text: `${p.members.length}語`, cls: 'jp-lex-par-count' });
+    main.createDiv({
+      cls: 'jp-lex-par-why',
+      text: p.basis === 'move'
+        // The move IS the meaning of the grouping, so it leads.
+        ? `${p.label} — 走査${p.sightings.toLocaleString()}件がそう言っています`
+        : '書き方のちがいだけ（けれども・けども・けど など）',
+    });
+    const meta = row.createDiv('jp-lex-row-meta');
+    if (p.attestations) meta.createSpan({ text: `×${p.attestations}`, cls: 'jp-lex-row-count' });
+    row.addEventListener('click', () => {
+      this.listScroll = body.scrollTop;
+      if (open) this.openParadigms.delete(p.id); else this.openParadigms.add(p.id);
+      this.restoreScroll = true;
+      this.rerender();
+    });
+    if (!open) return;
+    const kids = body.createDiv('jp-lex-par-kids');
+    for (const m of p.members) this.renderRow(kids, m);
+  }
+
   private renderRow(body: HTMLElement, e: UnifiedEntry): void {
     // monokakido index row (§20.1): class color as a thin left RAIL, dense
     // headword-first typography, separation by whitespace not borders.
@@ -511,9 +765,24 @@ export class LexiconPanel {
     top.createSpan({ text: e.headword, cls: 'jp-lex-row-hw' });
     if (e.reading) top.createSpan({ text: e.reading, cls: 'jp-lex-row-reading' });
     if (e.merged) top.createSpan({ text: '📚', cls: 'jp-lex-row-merged', attr: { title: '旧レキシコンの文法ノートと統合済み' } });
+    // §22.7 — this row is here because its frozen 語法 profile matched, not
+    // because anything the user wrote did. Saying so is the difference between
+    // "you noticed this" and "a corpus lists this under something you noticed";
+    // an unmarked row would quietly claim the first (§28 S3).
+    if (e.viaCorpus) {
+      top.createSpan({
+        text: '📊', cls: 'jp-lex-row-corpus',
+        attr: { title: '一致したのは語法プロフィール（コーパス）— あなたの記録ではありません' },
+      });
+    }
     if (e.gloss) main.createDiv({ text: e.gloss, cls: 'jp-lex-row-gloss' });
     // the embedded entry: ONE real usage line — just enough context, no more
-    if (e.example) main.createDiv({ text: `「${e.example}」`, cls: 'jp-lex-row-ex' });
+    if (e.example) {
+      main.createDiv({
+        text: `「${e.example}」`,
+        cls: 'jp-lex-row-ex' + (e.viaCorpus ? ' jp-lex-row-ex--corpus' : ''),
+      });
+    }
     const meta = row.createDiv('jp-lex-row-meta');
     for (const s of e.sources) meta.createSpan({ text: { yt: '▶', x: '𝕏', web: '🌐', manual: '✍' }[s], cls: 'jp-lex-row-src' });
     if (e.attestationCount) meta.createSpan({ text: `×${e.attestationCount}`, cls: 'jp-lex-row-count' });
@@ -522,6 +791,19 @@ export class LexiconPanel {
       if (e.kind === 'pattern') { this.selectedId = e.id; this.stopAudio(); this.rerender(); }
       else if (e.collocation) this.renderCollocationDetail(e.collocation);
     });
+    // §29 the other direction: carry the entry out — into Apple Notes across
+    // the Stage Manager seam, into an editor pane, onto another surface. Its
+    // one real usage line goes with it, because a headword alone is a word and
+    // a headword with its line is a thing you can use.
+    makeDraggable(row, () => ({
+      kind: 'entry',
+      text: e.example ? `${e.headword}\n「${e.example}」` : e.headword,
+      label: e.headword,
+      sub: e.reading ?? e.gloss,
+      html: `<b>${e.headword}</b>${e.reading ? `（${e.reading}）` : ''}${e.gloss ? ` — ${e.gloss}` : ''}` +
+        (e.example ? `<blockquote>${e.example}</blockquote>` : ''),
+      meta: { patternId: e.kind === 'pattern' ? e.id : undefined, cls: e.cls },
+    }));
   }
 
   /**
@@ -580,13 +862,17 @@ export class LexiconPanel {
     if (entries.length) {
       const sec = slot.createDiv('jp-lex-bigsec-block');
       sec.createDiv({ cls: 'jp-lex-dictsec-title', text: '📚 大型辞書' });
-      for (const { dictionary, entry } of entries.slice(0, 6)) {
+      for (const { dictionary, entry, deinflection } of entries.slice(0, 6)) {
         const row = sec.createDiv('jp-lex-dict-row');
         const top = row.createDiv('jp-lex-row-top');
         top.createSpan({ text: entry.expression, cls: 'jp-lex-row-hw' });
         if (entry.reading && entry.reading !== entry.expression) {
           top.createSpan({ text: entry.reading, cls: 'jp-lex-row-reading' });
         }
+        // The query was inflected and this hit is the deinflected form — say so,
+        // in the same 〈…〉 badge the small-dictionary rows use (renderDictRow).
+        // Without it 食べた silently shows 食べる with nothing marking the step.
+        if (deinflection?.length) top.createSpan({ text: `〈${deinflection.join('+')}〉`, cls: 'jp-lex-deinflect' });
         top.createSpan({ text: dictionary, cls: 'jp-lex-cand-dict' });
         const gloss = entry.senses.map((s) => s.gloss).filter(Boolean).join(' / ');
         if (gloss) row.createDiv({ text: gloss.slice(0, 140), cls: 'jp-lex-row-gloss' });
@@ -720,9 +1006,35 @@ export class LexiconPanel {
 
     // §20.1: 用例 ARE the entry — the context tree is the BODY, directly
     // under the header; grammar notes and everything else come after.
+    // §20.1 — a word the sweep met thousands of times is answered with a
+    // PROFILE, not a queue. Rendered above the tree because for those entries it
+    // IS the entry: 「ですね」 has no confirmed 用例 and never will.
+    const profile = buildUsageProfile(p);
+    if (profile) this.renderUsageProfile(root, profile);
+
+    /**
+     * §29.2 — how X writes it, in the entry rather than in another view.
+     *
+     * The 𝕏 corpus was reachable only by leaving for the 𝕏 view with a
+     * prefilled query, which means it answered a question you had to already
+     * be asking. Here it answers the question you are demonstrably asking: you
+     * are looking at this entry. Same renderer as the 𝕏 view (§28 S1 — one
+     * object, one presentation, whichever door you came through), and the two
+     * boxes sit next to each other on purpose: the 使われ方 profile is YOUR
+     * corpus of watched video, this is contemporary written Japanese from
+     * strangers. Where they agree is worth more than either alone.
+     */
+    const xu = this.deps.xUsage?.(p);
+    if (xu) {
+      renderXUsage(root, xu, {
+        openUrl: (url) => this.deps.openUrl?.(url),
+        onCapture: (quote, url, handle) => this.deps.attachXLine?.(p, quote, url, handle),
+      });
+    }
+
     const tree = buildContextTree(p, this.deps.patterns());
     const terms = [p.key, ...(p.payload.parts ?? []), p.payload.halo ?? '', p.payload.lemma ?? ''].filter((t) => t.length >= 2);
-    this.renderTree(root, tree, p.id, terms);
+    this.renderTree(root, tree, p.id, terms, profile);
 
     // §26.2 似ている表現 — the ACE CROWN 似ている単語 box (f40) composed
     // from the user's OWN captures: cross-lemma family members, or the same
@@ -782,22 +1094,197 @@ export class LexiconPanel {
 
     // §22.7 語法プロフィール — corpus enrichment, fetched once and frozen
     const goho = p.payload.goho;
-    if (goho && (goho.collocates.length || goho.examples.length)) {
-      const g = knowledgeBox(root, `語法 — ${goho.source}（取得済み固定）`, 'goho');
-      if (goho.collocates.length) {
+    if (goho && (goho.frames?.length || goho.collocates.length || goho.examples.length)) {
+      const total = goho.sourceTotal ? ` · ${goho.sourceTotal.toLocaleString()}例` : '';
+      const g = knowledgeBox(root, `語法 — ${goho.source}（取得済み固定）${total}`, 'goho');
+
+      // 頻度 vs 結合度 — offered, not applied.
+      //
+      // The two answer different questions and the box has no business picking:
+      // 「風を」 tops the frequency list because を is common, while
+      // 「クーラーの風」 is rare and is nevertheless the pairing that IS the word.
+      // logDice separates them, which is the whole reason to consult a corpus
+      // rather than a word list. Frequency stays the default because it is the
+      // order the source shipped, and re-ranking silently would be the panel
+      // overriding measured data with a preference (cf. `resolve()` refusing to
+      // prefer 名詞 over 形容動詞 for 風).
+      if ((goho.frames ?? []).some((f) => f.measured?.length)) {
+        const sortRow = g.createDiv('jp-lex-goho-sort');
+        const defs: Array<[GohoSort, string, string]> = [
+          ['freq', '頻度', 'コーパスでの出現回数が多い順'],
+          ['dice', '結合度', 'logDice の高い順 — 「その語だからこその組み合わせ」が上に来ます'],
+        ];
+        for (const [m, label, title] of defs) {
+          const b = sortRow.createEl('button', {
+            text: label, attr: { title },
+            cls: 'jp-lex-goho-sortbtn' + (this.gohoSort === m ? ' is-on' : ''),
+          });
+          b.onclick = () => { this.gohoSort = m; this.rerender(); };
+        }
+      }
+
+      // §22.7 — the GRAMMAR half: one block per way the word attaches. A flat
+      // chip row cannot say that 「風が吹く」 and 「そよ風」 are the same word in
+      // two different positions, and that distinction is the whole reason to
+      // consult a corpus rather than a list.
+      for (const f of goho.frames ?? []) {
+        const box = g.createDiv('jp-lex-goho-frame');
+        const head = box.createDiv('jp-lex-goho-frame-head');
+        // 'unmarked' means the source made no positional claim (TWC's 近接動詞
+        // lists words that merely co-occur). Showing 「走る～」 there would
+        // assert something no one said, so the head stands bare and the frame's
+        // own label carries the meaning.
+        const arrow = f.direction === 'head-final' ? `～${p.key}`
+          : f.direction === 'compound' ? `${p.key}＋`
+          : f.direction === 'unmarked' ? p.key : `${p.key}～`;
+        head.createSpan({ text: arrow, cls: 'jp-lex-goho-arrow' });
+        if (f.pos) head.createSpan({ text: f.pos, cls: 'jp-lex-goho-pos' });
+        if (f.sense !== undefined) head.createSpan({ text: `語義${f.sense}`, cls: 'jp-lex-goho-sense' });
+        // The grammar verbatim — 「風＋助詞」 says something 「風～」 cannot.
+        if (f.label && f.label !== arrow) head.createSpan({ text: f.label, cls: 'jp-lex-goho-label' });
+        // The share is what turns a list of behaviours into a profile: 88% and
+        // 5% are not two equal facts about the word.
+        if (f.share !== undefined) {
+          const s = head.createSpan({ text: `${f.share}%`, cls: 'jp-lex-goho-share' });
+          s.title = f.freq !== undefined
+            ? `この付き方はコーパス中 ${f.freq.toLocaleString()}回 — ${p.key}の全用例の${f.share}%`
+            : `${p.key}の全用例の${f.share}%`;
+        }
+        // The cap must never read as the total (§28 S6). `atLeast` means even
+        // the total is a floor — "24 / 1,000+件", never a confident 1,000.
+        const more = f.atLeast ? '+' : '';
+        head.createSpan({
+          text: f.total > f.items.length
+            ? `${f.items.length} / ${f.total.toLocaleString()}${more}件`
+            : `${f.total}${more}件`,
+          cls: 'jp-lex-goho-count',
+        });
+        const chips = box.createDiv('jp-lex-goho-chips');
+        // `measured` is parallel to `items` when the source has association
+        // measures; sources without them (Hyogen) fall through unchanged.
+        for (const { text: it, m } of this.gohoChipOrder(f)) {
+          const chip = chips.createEl('button', { text: it, cls: 'jp-lex-goho-chip' });
+          if (m) {
+            // Show the number the box is currently RANKED by, so the ordering
+            // on screen is always explained by the figure next to it.
+            chip.createSpan({
+              text: this.gohoSort === 'dice' ? m.logDice.toFixed(1) : String(m.freq),
+              cls: 'jp-lex-goho-chip-freq',
+            });
+            // Frequency alone cannot separate 「風を」(common because を is) from
+            // 「クーラーの風」(rare, but the pairing IS the word). MI can.
+            chip.title = `${it} — ${m.freq.toLocaleString()}回 · MI ${m.mi.toFixed(2)} · logDice ${m.logDice.toFixed(2)}\n台帳へ取り込む（📊 コーパス層）`;
+          } else {
+            chip.title = `${arrow} — 台帳へ取り込む（📊 コーパス層）`;
+          }
+          chip.onclick = () => this.deps.captureCorpus
+            ? this.deps.captureCorpus(p, it)
+            : this.deps.openDict(it);
+          // §29 — a collocate is a THING, so it is carryable. Dragging it into
+          // Apple Notes or an editor pane beats reading it off the screen and
+          // retyping it, which is what a click-only chip leaves you doing.
+          makeDraggable(chip, () => ({
+            kind: 'entry',
+            text: it,
+            label: it,
+            sub: m ? `${goho.source} · ${m.freq.toLocaleString()}回` : goho.source,
+            meta: { headword: p.key, frame: f.label, source: goho.source },
+          }));
+        }
+      }
+
+      // The particle facets: the rest of the corpus, reachable rather than lost.
+      if (goho.facets?.length && this.deps.openUrl) {
+        const fr = g.createDiv('jp-lex-goho-facets');
+        fr.createSpan({ text: '絞込み', cls: 'jp-lex-goho-facets-label' });
+        for (const f of goho.facets) {
+          const a = fr.createEl('button', { text: f.label, cls: 'jp-lex-goho-facet' });
+          a.title = `${f.label} だけを ${goho.source} で見る`;
+          a.onclick = () => this.deps.openUrl!(f.url);
+        }
+      }
+
+      // Legacy/flat profiles (fetched before frames existed) still render.
+      if (!goho.frames?.length && goho.collocates.length) {
         const chips = g.createDiv('jp-lex-goho-chips');
         for (const c of goho.collocates) {
           const chip = chips.createEl('button', { text: c, cls: 'jp-lex-goho-chip' });
           chip.onclick = () => this.deps.openDict(c);
         }
       }
-      for (const ex of goho.examples) {
-        const row = g.createDiv('jp-lex-goho-ex');
-        row.createSpan({ text: `「${ex}」`, cls: 'jp-lex-leaf-quote jp-lex-tappable' });
-        if (this.deps.captureCorpus) {
-          const cap = row.createEl('button', { text: '🏷️', cls: 'jp-lex-leaf-btn', attr: { title: 'この用例を台帳へ（📊 コーパス層）' } });
-          cap.onclick = () => this.deps.captureCorpus!(p, ex);
+      // ── 用例 ────────────────────────────────────────────────────────────
+      //
+      // ONE row shape for both kinds of evidence, differing only by the marker
+      // that states which it is. They are NOT the same claim — 「」 is a
+      // sentence somebody wrote in a document TWC names and links; 〈〉 is a
+      // phrase Hyogen lists on the word's page — and a reader who cannot tell
+      // them apart cannot tell either from an invented one (§28 S3). Two
+      // separate loops rendering two different-looking rows was how this
+      // drifted: the second one had become unreachable, so Hyogen's phrases
+      // were stored and never shown at all.
+      const shownEx: GohoExample[] = goho.sourced?.length
+        ? goho.sourced
+        // Profiles frozen before `sourced` existed carry only flat strings.
+        : goho.examples.map((text) => ({ text, kind: 'phrase' as const }));
+      if (shownEx.length) {
+        const attested = shownEx.filter((e) => (e.kind ?? (e.url ? 'attested' : 'phrase')) === 'attested').length;
+        g.createDiv({
+          cls: 'jp-lex-goho-exhead',
+          text: attested === shownEx.length ? `用例 ${shownEx.length}件（出典つき）`
+            : attested === 0 ? `用例 ${shownEx.length}件（${goho.source}の収録句）`
+            : `用例 ${shownEx.length}件（うち出典つき ${attested}件）`,
+        });
+      }
+      for (const ex of shownEx) {
+        const kind = ex.kind ?? (ex.url ? 'attested' : 'phrase');
+        const row = g.createDiv(`jp-lex-goho-ex jp-lex-goho-ex--${kind}`);
+        const quote = row.createSpan({ cls: 'jp-lex-leaf-quote jp-lex-tappable' });
+        const [open, close] = kind === 'attested' ? ['「', '」'] : ['〈', '〉'];
+        const [s, e] = ex.span ?? [0, 0];
+        if (e > s && e <= ex.text.length) {
+          // The corpus supplies the highlight offsets, so the panel never has
+          // to guess where the collocation sits in the sentence.
+          quote.appendText(`${open}${ex.text.slice(0, s)}`);
+          quote.createSpan({ text: ex.text.slice(s, e), cls: 'jp-lex-goho-hit' });
+          quote.appendText(`${ex.text.slice(e)}${close}`);
+        } else {
+          quote.setText(`${open}${ex.text}${close}`);
         }
+        // Which way of attaching this sentence is evidence FOR. Recorded at
+        // fetch time because it cannot be recovered afterwards — TWC's grid is
+        // lemmatised and its sentences are surface.
+        if (ex.frame) row.createSpan({ text: ex.frame, cls: 'jp-lex-goho-exframe' });
+        // ~1 sentence in 8 has no document title in the corpus. The host is
+        // coarser provenance, but it is still provenance, and an example whose
+        // origin is invisible cannot be told from an invented one (§28 S3).
+        const cited = ex.source || hostOf(ex.url);
+        if (cited) {
+          const cite = row.createSpan({ text: cited, cls: 'jp-lex-goho-cite' });
+          cite.title = ex.url ? `${cited}\n${ex.url}` : cited;
+          if (ex.url && this.deps.openUrl) {
+            cite.addClass('jp-lex-tappable');
+            cite.onclick = () => this.deps.openUrl!(ex.url!);
+          }
+        }
+        if (this.deps.captureCorpus) {
+          const cap = row.createEl('button', {
+            text: '🏷️', cls: 'jp-lex-leaf-btn',
+            attr: { title: kind === 'attested'
+              ? 'この用例を台帳へ（📊 コーパス層 — 出典つき）'
+              : `この句を台帳へ（📊 コーパス層 — ${goho.source}の収録句）` },
+          });
+          cap.onclick = () => this.deps.captureCorpus!(p, ex.text, { sourceName: ex.source, url: ex.url });
+        }
+        // §29 — carry the sentence out. `text/html` gives it as a blockquote
+        // with its citation attached, so it arrives in Apple Notes already
+        // knowing where it came from rather than as an anonymous string.
+        makeDraggable(row, () => ({
+          kind: 'quote',
+          text: ex.text,
+          label: ex.text,
+          sub: cited || goho.source,
+          meta: { headword: p.key, source: cited || goho.source, url: ex.url, frame: ex.frame },
+        }));
       }
     } else if (goho) {
       // fetched but empty: no box (a box must carry data, §26.0 test e) —
@@ -877,7 +1364,66 @@ export class LexiconPanel {
   private peek: HoverPeek | null = null;
   private cancelPeek(): void { this.peek?.cancel(); }
 
-  private renderTree(root: HTMLElement, tree: ContextTree, patternId: string, terms: string[]): void {
+  /**
+   * One frame's chips in the box's current order, each carrying its measures.
+   *
+   * `measured` is parallel to `items` by construction, but only where the
+   * source HAS association measures — so the pairing is re-checked per row
+   * rather than assumed, and a source without them (Hyogen) falls through with
+   * `m` undefined and its page order intact. Sorting a list that has nothing to
+   * sort by would silently reorder Hyogen's items for no reason.
+   */
+  private gohoChipOrder(f: GohoFrame): Array<{ text: string; m?: GohoMeasured }> {
+    const rows = f.items.map((text, i) => {
+      const m = f.measured?.[i];
+      return { text, m: m && m.text === text ? m : undefined };
+    });
+    if (this.gohoSort !== 'dice' || !rows.some((r) => r.m)) return rows;
+    return [...rows].sort((a, b) => (b.m?.logDice ?? -Infinity) - (a.m?.logDice ?? -Infinity));
+  }
+
+  /**
+   * 使われ方 — what a high-frequency word DOES, drawn as a distribution.
+   *
+   * The ✓/✕ spine is the right interface for a noticing the sweep found nine
+   * times. It is the wrong one for 「ですね」, whose 3,565 sightings the panel
+   * used to show as twelve rows and an implied backlog of 3,553. Nobody clears
+   * that, and nobody should: the question for a word this common is not "is
+   * sighting #2,004 genuine" but "what is this word for" — which the sweep
+   * already answered on every one of them and nothing read back.
+   *
+   * Each row carries its real lines, so the claim stays checkable rather than
+   * becoming a statistic the user has to take on faith (§12).
+   */
+  private renderUsageProfile(root: HTMLElement, prof: UsageProfile): void {
+    const pct = (n: number): string => `${Math.round(n * 100)}%`;
+    const body = knowledgeBox(root, `📊 使われ方 — 走査 ${prof.total.toLocaleString()}件から`, 'goho');
+
+    if (prof.positions.length) {
+      const posTotal = prof.positions.reduce((n, p) => n + p.count, 0) || 1;
+      body.createDiv({
+        cls: 'jp-lex-usage-pos',
+        text: '位置: ' + prof.positions.map((p) => `${p.label} ${pct(p.count / posTotal)}`).join(' ・ '),
+      });
+    }
+
+    for (const m of prof.moves) {
+      const row = body.createDiv('jp-lex-usage-row');
+      const head = row.createDiv('jp-lex-usage-head');
+      head.createSpan({ text: m.label, cls: 'jp-lex-usage-label' });
+      head.createSpan({ text: `${m.count.toLocaleString()}（${pct(m.share)}）`, cls: 'jp-lex-usage-count' });
+      // The bar is the same number said twice — but a 53% and a 4% are not
+      // distinguishable at a glance as digits, and that glance is the point.
+      const bar = row.createDiv('jp-lex-usage-bar');
+      bar.createDiv('jp-lex-usage-fill').style.width = `${(m.share * 100).toFixed(1)}%`;
+      for (const ex of m.examples) {
+        const q = row.createDiv({ text: `「${ex}」`, cls: 'jp-lex-usage-ex jp-lex-tappable' });
+        q.addEventListener('click', (evt) => this.tapLookup(evt));
+      }
+    }
+  }
+
+  private renderTree(root: HTMLElement, tree: ContextTree, patternId: string, terms: string[], profile?: UsageProfile | null): void {
     const sec = root.createDiv('jp-lex-tree');
     sec.createDiv({ cls: 'jp-lex-tree-title', text: `用例 (${tree.totalLeaves})` });
     if (tree.totalLeaves === 0) {
@@ -897,8 +1443,19 @@ export class LexiconPanel {
     if (tree.candidates.length) {
       const cand = sec.createEl('details', { cls: 'jp-lex-tree-group jp-lex-cand-group' });
       const sum = cand.createEl('summary', { cls: 'jp-lex-tree-sum' });
-      sum.createSpan({ text: '❓ 候補（走査の提案 — ✓確定 / ✕否認）', cls: 'jp-lex-tree-label' });
-      sum.createSpan({ text: `${tree.candidates.length}`, cls: 'jp-lex-tree-count' });
+      // Say the true size. The list is capped at twelve, so on a profiled entry
+      // the old header read "候補 12" over a pile of 3,565 — which is not a
+      // small imprecision, it is the difference between a chore and a lie.
+      sum.createSpan({
+        text: profile
+          ? '❓ 走査の抜粋（この語は多すぎて全件は捌けません）'
+          : '❓ 候補（走査の提案 — ✓確定 / ✕否認）',
+        cls: 'jp-lex-tree-label',
+      });
+      sum.createSpan({
+        text: profile ? `${tree.candidates.length} / ${profile.total.toLocaleString()}` : `${tree.candidates.length}`,
+        cls: 'jp-lex-tree-count',
+      });
       for (const leaf of tree.candidates) this.renderLeaf(cand, leaf, terms, patternId);
     }
 
@@ -959,6 +1516,28 @@ export class LexiconPanel {
     const jump = meta.createEl('button', { cls: 'jp-lex-leaf-btn', attr: { title: '出典を開く' } });
     setIcon(jump, leaf.source === 'x' || leaf.source === 'web' ? 'external-link' : 'corner-down-right');
     jump.onclick = (e) => { e.stopPropagation(); void this.deps.openAttestation(leaf.att).catch((err) => new Notice(String(err))); };
+    // §29: a CONFIRMED 用例 can be carried out, and it takes its door back with
+    // it (§28 S2) — the quote arrives in Notes already citing the video and the
+    // second. Candidate rows are deliberately excluded: they own the horizontal
+    // swipe (✓/✕), and a drag would fight it for the same gesture.
+    if (!(leaf.suggested && candidateOf)) {
+      const at = leaf.tStartSec != null
+        ? `${Math.floor(leaf.tStartSec / 60)}:${String(Math.floor(leaf.tStartSec % 60)).padStart(2, '0')}`
+        : undefined;
+      const where = leaf.att.scene?.sourceName ?? leaf.file?.split('/').pop()?.replace(/\.md$/, '');
+      const cite = [where, at].filter(Boolean).join(' ');
+      makeDraggable(row, () => ({
+        kind: 'quote',
+        text: leaf.quote,
+        sub: cite || undefined,
+        html: `<blockquote>${leaf.quote}${cite ? `<br><small>— ${cite}` : ''}` +
+          `${leaf.att.scene?.deepLink ? ` <a href="${leaf.att.scene.deepLink}">↪</a>` : ''}${cite ? '</small>' : ''}</blockquote>`,
+        meta: {
+          file: leaf.file, tSec: leaf.tStartSec ?? undefined,
+          videoId: leaf.att.videoId ?? undefined, deepLink: leaf.att.scene?.deepLink,
+        },
+      }));
+    }
     if (leaf.suggested && candidateOf) {
       const yes = meta.createEl('button', { text: '✓', cls: 'jp-lex-leaf-btn jp-lex-cand-yes', attr: { title: '本物 — 確定用例にする（キー: ⏎ / 右スワイプ）' } });
       yes.onclick = async (e) => { e.stopPropagation(); await this.deps.ratifyAttestation(candidateOf, leaf.att); new Notice('✓ 確定しました'); this.rerender(); };

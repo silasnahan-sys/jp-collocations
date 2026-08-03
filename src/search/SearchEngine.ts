@@ -1,10 +1,32 @@
 import type { CollocationEntry, SearchOptions, SearchResult } from "../types.ts";
 import type { CollocationStore } from "../data/CollocationStore.ts";
-import { toHiragana, romajiToHiragana, similarity, normalizeJapanese, isJapanese } from "../utils/japanese.ts";
+import { prepareQuery, scoreFields, FieldCache, type MatchQuery } from "./match-japanese.ts";
 import { expandSearch } from "../utils/grammar.ts";
+
+/**
+ * Which fields of a legacy entry are searched, and how much each one means.
+ *
+ * Boosts stay inside a tier (0–9), so a tag substring can never outrank a
+ * headword prefix — the old code added a flat +20 to headword hits, which let a
+ * boosted substring (80+20) beat an exact match on any other field (also 80).
+ */
+const FIELDS = (e: CollocationEntry): string[] => [
+  e.headword, e.headwordReading, e.fullPhrase, e.collocate, e.pattern,
+  ...e.tags, ...e.exampleSentences,
+];
+const BOOSTS = [9, 8, 9, 4, 2];   // headword / reading / fullPhrase / collocate / pattern
+const TAIL_BOOST = 0;             // tags + examples: findable, never ranked up
 
 export class SearchEngine {
   private store: CollocationStore;
+
+  /**
+   * AUDIT §3(b) — normalization happens ONCE per entry, not per keystroke.
+   * `scoreEntry` used to call `normalizeJapanese` + `toHiragana` for every
+   * field of every entry on every keystroke; at 10k entries that alone was
+   * most of the 505ms.
+   */
+  private cache = new FieldCache<CollocationEntry>(FIELDS, (e) => e.updatedAt);
 
   constructor(store: CollocationStore) {
     this.store = store;
@@ -23,28 +45,11 @@ export class SearchEngine {
       sortDir = "desc",
     } = options;
 
-    const normalized = normalizeJapanese(query.trim());
-    const hiraganaQuery = toHiragana(normalized);
-    // If query is romaji, convert to hiragana for matching
-    const romajiConverted = !isJapanese(normalized) && normalized.length > 0
-      ? romajiToHiragana(normalized)
-      : hiraganaQuery;
-
-    const allTerms = new Set<string>([normalized, hiraganaQuery, romajiConverted]);
-    // Grammar expansion
-    for (const term of [normalized, hiraganaQuery]) {
-      for (const variant of expandSearch(term)) {
-        allTerms.add(variant);
-      }
-    }
-
-    // Wildcard conversion: * → .*, ? → .
-    const wildcardRegex = normalized.includes("*") || normalized.includes("?")
-      ? new RegExp(
-          "^" + normalized.replace(/\*/g, ".*").replace(/\?/g, ".") + "$",
-          "i"
-        )
-      : null;
+    // ONE matcher, shared with `unifiedSearch` (AUDIT §3). Kana folding,
+    // romaji, wildcard and grammar expansion all live in `match-japanese.ts`
+    // now, so both search boxes answer the same question the same way.
+    // Grammar expansion is ON here: this store holds dictionary-form entries.
+    const q = prepareQuery(query, { expand: expandSearch });
 
     let entries = this.store.getAll();
 
@@ -63,14 +68,14 @@ export class SearchEngine {
     }
 
     // If no query, return filtered results sorted
-    if (!normalized) {
+    if (q.empty) {
       return this.sortAndLimit(entries.map(e => ({ entry: e, score: e.frequency })), sortBy, sortDir, maxResults);
     }
 
     const results: SearchResult[] = [];
 
     for (const entry of entries) {
-      const score = this.scoreEntry(entry, normalized, hiraganaQuery, romajiConverted, allTerms, wildcardRegex, fuzzy);
+      const score = this.scoreEntry(entry, q, fuzzy);
       if (score > 0) {
         results.push({ entry, score });
       }
@@ -79,69 +84,18 @@ export class SearchEngine {
     return this.sortAndLimit(results, sortBy, sortDir, maxResults);
   }
 
-  private scoreEntry(
-    entry: CollocationEntry,
-    query: string,
-    hiraganaQuery: string,
-    romajiConverted: string,
-    allTerms: Set<string>,
-    wildcardRegex: RegExp | null,
-    fuzzy: boolean
-  ): number {
-    const fields = [
-      entry.headword,
-      entry.headwordReading,
-      entry.collocate,
-      entry.fullPhrase,
-      entry.pattern,
-      ...entry.tags,
-      ...entry.exampleSentences,
-    ];
-
-    let best = 0;
-
-    for (const field of fields) {
-      if (!field) continue;
-      const fieldNorm = normalizeJapanese(field);
-      const fieldHira = toHiragana(fieldNorm);
-
-      // Wildcard
-      if (wildcardRegex && (wildcardRegex.test(fieldNorm) || wildcardRegex.test(fieldHira))) {
-        best = Math.max(best, 90);
-        continue;
-      }
-
-      // Exact match
-      for (const term of allTerms) {
-        if (term && fieldNorm.includes(term)) {
-          // Boost for headword exact match
-          const boost = field === entry.headword || field === entry.fullPhrase ? 20 : 0;
-          best = Math.max(best, 80 + boost);
-        }
-        if (term && fieldHira.includes(term)) {
-          best = Math.max(best, 75);
-        }
-      }
-
-      // Fuzzy
-      if (fuzzy && query.length >= 2) {
-        for (const term of [query, hiraganaQuery, romajiConverted]) {
-          if (!term || term.length < 2) continue;
-          const sim = similarity(fieldNorm, term);
-          if (sim > 0.5) best = Math.max(best, Math.round(sim * 60));
-          // substring fuzzy
-          if (fieldNorm.length >= term.length) {
-            for (let i = 0; i <= fieldNorm.length - term.length; i++) {
-              const sub = fieldNorm.slice(i, i + term.length);
-              const s = similarity(sub, term);
-              if (s > 0.7) best = Math.max(best, Math.round(s * 65));
-            }
-          }
-        }
-      }
-    }
-
-    return best;
+  /**
+   * Score one entry on the SHARED tier scale (match-japanese.ts).
+   *
+   * Was: per field, per term, a sliding-window Levenshtein over every
+   * substring offset, with the field re-normalized on every keystroke.
+   * scoreFields does the literal tiers first and gates the fuzzy pass behind
+   * a bigram check; fields arrive already normalized from the cache.
+   */
+  private scoreEntry(entry: CollocationEntry, q: MatchQuery, fuzzy: boolean): number {
+    const fields = this.cache.fields(entry);
+    const boosts = fields.map((_, i) => (i < BOOSTS.length ? BOOSTS[i] : TAIL_BOOST));
+    return scoreFields(fields, q, { fuzzy }, boosts);
   }
 
   private sortAndLimit(

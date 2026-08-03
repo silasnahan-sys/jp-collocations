@@ -42,17 +42,30 @@ const context = await esbuild.context({
 
 // Best-effort deploy of the build artifacts into the local Obsidian vault's
 // plugin dir, so a `build` is immediately loadable (still needs a plugin reload
-// in Obsidian). Path overridable via JP_VAULT_PLUGIN_DIR; skipped if absent.
+// in Obsidian). JP_VAULT_PLUGIN_DIR overrides; otherwise every existing
+// candidate gets the build (the vault has moved before — 2026-07-18 it was
+// renamed "Obsidian Vault" → "Lenovo" and deploys silently skipped; plugin
+// files are safe to duplicate, data.json is never touched).
 async function deployToVault() {
-  const dest = process.env.JP_VAULT_PLUGIN_DIR
-    ?? "C:/Users/silas/Documents/Obsidian Vault/.obsidian/plugins/jp-collocations";
+  const candidates = process.env.JP_VAULT_PLUGIN_DIR
+    ? [process.env.JP_VAULT_PLUGIN_DIR]
+    : [
+      "C:/Users/silas/Documents/Lenovo/.obsidian/plugins/jp-collocations",
+      "C:/Users/silas/Desktop/Lenovo/.obsidian/plugins/jp-collocations",
+      "C:/Users/silas/Documents/Obsidian Vault/.obsidian/plugins/jp-collocations",
+    ];
   try {
     const fs = await import("node:fs");
-    if (!fs.existsSync(dest)) { console.log(`deploy skipped (no ${dest})`); return; }
-    for (const f of ["main.js", "manifest.json", "styles.css"]) {
-      if (fs.existsSync(f)) fs.copyFileSync(f, `${dest}/${f}`);
+    let deployed = 0;
+    for (const dest of candidates) {
+      if (!fs.existsSync(dest)) continue;
+      for (const f of ["main.js", "manifest.json", "styles.css"]) {
+        if (fs.existsSync(f)) fs.copyFileSync(f, `${dest}/${f}`);
+      }
+      console.log(`deployed build → ${dest} (reload the plugin in Obsidian)`);
+      deployed++;
     }
-    console.log(`deployed build → ${dest} (reload the plugin in Obsidian)`);
+    if (!deployed) console.log(`deploy skipped (no candidate vault plugin dir exists)`);
   } catch (e) {
     console.warn("deploy skipped:", e.message);
   }

@@ -224,7 +224,17 @@ export function toAttestations(entry, now = 0) {
     file: r.source?.file,
     videoId: r.source?.videoId ?? null,
     tStartSec: r.tSec,
-    scene: r.source?.deepLink ? { deepLink: r.source.deepLink, sourceName: r.source.sourceName } : undefined,
+    // A scene is worth carrying whenever EITHER half exists. Gating on
+    // `deepLink` alone dropped the 番組名 of every source that has no URL — a
+    // Plex episode, a jimaku import, a local podcast — so the one thing that
+    // could say "this came from 進撃の巨人 S1E01" was discarded precisely for
+    // the media that have no other door back (§28 S2/S6).
+    scene: (r.source?.deepLink || r.source?.sourceName)
+      ? {
+          ...(r.source.deepLink ? { deepLink: r.source.deepLink } : {}),
+          ...(r.source.sourceName ? { sourceName: r.source.sourceName } : {}),
+        }
+      : undefined,
     quote: r.quote,
     addedAt: now,
     status: 'suggested',

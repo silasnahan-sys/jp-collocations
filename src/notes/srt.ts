@@ -136,6 +136,20 @@ const pad = (n: number): string => String(n).padStart(2, '0');
 export const fmtStamp = (sec: number): string =>
   `[${pad(Math.floor(sec / 3600))}:${pad(Math.floor((sec % 3600) / 60))}:${pad(Math.floor(sec % 60))}]`;
 
+/**
+ * A clock with no brackets, and no hour field it does not need.
+ *
+ * `fmtStamp` is the transcript's own notation — [00:12:34] belongs against a
+ * line of dialogue. It is the wrong shape for a duration or a position readout,
+ * where 「12:34 / 24:10」 is what the eye expects and the bracketed form reads as
+ * two anchors rather than a progress figure.
+ */
+export const fmtDur = (sec: number): string => {
+  const s = Math.max(0, Math.floor(sec || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+  return h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${pad(m)}:${pad(s % 60)}`;
+};
+
 const yaml = (s: string): string => s.replace(/"/g, "'");
 
 /**
@@ -153,10 +167,27 @@ export function srtToNote(opts: {
   srt: string;
   title: string;
   sourceName?: string;
-  /** where the subtitle came from: `jimaku` by hand, `plex` from the server. */
+  /** where the subtitle came from: `jimaku` fetched, `plex` from the server. */
   subSource?: string;
+  /** season / episode number, when the source knew them. */
+  episode?: { season?: number; episode?: number };
   /** Plex provenance — the episode and the media part it was read from. */
   plex?: { ratingKey?: string; partKey?: string; lang?: string };
+  /**
+   * jimaku provenance — which entry and which FILE this text came from. A
+   * fetched subtitle is a choice among several releases, and it is the one
+   * thing about the note that can be WRONG in a way the text does not show,
+   * so the choice is recorded where a re-fetch can be judged against it.
+   */
+  jimaku?: { entryId?: number; fileName?: string; url?: string };
+  /**
+   * Seconds to add to these stamps to line up with the video (§25.4b).
+   * Zero and present, rather than absent, when the subtitle came from
+   * somewhere other than the video file itself: that is exactly the case where
+   * the two clocks can disagree, and a field you can see is a field you can
+   * fix (鑑賞モード's ⌖ writes it back).
+   */
+  subOffsetSec?: number;
 }): { content: string; cueCount: number } {
   const cues = parseSubtitles(opts.srt);
   const fm = [
@@ -165,9 +196,14 @@ export function srtToNote(opts: {
     `title: "${yaml(opts.title)}"`,
     ...(opts.sourceName ? [`show: "${yaml(opts.sourceName)}"`] : []),
     `sub_source: ${opts.subSource ?? 'jimaku'}`,
+    ...(opts.episode?.season != null ? [`season: ${opts.episode.season}`] : []),
+    ...(opts.episode?.episode != null ? [`episode: ${opts.episode.episode}`] : []),
     ...(opts.plex?.ratingKey ? [`plex_rating_key: "${yaml(opts.plex.ratingKey)}"`] : []),
     ...(opts.plex?.partKey ? [`plex_part_key: "${yaml(opts.plex.partKey)}"`] : []),
     ...(opts.plex?.lang ? [`sub_lang: ${yaml(opts.plex.lang)}`] : []),
+    ...(opts.jimaku?.entryId != null ? [`jimaku_entry: ${opts.jimaku.entryId}`] : []),
+    ...(opts.jimaku?.fileName ? [`jimaku_file: "${yaml(opts.jimaku.fileName)}"`] : []),
+    ...(opts.subOffsetSec != null ? [`sub_offset_sec: ${opts.subOffsetSec}`] : []),
     '---',
     '',
     `# ${opts.title}`,

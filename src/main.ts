@@ -1,11 +1,12 @@
-import { Plugin, WorkspaceLeaf, Notice, TFile, Platform, FileSystemAdapter, Menu, normalizePath, requestUrl, arrayBufferToBase64 } from "obsidian";
+import { Plugin, WorkspaceLeaf, Notice, TFile, Platform, FileSystemAdapter, Menu, Modal, normalizePath, requestUrl, arrayBufferToBase64 } from "obsidian";
 import type { PluginSettings, CollocationEntry } from "./types";
-import { DEFAULT_SETTINGS, DEFAULT_NOTES_CONFIG, DEFAULT_PLEX_SETTINGS, PartOfSpeech, CollocationSource } from "./types";
+import { DEFAULT_SETTINGS, DEFAULT_NOTES_CONFIG, DEFAULT_PLEX_SETTINGS, DEFAULT_JIMAKU_SETTINGS, PartOfSpeech, CollocationSource } from "./types";
 import { CollocationStore } from "./data/CollocationStore";
 import { DataManager, type BlobFileIO } from "./data/data-manager";
 import { stripDerivedIndexes, extractSecrets, scrubSettingsForPersist, SECRET_LS_KEYS } from "./data/blob-migrations";
 import { SearchEngine } from "./search/SearchEngine";
 import { HyogenScraper } from "./scraper/HyogenScraper";
+import { hyogenExamples } from "./scraper/hyogen-parse";
 import { TsukubaWebCorpusScraper } from "./scraper/TsukubaWebCorpusScraper";
 import { CollocationView, JP_COLLOCATIONS_VIEW_TYPE, setCollocationViewResolver } from "./ui/CollocationView";
 import { SearchModal } from "./ui/SearchModal";
@@ -16,6 +17,13 @@ import { injectClassGrammar } from "./ui/class-grammar";
 import { DiscourseGoldStore, toJsonl } from "./notes/discourse-gold";
 import { SrsStore } from "./srs/srs-store";
 import { ReviewView, JP_REVIEW_VIEW_TYPE } from "./ui/ReviewView";
+// AUDIT §6.5 / punch #8 — ratification as a BYPRODUCT of study.
+import { RatifyStore } from "./study/ratify-store";
+import {
+  nextProbe, bestClaimProbe, answerOf, openCounts, report as ratifyReport, drillRow, componentRow,
+  MIN_FOR_PRECISION, MEASUREMENT_EVERY, DISPOSE,
+  type Probe, type Verdict, type RatifyData,
+} from "./study/ratify";
 import { isReviewable } from "./srs/review-cards";
 import { CardPreviewModal } from "./ui/CardPreviewModal";
 import { generatePhraseInContextCard, generateRelationChunkCards, setCardGenResolver } from "./srs/card-generator";
@@ -26,13 +34,15 @@ import { XCorpusStore } from "./x/XCorpusStore";
 import { XClient } from "./x/XClient";
 import { XSearchView, JP_X_VIEW_TYPE, type XViewDeps } from "./ui/XSearchView";
 import { emptyQuery, DEFAULT_X_SETTINGS } from "./x/x-types";
+// §29.2 — X as a corpus: KWIC windows, spread, and the adjacent environment.
+import { buildXUsage, kwicQuote, type XUsage } from "./x/usage";
 import { parseTerms } from "./x/query-builder";
 import {
   buildBrowserCaptureUrl,
   decodeCaptureData,
   X_CAPTURE_ACTION,
 } from "./x/mobile-capture";
-import { getDiscourseExtensions, toggleDiscourseVisualization, toggleVisualization, setEditorContext } from "./ui/EditorDecorations";
+import { getDiscourseExtensions, toggleDiscourseVisualization, toggleVisualization, visualizationActive, setEditorContext } from "./ui/EditorDecorations";
 import { getReadingModePostProcessor, setReadingResolver } from "./ui/ReadingModeHighlighter";
 import {
   expandSelection,
@@ -45,17 +55,19 @@ import { SurferBridge } from "./surfer-bridge";
 import { makeRelationsResolver, type RelationsResolver } from "./discourse/relations-resolver";
 import { setGrammarSetResolver } from "./srs/grammar-set-engine";
 import { ContextEngine } from "./context/ContextEngine";
-import { reconcileMultiAsync, reconcileOne, parseTranscriptLines, frontmatterSources, frontmatterAny, bodyVideoId, extractNotePhrases, CAPTION_STAMP_RE, type ReconciledResult } from "./notes/pipeline";
+import { readingSource, proseLines, tweetLines, sweepableTweets } from "./notes/medium-lines";
+import { reconcileMultiAsync, reconcileOne, parseTranscriptLines, frontmatterSources, frontmatterMedium, isCaptureNote, frontmatterAny, bodyVideoId, extractNotePhrases, looksGenerated, CAPTION_STAMP_RE, type ReconciledResult } from "./notes/pipeline";
 import { makeDictionaryReadingResolver } from "./notes/reading-resolver";
 import { LibraryView, JP_RECON_LIBRARY_VIEW_TYPE } from "./ui/LibraryView";
 import { ReconLibrary } from "./notes/recon-library";
-import { PatternStore, sweepTerms, patternIdFor, derivePattern, attestationKey, type Attestation, type PatternEntry } from "./notes/pattern-store";
+import { PatternStore, sweepTerms, patternIdFor, derivePattern, attestationKey, type Attestation, type PatternEntry, type Medium } from "./notes/pattern-store";
 // §27.5 big-dictionary sidecars (the blob never sees 2.36M entries).
 import { importEijiro, type BankSource } from "./dictionary/import-eijiro";
 import { vaultSidecarIO, nodeBankSource, nodeChunkSource } from "./dictionary/sidecar-io";
 import { bufferedSidecarIO, repairSidecarMeta } from "./dictionary/sidecar";
 import { importDexie, skipTitles } from "./dictionary/import-dexie";
 import { BigDictStore } from "./dictionary/big-dict";
+import { toFrame } from "./dictionary/frames";
 // The move concordance (DISCOURSE-VERDICT §11 fail branch → §12 result).
 import { transcriptToTurns } from "./discourse/calculus/turns.mjs";
 import {
@@ -75,8 +87,12 @@ import { renderCatalogJsonl, renderCatalogMd, parseCatalogJsonl } from "./notes/
 import { buildReconCards, renderCardsFile } from "./notes/cards";
 import { parseYouTubeId, deepLinkProvider } from "./notes/audio-provider";
 import { downloadFullAudio, clipFromLocal, clipWindow, detectTools, clipNameFor, nodeRuntimeAvailable, requireStrategy, probeBinary, nodeReq, run as runTool, ffmpegBinFrom } from "./notes/audio-extractor";
-import { parsePlexSessions, pickPlexSession, plexSessionsUrl, plexPartUrl, buildPlexClipArgs, buildPlexStillArgs, plexStreamUrl, plexMetadataUrl, parseStreams, pickSubtitleStream, subtitleRefusal, describeSubtitles, parsePlexItems, plexSectionsUrl, plexSectionItemsUrl, plexLeavesUrl, plexSearchUrl, episodeLabel, type PlexSessionsResult, type PlexStream, type PlexItemsResult } from "./notes/plex";
+import { parsePlexSessions, pickPlexSession, plexSessionsUrl, plexPartUrl, buildPlexClipArgs, buildPlexStillArgs, plexStreamUrl, plexMetadataUrl, parseStreams, pickSubtitleStream, subtitleRefusal, describeSubtitles, parsePlexItems, plexSectionsUrl, plexSectionItemsUrl, plexLeavesUrl, plexSearchUrl, episodeLabel, explainPlexTransportError, type PlexSessionsResult, type PlexStream, type PlexItemsResult } from "./notes/plex";
+import { parsePlexMediaMeta, type PlexMediaMeta } from "./notes/plex";
+import { plexControlUrl, plexControlHeaders, type PlexCommand } from "./notes/plex";
 import { PlexBrowseModal } from "./ui/PlexBrowseModal";
+import { jimakuSearchUrl, jimakuFilesUrl, jimakuHeaders, jimakuDownloadHeaders, parseJimakuEntries, parseJimakuFiles, pickJimakuEntry, pickJimakuFile, jimakuFileRefusal, jimakuQueryFor, describeJimakuEntry, episodeNumberFrom, type JimakuEntriesResult, type JimakuFilesResult, type JimakuEntry, type JimakuFile } from "./notes/jimaku";
+import { JimakuPickModal } from "./ui/JimakuPickModal";
 import { YouTubeTranscriptAdapter, TranscriptError, type HttpClient, type Transcript, type TranscriptFetchConfig, type YtdlpTranscriptConfig } from "./notes/transcript";
 import { ocrImage, mergeOcrPhrases, imageHash, ocrMarker, planTiles, tileUpscale } from "./notes/ocr-reconciler";
 import { detectSpeechTools, enrichClip, voiceSyncSidecarName, extractRefWav, DEFAULT_VOICE_SYNC, type VoiceSyncData } from "./notes/voice-lab";
@@ -86,21 +102,35 @@ import { buildScaffoldBody, parseScaffoldResponse } from "./notes/scaffold";
 import { suggestClass } from "./notes/class-suggester";
 import { srtToNote, fmtStamp } from "./notes/srt";
 import { parseWhisperSegments, parseDiarTurns, speakerStampLines } from "./notes/voice-lab";
-import { normalizeProfile } from "./scraper/goho";
+import { profileFromFrames, FRAME_ITEMS } from "./scraper/goho";
 import { MANGA_MODEL, MANGA_PROMPT, parseMangaOcr } from "./notes/manga-ocr";
 import { buildVisionBody } from "./notes/claude-client";
 import { parsePodcastFeed, podcastNote } from "./notes/podcast-rss";
 import { componentKeyOf, type ComponentVerdict } from "./ui/DiscourseModeView";
 import { ImportModal } from "./ui/ImportModal";
-import { InboxStore, markCard, type MarkRef, type InboxCard } from "./notes/inbox";
+import { InboxStore, markCard, imageCard, shapeDrop, type MarkRef, type InboxCard } from "./notes/inbox";
+// §29 — the drag road. `drop-intent` decides what arrived; `runDropIntent`
+// below hands it to the same code the equivalent command already calls.
+import { dropIntents, titleFromFilename, type DropIntent } from "./notes/drop-intent";
+import { type Surface } from "./ui/surface-bar";
 import { ReachStore, reachStats, type ReachData, type Reach } from "./notes/reach";
 import { ReachModal } from "./ui/ReachModal";
-import { TrayView, JP_TRAY_VIEW_TYPE } from "./ui/TrayView";
+import { TrayView, JP_TRAY_VIEW_TYPE, type TrayDoor } from "./ui/TrayView";
 import { discoverCollocations, type DiscoverySource, type Discovery } from "./notes/discovery";
 import { DiscoveryModal } from "./ui/DiscoveryModal";
 import { SpeakStore } from "./notes/speak-session";
 import { FollowAlongView, JP_FOLLOW_VIEW_TYPE } from "./ui/FollowAlongView";
 import { PLAYER_MODEL, PLAYER_PROMPT, parsePlayerShot, matchEpisodeNote } from "./notes/player-shot";
+
+/**
+ * How many sightings ONE auto-swept entry may write. The gesture's job is
+ * discovery, not exhaustive attestation: measured on a 123-transcript vault,
+ * 「気になる」 finds 135 sightings and 「っていうのは」 238, and writing those on a
+ * single drop would bury the ✓✕ queue under one phrase. The manual full sweep
+ * is still there for exhaustive work, and the Notice always states the total
+ * when the cap bites.
+ */
+const AUTO_SWEEP_CAP = 12;
 
 /** One source transcript in a (possibly multi-video) reconcile run. */
 interface ReconSource {
@@ -113,11 +143,28 @@ interface ReconSource {
   plan: AnchorPlan;
 }
 interface ReconPrep { file: TFile; sources: ReconSource[] }
+
+/**
+ * §25.4b — one subtitle attempt, from either source. `why` is written to be
+ * shown verbatim: when both sources fail, the user is told what each of them
+ * had, which is the difference between "no subtitles" and "the only track is
+ * PGS pictures / jimaku has this show but not this episode".
+ */
+type SubtitleFetch =
+  | {
+    ok: true;
+    source: "plex" | "jimaku";
+    text: string;
+    lang?: string;
+    codec?: string;
+    jimaku?: { entryId?: number; fileName?: string; url?: string };
+  }
+  | { ok: false; why: string; ambiguous?: boolean };
 import { renderTranscriptFile, transcriptFileBaseName } from "./notes/transcript-assembly";
 import { parseHistory, type WatchedVideo } from "./notes/yt-history";
 import { YtHistoryClient, YtHistoryError, DEFAULT_YT_HISTORY_SETTINGS } from "./notes/yt-history-client";
 import { HistoryRangeModal } from "./ui/HistoryRangeModal";
-import type { NoteClass } from "./notes/note-types";
+import { NOTE_TYPES, type NoteClass } from "./notes/note-types";
 import type {
   SurferCollocationEntry,
   DiscourseContext,
@@ -147,6 +194,8 @@ export default class JPCollocationsPlugin extends Plugin {
   goldStore!: DiscourseGoldStore;
   /** SRS review state for the catalog deck (pattern = card unit). */
   srsStore!: SrsStore;
+  /** §6.5 — the ONE place every human ✓/✕ lands, whatever surface made it. */
+  ratifyStore!: RatifyStore;
   /** 談話モード per-file segmentation (human-ratified turns/speakers). */
   private discourseSeg: Record<string, FileSeg> = {};
   /** §23.4-5 gold v2 layer-3: the drawn arrows (→/↳/↧) per transcript. */
@@ -326,6 +375,11 @@ export default class JPCollocationsPlugin extends Plugin {
     this.srsStore = new SrsStore((data) => this.dm.setKey("_srsDeck", data));
     this.srsStore.load(stored?._srsDeck);
 
+    // ── the ratification ledger (§6.5): one row per human judgement, whatever
+    //    surface produced it. Starts empty by design — see ratify-store.ts.
+    this.ratifyStore = new RatifyStore((data) => this.dm.setKey("_ratifications", data));
+    this.ratifyStore.load((stored as { _ratifications?: RatifyData } | undefined)?._ratifications);
+
     // ── 談話モード segmentation (human-ratified turn breaks/speakers = the
     //    training corpus the over-segmenting speaker detection lacks) ──
     this.discourseSeg = stored?._discourseSeg ?? {};
@@ -358,41 +412,22 @@ export default class JPCollocationsPlugin extends Plugin {
     this.reachStore.load((stored as { _reaches?: ReachData } | undefined)?._reaches);
     this.registerView(JP_TRAY_VIEW_TYPE, (leaf) => new TrayView(leaf, {
       store: this.inboxStore,
+      // §30 — the front door. Every road that used to require knowing which of
+      // 60 palette entries matched the medium in your hand.
+      doors: () => this.trayDoors(),
       openCapture: (ctx) => new CaptureModal(this.app, ctx, this.makeCaptureDeps()).open(),
-      saveImage: async (name, data) => {
-        const folder = "attachments";
-        if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder).catch(() => {});
-        const ext = name.split(".").pop() || "png";
-        const path = normalizePath(`${folder}/inbox-${Date.now()}.${ext}`);
-        await this.app.vault.createBinary(path, data);
-        return path;
-      },
+      saveImage: (name, data) => this.saveInboxImage(name, data),
       // §22.2 manga: spread-aware bubble OCR (pinned model, bbox-validated)
-      ocrManga: this.settings.notes.ocrApiKey ? async (vaultPath) => {
-        const f = this.app.vault.getFileByPath(vaultPath);
-        if (!f) throw new Error("画像が見つかりません");
-        const buf = await this.app.vault.readBinary(f);
-        const ext = vaultPath.split(".").pop()?.toLowerCase();
-        const mediaType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "webp" ? "image/webp" : "image/png";
-        const resp = await requestUrl({
-          url: CLAUDE_API_URL, method: "POST", throw: false,
-          headers: { "x-api-key": this.settings.notes.ocrApiKey, "anthropic-version": CLAUDE_API_VERSION, "content-type": "application/json" },
-          body: buildVisionBody({
-            apiKey: this.settings.notes.ocrApiKey, model: MANGA_MODEL,
-            images: [{ base64: arrayBufferToBase64(buf), mediaType }],
-            prompt: MANGA_PROMPT,
-          }),
-        });
-        const r = parseMangaOcr(resp.status, resp.text);
-        if (!r.ok) throw new Error(r.error);
-        return r.bubbles;
-      } : undefined,
+      ocrManga: this.settings.notes.ocrApiKey ? (vaultPath) => this.ocrMangaImage(vaultPath) : undefined,
       // §25.3: a player screenshot becomes a precise podcast mark
       recognizePlayer: this.settings.notes.ocrApiKey
         ? (card) => this.recognizePlayerShot(card)
         : undefined,
       // §25.1 harvest: a mark re-manifests its transcript moment
       resolveMarkContext: (mark) => this.resolveMarkContext(mark),
+      // §25.4: and can still have its scene cut, long after the watch ended
+      clipForMark: Platform.isDesktopApp ? (card) => this.cutClipForMarkCard(card) : undefined,
+      setMarkNote: async (id: string, text: string) => { await this.inboxStore.setMarkNote(id, text); },
       // §28 S1: a dropped phrase you have already noticed says so
       patternsIn: (text) => this.patternsIn(text),
       openPattern: (id) => void this.openLexiconAt(id),
@@ -408,6 +443,10 @@ export default class JPCollocationsPlugin extends Plugin {
       },
       onRejectOffer: async (id, i) => { await this.reachStore.rejectOffer(id, i); },
       onAbandonReach: async (id) => { await this.reachStore.abandonReach(id, Date.now()); },
+      onDrop: (intent, files) => void this.runDropIntent(intent, files),
+      dropCan: () => this.dropCapabilities(),
+      openSurface: (s) => void this.openSurface(s),
+      surfaceBadge: (s) => this.surfaceBadge(s),
     }));
 
     // ── 発話セッション store + 鑑賞モード view (§25.2/§25.5) ──
@@ -415,7 +454,31 @@ export default class JPCollocationsPlugin extends Plugin {
     this.speakStore.load(stored?._speakSessions);
     this.registerView(JP_FOLLOW_VIEW_TYPE, (leaf) => new FollowAlongView(leaf, {
       parse: parseTranscriptLines,
-      addTrayMark: async (m) => { await this.inboxStore.add(markCard(m, Date.now())); },
+      // §6.5 — the 予測 answer the panel used to discard on close.
+      recordDrill: (scope, caseId, claim, picked) => {
+        void this.ratifyStore.record(drillRow(scope, caseId, claim, picked, Date.now()));
+      },
+      // Returns the tray card id so 鑑賞モード can write a clip back onto the
+      // very card the mark became, instead of holding it only in memory.
+      addTrayMark: async (m) => {
+        const card = markCard(m, Date.now());
+        await this.inboxStore.add(card);
+        this.refreshTrayViews();
+        return card.id;
+      },
+      marksForFile: (path) => this.inboxStore.marksForFile(path ?? undefined).map((c) => ({
+        cardId: c.id,
+        tSec: c.mark?.tSec ?? null,
+        lineIndex: null,
+        lineText: '',
+        seed: c.content ?? c.mark?.seed ?? null,
+        at: c.createdAt,
+        ...(c.clip ? { clip: c.clip } : {}),
+      })),
+      attachMarkClip: (cardId, clip) =>
+        this.inboxStore.setMarkClip(cardId, clip).then(() => { this.refreshTrayViews(); }),
+      setMarkNote: (cardId, text) =>
+        this.inboxStore.setMarkNote(cardId, text).then(() => { this.refreshTrayViews(); }),
       speak: this.speakStore,
       aspects: () => this.settings.speak.aspects,
       goalPoints: () => this.settings.speak.goalPoints,
@@ -430,6 +493,38 @@ export default class JPCollocationsPlugin extends Plugin {
       plexEnabled: () => !!(this.settings.plex.baseUrl.trim() && this.settings.plex.token.trim()),
       plexPoll: () => this.fetchPlexSessions(),
       plexClip: (partKey, atSec, label) => this.cutPlexClip(partKey, atSec, label),
+      /**
+       * §25.4 — which Plex item this note was cut from, straight off its own
+       * frontmatter. The 🎬 cutter needs a Part key and nothing else; reading it
+       * here means clips exist for any note that has one, rather than only while
+       * a poll happens to be running.
+       */
+      plexIdentity: (file) => {
+        const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
+        return {
+          partKey: fm.plex_part_key ? String(fm.plex_part_key) : null,
+          ratingKey: fm.plex_rating_key ? String(fm.plex_rating_key) : null,
+        };
+      },
+      // §25.4c — relay a transport command to the client playing the session.
+      plexCommand: (targetId, command, params) => this.plexControl(targetId, command, params),
+      // §25.4b: a fetched subtitle can be shifted from the video it belongs
+      // to. The offset lives in the note, not in memory, so the correction
+      // survives closing the view — and is visible/editable as plain YAML.
+      subOffset: (file) => {
+        const v = this.app.metadataCache.getFileCache(file)?.frontmatter?.sub_offset_sec;
+        const n = typeof v === "number" ? v : Number(v);
+        return Number.isFinite(n) ? n : 0;
+      },
+      saveSubOffset: async (path, sec) => {
+        const f = this.app.vault.getFileByPath(path);
+        if (!f) return;
+        await this.app.fileManager.processFrontMatter(f, (fm) => {
+          fm.sub_offset_sec = Math.round(sec * 10) / 10;
+        });
+      },
+      onDrop: (intent, files) => void this.runDropIntent(intent, files),
+      dropCan: () => this.dropCapabilities(),
     }));
 
     // ── X Search corpus + client ─────────────────────────────
@@ -445,11 +540,14 @@ export default class JPCollocationsPlugin extends Plugin {
       this.store,
       this.surferBridge,
       this.xCorpus,
+      // §22.7 — the frozen 語法 profiles, so a lookup anywhere in the plugin
+      // reaches the corpus sentences instead of only the 語彙 panel's own box.
+      this.patternStore,
     );
 
     // Register views
     this.registerView(JP_COLLOCATIONS_VIEW_TYPE, leaf =>
-      new CollocationView(leaf, this.store, this.engine, this.settings, this.contextEngine, this.dictStore, {
+      this.withChrome(new CollocationView(leaf, this.store, this.engine, this.settings, this.contextEngine, this.dictStore, {
         patterns: () => this.patternStore.all(),
         collocations: () => this.store.getAll(),
         dictLookup: (q) => this.dictStore.lookup(q),
@@ -465,44 +563,134 @@ export default class JPCollocationsPlugin extends Plugin {
         loadSeg: (path) => this.discourseSeg[path] ?? null,
         // §22.2 manga context: neighbor bubbles live on the OCR'd tray card
         bubblesFor: (img) => this.inboxStore.all().find((c) => c.kind === "image" && c.content === img)?.bubbles ?? null,
-        // §23.5 cross-surface drop: tray card → 語彙 view = capture
-        onDropCapture: (text, sourceName) => {
-          const short = text.length <= 40;
-          new CaptureModal(this.app, {
-            text: short ? text : "",
-            example: short ? undefined : text,
-            source: { kind: "manual", sourceName },
-          }, this.makeCaptureDeps()).open();
-        },
+        // §29 the drag road — one executor, the panel supplies only `where`
+        onDrop: (intent, files, where) => void this.runDropIntent(intent, files, where),
+        dropCan: () => this.dropCapabilities(),
+        // §29.2 — the 𝕏 corpus, answered inside the entry
+        xUsage: (p) => this.xUsageFor(p),
+        openUrl: (url) => window.open(url, "_blank"),
+        attachXLine: (p, quote, url, handle) => void this.attachXLine(p, quote, url, handle),
         findExamples: (p) => this.findExamplesFor(p),
         searchXFor: (p) => this.openXView(sweepTerms(p).map((t) => `"${t}"`).join(" ") || p.key),
         generateScaffold: this.settings.notes.ocrApiKey ? (p) => this.generateScaffoldFor(p) : undefined,
         // §22.7: per-entry corpus enrichment — every enabled adapter answers
         // for THIS key, results merged, fetched once and frozen
+        // §22.7 — the 語法プロフィール: how this word attaches, and what
+        // attaches that way. Hyogen is the corpus adapter (no 利用規約, no 転載
+        // restriction, 青空文庫-derived); its structured profile carries the
+        // direction / sense / POS / particle-facet grammar that the old flat
+        // `collocates: string[]` threw away.
         fetchGoho: (this.settings.hyogenEnabled || this.settings.twcEnabled) ? async (p) => {
           const word = p.payload.lemma ?? p.key;
-          const entries: CollocationEntry[] = [];
-          const sources: string[] = [];
-          if (this.settings.hyogenEnabled) {
-            try {
-              const got = await new HyogenScraper(this.app, this.store, { rateLimit: 0 }).profileWord(word);
-              if (got.length) { entries.push(...got); sources.push("hyogen"); }
-            } catch (e) { console.error("[jp-collocations] hyogen goho failed:", e); }
+          try {
+            // NINJAL-LWP first when it is on: it is the only source that says
+            // how OFTEN each way of attaching is used and whether a pairing is
+            // selective (MI / logDice) rather than merely frequent. Hyogen
+            // answers when TWC is off or does not have the word — it has the
+            // 青空文庫 phrases TWC's grid does not carry.
+            if (this.settings.twcEnabled) {
+              // ~11 rate-limited round trips. ONE Notice, updated in place, so
+              // the wait reads as progress rather than as a hang (§28 S6).
+              const progress = new Notice(`語法: 「${word}」を照会中…`, 0);
+              const twc = new TsukubaWebCorpusScraper(this.app, this.store, {
+                rateLimit: this.settings.twcRateLimit,
+                onProgress: (msg) => progress.setMessage(`語法: ${msg}`),
+              });
+              let prof: Awaited<ReturnType<typeof twc.profile>>;
+              try { prof = await twc.profile(word); } finally { progress.hide(); }
+              if (prof?.frames.length) {
+                const shown = prof.frames.length;
+                const profile = profileFromFrames(
+                  {
+                    frames: prof.frames,
+                    // The ways of attaching that were counted but not drilled
+                    // into stay reachable rather than silently dropped (§28 S6),
+                    // and so is the other word spelled the same way — 風 is
+                    // 形容動詞 フウ (80,779例) and 名詞 カゼ (322例) in this corpus.
+                    facets: [
+                      { label: `全${prof.patterns.length}パターンを見る`, url: prof.url },
+                      ...prof.alternates.map((a) => ({
+                        label: `${a.headword}〈${a.yomi}・${a.pos}〉${a.freq.toLocaleString()}例`,
+                        url: TsukubaWebCorpusScraper.pageFor(a.id),
+                      })),
+                    ],
+                    total: prof.headword.freq,
+                    // Attested sentences, each carrying the document and URL it
+                    // came from — §28 S2, provenance is never dropped.
+                    // `attested`: TWC names the document AND links it, so each
+                    // of these is a citation, not a listing (cf. Hyogen's
+                    // `phrase` items). `frame`/`collocate` are what the batch
+                    // was requested for — the pairing cannot be recovered from
+                    // the text afterwards, so it travels with the sentence.
+                    examples: prof.examples.map((e) => ({
+                      text: e.text, source: e.source, url: e.url, span: e.span, ref: e.ref,
+                      kind: 'attested' as const, frame: e.frame, collocate: e.collocate,
+                    })),
+                  },
+                  p.key, "NINJAL-LWP for TWC", Date.now(),
+                );
+                const ok = await this.patternStore.setGoho(p.id, profile);
+                if (ok) {
+                  const ex = profile.sourced?.length ? ` · 用例${profile.sourced.length}件（出典つき）` : "";
+                  // Say WHICH lemma was profiled — with a homograph the reading
+                  // is the difference between two different words.
+                  const alt = prof.alternates.length ? ` ／ 別語義${prof.alternates.length}件は絞込みから` : "";
+                  new Notice(
+                    `語法プロフィール〈${prof.headword.yomi}・${prof.headword.pos}〉: ` +
+                    `${shown}/${prof.patterns.length}通りの付き方 · ` +
+                    `${prof.headword.freq.toLocaleString()}例（表示は各${FRAME_ITEMS}件）${ex}${alt}`,
+                    7000);
+                }
+                return ok;
+              }
+              if (!this.settings.hyogenEnabled) {
+                new Notice(`語法: 「${word}」は TWC の見出し語にありません`, 6000);
+                return false;
+              }
+            }
+
+            if (!this.settings.hyogenEnabled) return false;
+            const hy = await new HyogenScraper(this.app, this.store, { rateLimit: 0 }).profile(word);
+            if (!hy.total) {
+              new Notice(`語法: 「${word}」は Hyogen に見つかりませんでした`, 6000);
+              return false;
+            }
+            // Hyogen's items ARE its 青空文庫 phrases — the one thing TWC's
+            // grid does not carry. They used to reach the panel only as
+            // collocate chips, indistinguishable from a bare particle pairing,
+            // while the 用例 row rendered nothing for this source at all.
+            const hyEx = hyogenExamples(hy, HyogenScraper.pageFor(word));
+            const profile = profileFromFrames(
+              { frames: hy.sections, facets: hy.facets, total: hy.total, examples: hyEx },
+              p.key, "hyogen", Date.now(),
+            );
+            const ok = await this.patternStore.setGoho(p.id, profile);
+            if (ok) {
+              const ex = hyEx.length ? ` · 用例${hyEx.length}件（青空文庫）` : "";
+              new Notice(
+                `語法プロフィール: ${hy.sections.length}通りの付き方 / ${hy.total.toLocaleString()}例（表示は各${FRAME_ITEMS}件）${ex}`,
+                7000);
+            }
+            return ok;
+          } catch (e) {
+            // §28 S6 — say what failed, where the thing would have been.
+            console.error("[jp-collocations] goho fetch failed:", e);
+            new Notice(`語法の取得に失敗: ${e instanceof Error ? e.message : String(e)}`, 8000);
+            return false;
           }
-          if (this.settings.twcEnabled) {
-            try {
-              const got = await new TsukubaWebCorpusScraper(this.app, this.store, { rateLimit: 0 }).profileWord(word);
-              if (got.length) { entries.push(...got); sources.push("twc"); }
-            } catch (e) { console.error("[jp-collocations] twc goho failed:", e); }
-          }
-          const profile = normalizeProfile(entries, p.key, sources.join("+") || "corpus", Date.now());
-          return this.patternStore.setGoho(p.id, profile);
         } : undefined,
-        captureCorpus: (p, example) => {
+        captureCorpus: (p, example, prov) => {
+          // §28 S2 — when the corpus told us which document a sentence came
+          // from, that is the provenance, not the adapter's name. "corpus" as a
+          // sourceName is what we fall back to, never what we prefer.
           new CaptureModal(this.app, {
             text: p.key,
             example,
-            source: { kind: "web", medium: "corpus", sourceName: p.payload.goho?.source ?? "corpus", loc: p.key },
+            source: {
+              kind: "web", medium: "corpus",
+              sourceName: prov?.sourceName ?? p.payload.goho?.source ?? "corpus",
+              loc: prov?.url ?? p.key,
+            },
           }, this.makeCaptureDeps()).open();
         },
         // §27.5 — the vault sidecars, queried asynchronously. Both halves:
@@ -523,7 +711,7 @@ export default class JPCollocationsPlugin extends Plugin {
             source: { kind: "manual", medium: "dict", sourceName: dictionary, loc: intention },
           }, this.makeCaptureDeps()).open();
         },
-      })
+      }))
     );
     this.registerView(JP_DICTIONARY_VIEW_TYPE, leaf =>
       this.withCatalogHits(new DictionaryView(leaf, this.dictStore, async () => {
@@ -571,6 +759,14 @@ export default class JPCollocationsPlugin extends Plugin {
       resolveClip: (att) => this.resolveAttestationClip(att),
       openAttestation: (att) => this.openAttestation(att),
       newPerSession: () => this.settings.srsNewPerSession ?? 20,
+      // §6.5 — one judgement per graded card, on the pattern just studied;
+      // falling back to the best claim the deck cannot reach (see bestClaimProbe).
+      nextProbe: (p, seq) => {
+        const data = this.ratifyStore.data();
+        return nextProbe(p, data, { seq }) ?? bestClaimProbe(this.patternStore.all(), data);
+      },
+      answerProbe: (probe, verdict, answer) => this.answerProbe(probe, verdict, answer),
+      openCounts: () => openCounts(this.patternStore.all(), this.ratifyStore.data()),
     }));
 
     // ── ⚡ capture flow (the YT pipeline as ONE designed surface) ──
@@ -674,13 +870,13 @@ export default class JPCollocationsPlugin extends Plugin {
 
     this.addCommand({
       id: "import-data",
-      name: "Import Data",
+      name: "旧・連語ストアに読み込む (Import Legacy Collocations)",
       callback: () => this.importData(),
     });
 
     this.addCommand({
       id: "export-data",
-      name: "Export Data",
+      name: "旧・連語ストアだけを書き出す (Export Legacy Collocations — NOT the catalog)",
       callback: () => this.exportData(),
     });
 
@@ -803,6 +999,15 @@ export default class JPCollocationsPlugin extends Plugin {
       callback: async () => { await this.runReconcileFlow(); },
     });
 
+    // The other half of the ingest gate: `looksGenerated` now stops this junk
+    // arriving, but the entries that arrived BEFORE it existed are still in the
+    // index and no amount of correct filtering removes them.
+    this.addCommand({
+      id: "purge-generated-catalog-entries",
+      name: "台帳から生成物エントリを取り除く（プレビュー付き）",
+      callback: async () => { await this.purgeGeneratedPatterns(); },
+    });
+
     // ⚡ the one-shot flow: OCR (if images) → reconcile → cards → audio clips
     // (audio only when the opt-in setting is on — same behavior, one button).
     this.addCommand({
@@ -818,6 +1023,15 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "new-capture-note",
       name: "New Capture Note from Latest Watch History (paste image → ⚡)",
       callback: async () => { await this.newCaptureNote(); },
+    });
+
+    // The source-agnostic sibling: whatever transcript is open — Plex, jimaku,
+    // YouTube, hand-pasted .srt — gets a capture note pointing at it. Without
+    // this the TV road ends at the transcript and ⚡ is unreachable from it.
+    this.addCommand({
+      id: "capture-note-from-transcript",
+      name: "📝 このトランスクリプトからキャプチャノートを作成（→ ⚡）",
+      callback: async () => { await this.captureNoteFromTranscript(); },
     });
 
     // Speaker-synced clip enrichment (whisper + diarization, desktop, opt-in).
@@ -1086,6 +1300,22 @@ export default class JPCollocationsPlugin extends Plugin {
       callback: async () => { await this.buildConcordance(); },
     });
 
+    // §6.5 — the readout the ledger exists to make possible. A note, not a
+    // Notice: these are numbers to argue with over weeks, and a toast that
+    // vanishes in five seconds cannot be argued with.
+    this.addCommand({
+      id: "study-ratification-report",
+      name: "復習: 照合の記録を書き出す（精度・食い違い・未確定）",
+      callback: async () => {
+        const path = "照合レポート.md";
+        const body = this.ratificationReport();
+        const f = this.app.vault.getFileByPath(path);
+        if (f) await this.app.vault.modify(f, body);
+        else await this.app.vault.create(path, body);
+        void this.app.workspace.openLinkText(path, "", false);
+      },
+    });
+
     this.addCommand({
       id: "convert-big-dictionary",
       name: "辞書: Convert Yomitan Export → Vault Sidecars (desktop)",
@@ -1114,6 +1344,27 @@ export default class JPCollocationsPlugin extends Plugin {
       id: "plex-browse",
       name: "📺 Plex: ライブラリから選ぶ（字幕 → トランスクリプト）",
       callback: () => { this.openPlexBrowse(); },
+    });
+
+    // §25.4b — the same road without a Plex server: jimaku on its own.
+    // Seeded from the open note, so 「今これを見ている」 needs no retyping.
+    this.addCommand({
+      id: "jimaku-subtitle-transcript",
+      name: "📺 jimaku: 日本語字幕を探して取り込む",
+      callback: () => {
+        const f = this.app.workspace.getActiveFile();
+        const fm = f ? this.app.metadataCache.getFileCache(f)?.frontmatter : undefined;
+        const show = (fm?.show as string) ?? (fm?.title as string) ?? f?.basename ?? "";
+        const ep = episodeNumberFrom(String(fm?.title ?? f?.basename ?? ""));
+        this.openJimakuPicker({
+          query: jimakuQueryFor({ show: fm?.show as string, title: show }),
+          episode: (fm?.episode as number) ?? ep.episode,
+          season: (fm?.season as number) ?? ep.season,
+        }, {
+          ...(fm?.plex_rating_key ? { ratingKey: String(fm.plex_rating_key) } : {}),
+          ...(fm?.plex_part_key ? { partKey: String(fm.plex_part_key) } : {}),
+        });
+      },
     });
 
     // §27.0.2 — record a want you cannot yet say. The one place the plugin
@@ -1157,10 +1408,21 @@ export default class JPCollocationsPlugin extends Plugin {
     // Ribbon icons
     // ONE ribbon icon for the whole plugin (AUDIT §4): the hub menu reaches
     // every surface; each also stays reachable via the command palette.
-    this.addRibbonIcon("torii-gate", "JP Collocations", (evt) => {
+    // §30 — the ribbon OPENS THE TRAY. It used to open a menu of nine surfaces,
+    // which asked "where are you going?" at the moment you are holding
+    // something and want to put it down. The tray is the answer to "put this
+    // somewhere", and it now carries every road on it (see trayDoors), so the
+    // menu it replaced is still one surface away — on the right-click, and
+    // still whole in the command palette.
+    const ribbon = this.addRibbonIcon("torii-gate", "JP Collocations — 収集トレイ（右クリックで全surface）", () => {
+      void this.openTray();
+    });
+    this.registerDomEvent(ribbon, "contextmenu", (evt: MouseEvent) => {
+      evt.preventDefault();
       const menu = new Menu();
       const add = (title: string, icon: string, cb: () => void) =>
         menu.addItem((i) => i.setTitle(title).setIcon(icon).onClick(cb));
+      add("収集トレイ", "inbox", () => { void this.openTray(); });
       add("⚡ キャプチャフロー", "zap", () => this.openPipelineView());
       add("語彙・台帳", "languages", () => this.openLexiconView());
       add("復習 (SRS)", "layers", () => this.openReviewView());
@@ -1168,7 +1430,6 @@ export default class JPCollocationsPlugin extends Plugin {
       add("𝕏 検索", "search", () => this.openXView());
       add("談話モード", "messages-square", () => this.openDiscourseMode());
       add("鑑賞モード（今ここ）", "eye", () => { void this.openFollowAlong(); });
-      add("収集トレイ", "inbox", () => { void this.openTray(); });
       add("照合ライブラリ", "library", () => this.openReconLibrary());
       menu.addSeparator();
       add("照合パイプライン実行（OCR→照合→カード→音声）", "sparkles", () => { void this.runFullPipeline(); });
@@ -1408,14 +1669,16 @@ export default class JPCollocationsPlugin extends Plugin {
       editorCallback: (editor) => {
         // @ts-ignore — access CM6 view from Obsidian editor
         const cmView = (editor as any).cm;
-        if (cmView) {
-          toggleDiscourseVisualization(cmView);
-          const active = cmView.state.field(
-            // re-import avoided by checking directly
-            cmView.state.field !== undefined
-          );
-          new Notice('談話文法可視化：' + (active ? 'ON' : 'OFF'));
-        }
+        if (!cmView) { new Notice("この編集ビューでは切り替えられません"); return; }
+        toggleDiscourseVisualization(cmView);
+        // Read the field back with the FIELD, not with a boolean. This used to
+        // be `cmView.state.field(cmView.state.field !== undefined)` — i.e.
+        // `state.field(true)` — which CM6 answers with
+        // `RangeError: Field is not present in this state`. The dispatch above
+        // had already landed, so the toggle worked and the command then threw:
+        // no Notice, a console exception, and a state change with no feedback.
+        const active = cmView.state.field(visualizationActive, false) === true;
+        new Notice('談話文法可視化：' + (active ? 'ON' : 'OFF'));
       },
     });
 
@@ -1694,11 +1957,65 @@ export default class JPCollocationsPlugin extends Plugin {
   // ── Universal classify-capture (DESIGN §13) ─────────────────
 
   /** The dependency bundle every capture surface shares. */
+  /**
+   * §30 — the front door's rows.
+   *
+   * Every road here already existed as a command; the problem was that finding
+   * the right one meant knowing which of 60 palette entries matched the medium
+   * in your hand. Nothing is moved or removed — the commands stay, and these
+   * are the same roads made visible on the surface you are already looking at
+   * when you have something to put away.
+   *
+   * Ingest doors are invoked by command id (the convention CollocationView
+   * already uses) rather than by calling the handlers directly, so the large
+   * ImportModal callbacks stay in exactly one place and cannot drift from what
+   * the palette does.
+   */
+  private trayDoors(): TrayDoor[] {
+    const cmd = (id: string) => () => {
+      const ok = (this.app as any).commands?.executeCommandById(`jp-collocations:${id}`);
+      if (!ok) new Notice(`コマンドが見つかりません: ${id}`, 6000);
+    };
+    const plexOff = !(this.settings.plex.baseUrl.trim() && this.settings.plex.token.trim())
+      ? "設定 → Plex に baseUrl と X-Plex-Token を入力してください" : undefined;
+
+    return [
+      // ── 入れる: one row per medium, in the shape that medium deserves ──
+      { kind: "in", label: "YouTube 履歴", icon: "history", run: cmd("fetch-yt-history-live") },
+      { kind: "in", label: "YouTube URL", icon: "link", run: cmd("fetch-yt-transcript") },
+      { kind: "in", label: "Plex", icon: "tv", run: cmd("plex-browse"), disabled: plexOff },
+      // §25.4b — the same TV road WITHOUT a Plex server. It was palette-only
+      // while Plex sat on the tray, so the door that needs no server was the one
+      // you could not find, and a Plex-less setup read as "no TV support".
+      { kind: "in", label: "jimaku 字幕", icon: "subtitles", run: cmd("jimaku-subtitle-transcript") },
+      { kind: "in", label: "字幕 .srt", icon: "captions", run: cmd("import-srt") },
+      { kind: "in", label: "Podcast", icon: "podcast", run: cmd("import-podcast") },
+      { kind: "in", label: "Kindle・note", icon: "book-open-text", run: cmd("import-written") },
+      { kind: "in", label: "𝕏", icon: "search", run: cmd("open-x-search") },
+
+      // ── 開く: where it goes once it is in ──
+      { kind: "go", label: "⚡ キャプチャ", icon: "zap", run: () => this.openPipelineView() },
+      { kind: "go", label: "語彙・台帳", icon: "languages", run: () => this.openLexiconView() },
+      { kind: "go", label: "復習", icon: "layers", run: () => this.openReviewView() },
+      { kind: "go", label: "辞書", icon: "book-open", run: () => this.openDictionaryView() },
+      { kind: "go", label: "鑑賞モード", icon: "eye", run: () => { void this.openFollowAlong(); } },
+      { kind: "go", label: "談話モード", icon: "messages-square", run: () => this.openDiscourseMode() },
+      { kind: "go", label: "照合ライブラリ", icon: "library", run: () => this.openReconLibrary() },
+      // §27.0.2 — the one door that puts nothing down and takes nothing out.
+      // A want has no other entry point in the UI, and the tray is exactly where
+      // you are when you notice you cannot say something.
+      { kind: "go", label: "願い", icon: "sparkle", run: cmd("open-reach") },
+    ];
+  }
+
   makeCaptureDeps(): CaptureDeps {
     return {
       recordClassified: (opts) => this.patternStore.recordClassified(opts),
       addGold: (g) => this.goldStore.add(g),
-      onSaved: () => this.refreshReconLibrary(),
+      // The classify gesture is also the moment to go looking: one entry against
+      // every transcript costs ~100ms warm, and it turns "I flicked a phrase in"
+      // into "here are the other places you have already heard it."
+      onSaved: (entry) => { this.refreshReconLibrary(); void this.autoSweepAfterCapture(entry); },
       // §21: calibrated by the user's own suggested-vs-chosen record —
       // every past capture makes the next preselection smarter.
       suggestClass: (note) => suggestClass(
@@ -1834,12 +2151,31 @@ export default class JPCollocationsPlugin extends Plugin {
       }));
     await this.app.vault.adapter.write(normalizePath("class-choices.jsonl"), choices.join("\n") + (choices.length ? "\n" : ""));
 
+    // §23 LAYER 2 — the component verdicts. These were being collected with
+    // full turn context by DiscourseModeView's pills and written to
+    // `_componentGold`, where they had exactly two readers: the write itself and
+    // the "have I already judged this?" lookup. The layer DESIGN §23 calls "the
+    // parser's honest ceiling" was producing gold with no exit and no consumer.
+    // It is the one gold whose claims are decidable from the skeleton alone, so
+    // it is the one most worth being able to train or measure against.
+    const comps = Object.entries(this.componentGold).map(([key, v]) => JSON.stringify({
+      key, file: v.file, line: v.line, tStartSec: v.tStartSec ?? null,
+      kind: v.kind, unitText: v.unitText, echoed: v.echoed ?? null, evidence: v.evidence ?? null,
+      verdict: v.verdict, prevText: v.prevText, turnText: v.turnText, at: v.at,
+    }));
+    await this.app.vault.adapter.write(
+      normalizePath("component-gold.jsonl"), comps.join("\n") + (comps.length ? "\n" : ""));
+    const acc = comps.length
+      ? Object.values(this.componentGold).filter((v) => v.verdict === "accept").length
+      : 0;
+
     const a = stats.actAgreement;
     const rate = a.graded ? `${Math.round((a.agreed / a.graded) * 100)}% (${a.agreed}/${a.graded})` : "—";
     new Notice(
       `談話ゴールド ${stats.total}件 → discourse-gold.jsonl\n` +
       `パーサのムーブ一致率: ${rate}\n` +
-      `分類選択 ${choices.length}件 → class-choices.jsonl`,
+      `分類選択 ${choices.length}件 → class-choices.jsonl\n` +
+      `§23 層2 部品判定 ${comps.length}件（採用 ${acc}）→ component-gold.jsonl`,
       9000,
     );
   }
@@ -1853,6 +2189,16 @@ export default class JPCollocationsPlugin extends Plugin {
       client: this.xClient,
       getSettings: () => this.settings.x,
       saveSettings: () => this.saveSettings(),
+      // §29.2 — a concordance line goes down the SAME road every capture does
+      // (§28 S5): the classify modal, with the window as the example and the
+      // post as the scene. Not a side channel that writes straight to a store.
+      onCaptureLine: (quote, url, handle) => {
+        new CaptureModal(this.app, {
+          text: "",
+          example: quote,
+          source: { kind: "x", medium: "x", url, sourceName: handle ? `@${handle}` : "X" },
+        }, this.makeCaptureDeps()).open();
+      },
       onSaveCollocation: (surface, example, sourceUrl, parts) => {
         const now = Date.now();
         const id = `x-${now}-${Math.random().toString(36).slice(2, 7)}`;
@@ -1905,6 +2251,10 @@ export default class JPCollocationsPlugin extends Plugin {
       // pattern already in the 台帳 wears that pattern's class mark here too.
       patternsIn: (text) => this.patternsIn(text),
       openPattern: (id) => this.openLexiconAt(id),
+      onDrop: (intent, files) => void this.runDropIntent(intent, files),
+      dropCan: () => this.dropCapabilities(),
+      openSurface: (s) => void this.openSurface(s),
+      surfaceBadge: (s) => this.surfaceBadge(s),
     };
   }
 
@@ -2009,6 +2359,7 @@ export default class JPCollocationsPlugin extends Plugin {
     this.settings.ytHistory = { ...DEFAULT_YT_HISTORY_SETTINGS, ...(stored?.ytHistory ?? {}) };
     this.settings.voiceSync = { ...DEFAULT_VOICE_SYNC, ...(stored?.voiceSync ?? {}) };
     this.settings.plex = { ...DEFAULT_PLEX_SETTINGS, ...(stored?.plex ?? {}) };
+    this.settings.jimaku = { ...DEFAULT_JIMAKU_SETTINGS, ...(stored?.jimaku ?? {}) };
     // Secrets live device-local (never in the synced blob); the runtime
     // settings object carries the real values, the persisted copy carries ''.
     const ls = (k: string): string => (this.app.loadLocalStorage(k) as string | null) ?? "";
@@ -2017,6 +2368,7 @@ export default class JPCollocationsPlugin extends Plugin {
     if (!this.settings.ytHistory.cookie) this.settings.ytHistory.cookie = ls(SECRET_LS_KEYS.ytCookie);
     if (!this.settings.notes.ocrApiKey) this.settings.notes.ocrApiKey = ls(SECRET_LS_KEYS.ocrApiKey);
     if (!this.settings.plex.token) this.settings.plex.token = ls(SECRET_LS_KEYS.plexToken);
+    if (!this.settings.jimaku.apiKey) this.settings.jimaku.apiKey = ls(SECRET_LS_KEYS.jimakuApiKey);
   }
 
   async saveSettings(): Promise<void> {
@@ -2026,6 +2378,7 @@ export default class JPCollocationsPlugin extends Plugin {
     this.app.saveLocalStorage(SECRET_LS_KEYS.ytCookie, secrets.ytCookie ?? null);
     this.app.saveLocalStorage(SECRET_LS_KEYS.ocrApiKey, secrets.ocrApiKey ?? null);
     this.app.saveLocalStorage(SECRET_LS_KEYS.plexToken, secrets.plexToken ?? null);
+    this.app.saveLocalStorage(SECRET_LS_KEYS.jimakuApiKey, secrets.jimakuApiKey ?? null);
     await this.dm.setSettings(scrubbed);
   }
 
@@ -2037,6 +2390,305 @@ export default class JPCollocationsPlugin extends Plugin {
       await leaf.setViewState({ type: JP_TRAY_VIEW_TYPE, active: true });
       this.app.workspace.revealLeaf(leaf);
     }
+  }
+
+  // ── §29 the drop road: one executor for every dragged-in thing ────────────
+  //
+  // §28 S5 says every medium funnels into the same capture path. Dragging is a
+  // medium — the iPad's native one — so it gets no store, no view and no
+  // parallel pipeline of its own: `drop-intent.ts` decides what arrived, and
+  // this method hands it to the exact code the corresponding command already
+  // calls. If a drop can do something a command cannot, one of the two is a bug.
+
+  /** Save a dropped/picked image into the vault and return its path. */
+  private async saveInboxImage(name: string, data: ArrayBuffer): Promise<string> {
+    const folder = "attachments";
+    if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder).catch(() => {});
+    const ext = name.split(".").pop() || "png";
+    const path = normalizePath(`${folder}/inbox-${Date.now()}-${Math.floor(Math.random() * 1e4)}.${ext}`);
+    await this.app.vault.createBinary(path, data);
+    return path;
+  }
+
+  /** §22.2 manga: spread-aware bubble OCR (pinned model, bbox-validated). */
+  private async ocrMangaImage(vaultPath: string): Promise<Array<{ text: string; bbox: [number, number, number, number] }>> {
+    const f = this.app.vault.getFileByPath(vaultPath);
+    if (!f) throw new Error("画像が見つかりません");
+    const buf = await this.app.vault.readBinary(f);
+    const ext = vaultPath.split(".").pop()?.toLowerCase();
+    const mediaType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "webp" ? "image/webp" : "image/png";
+    const resp = await requestUrl({
+      url: CLAUDE_API_URL, method: "POST", throw: false,
+      headers: { "x-api-key": this.settings.notes.ocrApiKey, "anthropic-version": CLAUDE_API_VERSION, "content-type": "application/json" },
+      body: buildVisionBody({
+        apiKey: this.settings.notes.ocrApiKey, model: MANGA_MODEL,
+        images: [{ base64: arrayBufferToBase64(buf), mediaType }],
+        prompt: MANGA_PROMPT,
+      }),
+    });
+    const r = parseMangaOcr(resp.status, resp.text);
+    if (!r.ok) throw new Error(r.error);
+    return r.bubbles;
+  }
+
+  /** The transcript note already frozen for a video id, if there is one. */
+  private findTranscriptByVideoId(videoId: string): TFile | null {
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+      if (fm && parseYouTubeId(String(fm.video ?? fm.videoId ?? "")) === videoId) return f;
+    }
+    return null;
+  }
+
+  /** What every surface's drop router reports capability-wise. */
+  dropCapabilities(): { ocr: boolean; x: boolean } {
+    return { ocr: !!this.settings.notes.ocrApiKey, x: !this.xClient.configIssue() };
+  }
+
+  /**
+   * Execute one routed drop. `where.patternId` is the entry the user dropped
+   * ONTO — the only piece of context a surface knows and this method cannot
+   * derive.
+   */
+  async runDropIntent(intent: DropIntent, files: File[], where?: { patternId?: string }): Promise<void> {
+    const p = intent.payload;
+    const pick = (): File[] => (p.fileIdx ?? []).map((i) => files[i]).filter(Boolean);
+    try {
+      switch (intent.action) {
+        case "yt-transcript": {
+          if (!p.videoId) return;
+          const existing = this.findTranscriptByVideoId(p.videoId);
+          if (existing) {
+            new Notice(`すでに取得済みです → ${existing.basename}`, 6000);
+            await this.app.workspace.getLeaf(false).openFile(existing);
+            return;
+          }
+          await this.fetchTranscriptFor(p.videoId);
+          return;
+        }
+        case "yt-mark": {
+          // A link with a second in it points at a MOMENT. Fetch the transcript
+          // if we don't have it, then leave a mark that can re-manifest the
+          // line — a bare bookmark with no text would be an orphan (§28 S2).
+          if (!p.videoId) return;
+          let file = this.findTranscriptByVideoId(p.videoId);
+          if (!file) file = await this.fetchTranscriptFor(p.videoId);
+          await this.inboxStore.add(markCard({
+            medium: "yt",
+            file: file?.path,
+            tSec: p.tSec ?? 0,
+            sourceName: file?.basename,
+            wallClock: Date.now(),
+          }, Date.now()));
+          this.refreshTrayViews();
+          new Notice(`📍 ${fmtStamp(p.tSec ?? 0)} をトレイにマークしました${file ? `（${file.basename}）` : ""}`, 6000);
+          void this.openTray();
+          return;
+        }
+        case "x-post": {
+          if (!p.tweetId) return;
+          const issue = this.xClient.configIssue();
+          if (issue) { new Notice(`𝕏: ${issue}`, 8000); return; }
+          const notice = new Notice("𝕏 投稿を取得中…", 0);
+          try {
+            const tweet = await this.xClient.fetchTweetById(p.tweetId);
+            notice.hide();
+            if (!tweet) { new Notice("投稿を取得できませんでした（削除・鍵アカウントの可能性）", 8000); return; }
+            const added = this.xCorpus.addTweets([tweet]);
+            await this.xCorpus.save();
+            new Notice(added ? `𝕏 @${tweet.authorHandle} をコーパスへ` : "すでにコーパスにあります", 6000);
+            await this.openXView(undefined, false);
+          } catch (e) { notice.hide(); throw e; }
+          return;
+        }
+        case "subtitle": {
+          let srt = p.srt ?? "";
+          let title = p.title ?? "";
+          const f = pick()[0];
+          if (f) { srt = await f.text(); title = title || titleFromFilename(f.name); }
+          if (!srt.trim()) { new Notice("字幕の中身が読めませんでした", 6000); return; }
+          if (!title) title = `字幕 ${new Date().toISOString().slice(0, 10)}`;
+          const { content, cueCount } = srtToNote({ srt, title });
+          if (cueCount < 5) { new Notice("字幕を解析できませんでした（cue が5件未満）", 8000); return; }
+          const folder = this.settings.notes.transcriptFolder || "Transcripts";
+          if (!this.app.vault.getAbstractFileByPath(folder)) await this.app.vault.createFolder(folder).catch(() => {});
+          const path = normalizePath(`${folder}/${title.replace(/[\\/:*?"<>|]/g, "")}.md`);
+          const out = this.app.vault.getFileByPath(path) ?? await this.app.vault.create(path, content);
+          new Notice(`📺 ${cueCount}行のトランスクリプト → ${out.basename}`, 8000);
+          await this.app.workspace.getLeaf(false).openFile(out);
+          return;
+        }
+        case "history": {
+          const { videos, source } = parseHistory(p.text ?? "");
+          if (!videos.length) { new Notice("視聴履歴として読めませんでした", 8000); return; }
+          const cap = Math.max(1, this.settings.notes.maxHistoryVideos || 20);
+          await this.fetchTranscriptsForVideos(videos.slice(0, cap), { source, detected: videos.length, openLog: true });
+          return;
+        }
+        case "image-ocr":
+        case "image-tray": {
+          const chosen = pick();
+          let added = 0;
+          const paths: string[] = [];
+          for (const f of chosen) {
+            const path = await this.saveInboxImage(f.name, await f.arrayBuffer());
+            if (await this.inboxStore.add(imageCard(path, Date.now()))) { added++; paths.push(path); }
+          }
+          this.refreshTrayViews();
+          new Notice(`📷 ${added}枚をトレイへ`, 5000);
+          void this.openTray();
+          if (intent.action === "image-ocr" && this.settings.notes.ocrApiKey) {
+            let ok = 0;
+            const failed: string[] = [];
+            const prog = new Notice(`🔎 OCR 0/${paths.length}…`, 0);
+            for (const [i, path] of paths.entries()) {
+              prog.setMessage(`🔎 OCR ${i + 1}/${paths.length}…`);
+              try {
+                await this.inboxStore.setBubbles((await this.inboxStore.all().find((c) => c.content === path))!.id,
+                  await this.ocrMangaImage(path));
+                ok++;
+              } catch (e) { failed.push(`${path.split("/").pop()}: ${String(e)}`); }
+            }
+            prog.hide();
+            this.refreshTrayViews();
+            new Notice(failed.length ? `🔎 ${ok}枚OK / ${failed.length}枚失敗\n${failed.join("\n")}` : `🔎 ${ok}枚の吹き出しを抽出`, 8000);
+          }
+          return;
+        }
+        case "attest": {
+          // The payoff of the whole gesture: a line carried in from Notes
+          // becomes a CONFIRMED 用例 on the entry you dropped it on. Confirmed,
+          // not suggested — a hand carried it here, and §28 S3's provisionality
+          // rule is about MACHINE output, not about yours.
+          const entry = where?.patternId ? this.patternStore.byId(where.patternId) : undefined;
+          const text = (p.text ?? "").trim();
+          if (!entry || !text) return;
+          const n = await this.patternStore.addAttestations([{
+            id: entry.id,
+            att: {
+              source: "manual", medium: "note", quote: text, addedAt: Date.now(),
+              matchKind: "drop", scene: { sourceName: "手渡し" },
+            },
+          }]);
+          this.refreshViews();
+          new Notice(n ? `📎 「${entry.key}」に用例を追加しました` : "同じ用例がすでにあります", 6000);
+          return;
+        }
+        case "capture": {
+          const text = (p.text ?? "").trim();
+          if (!text) return;
+          // A word is the notation; a sentence is the EVIDENCE for a notation
+          // you have yet to name. Prefilling the wrong field is what makes a
+          // capture modal feel like a form instead of a catch.
+          const short = [...text].length <= 40 && !/[。！？\n]/.test(text);
+          new CaptureModal(this.app, {
+            text: short ? text : "",
+            example: short ? undefined : text,
+            source: { kind: "manual", sourceName: "ドロップ" },
+          }, this.makeCaptureDeps()).open();
+          return;
+        }
+        case "lookup": {
+          await this.openDictionaryView((p.text ?? "").trim());
+          return;
+        }
+        case "x-search": {
+          await this.openXView(`"${(p.text ?? "").trim()}"`);
+          return;
+        }
+        case "reach": {
+          const want = (p.text ?? "").trim();
+          if (!want) return;
+          await this.reachStore.add(want, Date.now());
+          this.refreshTrayViews();
+          new Notice(`🕯 願い「${want}」を保持しました — 届いたものが並べられます`, 8000);
+          void this.openTray();
+          return;
+        }
+        case "link":
+        case "tray": {
+          const chosen = pick();
+          if (chosen.length) {
+            let added = 0;
+            for (const f of chosen) {
+              const path = await this.saveInboxImage(f.name, await f.arrayBuffer());
+              if (await this.inboxStore.add(imageCard(path, Date.now()))) added++;
+            }
+            this.refreshTrayViews();
+            new Notice(`⤵ ${added}件をトレイへ`, 5000);
+            void this.openTray();
+            return;
+          }
+          const text = (p.url ?? p.text ?? "").trim();
+          if (!text) return;
+          const fresh = await this.inboxStore.add(shapeDrop(text, Date.now()));
+          this.refreshTrayViews();
+          new Notice(fresh ? "⤵ トレイへ" : "同じ内容が既にあります", 5000);
+          void this.openTray();
+          return;
+        }
+      }
+    } catch (e) {
+      // §28 S6: say what failed, where it would have happened, verbatim.
+      console.error("[jp-collocations] drop failed:", e);
+      new Notice(`${intent.icon} ${intent.label} に失敗しました\n${String(e)}`, 12000);
+    }
+  }
+
+  /**
+   * §29.2 — the 𝕏 corpus profile for one catalog entry.
+   *
+   * Probes the entry's longest sweep term: a 🟠 link entry has several parts
+   * and a concordance needs ONE column to align on, so aligning on the most
+   * distinctive part is the only choice that produces a readable stack. Null
+   * when the corpus has nothing, which renders as no box at all.
+   */
+  xUsageFor(p: PatternEntry): XUsage | null {
+    const terms = sweepTerms(p);
+    if (!terms.length) return null;
+    const probe = terms.reduce((a, b) => (b.length > a.length ? b : a), terms[0]);
+    const u = buildXUsage(this.xCorpus.getAll(), probe, this.xCorpus.size());
+    return u.hits ? u : null;
+  }
+
+  /**
+   * Attach ONE concordance line as a 用例 — the window, not the tweet.
+   *
+   * Confirmed rather than suggested, unlike the bulk corpus join: this one the
+   * user picked by hand off a line they could read, which is the whole of the
+   * §28 S3 distinction. The hand is the classifier.
+   */
+  async attachXLine(p: PatternEntry, quote: string, url: string, handle: string): Promise<void> {
+    const n = await this.patternStore.addAttestations([{
+      id: p.id,
+      att: {
+        source: "x", medium: "x", file: url, quote, addedAt: Date.now(),
+        scene: { deepLink: url, sourceName: handle ? `@${handle}` : "X" },
+      },
+    }]);
+    this.refreshViews();
+    new Notice(n ? `📎 「${p.key}」に 𝕏 の用例を追加しました` : "同じ用例がすでにあります", 5000);
+  }
+
+  /** §26.3 step 5 — where the identity bar sends you. */
+  async openSurface(s: Surface): Promise<void> {
+    if (s === "lexicon") { await this.openLexiconView(); return; }
+    if (s === "dict") { await this.openDictionaryView(); return; }
+    if (s === "x") { await this.openXView(undefined, false); return; }
+    if (s === "tray") { await this.openTray(); return; }
+    if (s === "review") { await this.openReviewView(); return; }
+    if (s === "capture") { await this.openPipelineView(); return; }
+  }
+
+  /** Live counts for the identity bar. A zero renders as no badge at all. */
+  surfaceBadge(s: Surface): number | undefined {
+    if (s === "tray") return this.inboxStore.all().length || undefined;
+    if (s === "review") {
+      const ids = this.patternStore.all().map((e) => e.id);
+      const c = this.srsStore.counts(ids);
+      return (c.due + c.learn) || undefined;
+    }
+    return undefined;
   }
 
   /** §25.2 鑑賞モード: open FollowAlong on a transcript note (active file by
@@ -2060,7 +2712,8 @@ export default class JPCollocationsPlugin extends Plugin {
     try {
       resp = await requestUrl({ url: plexSessionsUrl(baseUrl, token), method: "GET", headers: { Accept: "application/json" }, throw: false });
     } catch (e) {
-      return { ok: false, error: `Plex サーバーに接続できません: ${(e as Error).message}` };
+      // A transport failure is never an auth failure — see the helper.
+      return { ok: false, error: explainPlexTransportError(baseUrl, (e as Error).message) };
     }
     return parsePlexSessions(resp.status, resp.text ?? "");
   }
@@ -2114,6 +2767,8 @@ export default class JPCollocationsPlugin extends Plugin {
         show: session.show,
         partKey: session.partKey,
         streams: session.streams,
+        episodeIndex: session.episodeIndex,
+        seasonIndex: session.seasonIndex,
       }, notice);
     } finally {
       notice.hide();
@@ -2126,65 +2781,224 @@ export default class JPCollocationsPlugin extends Plugin {
    * two ways in must not mean two kinds of transcript note (§28 S5, one road).
    */
   async plexTranscriptFor(
-    ep: { ratingKey?: string; title: string; show?: string; partKey?: string; streams?: PlexStream[] },
+    ep: {
+      ratingKey?: string; title: string; show?: string; partKey?: string;
+      streams?: PlexStream[]; episodeIndex?: number; seasonIndex?: number;
+    },
     notice?: Notice,
   ): Promise<string> {
-    const { baseUrl, token } = this.settings.plex;
     const say = (m: string): void => { notice?.setMessage(m); };
 
-    // A session response does not always carry Part.Stream[]; the metadata
-    // endpoint does. Ask the cheap source first, then the authoritative one.
-    let streams = ep.streams ?? [];
-    if (!streams.some((s) => s.streamType === 3) && ep.ratingKey) {
-      say("Plex: 字幕トラックを問い合わせ中…");
-      streams = await this.fetchPlexStreams(ep.ratingKey);
+    // Already have this episode? Open it. A second transcript of the same
+    // media is not a fresh start — it is a fork that silently orphans every
+    // mark, capture and clip made against the first one (§28 S2: a noticing
+    // must not lose reachability). The check is first because it also saves
+    // the download.
+    if (ep.ratingKey) {
+      const existing = this.findTranscriptByRatingKey(ep.ratingKey);
+      if (existing) {
+        void this.app.workspace.openLinkText(existing.path, "", false);
+        const m = `📺 このエピソードのトランスクリプトは既にあります: ${existing.path}`;
+        new Notice(m + "\n（別の字幕で作り直すには jimaku の選択画面から）", 8000);
+        return m;
+      }
     }
 
-    const langPref = (this.settings.notes.langPref || "ja")
-      .split(",").map((s) => s.trim()).filter(Boolean);
-    const pick = pickSubtitleStream(streams, { langPref: [...langPref, "jpn", "japanese"] });
-    if (!pick?.key) {
-      // Say WHICH tracks exist and why none was usable — an empty transcript
-      // with no explanation is the failure this replaces (§28 S6).
-      const why = subtitleRefusal(streams) ?? "字幕を選べませんでした。";
+    // A session response does not always carry Part.Stream[]; the metadata
+    // endpoint does — and it also carries the partKey (the clip door) and the
+    // episode NUMBER (what an external subtitle source must be asked for).
+    let streams = ep.streams ?? [];
+    let partKey = ep.partKey;
+    let episodeIndex = ep.episodeIndex;
+    let seasonIndex = ep.seasonIndex;
+    if (ep.ratingKey && (!streams.some((s) => s.streamType === 3) || !partKey || episodeIndex == null)) {
+      say("Plex: エピソード情報を問い合わせ中…");
+      const meta = await this.fetchPlexMeta(ep.ratingKey);
+      if (meta) {
+        if (!streams.some((s) => s.streamType === 3)) streams = meta.streams;
+        partKey = partKey ?? meta.partKey;
+        episodeIndex = episodeIndex ?? meta.episodeIndex;
+        seasonIndex = seasonIndex ?? meta.seasonIndex;
+      }
+    }
+    // Last resort for the episode number: the title itself ("S01E04", 第4話).
+    if (episodeIndex == null) {
+      const fromTitle = episodeNumberFrom(ep.title);
+      episodeIndex = fromTitle.episode;
+      seasonIndex = seasonIndex ?? fromTitle.season;
+    }
+
+    const jm = this.settings.jimaku;
+    const jimakuOn = !!jm.apiKey.trim() && jm.mode !== "off";
+    const jimakuFirst = jimakuOn && jm.mode === "always";
+    const why: string[] = [];
+
+    // Two sources, one road. Which is tried first is a setting, because the
+    // muxed track is guaranteed to be in sync while jimaku's is guaranteed to
+    // be Japanese — neither is always the better answer.
+    let got = jimakuFirst ? null : await this.plexEmbeddedSubtitle(streams, say);
+    if (!got?.ok && !jimakuFirst && got) why.push(got.why);
+
+    if (!got?.ok && jimakuOn) {
+      const j = await this.jimakuSubtitleFor(
+        { show: ep.show, title: ep.title, episode: episodeIndex, season: seasonIndex }, say,
+      );
+      if (j.ok) got = j;
+      else {
+        why.push(j.why);
+        // Ambiguous is not failure: it is a question. Hand it to the picker
+        // rather than guessing at a transcript that would look correct.
+        if (j.ambiguous) {
+          this.openJimakuPicker({
+            query: jimakuQueryFor(ep), episode: episodeIndex, season: seasonIndex,
+          }, { ratingKey: ep.ratingKey, partKey, title: ep.title, show: ep.show, seasonIndex });
+          return `📺 jimaku: 候補が複数あります — 選んでください`;
+        }
+      }
+    }
+    if (!got?.ok && jimakuFirst) {
+      const p = await this.plexEmbeddedSubtitle(streams, say);
+      if (p.ok) got = p; else why.push(p.why);
+    }
+
+    if (!got?.ok) {
+      // Say what each source had and why none of it was usable — an empty
+      // transcript with no explanation is the failure this replaces (§28 S6).
       const list = describeSubtitles(streams);
-      const m = `${ep.title}: ${why}` + (list.length ? `\n${list.join("\n")}` : "");
+      const tail = !jimakuOn && jm.mode !== "off"
+        ? "\n設定 → jimaku に API キーを入れると、Plex に日本語字幕がない作品も取り込めます。"
+        : "";
+      const m = `${ep.title}: ${why.join("\n") || "字幕を選べませんでした。"}`
+        + (list.length ? `\n${list.join("\n")}` : "") + tail;
       new Notice(m, 20000);
       return m;
     }
 
-    say(`Plex: 字幕を取得中… (${pick.languageCode ?? pick.language ?? "?"}/${pick.codec ?? "?"})`);
-    let body: string;
-    try {
-      const r = await requestUrl({
-        url: plexStreamUrl(baseUrl, pick.key, token), method: "GET", throw: false,
-      });
-      if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
-      body = r.text ?? "";
-    } catch (e) {
-      const m = `字幕の取得に失敗: ${(e as Error).message}`;
-      new Notice(m, 10000); return m;
-    }
+    return await this.writeTranscriptNote({
+      srt: got.text,
+      title: ep.title || "Plex episode",
+      show: ep.show,
+      subSource: got.source,
+      episode: { season: seasonIndex, episode: episodeIndex },
+      plex: { ratingKey: ep.ratingKey, partKey, lang: got.lang },
+      jimaku: got.jimaku,
+      // A subtitle that did not come out of the video file can be time-shifted
+      // from it; the field exists so 鑑賞モード's ⌖ has somewhere to write.
+      subOffsetSec: got.source === "jimaku" ? 0 : undefined,
+      codec: got.codec,
+    });
+  }
 
-    const title = ep.title || "Plex episode";
+  /** A transcript note already made from this Plex episode, if there is one. */
+  private findTranscriptByRatingKey(ratingKey: string): TFile | null {
+    for (const f of this.app.vault.getMarkdownFiles()) {
+      const fm = this.app.metadataCache.getFileCache(f)?.frontmatter;
+      if (fm && String(fm.plex_rating_key ?? "") === ratingKey) return f;
+    }
+    return null;
+  }
+
+  /** Source A: the subtitle muxed into the media Plex is serving. */
+  private async plexEmbeddedSubtitle(
+    streams: PlexStream[], say: (m: string) => void,
+  ): Promise<SubtitleFetch> {
+    const { baseUrl, token } = this.settings.plex;
+    const langPref = (this.settings.notes.langPref || "ja")
+      .split(",").map((s) => s.trim()).filter(Boolean);
+    const pick = pickSubtitleStream(streams, { langPref: [...langPref, "jpn", "japanese"] });
+    if (!pick?.key) {
+      return { ok: false, why: `Plex: ${subtitleRefusal(streams) ?? "字幕を選べませんでした。"}` };
+    }
+    say(`Plex: 字幕を取得中… (${pick.languageCode ?? pick.language ?? "?"}/${pick.codec ?? "?"})`);
+    try {
+      const r = await requestUrl({ url: plexStreamUrl(baseUrl, pick.key, token), method: "GET", throw: false });
+      if (r.status !== 200) throw new Error(`HTTP ${r.status}`);
+      return {
+        ok: true, source: "plex", text: r.text ?? "",
+        lang: pick.languageCode ?? pick.language, codec: pick.codec,
+      };
+    } catch (e) {
+      return { ok: false, why: `Plex: 字幕の取得に失敗 (${(e as Error).message})` };
+    }
+  }
+
+  /**
+   * Source B: jimaku.cc.
+   *
+   * Auto only where auto is honest — one clearly-matching work AND one file
+   * that names the episode. Anything else returns `ambiguous`, and the caller
+   * opens the picker. The machine is a recall machine (DESIGN §12): a
+   * confidently wrong release here reads as a perfectly normal transcript.
+   */
+  private async jimakuSubtitleFor(
+    ref: { show?: string; title: string; episode?: number; season?: number },
+    say: (m: string) => void,
+  ): Promise<SubtitleFetch> {
+    const query = jimakuQueryFor(ref);
+    if (!query) return { ok: false, why: "jimaku: 検索できる作品名がありません。" };
+    say(`jimaku: 「${query}」を検索中…`);
+    const found = await this.jimakuSearch(query);
+    if (!found.ok) return { ok: false, why: `jimaku: ${found.error}` };
+    if (!found.entries.length) {
+      return { ok: false, why: `jimaku: 「${query}」が見つかりません。`, ambiguous: true };
+    }
+    const entryPick = pickJimakuEntry(found.entries, query, ref.season);
+    if (!entryPick.entry || !entryPick.confident) {
+      return {
+        ok: false, ambiguous: true,
+        why: `jimaku: 「${query}」の候補が${found.entries.length}件あり、確定できません。`,
+      };
+    }
+    say(`jimaku: ${entryPick.entry.name} のファイル一覧…`);
+    const files = await this.jimakuFiles(entryPick.entry.id, ref.episode);
+    if (!files.ok) return { ok: false, why: `jimaku: ${files.error}` };
+    const filePick = pickJimakuFile(files.files, { episode: ref.episode });
+    if (!filePick.file || !filePick.confident) {
+      const refusal = jimakuFileRefusal(files.files, ref.episode);
+      return {
+        ok: false, ambiguous: !refusal || filePick.ranked.length > 0,
+        why: `jimaku: ${refusal ?? `${entryPick.entry.name} に候補が${filePick.ranked.length}件あり、確定できません。`}`,
+      };
+    }
+    say(`jimaku: ${filePick.file.name} を取得中…`);
+    const text = await this.fetchJimakuFile(filePick.file);
+    if (!text.ok) return { ok: false, why: `jimaku: ${text.error}` };
+    return {
+      ok: true, source: "jimaku", text: text.text, lang: "ja",
+      jimaku: { entryId: entryPick.entry.id, fileName: filePick.file.name, url: filePick.file.url },
+    };
+  }
+
+  /**
+   * Write the standard transcript note. ONE writer for every subtitle source,
+   * so a jimaku episode and a Plex episode are the same kind of object and
+   * everything downstream — 照合・走査・談話モード・⚡ — needs to know nothing
+   * about where the text came from (§28 S5).
+   */
+  async writeTranscriptNote(opts: {
+    srt: string; title: string; show?: string;
+    subSource: "plex" | "jimaku";
+    episode?: { season?: number; episode?: number };
+    plex?: { ratingKey?: string; partKey?: string; lang?: string };
+    jimaku?: { entryId?: number; fileName?: string; url?: string };
+    subOffsetSec?: number;
+    codec?: string;
+  }): Promise<string> {
     const { content, cueCount } = srtToNote({
-      srt: body, title, sourceName: ep.show, subSource: "plex",
-      plex: {
-        ratingKey: ep.ratingKey, partKey: ep.partKey,
-        lang: pick.languageCode ?? pick.language,
-      },
+      srt: opts.srt, title: opts.title, sourceName: opts.show, subSource: opts.subSource,
+      episode: opts.episode, plex: opts.plex, jimaku: opts.jimaku, subOffsetSec: opts.subOffsetSec,
     });
     if (cueCount < 5) {
-      const m = `字幕を解析できませんでした（${cueCount}行）。形式: ${pick.codec ?? "不明"}。`
-        + "別のトラックを選ぶか、.srt を手動で取り込んでください。";
+      const m = `字幕を解析できませんでした（${cueCount}行）。`
+        + (opts.codec ? `形式: ${opts.codec}。` : "")
+        + "別のトラック / 別のファイルを選ぶか、.srt を手動で取り込んでください。";
       new Notice(m, 15000); return m;
     }
-
     const folder = this.settings.notes.transcriptFolder || "Transcripts";
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       await this.app.vault.createFolder(folder).catch(() => {});
     }
-    const safe = `${ep.show ? `${ep.show} — ` : ""}${title}`.replace(/[\\/:*?"<>|]/g, "");
+    const safe = `${opts.show ? `${opts.show} — ` : ""}${opts.title}`.replace(/[\\/:*?"<>|]/g, "");
     let path = `${folder}/${safe}.md`;
     if (this.app.vault.getAbstractFileByPath(path)) {
       // Never clobber a transcript that may already carry marks.
@@ -2192,8 +3006,9 @@ export default class JPCollocationsPlugin extends Plugin {
     }
     await this.app.vault.create(path, content);
     void this.app.workspace.openLinkText(path, "", false);
+    const via = opts.subSource === "jimaku" ? `jimaku: ${opts.jimaku?.fileName ?? ""}` : "Plex 内蔵字幕";
     const msg = `📺 ${cueCount}行のトランスクリプトを作成: ${path}`;
-    new Notice(msg, 8000);
+    new Notice(`${msg}\n（${via}）`, 8000);
     return msg;
   }
 
@@ -2211,7 +3026,7 @@ export default class JPCollocationsPlugin extends Plugin {
         });
         return parsePlexItems(r.status, r.text ?? "");
       } catch (e) {
-        return { ok: false, error: `Plex サーバーに接続できません: ${(e as Error).message}` };
+        return { ok: false, error: explainPlexTransportError(baseUrl, (e as Error).message) };
       }
     };
     new PlexBrowseModal(this.app, {
@@ -2219,31 +3034,150 @@ export default class JPCollocationsPlugin extends Plugin {
       sectionItems: (key) => get(plexSectionItemsUrl(baseUrl, key, token)),
       episodes: (ratingKey) => get(plexLeavesUrl(baseUrl, ratingKey, token)),
       search: (q) => get(plexSearchUrl(baseUrl, q, token)),
+      // So the browser can flag episodes you have already transcribed instead of
+      // letting you find out after a round trip.
+      hasTranscript: (ratingKey) => !!this.findTranscriptByRatingKey(ratingKey),
       openEpisode: (item) => this.plexTranscriptFor({
         ratingKey: item.ratingKey,
         title: item.type === "episode" ? episodeLabel(item) : item.title,
         show: item.grandparentTitle,
+        episodeIndex: item.type === "episode" ? item.index : undefined,
+        seasonIndex: item.parentIndex,
       }),
     }).open();
   }
 
-  /** `/library/metadata/{ratingKey}` → the Part's streams. */
-  async fetchPlexStreams(ratingKey: string): Promise<PlexStream[]> {
+  /** `/library/metadata/{ratingKey}` → streams, partKey and episode numbers. */
+  async fetchPlexMeta(ratingKey: string): Promise<PlexMediaMeta | null> {
     const { baseUrl, token } = this.settings.plex;
     try {
       const r = await requestUrl({
         url: plexMetadataUrl(baseUrl, ratingKey, token), method: "GET",
         headers: { Accept: "application/json" }, throw: false,
       });
-      if (r.status !== 200) return [];
-      const json = JSON.parse(r.text ?? "{}") as {
-        MediaContainer?: { Metadata?: Array<{ Media?: Array<{ Part?: Array<{ Stream?: unknown }> }> }> };
-      };
-      const part = json?.MediaContainer?.Metadata?.[0]?.Media?.[0]?.Part?.[0];
-      return parseStreams(part?.Stream);
+      return parsePlexMediaMeta(r.status, r.text ?? "");
     } catch {
-      return [];
+      return null;
     }
+  }
+
+  /** `/library/metadata/{ratingKey}` → the Part's streams. Kept as the narrow
+   *  door for the plugin-to-plugin API; internally use `fetchPlexMeta`. */
+  async fetchPlexStreams(ratingKey: string): Promise<PlexStream[]> {
+    return (await this.fetchPlexMeta(ratingKey))?.streams ?? [];
+  }
+
+  // ── §25.4b jimaku.cc — subtitles for media that carries none ──────────────
+  // Transport only. Every URL, every field name and every choice among files
+  // lives in notes/jimaku.ts; this layer moves bytes and nothing else.
+
+  /**
+   * Search jimaku for a work.
+   *
+   * TWO requests, merged: the API's `anime` filter defaults to true, so a
+   * live-action drama is invisible to the default search — and live action is
+   * precisely the half of a library whose files have no Japanese track muxed
+   * in, i.e. the reason this code exists at all. Anime results rank first
+   * only by score, not by which request found them.
+   */
+  async jimakuSearch(query: string): Promise<JimakuEntriesResult> {
+    const key = this.settings.jimaku.apiKey;
+    if (!key.trim()) return { ok: false, error: "API キーが未設定です。" };
+    const one = async (anime: boolean): Promise<JimakuEntriesResult> => {
+      try {
+        const r = await requestUrl({
+          url: jimakuSearchUrl({ query, anime }), method: "GET",
+          headers: jimakuHeaders(key), throw: false,
+        });
+        return parseJimakuEntries(r.status, r.text ?? "", r.headers as Record<string, string>);
+      } catch (e) {
+        return { ok: false, error: `jimaku.cc に接続できません（${(e as Error).message}）。` };
+      }
+    };
+    const [anime, live] = await Promise.all([one(true), one(false)]);
+    if (!anime.ok && !live.ok) return anime;             // same failure both ways
+    const seen = new Set<number>();
+    const entries: JimakuEntry[] = [];
+    for (const r of [anime, live]) {
+      if (!r.ok) continue;
+      for (const e of r.entries) if (!seen.has(e.id)) { seen.add(e.id); entries.push(e); }
+    }
+    return { ok: true, entries };
+  }
+
+  async jimakuFiles(entryId: number, episode?: number): Promise<JimakuFilesResult> {
+    const key = this.settings.jimaku.apiKey;
+    if (!key.trim()) return { ok: false, error: "API キーが未設定です。" };
+    try {
+      const r = await requestUrl({
+        url: jimakuFilesUrl(entryId, episode), method: "GET",
+        headers: jimakuHeaders(key), throw: false,
+      });
+      const res = parseJimakuFiles(r.status, r.text ?? "", r.headers as Record<string, string>);
+      // The episode filter is documented best-effort: an empty answer for one
+      // episode does not mean the entry is empty. Re-ask without it rather
+      // than reporting "no files" for a directory that has 24 of them.
+      if (res.ok && !res.files.length && episode != null) return await this.jimakuFiles(entryId);
+      return res;
+    } catch (e) {
+      return { ok: false, error: `jimaku.cc に接続できません（${(e as Error).message}）。` };
+    }
+  }
+
+  /** Download one subtitle body. */
+  async fetchJimakuFile(file: JimakuFile): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
+    try {
+      const r = await requestUrl({
+        url: file.url, method: "GET",
+        headers: jimakuDownloadHeaders(file.url, this.settings.jimaku.apiKey), throw: false,
+      });
+      if (r.status !== 200) return { ok: false, error: `ダウンロードに失敗 (HTTP ${r.status})` };
+      const text = r.text ?? "";
+      if (!text.trim()) return { ok: false, error: "ダウンロードしたファイルが空です。" };
+      return { ok: true, text };
+    } catch (e) {
+      return { ok: false, error: `ダウンロードに失敗（${(e as Error).message}）。` };
+    }
+  }
+
+  /**
+   * The picker. `attach` carries whatever Plex identity the caller already
+   * had, so a jimaku-sourced transcript still knows which media it belongs to
+   * — that is what keeps the clock and the 🎬 clip cutter working on a note
+   * whose text came from somewhere else entirely (§28: provenance survives
+   * the boundary).
+   */
+  openJimakuPicker(
+    seed: { query?: string; episode?: number; season?: number },
+    attach: { ratingKey?: string; partKey?: string; title?: string; show?: string; seasonIndex?: number } = {},
+  ): void {
+    if (!this.settings.jimaku.apiKey.trim()) {
+      new Notice("設定 → jimaku に API キーを入力してください（jimaku.cc → プロフィール → API キー）。", 10000);
+      return;
+    }
+    new JimakuPickModal(this.app, {
+      seed,
+      search: (q) => this.jimakuSearch(q),
+      files: (id, ep) => this.jimakuFiles(id, ep),
+      choose: async (entry: JimakuEntry, file: JimakuFile) => {
+        const got = await this.fetchJimakuFile(file);
+        if (!got.ok) { new Notice(`jimaku: ${got.error}`, 10000); return got.error; }
+        const ep = episodeNumberFrom(file.name).episode ?? seed.episode;
+        // Title: keep the Plex episode's own name when this was launched from
+        // an episode, so the note matches the library rather than the upload.
+        const title = attach.title
+          ?? `${describeJimakuEntry(entry).split("（")[0]}${ep != null ? ` 第${ep}話` : ""}`;
+        return await this.writeTranscriptNote({
+          srt: got.text, title, show: attach.show ?? entry.japaneseName ?? entry.name,
+          subSource: "jimaku",
+          episode: { season: attach.seasonIndex ?? seed.season, episode: ep },
+          ...(attach.ratingKey || attach.partKey
+            ? { plex: { ratingKey: attach.ratingKey, partKey: attach.partKey, lang: "ja" } } : {}),
+          jimaku: { entryId: entry.id, fileName: file.name, url: file.url },
+          subOffsetSec: 0,
+        });
+      },
+    }).open();
   }
 
   /** §25.4 clip cutting at a mark: cut an audio clip (+still frame) from the Plex
@@ -2280,6 +3214,138 @@ export default class JPCollocationsPlugin extends Plugin {
     if (!out.audio && !out.still) { new Notice("クリップの切り出しに失敗しました（ffmpeg / サーバー接続を確認）。"); return null; }
     new Notice(`📺 クリップを保存: ${out.audio ?? out.still}`);
     return out;
+  }
+
+  /**
+   * §25.4c — ask the server to relay a playback command to the client that owns
+   * the session (Plex Companion). Transport only; every URL and header lives in
+   * notes/plex.ts.
+   *
+   * Failure is expected and normal: a client can have remote control off, or be
+   * a product that never supported it. The caller degrades to moving only the
+   * transcript, so this reports rather than throws.
+   */
+  async plexControl(
+    targetId: string | null | undefined,
+    command: PlexCommand,
+    params?: Record<string, string | number | undefined>,
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    const { baseUrl, token } = this.settings.plex;
+    if (!baseUrl.trim() || !token.trim()) return { ok: false, error: "Plex 未設定" };
+    if (!targetId) return { ok: false, error: "クライアント不明" };
+    try {
+      const r = await requestUrl({
+        url: plexControlUrl(baseUrl, command, token, targetId, params),
+        method: "GET",
+        headers: plexControlHeaders(),
+        throw: false,
+      });
+      if (r.status >= 200 && r.status < 300) return { ok: true };
+      return { ok: false, error: `HTTP ${r.status}` };
+    } catch (e) {
+      return { ok: false, error: (e as { message?: string })?.message ?? String(e) };
+    }
+  }
+
+  /**
+   * §25.4 — cut the scene at a tray mark.
+   *
+   * The Part key is read off the transcript note the mark was made against, not
+   * off a live session, so a mark you dropped last week still cuts. Stored on
+   * the card, which is what 🏷️分類 then carries into the attestation.
+   */
+  async cutClipForMarkCard(card: InboxCard): Promise<{ audio?: string; still?: string } | null> {
+    const m = card.mark;
+    if (!m?.file || m.tSec == null) {
+      new Notice("このマークには元ノートと時刻がないので切り出せません。", 6000);
+      return null;
+    }
+    const f = this.app.vault.getFileByPath(m.file);
+    if (!f) {
+      new Notice(`元のトランスクリプトが見つかりません: ${m.file}`, 8000);
+      return null;
+    }
+    const fm = this.app.metadataCache.getFileCache(f)?.frontmatter ?? {};
+    const partKey = fm.plex_part_key ? String(fm.plex_part_key) : "";
+    if (!partKey) {
+      new Notice(
+        `このノートには plex_part_key がないので Plex から切り出せません（${f.basename}）。\n` +
+        `Plex 由来のトランスクリプトなら、作り直すと付きます。`,
+        10000,
+      );
+      return null;
+    }
+    const label = card.content || m.sourceName || "mark";
+    const clip = await this.cutPlexClip(partKey, m.tSec, label);
+    if (clip) {
+      await this.inboxStore.setMarkClip(card.id, clip);
+      this.refreshTrayViews();
+    }
+    return clip ?? null;
+  }
+
+  /**
+   * Remove catalog entries that are the plugin's own output, re-ingested.
+   *
+   * `looksGenerated` is the SAME predicate the ingest gate uses, deliberately:
+   * a filter that only guards new writes leaves the existing junk in the index
+   * forever, and a second copy of the rule would drift from the first.
+   *
+   * Shows every candidate before touching anything. This deletes user data —
+   * even when that data is furniture — so it asks, and it says exactly what it
+   * found rather than a count. Entries carrying confirmed attestations are
+   * reported separately and NEVER auto-removed: a ✓ is a human judgement, and
+   * one of those on a junk-looking key means the key is not junk.
+   */
+  private async purgeGeneratedPatterns(): Promise<void> {
+    const all = this.patternStore.all();
+    const hits = all.filter((p) => looksGenerated(p.key));
+    if (!hits.length) {
+      new Notice("生成物エントリは見つかりませんでした（台帳はきれいです）。", 6000);
+      return;
+    }
+    const confirmed = hits.filter((p) => (p.attestations ?? []).some((a) => !a.status));
+    const removable = hits.filter((p) => !(p.attestations ?? []).some((a) => !a.status));
+
+    const modal = new Modal(this.app);
+    modal.titleEl.setText(`🧹 生成物エントリ ${hits.length}件`);
+    const c = modal.contentEl;
+    c.createEl("p", {
+      text: `台帳 ${all.length}件のうち ${hits.length}件が、プラグイン自身の出力（原文アンカー・`
+        + `YouTube リンク・訂正マーク・クローズ問題文など）を見出しとして取り込んだものです。`,
+    });
+    if (confirmed.length) {
+      c.createEl("p", {
+        text: `うち ${confirmed.length}件は確定用例を持つため残します（✓ はあなたの判断です）。`,
+      });
+    }
+    const list = c.createDiv();
+    list.style.maxHeight = "40vh";
+    list.style.overflowY = "auto";
+    list.style.margin = "8px 0";
+    for (const p of removable) {
+      const row = list.createDiv();
+      row.style.fontSize = "0.8rem";
+      row.style.padding = "3px 0";
+      row.style.borderBottom = "1px solid var(--background-modifier-border)";
+      row.setText(`${p.class} — ${p.key.slice(0, 70)}${p.key.length > 70 ? "…" : ""}`);
+    }
+    const acts = c.createDiv();
+    acts.style.display = "flex";
+    acts.style.gap = "8px";
+    acts.style.justifyContent = "flex-end";
+    const cancel = acts.createEl("button", { text: "やめる" });
+    cancel.onclick = () => modal.close();
+    const go = acts.createEl("button", { text: `${removable.length}件を取り除く`, cls: "mod-warning" });
+    go.onclick = async () => {
+      go.disabled = true;
+      for (const p of removable) await this.patternStore.remove(p.id);
+      modal.close();
+      this.refreshViews();
+      new Notice(`🧹 ${removable.length}件を取り除きました`
+        + (confirmed.length ? `（確定用例つき ${confirmed.length}件は残しました）` : ""), 8000);
+    };
+    modal.open();
   }
 
   /** §25.1 harvest: re-manifest a mark's moment as capture context. */
@@ -2348,9 +3414,28 @@ export default class JPCollocationsPlugin extends Plugin {
   }
 
   /** §28 S1/S4 — give a view the catalog-identity pair in one place. */
+  /** §26.3 — hand a view the identity bar's wiring. */
+  private withChrome(v: CollocationView): CollocationView {
+    v.chrome = {
+      openSurface: (s) => void this.openSurface(s),
+      surfaceBadge: (s) => this.surfaceBadge(s),
+    };
+    return v;
+  }
+
   private withCatalogHits(v: DictionaryView): DictionaryView {
     v.patternsIn = (text) => this.patternsIn(text);
     v.openPattern = (id) => void this.openLexiconAt(id);
+    v.onDrop = (intent, files) => void this.runDropIntent(intent, files);
+    v.dropCan = () => this.dropCapabilities();
+    v.openSurface = (s) => void this.openSurface(s);
+    v.surfaceBadge = (s) => this.surfaceBadge(s);
+    // §27.5 — the converted dictionaries. Same store the 語彙 panel queries, so
+    // 辞書 and 語彙 cannot disagree about what is installed.
+    v.bigDict = {
+      lookup: (q, limit) => this.bigDict.lookup(q, limit),
+      installed: () => this.listBigDictionaries(),
+    };
     return v;
   }
 
@@ -2623,6 +3708,44 @@ export default class JPCollocationsPlugin extends Plugin {
    * Juxtaposition is capped low: the point is to set two things side by side,
    * not to bury a want under everything that arrived today.
    */
+  /**
+   * One catalog entry, as things that just ARRIVED in the attested stream.
+   *
+   * Two details that decide whether a collision can happen at all:
+   *
+   *  - **`frameKey`.** `collide` can make a `frame` offer — "this realizes the
+   *    型 you were circling" — but only if the incoming item carries one, and
+   *    the previous (only) caller supplied none, so that entire offer reason was
+   *    unreachable from production. A 💠 entry IS a frame; a 🟠 link is one too
+   *    once its parts are joined. `toFrame` normalizes both into the same key
+   *    space the dictionary's reach-for query uses, so a want circling a shape
+   *    can meet a phrase that realizes it.
+   *  - **The quote AND the key.** A want is often written about the shape
+   *    («that "at some point" feeling»), not about the words, so offering only
+   *    the quote means a token match can never land on the pattern itself.
+   */
+  private incomingFrom(p: PatternEntry): Array<{ surface: string; source?: Reach['offers'][number]['source']; frameKey?: string; at: number }> {
+    const frame = p.payload.frame ?? (p.payload.parts?.length ? p.payload.parts.join('～') : undefined);
+    const frameKey = frame ? toFrame(frame).key : undefined;
+    const now = Date.now();
+    type Item = { surface: string; source?: Reach['offers'][number]['source']; frameKey?: string; at: number };
+    const out: Item[] = p.attestations.map((a) => ({
+      surface: a.quote,
+      source: {
+        ...(a.file ? { file: a.file } : {}),
+        ...(a.tStartSec != null ? { tStartSec: a.tStartSec } : {}),
+        medium: a.medium ?? a.source,
+        ...(a.scene?.deepLink ? { deepLink: a.scene.deepLink } : {}),
+      },
+      ...(frameKey ? { frameKey } : {}),
+      at: a.addedAt,
+    }));
+    // The pattern itself is an arrival too — 「どっかのタイミングで」 is the thing
+    // that fills the want, not the sentence it was heard in.
+    out.push({ surface: p.key, source: { medium: 'manual' }, ...(frameKey ? { frameKey } : {}), at: now });
+    return out;
+  }
+
   private async watchReaches(incoming: Array<{ surface: string; source?: Reach['offers'][number]['source']; frameKey?: string; at: number }>): Promise<void> {
     if (!this.reachStore.open().length || !incoming.length) return;
     const made = await this.reachStore.watch(incoming, { juxtaposeLimit: 2 });
@@ -2715,7 +3838,11 @@ export default class JPCollocationsPlugin extends Plugin {
     if (!file) { new Notice("ノートファイルを開いてください"); return; }
     const content = await this.app.vault.read(file);
     if (!frontmatterSources(content).length) {
-      new Notice("frontmatter に `source: [[transcript]]`（複数可: カンマ/リスト）を追加してください");
+      new Notice(
+        "これはキャプチャノートではありません。frontmatter に `sources: [[文字起こし]]`"
+        + "（複数可: カンマ/リスト）が必要です。\n"
+        + "文字起こしを開いて「📝 このトランスクリプトからキャプチャノートを作成」を実行すると一発で作れます。",
+        12000);
       return;
     }
     const images = this.findEmbeddedImages(content, file);
@@ -2786,7 +3913,11 @@ export default class JPCollocationsPlugin extends Plugin {
     if (!file) { new Notice("ノートファイルを開いてください"); return; }
     const content = await this.app.vault.read(file);
     if (!frontmatterSources(content).length) {
-      new Notice("frontmatter に `source: [[transcript]]`（複数可: カンマ/リスト）を追加してください");
+      new Notice(
+        "これはキャプチャノートではありません。frontmatter に `sources: [[文字起こし]]`"
+        + "（複数可: カンマ/リスト）が必要です。\n"
+        + "文字起こしを開いて「📝 このトランスクリプトからキャプチャノートを作成」を実行すると一発で作れます。",
+        12000);
       return;
     }
 
@@ -2910,6 +4041,68 @@ export default class JPCollocationsPlugin extends Plugin {
     const file = await this.app.vault.create(path, body);
     await this.app.workspace.getLeaf(false).openFile(file);
     new Notice(`キャプチャノート作成: ${links.length} 本の動画とリンク済み${missing.length ? `（未取得 ${missing.length} 本）` : ""}。画像を貼って ⚡`, 10000);
+  }
+
+  /**
+   * Capture note for the transcript that is open right now — the missing rung
+   * between a transcript and ⚡.
+   *
+   * `newCaptureNote()` above only ever reaches YouTube: it needs a
+   * `_watch-history` note and matches `youtu.be/<11 chars>` against filenames.
+   * A Plex or jimaku transcript carries `plex_rating_key` / `jimaku_entry` and
+   * no video id, so it could never be reached — the TV road built a transcript
+   * and then dead-ended, because `runFullPipeline()` requires a capture note
+   * whose frontmatter names it in `sources:`, and nothing could write one.
+   *
+   * So this deliberately knows nothing about where the transcript came from.
+   * The one thing it checks is the one thing the pipeline actually needs:
+   * that `parseTranscriptLines` can get stamped lines out of the file. Plex,
+   * jimaku, YouTube and a hand-pasted .srt are all served by the same rung.
+   */
+  private async captureNoteFromTranscript(): Promise<void> {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) { new Notice("文字起こしノートを開いてから実行してください。", 8000); return; }
+
+    const md = await this.app.vault.cachedRead(file);
+    // `isCaptureNote` — i.e. `frontmatterSources().length > 0`. This used to be
+    // a hand-rolled plural-only regex right here, because `frontmatterSources`
+    // matched the SINGULAR `source:` too and so classified every Plex/jimaku
+    // transcript (`source: tv`) as an existing capture note — refusing the exact
+    // case this command was added for. The shared function is now plural-only
+    // (pipeline.ts `frontmatterSources` / `frontmatterMedium`), so the workaround
+    // and its private parse are gone. golden/capture-rung.mjs still pins it.
+    if (isCaptureNote(md)) {
+      new Notice("このノートは既にキャプチャノートです（sources: があります）。画像を貼って ⚡ を実行してください。", 10000);
+      return;
+    }
+    // The pipeline anchors marks to timestamps; a transcript with none would
+    // produce a capture note that silently reconciles nothing. Refuse loudly.
+    const stamped = parseTranscriptLines(md).filter((l) => l.tStartSec != null).length;
+    if (stamped < 5) {
+      new Notice(
+        `このノートからタイムスタンプ付きの行が読み取れません（${stamped}行）。`
+        + "字幕から作った文字起こしノートを開いて実行してください。", 12000);
+      return;
+    }
+
+    const title = frontmatterAny(md, ["title"]) || file.basename;
+    const safe = title.replace(/[\\/:*?"<>|]/g, "").trim() || file.basename;
+    let path = `Capture ${safe}.md`;
+    for (let i = 2; this.app.vault.getAbstractFileByPath(path); i++) path = `Capture ${safe} (${i}).md`;
+
+    const body = [
+      "---",
+      "sources:",
+      `  - "[[${file.basename}]]"`,
+      "---",
+      "",
+      "> [!tip] 手書きページの画像をこの下に貼り付けて、⚡（リボンの ✨）を実行",
+      "",
+    ].join("\n") + "\n";
+
+    const created = await this.app.vault.create(path, body);
+    await this.app.workspace.getLeaf(false).openFile(created);
+    new Notice(`キャプチャノート作成: ${created.basename}\n（${stamped}行の文字起こしとリンク済み）画像を貼って ⚡`, 9000);
   }
 
   /** Enrich every clip in the audio folder that lacks a `.voicesync.json`
@@ -3041,6 +4234,116 @@ export default class JPCollocationsPlugin extends Plugin {
     const key = v.file + "|" + componentKeyOf({ kind: v.kind, unitText: v.unitText }, v.turnText);
     this.componentGold[key] = { ...v, at: Date.now() };
     await this.dm.setKey("_componentGold", this.componentGold);
+    // …and mirror it into the ledger, so a measurement reads ONE place (§6.5).
+    // `_componentGold` stays the layer-2 store — it holds the turn text and the
+    // evidence span, which the ledger deliberately does not.
+    await this.ratifyStore.record(componentRow(v.file, key, v.kind, v.verdict === "accept", Date.now()));
+  }
+
+  /**
+   * Apply one study probe's answer (AUDIT §6.5).
+   *
+   * Order matters: the SIDE EFFECT lands first, so a ✓ genuinely confirms the
+   * attestation and the pattern becomes reviewable in the same gesture, and the
+   * ledger row second. Doing it the other way round would leave a ledger that
+   * claims a judgement the catalog never received if the write failed.
+   *
+   * Returns the sentence worth showing, or null when there is nothing to say —
+   * a probe that produces a Notice on every tap is a chore wearing a new hat.
+   */
+  async answerProbe(probe: Probe, verdict: Verdict, answer?: string): Promise<string | null> {
+    const p = this.patternStore.all().find((x) => x.id === probe.patternId);
+    let msg: string | null = null;
+
+    if (verdict !== "skip" && p) {
+      if (probe.kind === "sighting") {
+        // The reward, stated at the moment it is earned: a pattern whose only
+        // material was a suggestion cannot be reviewed at all (`pickAttestation`
+        // takes confirmed sightings only), so this ✓ is what puts it in the deck.
+        const hadMaterial = p.attestations.some((a) => !a.status);
+        if (verdict === "yes") {
+          await this.patternStore.ratifyAttestation(p.id, probe.subject);
+          msg = hadMaterial ? "✓ 実例を確定しました" : "✓ 実例を確定 — このカードが復習に入りました";
+        } else {
+          await this.patternStore.rejectAttestation(p.id, probe.subject);
+          msg = "✕ 除外 — 掃き出しは二度と提案しません";
+        }
+      } else if (probe.kind === "class") {
+        // A ✕ that only said "go and fix it elsewhere" would leave all 255 open
+        // class suggestions exactly where they are; the view offers the six
+        // classes inline, so a disagreement completes here.
+        if (answer === DISPOSE) {
+          await this.patternStore.remove(p.id);
+          msg = `🗑 「${p.key}」を台帳から削除しました`;
+        } else {
+          const cls = (verdict === "no" && answer ? answer : p.class) as NoteClass;
+          await this.patternStore.setClass(p.id, cls);
+          msg = verdict === "yes"
+            ? "✓ 分類を確定しました"
+            : `✓ ${NOTE_TYPES[cls].emoji} ${NOTE_TYPES[cls].label} に付け替えました`;
+        }
+      } else if (probe.kind === "move") {
+        msg = verdict === "yes"
+          ? `✓ 「${p.key}」の見え方 ${probe.covers}件を一度に確定しました`
+          : "✕ この見え方は当てにならない、と記録しました";
+      }
+    }
+
+    await this.ratifyStore.record(answerOf(probe, verdict, Date.now(), "review", answer));
+    this.refreshReconLibrary();
+    return msg;
+  }
+
+  /**
+   * The readout §6.5 exists to make possible: what the ledger can and cannot
+   * say yet. Deliberately blunt about the second half — every number here was
+   * previously the model grading its own output, and the point is not to
+   * replace that with a friendlier number but with a falsifiable one.
+   */
+  private ratificationReport(): string {
+    const data = this.ratifyStore.data();
+    const r = ratifyReport(data);
+    const open = openCounts(this.patternStore.all(), data);
+    const pct = (x: number) => `${Math.round(x * 100)}%`;
+    const prop = (p: { n: number; yes: number; pct: number; lo: number; hi: number } | null, floor: number) =>
+      p ? `${pct(p.pct)}（${p.yes}/${p.n}、95%区間 ${pct(p.lo)}–${pct(p.hi)}）`
+        : `— まだ言えません（${floor}件必要）`;
+
+    const L: string[] = [];
+    L.push(`## 照合の記録 — ${r.total}件`);
+    L.push("");
+    L.push("### 掃き出しの精度（一様抽出のみ）");
+    L.push(`${prop(r.sweepPrecision, MIN_FOR_PRECISION)}　　一様抽出 ${r.randomN}件（${MEASUREMENT_EVERY}問に1問）`);
+    L.push("");
+    L.push("この数字だけが「精度」と呼べます。下の行は**わざと迷う側に寄せて**選んだ標本なので、");
+    L.push("低く出るのが正常であり、上の数字と混ぜてはいけません。");
+    L.push(`　不確実性抽出: ${prop(r.sweepBiased, MIN_FOR_PRECISION)}`);
+    L.push("");
+    L.push("### 語がしていること（語法ラベルの一致）");
+    L.push(`${prop(r.moveAgreement, 5)}　　確定した見え方 ${r.moveCovers}件ぶん`);
+    L.push("");
+    L.push("### 分類の提案がそのまま通った割合");
+    L.push(prop(r.classAgreement, MIN_FOR_PRECISION));
+    L.push("");
+    L.push("### 予測ドリル — 学習者と計算の一致率");
+    L.push(prop(r.drillAgreement, MIN_FOR_PRECISION));
+    L.push("**これはパーサの正解率ではありません。** 凍結点で食い違ったとき、どちらが正しいかを");
+    L.push("決める第三者はいません。使い道は下の「食い違いの型」— 同じ拒み方が繰り返されている所です。");
+    if (r.drillSplits.length) {
+      L.push("");
+      for (const s of r.drillSplits) L.push(`　${s.claim} と言われて「${s.answer}」と答えた: ${s.n}回`);
+    }
+    L.push("");
+    L.push("### 談話モードの部品判定");
+    L.push(prop(r.componentAgreement, 5));
+    L.push("");
+    L.push(`### まだ開いているもの — ${open.total}問`);
+    L.push(`　語法の見え方 ${open.move}問 → 実例 ${open.covered.toLocaleString()}件ぶんが決まります`);
+    L.push(`　未確定の分類 ${open.class}問`);
+    L.push(`　個別の実例 ${open.sighting}問（語法でまとめられない分だけ）`);
+    L.push("");
+    L.push("復習で1枚採点するごとに1問だけ出ます。別途の作業はありません。");
+    return L.join("\n");
   }
 
   goldInfo(): { total: number; agreementPct: number | null } {
@@ -3140,7 +4443,11 @@ export default class JPCollocationsPlugin extends Plugin {
     if (!file) { new Notice("ノートファイルを開いてください"); return null; }
     const content = await this.app.vault.cachedRead(file);
     const srcRefs = frontmatterSources(content);
-    if (!srcRefs.length) { new Notice("frontmatter に `source: [[transcript]]`（複数可: カンマ/リスト）を追加してください"); return null; }
+    if (!srcRefs.length) { new Notice(
+        "これはキャプチャノートではありません。frontmatter に `sources: [[文字起こし]]`"
+        + "（複数可: カンマ/リスト）が必要です。\n"
+        + "文字起こしを開いて「📝 このトランスクリプトからキャプチャノートを作成」を実行すると一発で作れます。",
+        12000); return null; }
 
     // Resolve every referenced transcript (a page can span several videos).
     const heads: { tFile: TFile; pristine: string; lines: MatcherLine[]; videoId: string | null }[] = [];
@@ -3281,17 +4588,34 @@ export default class JPCollocationsPlugin extends Plugin {
     const tweets = this.xCorpus.search(q, 50);
     const before = this.patternStore.byId(p.id)?.attestations.length ?? 0;
     const now = Date.now();
-    await this.patternStore.recordMany(tweets.map((t) => ({
-      note: p.note,
-      // §28 S2: carry the door back. The corpus join used to leave `medium`
-      // and `scene` empty, so a tweet attached here rendered without the X
-      // affordances the same tweet gets when captured by hand.
-      att: {
-        source: "x" as const, medium: "x" as const, file: t.url,
-        scene: { deepLink: t.url, sourceName: t.authorHandle ? `@${t.authorHandle}` : "X" },
-        quote: t.text.replace(/\s+/g, " ").trim(), addedAt: now,
-      },
-    })), now);
+    /**
+     * §29.2 — a WINDOW around the hit, marked suggested.
+     *
+     * Both halves of this were wrong before. The quote was the whole tweet:
+     * mean length in this corpus is 533 characters, p90 of what actually landed
+     * in the catalog was 4,691, and the longest 用例 filed under 「だよね」 was a
+     * 9,721-character marketing thread. You cannot see a phrase working inside
+     * 9,721 characters, which makes it a haystack rather than a scene (§22).
+     * And it was recorded CONFIRMED — a machine substring match wearing the
+     * weight of a ratified fact, which is precisely what §28 S3 forbids. The
+     * hand is the classifier; a corpus join is a recall machine.
+     */
+    const longest = terms.reduce((a, b) => (b.length > a.length ? b : a), terms[0]);
+    await this.patternStore.recordMany(tweets.map((t) => {
+      const line = buildXUsage([t], longest, 1).lines[0];
+      return {
+        note: p.note,
+        // §28 S2: carry the door back. The corpus join used to leave `medium`
+        // and `scene` empty, so a tweet attached here rendered without the X
+        // affordances the same tweet gets when captured by hand.
+        att: {
+          source: "x" as const, medium: "x" as const, file: t.url,
+          scene: { deepLink: t.url, sourceName: t.authorHandle ? `@${t.authorHandle}` : "X" },
+          quote: line ? kwicQuote(line) : t.text.replace(/\s+/g, " ").trim().slice(0, 140),
+          addedAt: now, status: "suggested" as const, matchKind: "x-corpus",
+        },
+      };
+    }), now);
     const added = (this.patternStore.byId(p.id)?.attestations.length ?? 0) - before;
     new Notice(tweets.length
       ? `𝕏 ${terms.join("+")} — コーパス内 ${tweets.length}件（新規 ${added}件）`
@@ -3355,6 +4679,254 @@ export default class JPCollocationsPlugin extends Plugin {
     }
     const added = batch.length ? await this.patternStore.addAttestations(batch, now) : 0;
     return { confirmed: Math.min(confirmedCount, added), suggested: Math.max(0, added - confirmedCount), isTranscript: true };
+  }
+
+  /**
+   * AUTO-SWEEP — the one-entry sweep, run the moment a card is classified.
+   *
+   * The full sweep (`sweepCatalog`) is pattern-major: every entry against every
+   * transcript. That is the right shape for a periodic pass and the wrong shape
+   * for a gesture — measured on this vault (302 patterns × 123 transcripts),
+   * Tier 1's `reconcileOne` alone costs 1.1–4.8 s **per entry**, so the full
+   * sweep is minutes. It therefore sits 38th in a list of 60 commands and is
+   * effectively never run, which is why a phrase flicked into the tray never
+   * found the four other places you had already heard it.
+   *
+   * This is the inverse: ONE entry against every transcript, cheap enough to
+   * run unprompted.
+   *
+   * Two decisions make it cheap, and the second is the important one:
+   *
+   *  • Parsed transcripts are cached by (path, mtime), so the second drop of a
+   *    session pays nothing to read 7.5 MB again. (Measured: 171 ms cold for
+   *    123 transcripts / 103k lines.)
+   *
+   *  • **Tier 2 only.** `sweepEntry` — the class-aware structural matcher —
+   *    costs ~100 ms for one entry across the whole vault. Tier 1's fuzzy
+   *    `reconcileOne` is 10–50× that and is deliberately NOT run here. This is
+   *    a correctness argument before a speed one: Tier 1 writes CONFIRMED
+   *    attestations, and a confirmed attestation is a claim about meaning that
+   *    the project reserves for a human (§28 / DISCOURSE-VERDICT §12 —
+   *    "volume is not evidence"). Everything this produces is
+   *    `status:'suggested'`, awaiting one-tap ✓/✕ in the 語彙 tab. A prefilter
+   *    was tried to make Tier 1 affordable and rejected: it silently lost 2 of
+   *    46 real hits on 気になる, and a sweep that quietly misses attestations is
+   *    worse than one that does not claim them.
+   */
+  private sweepCache = new Map<string, {
+    mtime: number;
+    /** null = this file is not a transcript. Cached deliberately — 480 of this
+     *  vault's 604 notes are not transcripts, and re-reading them on every drop
+     *  is the bulk of the cold cost. mtime still guards it, so a note EDITED
+     *  into a transcript is picked up rather than being negatively cached
+     *  forever. */
+    rec: {
+      lines: ReturnType<typeof parseTranscriptLines>;
+      videoId: string | null;
+      sceneTag: Record<string, unknown>;
+      /** which Attestation.source this medium writes — 'yt' for captioned
+       *  video, 'web' for prose. */
+      attSource?: "yt" | "web";
+    } | null;
+  }>();
+
+  /** Parsed transcript for a file, or null if it is not one. */
+  /**
+   * A transcript's own account of where it came from.
+   *
+   * ONE derivation, shared by the sweep and the concordance, because they were
+   * disagreeing: `sweepRecord` read `source:` out of the frontmatter while
+   * `buildConcordance` hard-coded `yt`. Two writers producing attestations with
+   * contradictory provenance for the same file is the seam §28 S2 forbids.
+   *
+   * `source` stays the coarse four-value bucket the `Attestation` type allows;
+   * `medium` carries the truth. A deep link is emitted ONLY for a real videoId —
+   * a Plex episode has no youtu.be URL and claiming one is worse than omitting it.
+   */
+  private transcriptProvenance(md: string, videoId: string | null): {
+    source: "yt" | "web"; medium: Medium; deepLink?: string;
+  } {
+    const fm = md.slice(0, 400);
+    const declared = fm.match(/^source:\s*(yt|tv|podcast|book|note|manga|x|web)\s*$/m)?.[1] as Medium | undefined;
+    const medium: Medium = declared ?? (videoId ? "yt" : "web");
+    return {
+      // Only a YouTube transcript is honestly `source:'yt'`; everything else
+      // buckets to 'web' so the lexicon's source facet stops filing TV under
+      // YouTube.
+      source: medium === "yt" ? "yt" : "web",
+      medium,
+      ...(videoId ? { deepLink: `https://youtu.be/${videoId}` } : {}),
+    };
+  }
+
+  /** 番組名 / 書名 / site, as the transcript declares it. */
+  private transcriptSourceName(md: string): string | undefined {
+    return md.slice(0, 400).match(/^(?:show|book_title|site|title):\s*"?([^"\n]+?)"?\s*$/m)?.[1]?.trim() || undefined;
+  }
+
+  private async sweepRecord(f: TFile) {
+    const hit = this.sweepCache.get(f.path);
+    if (hit && hit.mtime === f.stat.mtime) return hit.rec;
+
+    const miss = (): null => { this.sweepCache.set(f.path, { mtime: f.stat.mtime, rec: null }); return null; };
+    const md = await this.app.vault.cachedRead(f);
+
+    // §6.7-3 — a reading note (Kindle / note.com) is prose with no timestamps.
+    // It was ALREADY being handed to the sweep — `import-written` writes these
+    // into the transcript folder — and was dropped for want of a caption stamp.
+    // The matcher never needed one (`lines[i].tStartSec ?? null`); only the line
+    // producer did.
+    const reading = readingSource(md);
+    if (reading) {
+      const lines = proseLines(md);
+      if (lines.length < 3) return miss();
+      const rec = {
+        lines, videoId: null,
+        sceneTag: {
+          medium: reading.medium,
+          ...(reading.sourceName || reading.url
+            ? { scene: { ...(reading.sourceName ? { sourceName: reading.sourceName } : {}),
+                         ...(reading.url ? { deepLink: reading.url } : {}) } }
+            : {}),
+        } as Record<string, unknown>,
+        attSource: "web" as const,
+      };
+      this.sweepCache.set(f.path, { mtime: f.stat.mtime, rec });
+      return rec;
+    }
+
+    if (!CAPTION_STAMP_RE.test(md)) return miss();
+    const lines = parseTranscriptLines(md);
+    if (lines.length < 5 || lines[0].tStartSec == null) return miss();
+    const fmMedium = md.slice(0, 400).match(/^source:\s*(tv|podcast|book|note|manga)\s*$/m)?.[1] as
+      "tv" | "podcast" | "book" | "note" | "manga" | undefined;
+    const fmShow = md.slice(0, 400).match(/^(?:show|book_title|site):\s*"?([^"\n]+?)"?\s*$/m)?.[1];
+    const rec = {
+      lines,
+      videoId: this.resolveVideoId(f, f, md),
+      sceneTag: (fmMedium ? { medium: fmMedium, ...(fmShow ? { scene: { sourceName: fmShow } } : {}) } : {}) as Record<string, unknown>,
+      attSource: "yt" as const,
+    };
+    // Bound the cache: mobile has far less headroom and a session rarely
+    // touches more than a few dozen transcripts. Evicting the oldest key is
+    // enough — this is a warm-start optimisation, not a correctness mechanism.
+    const cap = Platform.isMobile ? 60 : 400;
+    if (this.sweepCache.size >= cap) this.sweepCache.delete(this.sweepCache.keys().next().value as string);
+    this.sweepCache.set(f.path, { mtime: f.stat.mtime, rec });
+    return rec;
+  }
+
+  /**
+   * Sweep ONE entry across every transcript. Returns what it found so the
+   * caller can say so — a silent background write would be the "no silent
+   * caps" rule broken in the other direction.
+   */
+  async autoSweepEntry(p: PatternEntry): Promise<{ sightings: number; files: number; found: number; skipped: string | null }> {
+    if (p.class === "discourse") return { sightings: 0, files: 0, found: 0, skipped: "discourse" };
+    if (!sweepableClass(p.class)) return { sightings: 0, files: 0, found: 0, skipped: "class" };
+    if (sweepMuted(p)) return { sightings: 0, files: 0, found: 0, skipped: "muted" };
+
+    const files = this.app.vault.getMarkdownFiles().filter((f) => !f.path.endsWith("-cards.md"));
+    const seen = new Set(p.attestations.map((a) => a.file));
+    const now = Date.now();
+    const found: { file: string; att: Attestation }[] = [];
+    for (const f of files) {
+      if (seen.has(f.path)) continue;                 // already attested here
+      const rec = await this.sweepRecord(f);
+      if (!rec) continue;
+      for (const c of sweepEntry(p, rec.lines)) {
+        found.push({ file: f.path, att: {
+          source: rec.attSource ?? "yt", file: f.path, videoId: rec.videoId,
+          tStartSec: c.tStartSec, quote: c.quote,
+          addedAt: now, status: "suggested", matchKind: c.matchKind, confidence: c.confidence,
+          ...rec.sceneTag,
+        } });
+      }
+    }
+
+    // §6.7-3 — the X corpus is not a file, so it is swept separately: tweets
+    // live in the plugin blob, not the vault. Japanese-only (X returns a lot of
+    // English, and no Japanese collocation is attested by an English tweet), and
+    // the tweet URL is the `file` key so the "already attested here" test and
+    // the door back both work exactly as they do for a transcript path.
+    for (const tw of sweepableTweets(this.xCorpus.getAll())) {
+      if (seen.has(tw.url)) continue;
+      for (const c of sweepEntry(p, tweetLines(tw.text))) {
+        found.push({ file: tw.url, att: {
+          source: "x", medium: "x", file: tw.url, videoId: null, tStartSec: null, quote: c.quote,
+          addedAt: now, status: "suggested", matchKind: c.matchKind, confidence: c.confidence,
+          scene: { deepLink: tw.url, ...(tw.authorHandle ? { sourceName: `@${tw.authorHandle}` } : {}) },
+        } });
+      }
+    }
+
+    // CAP, and say so. Measured on this vault: 「気になる」 finds 135 sightings
+    // across 74 files and 「っていうのは」 238 across 96. Writing all of those on
+    // a single drop would bury the ✓✕ queue under one phrase — the "volume is
+    // not evidence" failure this project keeps having to unlearn. The gesture's
+    // job is DISCOVERY ("you have heard this elsewhere, here is where"), not
+    // exhaustive attestation; the manual full sweep remains for the latter.
+    // Highest confidence first, one per file before any file gets a second, so
+    // the sample spans the corpus instead of piling up in the longest video.
+    const byFile = new Map<string, typeof found>();
+    for (const x of found) {
+      if (!byFile.has(x.file)) byFile.set(x.file, []);
+      byFile.get(x.file)!.push(x);
+    }
+    for (const list of byFile.values()) list.sort((a, b) => (b.att.confidence ?? 0) - (a.att.confidence ?? 0));
+    const ordered: typeof found = [];
+    for (let round = 0; ordered.length < found.length; round++) {
+      const tier: typeof found = [];
+      for (const list of byFile.values()) if (list[round]) tier.push(list[round]);
+      if (!tier.length) break;
+      // Rank WITHIN the round by confidence, not by the order sources happened
+      // to be visited. Without this the map's insertion order decides: files are
+      // swept before the X corpus, so with 74 transcript hits the cap of 12 was
+      // reached before a single tweet was considered, and a whole medium would
+      // have been silently unreachable.
+      tier.sort((a, b) => (b.att.confidence ?? 0) - (a.att.confidence ?? 0));
+      ordered.push(...tier);
+    }
+    const capped = ordered.slice(0, AUTO_SWEEP_CAP);
+
+    const added = capped.length
+      ? await this.patternStore.addAttestations(capped.map((x) => ({ id: p.id, att: x.att })), now)
+      : 0;
+    return {
+      sightings: added,
+      files: new Set(capped.map((x) => x.file)).size,
+      found: found.length,
+      skipped: null,
+    };
+  }
+
+  /**
+   * The gesture-side wrapper: sweep, then SAY something. Non-blocking by
+   * construction — the modal has already closed and the card is already in the
+   * catalog, so this only ever adds.
+   */
+  async autoSweepAfterCapture(p: PatternEntry): Promise<void> {
+    try {
+      const r = await this.autoSweepEntry(p);
+      if (r.skipped || !r.sightings) return;      // silence is right when there is nothing to say
+      // The cap is stated whenever it bites — a truncated result presented as a
+      // total reads as "that's all there is", which is the one thing it isn't.
+      const more = r.found > r.sightings ? `（全${r.found}件中の上位${r.sightings}件）` : "";
+      const n = new Notice(
+        `🔍 「${p.key}」を ${r.files}本の文字起こしで ${r.sightings}件発見${more}\n` +
+        `タップで語彙タブを開いて ✓/✕`, 9000);
+      n.noticeEl.style.cursor = "pointer";
+      n.noticeEl.addEventListener("click", () => { void this.openLexiconAt(p.id); });
+      this.refreshReconLibrary();
+      // §27.0.2 — THIS is where a collision can happen. The watcher used to be
+      // called only from `sweepCatalog`, the full sweep that costs minutes and
+      // never gets run, so an open 願い could sit for weeks while captures
+      // landed past it every day. What just arrived is what a want collides
+      // with, so the watcher runs on arrival.
+      await this.watchReaches(this.incomingFrom(p));
+    } catch (e) {
+      console.error("[jp-collocations] auto-sweep failed", e);
+    }
   }
 
   /** Transcript sweep: run EVERY catalog pattern against EVERY transcript in
@@ -3479,11 +5051,20 @@ export default class JPCollocationsPlugin extends Plugin {
         transcripts++;
         const { turns } = transcriptToTurns(md);
         const videoId = this.resolveVideoId(f, f, md);
+        // The medium comes from the transcript's OWN frontmatter, never from a
+        // constant. This loop walks EVERY stamped markdown file in the vault —
+        // Plex episodes, jimaku subtitles, whisper'd podcasts, hand-pasted .srt —
+        // and used to stamp `medium:'yt'` on all of them. That is where most of
+        // the catalog's suggested attestations came from, so most of the corpus
+        // asserted a medium it did not have and offered no door back in the
+        // medium it actually had (§28 S2). `deepLink` is emitted only when a
+        // videoId really exists.
         const rows = buildConcordanceRows(turns, {
           source: {
-            source: "yt", medium: "yt", file: f.path, videoId,
-            sourceName: f.basename,
-            ...(videoId ? { deepLink: `https://youtu.be/${videoId}` } : {}),
+            ...this.transcriptProvenance(md, videoId),
+            file: f.path,
+            videoId,
+            sourceName: this.transcriptSourceName(md) ?? f.basename,
           },
         });
         instances += rows.length;
@@ -4223,17 +5804,26 @@ export default class JPCollocationsPlugin extends Plugin {
     return await this.app.vault.create(path, body);
   }
 
-  /** Stamp `source: [[basename]]` into a notes file's frontmatter if it has none,
-   *  so the reconcile command finds the transcript. Non-destructive otherwise. */
+  /** Stamp `sources:` into a notes file's frontmatter if it has none, so the
+   *  reconcile command finds the transcript. Non-destructive otherwise.
+   *
+   *  Writes the PLURAL list form — the shape every other writer uses and the one
+   *  `frontmatterSources` accepts unconditionally. This used to write the
+   *  singular `source: [[basename]]`, which is the shape that forced
+   *  `frontmatterSources` to match `sources?` and so let the ⚡ gate mistake
+   *  every `source: tv` transcript for a capture note. Notes already carrying
+   *  the legacy singular still resolve (see pipeline.ts); nothing new adds to
+   *  the pile. */
   private async ensureSourceFrontmatter(file: TFile, basename: string): Promise<boolean> {
     const content = await this.app.vault.read(file);
     if (frontmatterSources(content).length) return false;         // already linked — leave it
+    const entry = `sources:\n  - "[[${basename}]]"`;
     let next: string;
     const fm = content.match(/^(﻿?---\r?\n)([\s\S]*?)(\r?\n---\r?\n?)/);
     if (fm) {
-      next = fm[1] + fm[2] + `\nsource: [[${basename}]]` + fm[3] + content.slice(fm[0].length);
+      next = fm[1] + fm[2] + `\n${entry}` + fm[3] + content.slice(fm[0].length);
     } else {
-      next = `---\nsource: [[${basename}]]\n---\n\n` + content;
+      next = `---\n${entry}\n---\n\n` + content;
     }
     await this.app.vault.modify(file, next);
     return true;
@@ -4298,6 +5888,16 @@ export default class JPCollocationsPlugin extends Plugin {
   private async fetchTranscriptCommand(): Promise<void> {
     const videoId = await this.resolveVideoIdToFetch();
     if (!videoId) return;
+    await this.fetchTranscriptFor(videoId);
+  }
+
+  /**
+   * Fetch + freeze one video's transcript and open it. Split out of the command
+   * so a DROPPED YouTube link takes the identical road (§28 S5) — the command
+   * only owns the "which video did you mean" question, which a drop answers by
+   * construction.
+   */
+  async fetchTranscriptFor(videoId: string): Promise<TFile | null> {
     const notesFile = this.app.workspace.getActiveFile();
 
     const adapter = this.makeTranscriptAdapter();
@@ -4309,10 +5909,10 @@ export default class JPCollocationsPlugin extends Plugin {
       notice.hide();
       const msg = e instanceof TranscriptError ? e.message : String(e);
       new Notice(`文字起こしの取得に失敗しました。\n${msg}\n\n手動の場合: 字幕テキストを ${this.settings.notes.transcriptFolder} に貼り付け、frontmatter に \`video: ${videoId}\` を追加してください。`, 20000);
-      return;
+      return null;
     }
     notice.hide();
-    if (!t) { new Notice(`この動画には字幕がありません (${videoId})。スキップしました。`, 10000); return; }
+    if (!t) { new Notice(`この動画には字幕がありません (${videoId})。スキップしました。`, 10000); return null; }
 
     const outFile = await this.writeTranscriptFile(t, true);
     let linked = false;
@@ -4325,6 +5925,7 @@ export default class JPCollocationsPlugin extends Plugin {
       12000,
     );
     await this.app.workspace.getLeaf(false).openFile(outFile);
+    return outFile;
   }
 
   private async fetchHistoryTranscriptsCommand(): Promise<void> {
@@ -4693,16 +6294,36 @@ export default class JPCollocationsPlugin extends Plugin {
     input.click();
   }
 
+  /**
+   * Export the LEGACY collocation store — and say so.
+   *
+   * This was called "Export Data" and exported `store.exportAll()`: the ~220
+   * seed collocations, and nothing else. Not `_patternStore` (the catalog and
+   * its ~18k attestations), not `_srsDeck`, `_ratify`, `_reaches`, `_xCorpus`,
+   * `_inbox`, `_discourseGold` or `_componentGold`. A user reaching for a button
+   * named "Export Data" before a reinstall would have got the least valuable
+   * store in the plugin and no warning that the rest was missing.
+   *
+   * The corpus itself is safe — `writeMirror` keeps `JP Lexicon/catalog.jsonl`
+   * on a 5s debounce — so the fix is honesty about scope, plus a pointer at the
+   * thing that actually holds everything.
+   */
   private exportData(): void {
-    const data = JSON.stringify(this.store.exportAll(), null, 2);
+    const entries = this.store.exportAll();
+    const data = JSON.stringify(entries, null, 2);
     const blob = new Blob([data], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "jp-collocations-export.json";
+    a.download = "jp-collocations-legacy-collocations.json";
     a.click();
     URL.revokeObjectURL(url);
-    new Notice("Exported collocations.");
+    new Notice(
+      `旧・連語ストアのみ ${entries.length}件を書き出しました。\n` +
+      `台帳（${this.patternStore.size()}件）・復習・𝕏コーパス等は含まれません — ` +
+      `そちらは ${JPCollocationsPlugin.MIRROR_FOLDER}/catalog.jsonl に自動保存されています。`,
+      12000,
+    );
   }
 
   private async fetchFromHyogen(): Promise<void> {

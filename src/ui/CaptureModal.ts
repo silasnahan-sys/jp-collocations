@@ -56,7 +56,10 @@ export interface CaptureDeps {
     att: Attestation | null;
   }) => Promise<PatternEntry>;
   addGold?: (g: Omit<GoldExample, 'id'>) => Promise<GoldExample>;
-  onSaved?: () => void;
+  /** Fired after the entry is in the catalog. Receives the entry so the host
+   *  can act on THIS one — the auto-sweep (main.ts) needs it to go looking for
+   *  where else this phrase has already been heard. */
+  onSaved?: (entry: PatternEntry) => void;
   /** §21: the calibrated class-suggester (structural signals + the user's
    *  own suggested-vs-chosen record). Ranked; [0] is preselected. Absent →
    *  notation-only derivePattern fallback. */
@@ -421,7 +424,7 @@ export class CaptureModal extends Modal {
 
       const def = NOTE_TYPES[this.cls];
       new Notice(`${def.emoji} ${def.label} として台帳に記録: ${entry.key}`);
-      this.deps.onSaved?.();
+      this.deps.onSaved?.(entry);
       if (closeAfter) this.close();
     } catch (e) {
       new Notice(`保存に失敗: ${(e as Error).message}`, 6000);

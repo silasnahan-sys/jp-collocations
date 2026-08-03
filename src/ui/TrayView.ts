@@ -12,19 +12,70 @@
  *   image — thumbnail + open (OCR arrives with the manga stage, §22.9)
  */
 
-import { ItemView, WorkspaceLeaf, Notice, normalizePath } from 'obsidian';
-import type { InboxStore, InboxCard, ReadingSession, MarkRef } from '../notes/inbox.ts';
+import { ItemView, WorkspaceLeaf, Notice, normalizePath, setIcon } from 'obsidian';
+import type { InboxStore, InboxCard, ReadingSession, MarkRef, MarkClip } from '../notes/inbox.ts';
 import { shapeDrop, imageCard, sessionGroups } from '../notes/inbox.ts';
 import { fmtStamp } from '../notes/srt.ts';
 import type { CaptureContext } from './CaptureModal.ts';
 import { NOTE_TYPES, type NoteClass } from '../notes/note-types.ts';
 import { classBadge, applyClassRail } from './class-grammar.ts';
 import type { Reach } from '../notes/reach.ts';
+import { armDrops, armSelectionEcho, mountSurfaceBar, type ViewChrome } from './view-chrome.ts';
+import { makeDraggable } from './drag-out.ts';
 
 export const JP_TRAY_VIEW_TYPE = 'jp-tray-view';
 
+/**
+ * §25.4 — fold a cut clip into a capture context.
+ *
+ * `scene.image` / `scene.audio` is what makes an attestation clip-eligible
+ * downstream (context-tree reads exactly these), so a clip that never reaches
+ * `source` is a clip that never reaches a card. One helper, used by every door
+ * into capture, so a new door cannot forget.
+ */
+function withMarkClip(ctx: CaptureContext, clip?: MarkClip): CaptureContext {
+  if (!clip || (!clip.still && !clip.audio)) return ctx;
+  return {
+    ...ctx,
+    source: {
+      ...ctx.source,
+      ...(clip.still ? { image: clip.still } : {}),
+      ...(clip.audio ? { audio: clip.audio } : {}),
+    },
+  };
+}
+
+/**
+ * §30 — one row of the front door.
+ *
+ * The plugin had 60 commands and 9 views and no entry point, so the answer to
+ * "where do I put this?" depended on remembering which of 60 palette entries
+ * matched the medium in your hand. The tray was already conceptually the inbox
+ * — "anything flicked from any app lands here" — so it becomes the door, and
+ * the medium-specific roads become rows on it.
+ *
+ * `kind` separates the two questions a front door has to answer:
+ *   'in' — get material INTO the vault in the shape its medium deserves
+ *   'go' — reach another surface once it is in
+ *
+ * The tray stays dumb: it renders whatever main.ts hands it, so platform gating
+ * and command wiring live where they already do. A door that cannot run on this
+ * device carries `disabled` and is shown greyed WITH THE REASON rather than
+ * hidden — a door you cannot find is indistinguishable from one that does not
+ * exist (§28 S6: refuse loudly rather than no-op).
+ */
+export interface TrayDoor {
+  label: string;
+  icon: string;
+  kind: 'in' | 'go';
+  run: () => void;
+  disabled?: string;
+}
+
 export interface TrayDeps {
   store: InboxStore;
+  /** §30 the front door. Absent → the tray renders as it always did. */
+  doors?: () => TrayDoor[];
   openCapture: (ctx: CaptureContext) => void;
   /** save a dropped image into the vault; returns its path. */
   saveImage: (name: string, data: ArrayBuffer) => Promise<string>;
@@ -36,6 +87,10 @@ export interface TrayDeps {
   /** §25.1 harvest: re-manifest a mark's moment as capture context (reads
    *  the transcript at tSec). Null = file/moment unresolvable. */
   resolveMarkContext?: (mark: MarkRef) => Promise<CaptureContext | null>;
+  /** §25.4: cut the scene at this mark from Plex (absent = mobile / no ffmpeg). */
+  clipForMark?: (card: InboxCard) => Promise<MarkClip | null>;
+  /** §25.1: fix the note on a mark after the fact. */
+  setMarkNote?: (id: string, text: string) => Promise<void>;
   /** §28 S1: catalog patterns occurring in this card's text — "you have
    *  already noticed this", wearing the same class mark as everywhere else. */
   patternsIn?: (text: string) => Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }>;
@@ -47,6 +102,11 @@ export interface TrayDeps {
   onRejectOffer?: (reachId: string, offerIndex: number) => Promise<void>;
   onAbandonReach?: (reachId: string) => Promise<void>;
   openReach?: () => void;
+  /** §29 the drag road + §26.3 the identity bar (see ui/view-chrome.ts). */
+  onDrop?: ViewChrome['onDrop'];
+  dropCan?: ViewChrome['dropCan'];
+  openSurface?: ViewChrome['openSurface'];
+  surfaceBadge?: ViewChrome['surfaceBadge'];
 }
 
 export class TrayView extends ItemView {
@@ -124,12 +184,21 @@ export class TrayView extends ItemView {
     const root = this.contentEl;
     root.empty();
     root.addClass('jp-tray');
+    // §29 — the tray's own drop handling used to live on the zone element and
+    // took text or images and nothing else. The router covers the whole view
+    // and knows more verbs, so the zone below is now purely the instruction
+    // (and the fallback when this view is built without a drop road).
+    armDrops(root, this.deps, 'tray', { paste: true });
+    // A tray card is unclassified BY DESIGN, so the commonest thing you want is
+    // part of one — the sentence inside the paragraph you dropped.
+    armSelectionEcho(root, this.deps, 'tray');
+    mountSurfaceBar(root, this.deps, 'tray');
 
     // ── the drop zone ──
     const zone = root.createDiv('jp-tray-zone');
     zone.createDiv({ text: '⤵', cls: 'jp-tray-zone-icon' });
     zone.createDiv({ text: 'ここにドロップ', cls: 'jp-tray-zone-label' });
-    zone.createDiv({ text: 'マンガのコマ・辞書の用例・ツイート・記事の一節 — 何でも。落としたものは失われません。', cls: 'jp-tray-zone-sub' });
+    zone.createDiv({ text: 'マンガのコマ・辞書の用例・ツイート・記事の一節・YouTube や X のリンク・字幕ファイル — 何でも。落としたものは失われません。', cls: 'jp-tray-zone-sub' });
     const zoneBtns = zone.createDiv('jp-tray-zone-btns');
     const pasteBtn = zoneBtns.createEl('button', { text: '📋 クリップボードから', cls: 'jp-tray-paste' });
     pasteBtn.onclick = async () => {
@@ -159,6 +228,11 @@ export class TrayView extends ItemView {
       this.render();
     };
     pickBtn.onclick = () => picker.click();
+
+    // ── §30 THE DOORS ───────────────────────────────────────────────────────
+    // Directly under the drop zone, because the drop zone answers "anything"
+    // and these answer "this particular thing, properly."
+    this.renderDoors(root);
 
     // ── §27.0.2 THE REACHING ────────────────────────────────────────────────
     // The tray holds what has arrived and is not yet resolved. A reach is the
@@ -200,6 +274,43 @@ export class TrayView extends ItemView {
       if (g.cards.length < 2) { this.renderCard(list, g.cards[0]); continue; }
       this.renderSession(list, g);
     }
+  }
+
+  /**
+   * §30 — the front door's two rows: 入れる (get it in) and 開く (go somewhere).
+   *
+   * Compact chips rather than a menu, because the point is that the roads are
+   * VISIBLE. A menu would have reproduced the palette problem one level down.
+   */
+  private renderDoors(root: HTMLElement): void {
+    const doors = this.deps.doors?.() ?? [];
+    if (!doors.length) return;
+    const box = root.createDiv('jp-tray-doors');
+
+    const section = (kind: TrayDoor['kind'], title: string, hint: string): void => {
+      const rows = doors.filter((d) => d.kind === kind);
+      if (!rows.length) return;
+      const head = box.createDiv('jp-tray-doors-head');
+      head.createSpan({ text: title, cls: 'jp-tray-doors-title' });
+      head.createSpan({ text: hint, cls: 'jp-tray-doors-hint' });
+      const grid = box.createDiv('jp-tray-doors-grid');
+      for (const d of rows) {
+        const b = grid.createEl('button', {
+          cls: 'jp-tray-door' + (d.disabled ? ' jp-tray-door--off' : ''),
+        });
+        setIcon(b.createSpan({ cls: 'jp-tray-door-ic' }), d.icon);
+        b.createSpan({ text: d.label, cls: 'jp-tray-door-label' });
+        if (d.disabled) {
+          b.disabled = true;
+          b.setAttr('title', d.disabled);
+        } else {
+          b.onclick = () => d.run();
+        }
+      }
+    };
+
+    section('in', '入れる', '媒体ごとの取り込み');
+    section('go', '開く', '');
   }
 
   /** A 読書セッション: header (date + count + batch OCR) over the shots in
@@ -330,19 +441,66 @@ export class TrayView extends ItemView {
     }
   }
 
+  /** The cut scene, shown rather than described — a still you can recognise is
+   *  worth more than the words 「クリップあり」. */
+  private renderMarkClip(body: HTMLElement, clip: MarkClip): void {
+    const wrap = body.createDiv('jp-tray-clip');
+    if (clip.still) {
+      const still = clip.still;
+      const img = wrap.createEl('img', { cls: 'jp-tray-clip-still' });
+      img.src = this.app.vault.adapter.getResourcePath(normalizePath(still));
+      img.onclick = () => void this.app.workspace.openLinkText(still, '', false);
+    }
+    if (clip.audio) {
+      const au = wrap.createEl('audio', { cls: 'jp-tray-clip-audio' });
+      au.controls = true;
+      au.preload = 'none';
+      au.src = this.app.vault.adapter.getResourcePath(normalizePath(clip.audio));
+    }
+  }
+
+  /** Fix the note on a mark card in place. */
+  private editMarkNote(card: HTMLElement, c: InboxCard): void {
+    if (!this.deps.setMarkNote || card.querySelector('.jp-tray-noteedit')) return;
+    const wrap = card.createDiv('jp-tray-noteedit');
+    const ta = wrap.createEl('textarea', { cls: 'jp-tray-noteedit-input', attr: { rows: '2' } });
+    ta.value = c.content ?? '';
+    let settled = false;
+    const finish = async (save: boolean): Promise<void> => {
+      if (settled) return;
+      settled = true;
+      const text = ta.value.trim();
+      wrap.remove();
+      if (save) await this.deps.setMarkNote?.(c.id, text);
+      this.render();
+    };
+    ta.onkeydown = (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void finish(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); void finish(false); }
+    };
+    ta.onblur = () => void finish(true);
+    ta.focus();
+    try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch { /* not focusable yet */ }
+  }
+
   private renderCard(list: HTMLElement, c: InboxCard): void {
     const card = list.createDiv('jp-tray-card' + (c.id === this.focusId ? ' jp-tray-card--focus' : ''));
     card.addEventListener('pointerdown', () => { this.focusId = c.id; }, { capture: true });
     // §23.5 cross-surface drop: drag a text card ONTO the 語彙 view → capture
     // there with tray provenance (the card stays — quarantine until classified)
     if (c.kind !== 'image') {
-      card.setAttribute('draggable', 'true');
+      makeDraggable(card, () => ({
+        kind: 'card',
+        text: c.content,
+        sub: c.origin,
+        meta: { cardId: c.id, origin: c.origin, tSec: c.mark?.tSec ?? undefined, file: c.mark?.file },
+      }));
+      // The old `application/x-jpc-tray` flavour stays on the wire: it is what
+      // the 語彙 panel reads to keep tray provenance across the seam.
       card.addEventListener('dragstart', (e) => {
-        e.dataTransfer?.setData('text/plain', c.content);
         e.dataTransfer?.setData('application/x-jpc-tray', c.origin ?? '');
-        card.addClass('jp-tray-card--dragging');
       });
-      card.addEventListener('dragend', () => card.removeClass('jp-tray-card--dragging'));
     }
     const head = card.createDiv('jp-tray-card-head');
     head.createSpan({
@@ -438,7 +596,14 @@ export class TrayView extends ItemView {
         const row = body.createDiv('jp-tray-mark');
         if (m?.tSec != null) row.createSpan({ text: fmtStamp(m.tSec), cls: 'jp-tray-mark-stamp' });
         if (m?.loc) row.createSpan({ text: m.loc, cls: 'jp-tray-mark-stamp' });
-        row.createSpan({ text: c.content || '（シードなし）', cls: c.content ? 'jp-tray-mark-seed' : 'jp-tray-mark-seed jp-tray-mark-seed--none' });
+        // Notes can be several lines now, so a long one gets its own block
+        // rather than being squeezed onto the stamp row and clipped.
+        const multi = c.content.includes('\n') || c.content.length > 42;
+        if (multi) body.createDiv({ text: c.content, cls: 'jp-tray-mark-note' });
+        else row.createSpan({ text: c.content || '（メモなし）', cls: c.content ? 'jp-tray-mark-seed' : 'jp-tray-mark-seed jp-tray-mark-seed--none' });
+        // §25.4 — the scene cut at this mark, visible so you can tell at a
+        // glance which marks are ready to become cards with sound and picture.
+        if (c.clip) this.renderMarkClip(body, c.clip);
         break;
       }
       case 'url': {
@@ -468,18 +633,37 @@ export class TrayView extends ItemView {
 
     if (c.kind === 'mark') {
       const act = card.createDiv('jp-tray-card-actions');
-      const tag = act.createEl('button', { text: '🏷️ 分類', cls: 'jp-tray-classify' });
+      const tag = act.createEl('button', { text: '🏷️ 分類' + (c.clip ? ' 🎬' : ''), cls: 'jp-tray-classify' });
       tag.onclick = async () => {
         const m = c.mark;
         if (m && this.deps.resolveMarkContext) {
           const ctx = await this.deps.resolveMarkContext(m);
-          if (ctx) { this.deps.openCapture(ctx); return; }
+          // A clip cut against this mark rides into the capture, so the saved
+          // card carries the scene. Without this the 🎬 cut was decorative —
+          // it produced files that nothing downstream ever pointed at.
+          if (ctx) { this.deps.openCapture(withMarkClip(ctx, c.clip)); return; }
         }
-        this.deps.openCapture({
+        this.deps.openCapture(withMarkClip({
           text: c.content,
           source: { kind: 'manual', sourceName: c.origin, medium: m?.medium, file: m?.file, tStartSec: m?.tSec ?? null },
-        });
+        }, c.clip));
       };
+      // §25.4 — cut the moment this mark points at. The Part key comes off the
+      // transcript note the mark was made against, so this works long after the
+      // watch is over and with nothing playing.
+      if (this.deps.clipForMark && c.mark?.file && c.mark?.tSec != null) {
+        const cut = act.createEl('button', { text: c.clip ? '🎬 再切り出し' : '🎬 クリップ', cls: 'jp-tray-classify' });
+        cut.title = 'この時刻の音声＋静止画を Plex から切り出して、このマークに添えます（デスクトップのみ）。';
+        cut.onclick = async () => {
+          cut.disabled = true;
+          cut.setText('🎬 切り出し中…');
+          try { await this.deps.clipForMark!(c); } catch (e) { new Notice(String(e)); }
+          this.render();
+        };
+      }
+      const edit = act.createEl('button', { text: '✎', cls: 'jp-tray-classify' });
+      edit.title = 'メモを直す';
+      edit.onclick = () => this.editMarkNote(card, c);
     } else if (c.kind === 'sentence' || c.kind === 'word' || c.kind === 'text') {
       const act = card.createDiv('jp-tray-card-actions');
       const tag = act.createEl('button', { text: '🏷️ 分類', cls: 'jp-tray-classify' });

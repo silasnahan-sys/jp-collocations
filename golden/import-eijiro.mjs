@@ -29,8 +29,11 @@ const eijiroUrl = url(tsc(readFileSync(join(SRCDIR, 'eijiro.ts'), 'utf8'))
 const sidecarUrl = url(tsc(readFileSync(join(SRCDIR, 'sidecar.ts'), 'utf8'))
   .replace(/from ['"]\.\/frames\.ts['"]/g, `from '${framesUrl}'`)
   .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`));
+const genPartsUrl = url(tsc(readFileSync(join(SRCDIR, 'entry-parts.ts'), 'utf8'))
+  .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`));
 const genUrl = url(tsc(readFileSync(join(SRCDIR, 'generic-yomitan.ts'), 'utf8'))
   .replace(/from ['"]\.\/frames\.ts['"]/g, `from '${framesUrl}'`)
+  .replace(/from ['"]\.\/entry-parts\.ts['"]/g, `from '${genPartsUrl}'`)
   .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`));
 const importUrl = url(tsc(readFileSync(join(SRCDIR, 'import-eijiro.ts'), 'utf8'))
   .replace(/from ['"]\.\/eijiro\.ts['"]/g, `from '${eijiroUrl}'`)

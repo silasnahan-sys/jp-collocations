@@ -85,7 +85,11 @@ export async function importBatch(
   const eijiro = isEijiro(title);
   const heads = eijiro
     ? adaptEijiroBank(tuples, { evocativeHead: opts.evocativeHead })
-    : adaptGenericBank(tuples, { direction: opts.direction ?? 'ja->en', evocativeHead: opts.evocativeHead });
+    // The TITLE selects the book's tree vocabulary from the one profile table,
+    // so a batch converted here splits into senses the same way as a full run.
+    : adaptGenericBank(tuples, {
+      direction: opts.direction ?? 'ja->en', evocativeHead: opts.evocativeHead, dictionary: title,
+    });
   const res = await appendBatch(io, dir, heads, shards);
   return { dir, heads: res.heads, frames: res.frames, adapter: eijiro ? 'eijiro' : 'generic' };
 }
@@ -121,7 +125,7 @@ export async function importEijiro(
   const direction: Direction = directionOf(idx);
   const adapt = (bank: EijiroTuple[]): DictHeadword[] => eijiro
     ? adaptEijiroBank(bank, { evocativeHead: opts.evocativeHead })
-    : adaptGenericBank(bank, { direction, evocativeHead: opts.evocativeHead });
+    : adaptGenericBank(bank, { direction, evocativeHead: opts.evocativeHead, dictionary: title });
 
   await dropSidecar(io, dir, shards);
   await io.mkdir(dir);

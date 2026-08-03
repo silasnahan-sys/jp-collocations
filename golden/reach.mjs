@@ -20,10 +20,14 @@ import ts from 'typescript';
 const { transpileModule } = ts;
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const js = transpileModule(readFileSync(join(HERE, '..', 'src', 'notes', 'reach.ts'), 'utf8'), {
-  compilerOptions: { module: 'ESNext', target: 'ES2022' },
-}).outputText;
-const R = await import('data:text/javascript;base64,' + Buffer.from(js).toString('base64'));
+const tsc = (s) => transpileModule(s, { compilerOptions: { module: 'ESNext', target: 'ES2022' } }).outputText;
+const url = (j) => 'data:text/javascript;base64,' + Buffer.from(j).toString('base64');
+// reach.ts imports the ONE frame key space (frames.ts) so a want and the
+// dictionary's reach-for query agree about what shape is being circled.
+const framesUrl = url(tsc(readFileSync(join(HERE, '..', 'src', 'dictionary', 'frames.ts'), 'utf8')));
+const js = tsc(readFileSync(join(HERE, '..', 'src', 'notes', 'reach.ts'), 'utf8'))
+  .replace(/from ['"]\.\.\/dictionary\/frames\.ts['"]/g, `from '${framesUrl}'`);
+const R = await import(url(js));
 
 let fail = 0, n = 0;
 const ok = (cond, msg, extra = '') => {
@@ -113,6 +117,40 @@ console.log('\n══ closed reaches are inert ══');
   ok(!R.isOpen(gone), 'an abandoned reach is closed');
   ok(R.collide([gone], [{ surface: 'x', at: 9 }], { juxtaposeLimit: 5 }).length === 0,
     'and receives none either');
+}
+
+console.log('\n══ the FRAME offer fires at all (AUDIT-PARTS §7) ══');
+// This reason was unreachable in production on two counts: the only caller
+// never supplied `frameKey`, and the test was `frameKey.includes(gloss)` —
+// a gloss is prose ("that feeling when…"), a frame key is a slotted Japanese
+// shape, so it was false in every real case. Untested branch, dead branch.
+{
+  const at = 1_000;
+  // A want written WITH its shape in it — which is how a hole usually arrives.
+  // Deliberately a case where NO token is shared: the arriving phrase realizes
+  // the shape without repeating any of its words, which is exactly the case the
+  // token branch cannot reach and the frame branch exists for.
+  const r = R.openReach('〜が有効な反論', at, 'the move that actually lands');
+  const made = R.collide([r], [{ surface: 'それは決定打になる指摘だ', frameKey: '～が有効な反論', at }]);
+  ok(made.length === 1, 'a want circling a shape meets a phrase realizing it', JSON.stringify(made));
+  ok(made[0]?.offer.reason === 'frame', 'and the reason is `frame`', made[0]?.offer.reason);
+  ok(/型/.test(made[0]?.offer.why ?? ''), 'the why names the SHAPE, never a meaning', made[0]?.offer.why);
+  ok(!/=|means|意味です/.test(made[0]?.offer.why ?? ''), 'and still asserts no equivalence');
+
+  // A want with no shape in it has no frame to have been circling.
+  const plain = R.openReach('that feeling when you give up', at);
+  const none = R.collide([plain], [{ surface: '諦めがつく', frameKey: '～のタイミングで', at }]);
+  ok(none.length === 0, 'a shapeless want gets NO frame offer', JSON.stringify(none));
+
+  // A bare slot would otherwise match everything that arrives.
+  const bare = R.openReach('～', at);
+  const flood = R.collide([bare], [{ surface: '無関係な句', frameKey: '～のタイミングで', at }]);
+  ok(flood.length === 0, 'a bare slot is not a frame — no flood of offers', JSON.stringify(flood));
+
+  // Token still wins when both could fire: it is the more specific evidence.
+  const both = R.openReach('タイミング', at);
+  const t = R.collide([both], [{ surface: 'どっかのタイミングで', frameKey: '～のタイミングで', at }]);
+  ok(t[0]?.offer.reason === 'token', 'a token match outranks a frame match', t[0]?.offer.reason);
 }
 
 console.log('\n══ juxtaposition is BOUNDED (a wall of noise is not juxtaposition) ══');

@@ -49,6 +49,18 @@ export interface DictSense {
   gloss: string;
   /** the 〔…〕 bracket — a production-CONDITION, not a definition (§27.1). */
   situation?: string;
+  /**
+   * Who says it and where — 話 / 英 / 《口語》. Its own field because it answers
+   * a different question from `situation` (when) and from `gloss` (what), and
+   * because leaving it inside the gloss text is what produced "話 話遅らせる".
+   */
+  register?: string;
+  /**
+   * The example the source ships with this sense, kept OUT of the gloss.
+   * 英辞郎 appends it with no markup at all, so a conversion that merely strips
+   * tags produces `待つ、待機するI have learned to wait. …` as one "definition".
+   */
+  example?: string;
   /** div.supplement — Eijiro's ◆ note. */
   note?: string;
   xrefs?: string[];
@@ -90,6 +102,15 @@ export interface DictHeadword {
   /** rules[3]. 'name' entries are deprioritized, never study noise (§27.4). */
   kind?: 'name' | 'comb' | 'suf' | 'adj' | 'n';
   senses: DictSense[];
+  /**
+   * The entry's RELATION tree, when the source carried relations a flat sense
+   * list cannot hold — a 類語対比表, a 語群, a titled section.
+   *
+   * Stored ALONGSIDE `senses`, never instead of it: the reach-for index and
+   * every existing golden keep reading `senses`, and a surface that has not
+   * learned a shape still has prose to fall back on (§28 S6).
+   */
+  nodes?: import('./entry-parts.ts').EntryNode[];
   reachFor: ReachCandidate[];
   xrefs: string[];
   sequence: number;
@@ -169,11 +190,20 @@ export function adaptEijiroEntry(tuple: EijiroTuple, opts: AdaptOpts = {}): Dict
       const raw = li[1];
       const sensePos = pick(raw, 'span', 'sense-pos')[0];
       const note = pick(raw, 'div', 'supplement').join(' ') || undefined;
-      let body = drop(drop(drop(raw, 'span', 'sense-pos'), 'div', 'supplement'), 'span', 'xref');
+      // 英辞郎 emits the SAME token twice, as two different classes:
+      //   <span class="label">話</span> <span class="register">話</span>
+      // Dropping only `label` left `register`'s copy in the text, which is what
+      // produced glosses like "話 話遅らせる". Both are dropped from the body and
+      // the value is kept once, as the register it is.
+      const register = (pick(raw, 'span', 'register')[0] ?? pick(raw, 'span', 'label')[0]);
+      const body = drop(drop(drop(drop(drop(
+        raw, 'span', 'sense-pos'), 'div', 'supplement'), 'span', 'xref'),
+        'span', 'label'), 'span', 'register');
       const { situation, gloss } = splitSituation(stripTags(body).replace(/^＝\s*/, ''));
       senses.push({
         ...(sensePos ? { pos: sensePos } : {}),
-        gloss, ...(situation ? { situation } : {}), ...(note ? { note } : {}),
+        gloss, ...(situation ? { situation } : {}),
+        ...(register ? { register } : {}), ...(note ? { note } : {}),
       });
     }
   }
@@ -186,12 +216,14 @@ export function adaptEijiroEntry(tuple: EijiroTuple, opts: AdaptOpts = {}): Dict
     const raw = m[1];
     const labels = pick(raw, 'span', 'label');
     labelsFor.set(si, labels);
-    const body = drop(drop(raw, 'span', 'label'), 'span', 'xref');
+    const register = pick(raw, 'span', 'register')[0] ?? labels[0];
+    const body = drop(drop(drop(raw, 'span', 'label'), 'span', 'register'), 'span', 'xref');
     const { situation, gloss } = splitSituation(stripTags(body).replace(/^＝\s*/, ''));
     const note = pick(html, 'div', 'supplement').join(' ') || undefined;
     senses.push({
       ...(pos[0] ? { pos: pos[0] } : {}),
-      gloss, ...(situation ? { situation } : {}), ...(note ? { note } : {}),
+      gloss, ...(situation ? { situation } : {}),
+      ...(register ? { register } : {}), ...(note ? { note } : {}),
     });
     si++;
   }

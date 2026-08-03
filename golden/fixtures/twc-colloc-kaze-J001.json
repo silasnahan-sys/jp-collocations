@@ -1,0 +1,88 @@
+{
+ "page": 1,
+ "total": 1,
+ "rows": [
+  {
+   "id": 42004005,
+   "headword_collocation_id": "N.25644.J001",
+   "collocation_id": "J001.00001",
+   "collocation": "{風}を",
+   "freq": 145,
+   "mi": 4.11,
+   "logdice": -2.83
+  },
+  {
+   "id": 42004006,
+   "headword_collocation_id": "N.25644.J001",
+   "collocation_id": "J001.00002",
+   "collocation": "{風}が",
+   "freq": 46,
+   "mi": 2.59,
+   "logdice": -4.35
+  },
+  {
+   "id": 42004007,
+   "headword_collocation_id": "N.25644.J001",
+   "collocation_id": "J001.00003",
+   "collocation": "{風}や",
+   "freq": 38,
+   "mi": 5.34,
+   "logdice": -1.6
+  },
+  {
+   "id": 42004008,
+   "headword_collocation_id": "N.25644.J001",
+   "collocation_id": "J001.00004",
+   "collocation": "{風}に",
+   "freq": 25,
+   "mi": 1.5,
+   "logdice": -5.43
+  },
+  {
+   "id": 42004009,
+   "headword_collocation_id": "N.25644.J001",
+   "collocation_id": "J001.00005",
+   "collocation": "{風}で",
+   "freq": 17,
+   "mi": 2.2,
+   "logdice": -4.73
+  },
+  {
+   "id": 42004010,
+   "headword_collocation_id": "N.25644.J001",
+   "collocation_id": "J001.00006",
+   "collocation": "{風}は",
+   "freq": 9,
+   "mi": 0.2,
+   "logdice": -6.73
+  },
+  {
+   "id": 42004011,
+   "headword_collocation_id": "N.25644.J001",
+   "collocation_id": "J001.00007",
+   "collocation": "{風}の",
+   "freq": 2,
+   "mi": -2.65,
+   "logdice": -9.58
+  },
+  {
+   "id": 42004012,
+   "headword_collocation_id": "N.25644.J001",
+   "collocation_id": "J001.00008",
+   "collocation": "{風}なんか",
+   "freq": 1,
+   "mi": 6.14,
+   "logdice": -0.8
+  },
+  {
+   "id": 42004013,
+   "headword_collocation_id": "N.25644.J001",
+   "collocation_id": "J001.00009",
+   "collocation": "{風}より",
+   "freq": 1,
+   "mi": 2.5,
+   "logdice": -4.43
+  }
+ ],
+ "records": 9
+}
