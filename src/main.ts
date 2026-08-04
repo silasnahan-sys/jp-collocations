@@ -8,6 +8,7 @@ import { SearchEngine } from "./search/SearchEngine";
 import { HyogenScraper } from "./scraper/HyogenScraper";
 import { hyogenExamples } from "./scraper/hyogen-parse";
 import { normalizeJapanese } from "./utils/japanese";
+import { abortPointerDrag } from "./ui/pointer-drag";
 import { TsukubaWebCorpusScraper } from "./scraper/TsukubaWebCorpusScraper";
 import { CollocationView, JP_COLLOCATIONS_VIEW_TYPE, setCollocationViewResolver } from "./ui/CollocationView";
 import { SearchModal } from "./ui/SearchModal";
@@ -1912,6 +1913,9 @@ export default class JPCollocationsPlugin extends Plugin {
     await this.dm.flush(); // land any debounced blob write before we die
     this.scraper?.abort();
     this.twcScraper?.abort();
+    // A carry still in flight holds a document-level scroll blocker that would
+    // outlive this plugin — see `abortPointerDrag`.
+    abortPointerDrag();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(JP_DICTIONARY_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(JP_X_VIEW_TYPE);

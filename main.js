@@ -13387,8 +13387,188 @@ var _HyogenScraper = class _HyogenScraper {
 _HyogenScraper.MAX_PER_SECTION = 40;
 var HyogenScraper = _HyogenScraper;
 
-// src/scraper/TsukubaWebCorpusScraper.ts
+// src/ui/pointer-drag.ts
 var import_obsidian2 = require("obsidian");
+var zones = /* @__PURE__ */ new Set();
+function registerPointerDropZone(z) {
+  zones.add(z);
+  return () => {
+    zones.delete(z);
+  };
+}
+var SLOP = 10;
+var ARM_MS = 350;
+var COMMIT_MS = import_obsidian2.Platform.isPhone ? 380 : 700;
+var live = null;
+var pointerDragActive = () => live !== null;
+function abortPointerDrag() {
+  live == null ? void 0 : live.end();
+}
+function zoneAt(x, y) {
+  let el = document.elementFromPoint(x, y);
+  while (el) {
+    for (const z of zones)
+      if (z.el === el)
+        return z;
+    el = el.parentElement;
+  }
+  return null;
+}
+function beginPointerDrag(source, payload, pill, pointerId, x, y) {
+  if (live) {
+    pill.remove();
+    return;
+  }
+  pill.addClass("jp-drag-pill--live");
+  const place = (cx, cy) => {
+    pill.style.left = `${cx + 16}px`;
+    pill.style.top = `${cy + 12}px`;
+  };
+  place(x, y);
+  source.addClass("jp-draggable--lifted");
+  try {
+    source.setPointerCapture(pointerId);
+  } catch (e) {
+  }
+  const blockScroll = (e) => e.preventDefault();
+  document.addEventListener("touchmove", blockScroll, { passive: false });
+  let zone = null;
+  let ended = false;
+  const end = () => {
+    if (ended)
+      return;
+    ended = true;
+    window.clearTimeout(deadman);
+    if (frame)
+      window.cancelAnimationFrame(frame);
+    document.removeEventListener("touchmove", blockScroll);
+    window.removeEventListener("pointermove", onMove, true);
+    window.removeEventListener("pointerup", onUp, true);
+    window.removeEventListener("pointercancel", onCancel, true);
+    window.removeEventListener("blur", onCancel);
+    document.removeEventListener("visibilitychange", onHide);
+    window.removeEventListener("keydown", onKey, true);
+    try {
+      source.releasePointerCapture(pointerId);
+    } catch (e) {
+    }
+    source.removeClass("jp-draggable--lifted");
+    pill.remove();
+    live = null;
+  };
+  const deadman = window.setTimeout(() => {
+    console.warn("[jp-collocations] pointer drag timed out; releasing the page");
+    end();
+  }, 3e4);
+  let frame = 0;
+  let at = null;
+  const settle2 = () => {
+    frame = 0;
+    if (!at || ended)
+      return;
+    const { x: x2, y: y2 } = at;
+    const z = zoneAt(x2, y2);
+    if (z !== zone) {
+      zone == null ? void 0 : zone.leave();
+      zone = z;
+      zone == null ? void 0 : zone.enter(payload);
+    }
+    zone == null ? void 0 : zone.over(x2, y2);
+  };
+  const onMove = (ev) => {
+    if (ev.pointerId !== pointerId)
+      return;
+    place(ev.clientX, ev.clientY);
+    at = { x: ev.clientX, y: ev.clientY };
+    if (!frame)
+      frame = window.requestAnimationFrame(settle2);
+  };
+  const onUp = (ev) => {
+    if (ev.pointerId !== pointerId)
+      return;
+    const landed = zone;
+    end();
+    const swallow = (c) => {
+      c.preventDefault();
+      c.stopPropagation();
+    };
+    window.addEventListener("click", swallow, { capture: true, once: true });
+    window.setTimeout(() => window.removeEventListener("click", swallow, true), 400);
+    if (landed)
+      landed.drop(payload, ev.clientX, ev.clientY);
+  };
+  const onCancel = (ev) => {
+    if (ev && "pointerId" in ev && ev.pointerId !== pointerId)
+      return;
+    zone == null ? void 0 : zone.leave();
+    end();
+  };
+  const onHide = () => {
+    if (document.hidden)
+      onCancel();
+  };
+  const onKey = (ev) => {
+    if (ev.key !== "Escape")
+      return;
+    ev.preventDefault();
+    onCancel();
+  };
+  window.addEventListener("pointermove", onMove, true);
+  window.addEventListener("pointerup", onUp, true);
+  window.addEventListener("pointercancel", onCancel, true);
+  window.addEventListener("blur", onCancel);
+  document.addEventListener("visibilitychange", onHide);
+  window.addEventListener("keydown", onKey, true);
+  live = { end };
+}
+function bindPointerDrag(el, payload, pill) {
+  el.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" || e.button !== 0 || live)
+      return;
+    const pid = e.pointerId, x0 = e.clientX, y0 = e.clientY;
+    let armTimer = window.setTimeout(
+      () => el.addClass("jp-draggable--arming"),
+      ARM_MS
+    );
+    let commitTimer = null;
+    const done = () => {
+      if (armTimer !== null) {
+        window.clearTimeout(armTimer);
+        armTimer = null;
+      }
+      if (commitTimer !== null) {
+        window.clearTimeout(commitTimer);
+        commitTimer = null;
+      }
+      el.removeClass("jp-draggable--arming");
+      el.removeEventListener("dragstart", onNative);
+      el.removeEventListener("pointermove", onCandidateMove);
+      el.removeEventListener("pointerup", done);
+      el.removeEventListener("pointercancel", done);
+    };
+    const onNative = () => done();
+    const onCandidateMove = (ev) => {
+      if (ev.pointerId !== pid)
+        return;
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > SLOP)
+        done();
+    };
+    commitTimer = window.setTimeout(() => {
+      const p = payload();
+      done();
+      if (!p || !p.text.trim())
+        return;
+      beginPointerDrag(el, p, pill(p), pid, x0, y0);
+    }, COMMIT_MS);
+    el.addEventListener("dragstart", onNative);
+    el.addEventListener("pointermove", onCandidateMove);
+    el.addEventListener("pointerup", done);
+    el.addEventListener("pointercancel", done);
+  });
+}
+
+// src/scraper/TsukubaWebCorpusScraper.ts
+var import_obsidian3 = require("obsidian");
 
 // src/scraper/goho.ts
 var norm = (s) => normalizeJapanese(s).replace(/\s+/g, "");
@@ -13972,7 +14152,7 @@ var TsukubaWebCorpusScraper = class _TsukubaWebCorpusScraper {
    */
   async post(url, fields, referer) {
     const body2 = Object.entries(fields).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
-    const resp = await (0, import_obsidian2.requestUrl)({
+    const resp = await (0, import_obsidian3.requestUrl)({
       url,
       method: "POST",
       headers: {
@@ -14059,8 +14239,8 @@ var TsukubaWebCorpusScraper = class _TsukubaWebCorpusScraper {
 var import_obsidian11 = require("obsidian");
 
 // src/ui/AddEntryModal.ts
-var import_obsidian3 = require("obsidian");
-var AddEntryModal = class extends import_obsidian3.Modal {
+var import_obsidian4 = require("obsidian");
+var AddEntryModal = class extends import_obsidian4.Modal {
   constructor(app, store, onSave, existing) {
     super(app);
     // Form state
@@ -14097,52 +14277,52 @@ var AddEntryModal = class extends import_obsidian3.Modal {
     contentEl.empty();
     contentEl.addClass("jp-col-modal");
     contentEl.createEl("h2", { text: this.existing ? "Edit Entry" : "Add Collocation Entry" });
-    new import_obsidian3.Setting(contentEl).setName("Headword *").setDesc("Main word (e.g. \u98A8)").addText((t) => t.setValue(this.headword).onChange((v) => {
+    new import_obsidian4.Setting(contentEl).setName("Headword *").setDesc("Main word (e.g. \u98A8)").addText((t) => t.setValue(this.headword).onChange((v) => {
       this.headword = v;
       this.headwordPOS = detectPOS(v);
     }));
-    new import_obsidian3.Setting(contentEl).setName("Reading").setDesc("Hiragana reading (e.g. \u304B\u305C)").addText((t) => t.setValue(this.headwordReading).onChange((v) => {
+    new import_obsidian4.Setting(contentEl).setName("Reading").setDesc("Hiragana reading (e.g. \u304B\u305C)").addText((t) => t.setValue(this.headwordReading).onChange((v) => {
       this.headwordReading = v;
     }));
-    new import_obsidian3.Setting(contentEl).setName("Collocate *").setDesc("Collocating word/phrase (e.g. \u304C\u5439\u304F)").addText((t) => t.setValue(this.collocate).onChange((v) => {
+    new import_obsidian4.Setting(contentEl).setName("Collocate *").setDesc("Collocating word/phrase (e.g. \u304C\u5439\u304F)").addText((t) => t.setValue(this.collocate).onChange((v) => {
       this.collocate = v;
     }));
-    new import_obsidian3.Setting(contentEl).setName("Full Phrase").setDesc("Complete phrase (auto-generated if empty)").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
+    new import_obsidian4.Setting(contentEl).setName("Full Phrase").setDesc("Complete phrase (auto-generated if empty)").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
       this.fullPhrase = v;
     }));
-    new import_obsidian3.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
+    new import_obsidian4.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
       for (const pos of Object.values(PartOfSpeech))
         d.addOption(pos, pos);
       d.setValue(this.headwordPOS).onChange((v) => {
         this.headwordPOS = v;
       });
     });
-    new import_obsidian3.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
+    new import_obsidian4.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
       for (const pos of Object.values(PartOfSpeech))
         d.addOption(pos, pos);
       d.setValue(this.collocatePOS).onChange((v) => {
         this.collocatePOS = v;
       });
     });
-    new import_obsidian3.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u304C+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
+    new import_obsidian4.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u304C+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
       this.pattern = v;
     }));
-    new import_obsidian3.Setting(contentEl).setName("Example Sentences").setDesc("One per line").addTextArea((t) => {
+    new import_obsidian4.Setting(contentEl).setName("Example Sentences").setDesc("One per line").addTextArea((t) => {
       t.setValue(this.exampleSentences).onChange((v) => {
         this.exampleSentences = v;
       });
       t.inputEl.rows = 3;
     });
-    new import_obsidian3.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags").addText((t) => t.setValue(this.tags).onChange((v) => {
+    new import_obsidian4.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags").addText((t) => t.setValue(this.tags).onChange((v) => {
       this.tags = v;
     }));
-    new import_obsidian3.Setting(contentEl).setName("Notes").addTextArea((t) => {
+    new import_obsidian4.Setting(contentEl).setName("Notes").addTextArea((t) => {
       t.setValue(this.notes).onChange((v) => {
         this.notes = v;
       });
       t.inputEl.rows = 2;
     });
-    new import_obsidian3.Setting(contentEl).setName("Frequency").setDesc("1-100 importance score").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
+    new import_obsidian4.Setting(contentEl).setName("Frequency").setDesc("1-100 importance score").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
       this.frequency = v;
     }));
     const btnRow = contentEl.createDiv("jp-col-modal-btns");
@@ -14154,7 +14334,7 @@ var AddEntryModal = class extends import_obsidian3.Modal {
   handleSave() {
     var _a2, _b2, _c2, _d2, _e2, _f2;
     if (!this.headword.trim() || !this.collocate.trim()) {
-      new import_obsidian3.Notice("Headword and Collocate are required.");
+      new import_obsidian4.Notice("Headword and Collocate are required.");
       return;
     }
     const now = Date.now();
@@ -14178,10 +14358,10 @@ var AddEntryModal = class extends import_obsidian3.Modal {
     };
     if (this.existing) {
       this.store.update(entry2);
-      new import_obsidian3.Notice(`Updated: ${phrase}`);
+      new import_obsidian4.Notice(`Updated: ${phrase}`);
     } else {
       this.store.add(entry2);
-      new import_obsidian3.Notice(`Added: ${phrase}`);
+      new import_obsidian4.Notice(`Added: ${phrase}`);
     }
     this.onSave();
     this.close();
@@ -14192,7 +14372,7 @@ var AddEntryModal = class extends import_obsidian3.Modal {
 };
 
 // src/ui/CardPreviewModal.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
 // src/discourse/discourse-patterns.ts
 var _counter = {};
@@ -20389,7 +20569,7 @@ function buildSection(id, text, start, end, allPatterns, _fullText) {
 }
 
 // src/ui/CardPreviewModal.ts
-var CardPreviewModal = class extends import_obsidian4.Modal {
+var CardPreviewModal = class extends import_obsidian5.Modal {
   constructor(app, sourceText, collocations, sourceFile, options, injectedCards) {
     super(app);
     this.cards = [];
@@ -20496,19 +20676,19 @@ var CardPreviewModal = class extends import_obsidian4.Modal {
     copyCurrentBtn.addEventListener("click", () => this.copyCurrentCard());
     const optSection = contentEl.createDiv("jp-srs-options");
     optSection.createEl("h4", { text: "\u2699\uFE0F \u30AA\u30D7\u30B7\u30E7\u30F3", cls: "jp-srs-opt-title" });
-    new import_obsidian4.Setting(optSection).setName("\u30EC\u30B8\u30B9\u30BF\u30FC\u8868\u793A").addToggle((t) => t.setValue(this.options.includeRegister).onChange((v) => {
+    new import_obsidian5.Setting(optSection).setName("\u30EC\u30B8\u30B9\u30BF\u30FC\u8868\u793A").addToggle((t) => t.setValue(this.options.includeRegister).onChange((v) => {
       this.options.includeRegister = v;
       this.regenerate();
     }));
-    new import_obsidian4.Setting(optSection).setName("\u95A2\u4FC2\u77E2\u5370").addToggle((t) => t.setValue(this.options.includeRelations).onChange((v) => {
+    new import_obsidian5.Setting(optSection).setName("\u95A2\u4FC2\u77E2\u5370").addToggle((t) => t.setValue(this.options.includeRelations).onChange((v) => {
       this.options.includeRelations = v;
       this.regenerate();
     }));
-    new import_obsidian4.Setting(optSection).setName("\u82F1\u8A9E\u30B0\u30ED\u30B9").addToggle((t) => t.setValue(this.options.includeEnglish).onChange((v) => {
+    new import_obsidian5.Setting(optSection).setName("\u82F1\u8A9E\u30B0\u30ED\u30B9").addToggle((t) => t.setValue(this.options.includeEnglish).onChange((v) => {
       this.options.includeEnglish = v;
       this.regenerate();
     }));
-    new import_obsidian4.Setting(optSection).setName("\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7").addToggle((t) => t.setValue(this.options.includeTimestamps).onChange((v) => {
+    new import_obsidian5.Setting(optSection).setName("\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7").addToggle((t) => t.setValue(this.options.includeTimestamps).onChange((v) => {
       this.options.includeTimestamps = v;
       this.regenerate();
     }));
@@ -20906,23 +21086,23 @@ var CardPreviewModal = class extends import_obsidian4.Modal {
       const file = existing;
       const currentContent = await this.app.vault.read(file);
       await this.app.vault.modify(file, currentContent + "\n\n" + content);
-      new import_obsidian4.Notice(`\u{1F4DD} ${this.cards.length} cards appended to ${targetPath}`);
+      new import_obsidian5.Notice(`\u{1F4DD} ${this.cards.length} cards appended to ${targetPath}`);
     } else {
       await this.app.vault.create(targetPath, content);
-      new import_obsidian4.Notice(`\u{1F4DD} ${this.cards.length} cards written to ${targetPath}`);
+      new import_obsidian5.Notice(`\u{1F4DD} ${this.cards.length} cards written to ${targetPath}`);
     }
     this.close();
   }
   async copyCards() {
     const content = buildCardFileContent(this.cards);
     await navigator.clipboard.writeText(content);
-    new import_obsidian4.Notice(`\u{1F4CB} ${this.cards.length} cards copied to clipboard`);
+    new import_obsidian5.Notice(`\u{1F4CB} ${this.cards.length} cards copied to clipboard`);
   }
   async copyCurrentCard() {
     const card = this.cards[this.currentIndex];
     if (card) {
       await navigator.clipboard.writeText(card.markdown);
-      new import_obsidian4.Notice("\u{1F4CB} Card copied to clipboard");
+      new import_obsidian5.Notice("\u{1F4CB} Card copied to clipboard");
     }
   }
   regenerate() {
@@ -23700,145 +23880,6 @@ function renderXUsage(host, u, deps) {
   return body2;
 }
 
-// src/ui/pointer-drag.ts
-var import_obsidian5 = require("obsidian");
-var zones = /* @__PURE__ */ new Set();
-function registerPointerDropZone(z) {
-  zones.add(z);
-  return () => {
-    zones.delete(z);
-  };
-}
-var SLOP = 10;
-var ARM_MS = 350;
-var COMMIT_MS = import_obsidian5.Platform.isPhone ? 380 : 700;
-var live = null;
-var pointerDragActive = () => live !== null;
-function zoneAt(x, y) {
-  let el = document.elementFromPoint(x, y);
-  while (el) {
-    for (const z of zones)
-      if (z.el === el)
-        return z;
-    el = el.parentElement;
-  }
-  return null;
-}
-function beginPointerDrag(source, payload, pill, pointerId, x, y) {
-  if (live) {
-    pill.remove();
-    return;
-  }
-  pill.addClass("jp-drag-pill--live");
-  const place = (cx, cy) => {
-    pill.style.left = `${cx + 16}px`;
-    pill.style.top = `${cy + 12}px`;
-  };
-  place(x, y);
-  source.addClass("jp-draggable--lifted");
-  try {
-    source.setPointerCapture(pointerId);
-  } catch (e) {
-  }
-  const blockScroll = (e) => e.preventDefault();
-  document.addEventListener("touchmove", blockScroll, { passive: false });
-  let zone = null;
-  const end = () => {
-    document.removeEventListener("touchmove", blockScroll);
-    source.removeEventListener("pointermove", onMove);
-    source.removeEventListener("pointerup", onUp);
-    source.removeEventListener("pointercancel", onCancel);
-    try {
-      source.releasePointerCapture(pointerId);
-    } catch (e) {
-    }
-    source.removeClass("jp-draggable--lifted");
-    pill.remove();
-    live = null;
-  };
-  const onMove = (ev) => {
-    if (ev.pointerId !== pointerId)
-      return;
-    place(ev.clientX, ev.clientY);
-    const z = zoneAt(ev.clientX, ev.clientY);
-    if (z !== zone) {
-      zone == null ? void 0 : zone.leave();
-      zone = z;
-      zone == null ? void 0 : zone.enter(payload);
-    }
-    zone == null ? void 0 : zone.over(ev.clientX, ev.clientY);
-  };
-  const onUp = (ev) => {
-    if (ev.pointerId !== pointerId)
-      return;
-    const landed = zone;
-    end();
-    const swallow = (c) => {
-      c.preventDefault();
-      c.stopPropagation();
-    };
-    window.addEventListener("click", swallow, { capture: true, once: true });
-    window.setTimeout(() => window.removeEventListener("click", swallow, true), 400);
-    if (landed)
-      landed.drop(payload, ev.clientX, ev.clientY);
-  };
-  const onCancel = (ev) => {
-    if (ev.pointerId !== pointerId)
-      return;
-    zone == null ? void 0 : zone.leave();
-    end();
-  };
-  source.addEventListener("pointermove", onMove);
-  source.addEventListener("pointerup", onUp);
-  source.addEventListener("pointercancel", onCancel);
-  live = { end };
-}
-function bindPointerDrag(el, payload, pill) {
-  el.addEventListener("pointerdown", (e) => {
-    if (e.pointerType === "mouse" || e.button !== 0 || live)
-      return;
-    const pid = e.pointerId, x0 = e.clientX, y0 = e.clientY;
-    let armTimer = window.setTimeout(
-      () => el.addClass("jp-draggable--arming"),
-      ARM_MS
-    );
-    let commitTimer = null;
-    const done = () => {
-      if (armTimer !== null) {
-        window.clearTimeout(armTimer);
-        armTimer = null;
-      }
-      if (commitTimer !== null) {
-        window.clearTimeout(commitTimer);
-        commitTimer = null;
-      }
-      el.removeClass("jp-draggable--arming");
-      el.removeEventListener("dragstart", onNative);
-      el.removeEventListener("pointermove", onCandidateMove);
-      el.removeEventListener("pointerup", done);
-      el.removeEventListener("pointercancel", done);
-    };
-    const onNative = () => done();
-    const onCandidateMove = (ev) => {
-      if (ev.pointerId !== pid)
-        return;
-      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > SLOP)
-        done();
-    };
-    commitTimer = window.setTimeout(() => {
-      const p = payload();
-      done();
-      if (!p || !p.text.trim())
-        return;
-      beginPointerDrag(el, p, pill(p), pid, x0, y0);
-    }, COMMIT_MS);
-    el.addEventListener("dragstart", onNative);
-    el.addEventListener("pointermove", onCandidateMove);
-    el.addEventListener("pointerup", done);
-    el.addEventListener("pointercancel", done);
-  });
-}
-
 // src/ui/hover-peek.ts
 var DWELL_MS = 320;
 var HoverPeek = class {
@@ -24696,6 +24737,7 @@ var hostOf2 = (url) => {
   }
 };
 var LIST_LIMIT = 600;
+var GOHO_PAGE = 12;
 var LexiconPanel = class {
   constructor(app, deps) {
     this.app = app;
@@ -24736,6 +24778,9 @@ var LexiconPanel = class {
     /** §22.7 — how the 語法 box ranks its chips. Defaults to what the source
      *  shipped; see the toggle for why it is offered rather than applied. */
     this.gohoSort = "freq";
+    /** Which 語法 frames have been expanded past `GOHO_PAGE`. Keyed by pattern id
+     *  or head line, so the state survives a re-sort. */
+    this.gohoOpen = /* @__PURE__ */ new Set();
     // ── §26.3 hover peek (shared component; mouse/Pencil only, never touch) ──
     this.peek = null;
   }
@@ -25970,12 +26015,15 @@ ${ex.url}` : cited;
    */
   renderGohoFrameBody(box, p, goho, f) {
     var _a2;
-    const rows = this.gohoChipOrder(f);
-    const measured = rows.some((r2) => r2.m);
-    if (f.total > f.items.length) {
+    const all = this.gohoChipOrder(f);
+    const measured = all.some((r2) => r2.m);
+    const key = f.patternId || f.label;
+    const openAll = this.gohoOpen.has(key);
+    const rows = openAll ? all : all.slice(0, GOHO_PAGE);
+    if (f.total > rows.length) {
       box.createDiv({
         cls: "jp-lex-goho-count",
-        text: `${f.items.length} / ${f.total.toLocaleString()}${f.atLeast ? "+" : ""}\u7A2E\u985E\u3092\u8868\u793A`
+        text: `${rows.length} / ${f.total.toLocaleString()}${f.atLeast ? "+" : ""}\u7A2E\u985E\u3092\u8868\u793A`
       });
     }
     if (!measured) {
@@ -25992,6 +26040,7 @@ ${ex.url}` : cited;
           meta: { headword: p.key, frame: f.label, source: goho.source }
         }));
       }
+      this.gohoMoreButton(box, key, all.length - rows.length);
       return;
     }
     const haveEx = new Set(((_a2 = goho.sourced) != null ? _a2 : []).map((e) => e.collocate).filter(Boolean));
@@ -26033,6 +26082,21 @@ ${ex.url}` : cited;
         meta: { headword: p.key, frame: f.label, source: goho.source }
       }));
     }
+    this.gohoMoreButton(box, key, all.length - rows.length);
+  }
+  /** "…and the other N held" — only when there are some, never as a stub. */
+  gohoMoreButton(box, key, hidden) {
+    if (hidden <= 0)
+      return;
+    const b = box.createEl("button", {
+      cls: "jp-lex-goho-more",
+      text: `\u3082\u3063\u3068\u898B\u308B\uFF08\u3042\u3068${hidden}\u4EF6\uFF09`,
+      attr: { title: "\u3053\u306E\u4ED8\u304D\u65B9\u306B\u3064\u3044\u3066\u53D6\u5F97\u6E08\u307F\u306E\u6B8B\u308A\u3092\u8868\u793A\u3057\u307E\u3059\uFF08\u8FFD\u52A0\u306E\u901A\u4FE1\u306F\u3042\u308A\u307E\u305B\u3093\uFF09" }
+    });
+    b.onclick = () => {
+      this.gohoOpen.add(key);
+      this.rerender();
+    };
   }
   gohoChipOrder(f) {
     const rows = f.items.map((text, i) => {
@@ -51157,6 +51221,7 @@ ${summary}
     await this.dm.flush();
     (_a2 = this.scraper) == null ? void 0 : _a2.abort();
     (_b2 = this.twcScraper) == null ? void 0 : _b2.abort();
+    abortPointerDrag();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(JP_DICTIONARY_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(JP_X_VIEW_TYPE);

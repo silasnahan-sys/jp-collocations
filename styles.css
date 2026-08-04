@@ -4701,6 +4701,13 @@
 }
 .jp-lex-goho-exbtn:hover { color: var(--text-accent); border-style: solid; }
 .jp-lex-goho-hasex { font-size: 9.5px; color: var(--text-faint); flex-shrink: 0; }
+.jp-lex-goho-more {
+  align-self: flex-start; margin-top: 4px;
+  font-size: 10.5px; padding: 3px 10px; min-height: 30px; cursor: pointer;
+  border-radius: 9px; background: transparent; color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+}
+.jp-lex-goho-more:hover { color: var(--text-normal); background: var(--background-modifier-hover); }
 
 /* An UNMEASURED source (Hyogen) gets a flowing block, because that is what its
    items are — 青空文庫 phrases, listed the way the site lists them. Twenty-four

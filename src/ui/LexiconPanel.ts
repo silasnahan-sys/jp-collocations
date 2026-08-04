@@ -64,6 +64,18 @@ type SortMode = 'auto' | 'kana' | 'new' | 'count' | 'cls';
 
 /** How the 語法 box ranks its collocate chips. */
 type GohoSort = 'freq' | 'dice';
+
+/**
+ * Collocation rows one frame shows before you ask for the rest.
+ *
+ * Not a storage limit — the frame holds `FRAME_ITEMS` either way. It is a DOM
+ * limit: six frames at 24 rows is 144 rows, each of which is a flex row with
+ * four children AND a drag source with its own listeners. That is enough to
+ * make an entry detail visibly slow to open and to scroll, on a surface whose
+ * whole promise is that it answers instantly. Twelve reads as a list; the rest
+ * are one tap away and the count says how many.
+ */
+const GOHO_PAGE = 12;
 /** `auto` resolved against the current query — never `auto` itself. */
 type EffectiveSort = 'kana' | 'new' | 'count' | 'cls' | 'score';
 
@@ -185,6 +197,9 @@ export class LexiconPanel {
   /** §22.7 — how the 語法 box ranks its chips. Defaults to what the source
    *  shipped; see the toggle for why it is offered rather than applied. */
   private gohoSort: GohoSort = 'freq';
+  /** Which 語法 frames have been expanded past `GOHO_PAGE`. Keyed by pattern id
+   *  or head line, so the state survives a re-sort. */
+  private gohoOpen = new Set<string>();
 
   constructor(private app: App, private deps: LexiconDeps) {}
 
@@ -1478,15 +1493,22 @@ export class LexiconPanel {
     goho: NonNullable<PatternEntry['payload']['goho']>,
     f: GohoFrame,
   ): void {
-    const rows = this.gohoChipOrder(f);
-    const measured = rows.some((r) => r.m);
+    const all = this.gohoChipOrder(f);
+    const measured = all.some((r) => r.m);
+    // Bounded DOM — see GOHO_PAGE. The key survives a re-sort because it is the
+    // frame's identity, not its position.
+    const key = f.patternId || f.label;
+    const openAll = this.gohoOpen.has(key);
+    const rows = openAll ? all : all.slice(0, GOHO_PAGE);
 
     // How much of this pattern is on screen, against how much exists. `total`
     // is the corpus's own 種類 count now, so this is exact rather than a hedge.
-    if (f.total > f.items.length) {
+    // Counts what is actually VISIBLE, not what is held — a number describing
+    // rows the reader cannot see is the §28 S6 problem in miniature.
+    if (f.total > rows.length) {
       box.createDiv({
         cls: 'jp-lex-goho-count',
-        text: `${f.items.length} / ${f.total.toLocaleString()}${f.atLeast ? '+' : ''}種類を表示`,
+        text: `${rows.length} / ${f.total.toLocaleString()}${f.atLeast ? '+' : ''}種類を表示`,
       });
     }
 
@@ -1503,6 +1525,7 @@ export class LexiconPanel {
           meta: { headword: p.key, frame: f.label, source: goho.source },
         }));
       }
+      this.gohoMoreButton(box, key, all.length - rows.length);
       return;
     }
 
@@ -1547,6 +1570,18 @@ export class LexiconPanel {
         meta: { headword: p.key, frame: f.label, source: goho.source },
       }));
     }
+    this.gohoMoreButton(box, key, all.length - rows.length);
+  }
+
+  /** "…and the other N held" — only when there are some, never as a stub. */
+  private gohoMoreButton(box: HTMLElement, key: string, hidden: number): void {
+    if (hidden <= 0) return;
+    const b = box.createEl('button', {
+      cls: 'jp-lex-goho-more',
+      text: `もっと見る（あと${hidden}件）`,
+      attr: { title: 'この付き方について取得済みの残りを表示します（追加の通信はありません）' },
+    });
+    b.onclick = () => { this.gohoOpen.add(key); this.rerender(); };
   }
 
   private gohoChipOrder(f: GohoFrame): Array<{ text: string; m?: GohoMeasured }> {

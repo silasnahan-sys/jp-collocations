@@ -103,6 +103,18 @@ let live: Session | null = null;
 export const pointerDragActive = (): boolean => live !== null;
 
 /**
+ * End any drag in flight. Called from `onunload`.
+ *
+ * The scroll blocker lives on `document`, which outlives the plugin: a drag
+ * still in flight when the plugin is disabled would leave the app unscrollable
+ * with the offending code already gone, and only a full window reload would
+ * clear it. Unload is one of the ways a gesture can be abandoned.
+ */
+export function abortPointerDrag(): void {
+  live?.end();
+}
+
+/**
  * Which registered zone is under this point.
  *
  * Walks UP from the topmost element so the DEEPEST registered surface wins —
@@ -158,33 +170,71 @@ export function beginPointerDrag(
    * `touch-action` is read when the touch sequence BEGINS — by now it has, so
    * setting it here would do nothing. A non-passive `touchmove` blocker is the
    * only thing that actually works once a gesture is already in progress.
+   *
+   * It is also the most dangerous thing in this file: while it is installed the
+   * page cannot scroll AT ALL, so every path out of a drag must reach `end()`.
+   * See the listener placement below.
    */
   const blockScroll = (e: TouchEvent): void => e.preventDefault();
   document.addEventListener('touchmove', blockScroll, { passive: false });
 
   let zone: PointerDropZone | null = null;
+  let ended = false;
 
   const end = (): void => {
+    if (ended) return;
+    ended = true;
+    window.clearTimeout(deadman);
+    if (frame) window.cancelAnimationFrame(frame);
     document.removeEventListener('touchmove', blockScroll);
-    source.removeEventListener('pointermove', onMove);
-    source.removeEventListener('pointerup', onUp);
-    source.removeEventListener('pointercancel', onCancel);
+    window.removeEventListener('pointermove', onMove, true);
+    window.removeEventListener('pointerup', onUp, true);
+    window.removeEventListener('pointercancel', onCancel, true);
+    window.removeEventListener('blur', onCancel);
+    document.removeEventListener('visibilitychange', onHide);
+    window.removeEventListener('keydown', onKey, true);
     try { source.releasePointerCapture(pointerId); } catch { /* already gone */ }
     source.removeClass('jp-draggable--lifted');
     pill.remove();
     live = null;
   };
 
-  const onMove = (ev: PointerEvent): void => {
-    if (ev.pointerId !== pointerId) return;
-    place(ev.clientX, ev.clientY);
-    const z = zoneAt(ev.clientX, ev.clientY);
+  /**
+   * Last resort. If every other path somehow fails to fire, the scroll blocker
+   * must still come off — a carry that silently locks the page is worse than a
+   * carry that gives up. Long enough that no real drag hits it.
+   */
+  const deadman = window.setTimeout(() => {
+    console.warn('[jp-collocations] pointer drag timed out; releasing the page');
+    end();
+  }, 30_000);
+
+  /**
+   * Pointer moves arrive faster than the screen refreshes, and each one costs
+   * two `elementFromPoint` hit-tests (which zone, then which card). Doing that
+   * per event burns the frame budget the drag itself needs to look smooth, so
+   * the pill follows immediately — that is just a transform — and the hit-test
+   * runs at most once per frame.
+   */
+  let frame = 0;
+  let at: { x: number; y: number } | null = null;
+  const settle = (): void => {
+    frame = 0;
+    if (!at || ended) return;
+    const { x, y } = at;
+    const z = zoneAt(x, y);
     if (z !== zone) {
       zone?.leave();
       zone = z;
       zone?.enter(payload);
     }
-    zone?.over(ev.clientX, ev.clientY);
+    zone?.over(x, y);
+  };
+  const onMove = (ev: PointerEvent): void => {
+    if (ev.pointerId !== pointerId) return;
+    place(ev.clientX, ev.clientY);
+    at = { x: ev.clientX, y: ev.clientY };
+    if (!frame) frame = window.requestAnimationFrame(settle);
   };
 
   const onUp = (ev: PointerEvent): void => {
@@ -208,15 +258,38 @@ export function beginPointerDrag(
     if (landed) landed.drop(payload, ev.clientX, ev.clientY);
   };
 
-  const onCancel = (ev: PointerEvent): void => {
-    if (ev.pointerId !== pointerId) return;
+  const onCancel = (ev?: Event): void => {
+    if (ev && 'pointerId' in ev && (ev as PointerEvent).pointerId !== pointerId) return;
     zone?.leave();
     end();
   };
+  const onHide = (): void => { if (document.hidden) onCancel(); };
+  const onKey = (ev: KeyboardEvent): void => {
+    if (ev.key !== 'Escape') return;
+    ev.preventDefault();
+    onCancel();
+  };
 
-  source.addEventListener('pointermove', onMove);
-  source.addEventListener('pointerup', onUp);
-  source.addEventListener('pointercancel', onCancel);
+  /**
+   * Listened for on WINDOW, in the capture phase — never on `source`.
+   *
+   * `source` is a row inside a panel that re-renders itself, and a drop handler
+   * re-renders it. Listeners attached to the row die with the row, so a drag
+   * that outlived one re-render never reached `end()`: the pointer capture was
+   * already lost, `pointerup` went to a detached node, and the non-passive
+   * `touchmove` blocker above stayed installed — leaving the whole page
+   * unscrollable with no way back short of reloading the plugin.
+   *
+   * The window outlives every re-render, so every one of these fires. Escape,
+   * losing focus and backgrounding the app end it too, because the ways a
+   * gesture can be abandoned are not limited to lifting the pointer.
+   */
+  window.addEventListener('pointermove', onMove, true);
+  window.addEventListener('pointerup', onUp, true);
+  window.addEventListener('pointercancel', onCancel, true);
+  window.addEventListener('blur', onCancel);
+  document.addEventListener('visibilitychange', onHide);
+  window.addEventListener('keydown', onKey, true);
   live = { end };
 }
 
