@@ -117,7 +117,11 @@ export function corpusSurfaces(p: PatternEntry): string[] {
     out.push(t);
   };
 
-  // The grammar itself is searchable — 「風＋助詞」 is a thing you might look for.
+  // The grammar itself is searchable — 「風＋助詞」 is a thing you might look
+  // for. The INDEX is used, not just the drilled frames: an undrilled way of
+  // attaching is still a way this word attaches, and it would be strange for
+  // 「風が＋形容詞」 to become findable only after you happened to open it.
+  for (const t of goho.index ?? []) push(t.name);
   for (const f of goho.frames ?? []) push(f.label);
 
   const frames = goho.frames ?? [];

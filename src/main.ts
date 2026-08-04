@@ -7,6 +7,7 @@ import { stripDerivedIndexes, extractSecrets, scrubSettingsForPersist, SECRET_LS
 import { SearchEngine } from "./search/SearchEngine";
 import { HyogenScraper } from "./scraper/HyogenScraper";
 import { hyogenExamples } from "./scraper/hyogen-parse";
+import { normalizeJapanese } from "./utils/japanese";
 import { TsukubaWebCorpusScraper } from "./scraper/TsukubaWebCorpusScraper";
 import { CollocationView, JP_COLLOCATIONS_VIEW_TYPE, setCollocationViewResolver } from "./ui/CollocationView";
 import { SearchModal } from "./ui/SearchModal";
@@ -580,105 +581,68 @@ export default class JPCollocationsPlugin extends Plugin {
         // restriction, 青空文庫-derived); its structured profile carries the
         // direction / sense / POS / particle-facet grammar that the old flat
         // `collocates: string[]` threw away.
-        fetchGoho: (this.settings.hyogenEnabled || this.settings.twcEnabled) ? async (p) => {
+        // §22.7 drill-down: the index says HOW the word attaches; these two open
+        // one way, and then one collocation inside it. Each freezes what it
+        // finds through `extendGoho`, which is fill-only — so the profile gets
+        // deeper where you look without anything already recorded being
+        // rewritten (§2.4 survives; only coverage grows).
+        drillPattern: this.settings.twcEnabled ? async (p, patternId) => {
+          const pat = p.payload.goho?.index?.find((t) => t.id === patternId);
+          if (!pat) return false;
           const word = p.payload.lemma ?? p.key;
+          const progress = new Notice(`語法: ${pat.name} を取得中…`, 0);
           try {
-            // NINJAL-LWP first when it is on: it is the only source that says
-            // how OFTEN each way of attaching is used and whether a pairing is
-            // selective (MI / logDice) rather than merely frequent. Hyogen
-            // answers when TWC is off or does not have the word — it has the
-            // 青空文庫 phrases TWC's grid does not carry.
-            if (this.settings.twcEnabled) {
-              // ~11 rate-limited round trips. ONE Notice, updated in place, so
-              // the wait reads as progress rather than as a hang (§28 S6).
-              const progress = new Notice(`語法: 「${word}」を照会中…`, 0);
-              const twc = new TsukubaWebCorpusScraper(this.app, this.store, {
-                rateLimit: this.settings.twcRateLimit,
-                onProgress: (msg) => progress.setMessage(`語法: ${msg}`),
-              });
-              let prof: Awaited<ReturnType<typeof twc.profile>>;
-              try { prof = await twc.profile(word); } finally { progress.hide(); }
-              if (prof?.frames.length) {
-                const shown = prof.frames.length;
-                const profile = profileFromFrames(
-                  {
-                    frames: prof.frames,
-                    // The ways of attaching that were counted but not drilled
-                    // into stay reachable rather than silently dropped (§28 S6),
-                    // and so is the other word spelled the same way — 風 is
-                    // 形容動詞 フウ (80,779例) and 名詞 カゼ (322例) in this corpus.
-                    facets: [
-                      { label: `全${prof.patterns.length}パターンを見る`, url: prof.url },
-                      ...prof.alternates.map((a) => ({
-                        label: `${a.headword}〈${a.yomi}・${a.pos}〉${a.freq.toLocaleString()}例`,
-                        url: TsukubaWebCorpusScraper.pageFor(a.id),
-                      })),
-                    ],
-                    total: prof.headword.freq,
-                    // Attested sentences, each carrying the document and URL it
-                    // came from — §28 S2, provenance is never dropped.
-                    // `attested`: TWC names the document AND links it, so each
-                    // of these is a citation, not a listing (cf. Hyogen's
-                    // `phrase` items). `frame`/`collocate` are what the batch
-                    // was requested for — the pairing cannot be recovered from
-                    // the text afterwards, so it travels with the sentence.
-                    examples: prof.examples.map((e) => ({
-                      text: e.text, source: e.source, url: e.url, span: e.span, ref: e.ref,
-                      kind: 'attested' as const, frame: e.frame, collocate: e.collocate,
-                    })),
-                  },
-                  p.key, "NINJAL-LWP for TWC", Date.now(),
-                );
-                const ok = await this.patternStore.setGoho(p.id, profile);
-                if (ok) {
-                  const ex = profile.sourced?.length ? ` · 用例${profile.sourced.length}件（出典つき）` : "";
-                  // Say WHICH lemma was profiled — with a homograph the reading
-                  // is the difference between two different words.
-                  const alt = prof.alternates.length ? ` ／ 別語義${prof.alternates.length}件は絞込みから` : "";
-                  new Notice(
-                    `語法プロフィール〈${prof.headword.yomi}・${prof.headword.pos}〉: ` +
-                    `${shown}/${prof.patterns.length}通りの付き方 · ` +
-                    `${prof.headword.freq.toLocaleString()}例（表示は各${FRAME_ITEMS}件）${ex}${alt}`,
-                    7000);
-                }
-                return ok;
-              }
-              if (!this.settings.hyogenEnabled) {
-                new Notice(`語法: 「${word}」は TWC の見出し語にありません`, 6000);
-                return false;
-              }
-            }
-
-            if (!this.settings.hyogenEnabled) return false;
-            const hy = await new HyogenScraper(this.app, this.store, { rateLimit: 0 }).profile(word);
-            if (!hy.total) {
-              new Notice(`語法: 「${word}」は Hyogen に見つかりませんでした`, 6000);
-              return false;
-            }
-            // Hyogen's items ARE its 青空文庫 phrases — the one thing TWC's
-            // grid does not carry. They used to reach the panel only as
-            // collocate chips, indistinguishable from a bare particle pairing,
-            // while the 用例 row rendered nothing for this source at all.
-            const hyEx = hyogenExamples(hy, HyogenScraper.pageFor(word));
-            const profile = profileFromFrames(
-              { frames: hy.sections, facets: hy.facets, total: hy.total, examples: hyEx },
-              p.key, "hyogen", Date.now(),
-            );
-            const ok = await this.patternStore.setGoho(p.id, profile);
-            if (ok) {
-              const ex = hyEx.length ? ` · 用例${hyEx.length}件（青空文庫）` : "";
-              new Notice(
-                `語法プロフィール: ${hy.sections.length}通りの付き方 / ${hy.total.toLocaleString()}例（表示は各${FRAME_ITEMS}件）${ex}`,
-                7000);
-            }
+            const twc = new TsukubaWebCorpusScraper(this.app, this.store, {
+              rateLimit: this.settings.twcRateLimit,
+              onProgress: (msg) => progress.setMessage(`語法: ${msg}`),
+            });
+            const senses = await twc.resolve(word);
+            if (!senses[0]) { new Notice(`語法: 「${word}」は TWC の見出し語にありません`, 5000); return false; }
+            await sleep(this.settings.twcRateLimit);
+            const frame = await twc.drillPattern(senses[0].id, {
+              id: pat.id, name: pat.name, freq: pat.freq, share: pat.share, category: pat.category,
+            });
+            if (!frame) { new Notice(`語法: ${pat.name} は共起語が返りませんでした`, 5000); return false; }
+            const ok = await this.patternStore.extendGoho(p.id, { frame });
+            if (ok) new Notice(`${pat.name}: ${frame.total.toLocaleString()}種類のうち ${frame.items.length}件を展開`, 5000);
             return ok;
           } catch (e) {
-            // §28 S6 — say what failed, where the thing would have been.
-            console.error("[jp-collocations] goho fetch failed:", e);
             new Notice(`語法の取得に失敗: ${e instanceof Error ? e.message : String(e)}`, 8000);
             return false;
-          }
+          } finally { progress.hide(); }
         } : undefined,
+
+        drillExamples: this.settings.twcEnabled ? async (p, frameLabel, colloc) => {
+          const word = p.payload.lemma ?? p.key;
+          const progress = new Notice(`用例: 「${colloc.text}」を取得中…`, 0);
+          try {
+            const twc = new TsukubaWebCorpusScraper(this.app, this.store, {
+              rateLimit: this.settings.twcRateLimit,
+              onProgress: (msg) => progress.setMessage(msg),
+            });
+            const senses = await twc.resolve(word);
+            if (!senses[0]) return false;
+            await sleep(this.settings.twcRateLimit);
+            const rows = await twc.drillExamples(senses[0].id, colloc, frameLabel);
+            const ok = await this.patternStore.extendGoho(p.id, {
+              examples: rows.map((e) => ({
+                text: e.text, source: e.source, url: e.url, span: e.span, ref: e.ref,
+                kind: 'attested' as const, frame: e.frame, collocate: e.collocate,
+              })),
+            });
+            new Notice(ok
+              ? `「${colloc.text}」の用例 ${rows.length}件を取り込みました（全${colloc.freq.toLocaleString()}件中）`
+              : `「${colloc.text}」の用例は取得済みです`, 5000);
+            return ok;
+          } catch (e) {
+            new Notice(`用例の取得に失敗: ${e instanceof Error ? e.message : String(e)}`, 8000);
+            return false;
+          } finally { progress.hide(); }
+        } : undefined,
+
+        fetchGoho: (this.settings.hyogenEnabled || this.settings.twcEnabled)
+          ? (p) => this.freezeGoho(p)
+          : undefined,
         captureCorpus: (p, example, prov) => {
           // §28 S2 — when the corpus told us which document a sentence came
           // from, that is the provenance, not the adapter's name. "corpus" as a
@@ -6335,51 +6299,217 @@ export default class JPCollocationsPlugin extends Plugin {
       new Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
-    if (this.scraper?.isRunning()) {
-      new Notice("Scraper is already running.");
+    // Same road as TWC and as the panel's own button (§28 S5): the words name
+    // catalog entries and each gets a frozen profile. The old body called
+    // `scraper.run()`, which wrote up to 40 flat rows PER SECTION into the
+    // legacy store with the section label as their gloss — the 語彙 list filling
+    // with corpus output above the user's own noticings.
+    const { found, missing } = this.entriesForWords(this.settings.hyogenWordList);
+    if (!found.length) {
+      new Notice("語法: 設定の語に対応する台帳エントリがありません。", 8000);
       return;
     }
-    this.scraper = new HyogenScraper(this.app, this.store, {
-      rateLimit: this.settings.hyogenRateLimit,
-      onProgress: msg => new Notice(msg, 3000),
-      onEntry: () => this.refreshViews(),
-    });
-    this.scraper.enqueue(this.settings.hyogenWordList);
-    new Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
-    const count = await this.scraper.run();
-    new Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    let ok = 0, already = 0;
+    for (const p of found) {
+      if (p.payload.goho) { already++; continue; }
+      if (await this.freezeGoho(p)) ok++;
+    }
+    const parts = [`語法: ${ok}語を取得`];
+    if (already) parts.push(`${already}語は取得済み（固定）`);
+    if (missing.length) parts.push(`台帳になし: ${missing.slice(0, 5).join("・")}${missing.length > 5 ? "…" : ""}`);
+    new Notice(parts.join(" / "), 8000);
     this.refreshViews();
   }
 
+  /**
+   * §22.7 — fetch a 語法プロフィール for ONE catalog entry and freeze it.
+   *
+   * §28 S5 says every medium funnels into the same path, and this is that path
+   * for the corpus. The 語彙 panel's button, the `fetch-twc` command and the
+   * word-list command all end here, so a profile means the same thing however
+   * you asked for it — a frozen structure hanging off an entry you classified,
+   * never a pile of rows.
+   *
+   * NINJAL-LWP first when it is on: it is the only source that says how OFTEN
+   * each way of attaching is used and whether a pairing is selective (MI /
+   * logDice) rather than merely frequent. Hyogen answers when TWC is off or
+   * does not have the word — it has the 青空文庫 phrases TWC's grid does not.
+   */
+  private async freezeGoho(p: PatternEntry): Promise<boolean> {
+    const word = p.payload.lemma ?? p.key;
+    try {
+      if (this.settings.twcEnabled) {
+        // A few rate-limited round trips. ONE Notice, updated in place, so the
+        // wait reads as progress rather than as a hang (§28 S6).
+        const progress = new Notice(`語法: 「${word}」を照会中…`, 0);
+        const twc = new TsukubaWebCorpusScraper(this.app, this.store, {
+          rateLimit: this.settings.twcRateLimit,
+          onProgress: (msg) => progress.setMessage(`語法: ${msg}`),
+        });
+        let prof: Awaited<ReturnType<typeof twc.profile>>;
+        try { prof = await twc.profile(word); } finally { progress.hide(); }
+        if (prof?.frames.length) {
+          const shown = prof.frames.length;
+          const profile = profileFromFrames(
+            {
+              frames: prof.frames,
+              // EVERY way the word attaches, drilled or not — the site's own
+              // left-hand panel. One request gets all of them, so keeping six
+              // and discarding fourteen was never a saving; it just deleted
+              // whole categories (助詞＋形容詞, 助動詞, 接頭辞・接尾辞) silently.
+              index: prof.patterns.map((t) => ({
+                id: t.id, name: t.name, category: t.category, freq: t.freq, share: t.share,
+              })),
+              // The other word spelled the same way stays reachable — 風 is
+              // 形容動詞 フウ (80,779例) and 名詞 カゼ (322例) in this corpus.
+              facets: [
+                { label: `全${prof.patterns.length}パターンを見る`, url: prof.url },
+                ...prof.alternates.map((a) => ({
+                  label: `${a.headword}〈${a.yomi}・${a.pos}〉${a.freq.toLocaleString()}例`,
+                  url: TsukubaWebCorpusScraper.pageFor(a.id),
+                })),
+              ],
+              total: prof.headword.freq,
+              // `attested`: TWC names the document AND links it, so each of
+              // these is a citation, not a listing (cf. Hyogen's `phrase`
+              // items). `frame`/`collocate` are what the batch was requested
+              // for — the pairing cannot be recovered from the text afterwards.
+              examples: prof.examples.map((e) => ({
+                text: e.text, source: e.source, url: e.url, span: e.span, ref: e.ref,
+                kind: 'attested' as const, frame: e.frame, collocate: e.collocate,
+              })),
+            },
+            p.key, "NINJAL-LWP for TWC", Date.now(),
+          );
+          const ok = await this.patternStore.setGoho(p.id, profile);
+          if (ok) {
+            const ex = profile.sourced?.length ? ` · 用例${profile.sourced.length}件（出典つき）` : "";
+            // Say WHICH lemma was profiled — with a homograph the reading is
+            // the difference between two different words.
+            const alt = prof.alternates.length ? ` ／ 別語義${prof.alternates.length}件は絞込みから` : "";
+            new Notice(
+              `語法プロフィール〈${prof.headword.yomi}・${prof.headword.pos}〉: ` +
+              `${prof.patterns.length}通りの付き方を記録（${shown}件を展開済み — ` +
+              `残りは項目をタップで取得）· ` +
+              `${prof.headword.freq.toLocaleString()}例${ex}${alt}`,
+              7000);
+          }
+          return ok;
+        }
+        if (!this.settings.hyogenEnabled) {
+          new Notice(`語法: 「${word}」は TWC の見出し語にありません`, 6000);
+          return false;
+        }
+      }
+
+      if (!this.settings.hyogenEnabled) return false;
+      const hy = await new HyogenScraper(this.app, this.store, { rateLimit: 0 }).profile(word);
+      if (!hy.total) {
+        new Notice(`語法: 「${word}」は Hyogen に見つかりませんでした`, 6000);
+        return false;
+      }
+      // Hyogen's items ARE its 青空文庫 phrases — the one thing TWC's grid does
+      // not carry.
+      const hyEx = hyogenExamples(hy, HyogenScraper.pageFor(word));
+      const profile = profileFromFrames(
+        { frames: hy.sections, facets: hy.facets, total: hy.total, examples: hyEx },
+        p.key, "hyogen", Date.now(),
+      );
+      const ok = await this.patternStore.setGoho(p.id, profile);
+      if (ok) {
+        const ex = hyEx.length ? ` · 用例${hyEx.length}件（青空文庫）` : "";
+        new Notice(
+          `語法プロフィール: ${hy.sections.length}通りの付き方 / ${hy.total.toLocaleString()}例（表示は各${FRAME_ITEMS}件）${ex}`,
+          7000);
+      }
+      return ok;
+    } catch (e) {
+      // §28 S6 — say what failed, where the thing would have been.
+      console.error("[jp-collocations] goho fetch failed:", e);
+      new Notice(`語法の取得に失敗: ${e instanceof Error ? e.message : String(e)}`, 8000);
+      return false;
+    }
+  }
+
+  /**
+   * The catalog entries these words name, if any.
+   *
+   * Deliberately does NOT create one for a word with no entry. The corpus is a
+   * recall machine and the hand is the classifier (§12): manufacturing a
+   * catalog entry out of a scrape would be the machine filing a noticing you
+   * never had, and the six classes are human-assigned by construction. A word
+   * with no entry is reported, not invented.
+   */
+  private entriesForWords(words: string[]): { found: PatternEntry[]; missing: string[] } {
+    const norm = (s: string): string => normalizeJapanese(s).replace(/\s+/g, "");
+    const byKey = new Map<string, PatternEntry>();
+    for (const e of this.patternStore.all()) {
+      for (const k of [e.key, e.payload.lemma ?? ""]) {
+        const n = norm(k);
+        if (n && !byKey.has(n)) byKey.set(n, e);
+      }
+    }
+    const found: PatternEntry[] = [];
+    const missing: string[] = [];
+    const seen = new Set<string>();
+    for (const w of words) {
+      const hit = byKey.get(norm(w));
+      if (hit && !seen.has(hit.id)) { seen.add(hit.id); found.push(hit); }
+      else if (!hit) missing.push(w);
+    }
+    return { found, missing };
+  }
+
+  /**
+   * Fetch 語法 profiles for words, onto the entries that are those words.
+   *
+   * This used to call `scraper.run()`, which wrote up to `MAX_FRAMES ×
+   * maxPerPattern` = **120 flat `CollocationEntry` rows per word** into the
+   * legacy store — 600+ corpus rows sitting above the user's own noticings in
+   * the 語彙 list, each showing its raw `freq=… MI=… logDice=… — URL` string as
+   * its gloss. That is the §28 stratum order inverted in the most visible
+   * surface in the plugin, and the same data in a worse shape than the frozen
+   * profile already holds it in.
+   *
+   * The corpus is still fully reachable: it is indexed for search (badged 📊),
+   * it contributes to every context card, and it is the 語法 box on the entry.
+   */
   private async fetchFromTWC(words: string[]): Promise<void> {
     if (!this.settings.twcEnabled) {
       new Notice("TWC検索は無効です。設定で有効にしてください。");
       return;
     }
-    if (this.twcScraper?.isRunning()) {
-      new Notice("TWCスクレーパーは実行中です。");
+    const { found, missing } = this.entriesForWords(words);
+    if (!found.length) {
+      new Notice(
+        `語法: 「${words.join("・")}」に対応する台帳エントリがありません。` +
+        `先に分類して台帳に入れてください（コーパスは台帳を作りません）`, 8000);
       return;
     }
-    this.twcScraper = new TsukubaWebCorpusScraper(this.app, this.store, {
-      rateLimit: this.settings.twcRateLimit,
-      onProgress: msg => new Notice(msg, 3000),
-      onEntry: () => this.refreshViews(),
-    });
-    this.twcScraper.enqueue(words);
-    new Notice(`TWC: ${words.length}語の共起プロファイルを取得中...`);
-    const count = await this.twcScraper.run();
-    new Notice(`TWC完了: ${count}件の共起データを追加しました。`);
+    let ok = 0, already = 0;
+    for (const p of found) {
+      if (p.payload.goho) { already++; continue; }   // §2.4 — frozen, never re-fetched
+      if (await this.freezeGoho(p)) ok++;
+    }
+    const parts = [`語法: ${ok}語を取得`];
+    if (already) parts.push(`${already}語は取得済み（固定）`);
+    if (missing.length) parts.push(`台帳になし: ${missing.slice(0, 5).join("・")}${missing.length > 5 ? "…" : ""}`);
+    new Notice(parts.join(" / "), 8000);
     this.refreshViews();
   }
 
   private async fetchFromTWCWordlist(): Promise<void> {
-    // Collect headwords from existing store entries
-    const entries = this.store.exportAll();
-    const headwords = [...new Set(entries.map(e => e.headword))].slice(0, 50);
-    if (headwords.length === 0) {
-      new Notice("語彙データがありません。先にエントリを追加してください。");
+    // The catalog's own keys — the words you have actually noticed. Reading
+    // headwords out of the legacy store would ask the corpus about rows the
+    // corpus itself put there on a previous run.
+    const keys = this.patternStore.all()
+      .filter((e) => !e.payload.goho)
+      .slice(0, 50)
+      .map((e) => e.payload.lemma ?? e.key);
+    if (keys.length === 0) {
+      new Notice("語法を未取得の台帳エントリがありません。", 6000);
       return;
     }
-    await this.fetchFromTWC(headwords);
+    await this.fetchFromTWC(keys);
   }
 }

@@ -43,7 +43,7 @@ import type { CollocationStore } from '../data/CollocationStore.ts';
 import { MAX_FRAMES } from './goho.ts';
 import {
   parseHeadwords, parsePatterns, parseCollocates, parseExamples, collocationKey, toFrame,
-  groupExamplesByCollocation, citationsByCollocation,
+  groupExamplesByCollocation, citationsByCollocation, posOfId,
   type TwcHeadword, type TwcPattern, type TwcFrame, type TwcExample,
 } from './twc-parse.ts';
 
@@ -97,7 +97,17 @@ const DEFAULT_TWC_OPTIONS: TWCScraperOptions = {
  * user a rate-limited round trip per discarded frame, so this tracks it exactly.
  * The rest stay reachable through `url`.
  */
-export const MAX_PATTERNS = MAX_FRAMES;
+/**
+ * How many ways-of-attaching the FIRST fetch drills into.
+ *
+ * Lower than it was, and deliberately: the index now captures all of them in
+ * one request, so the initial fetch only has to put enough on screen to be
+ * worth reading. The rest are named, ranked and one tap away, which is both
+ * cheaper and more honest than picking six and discarding fourteen.
+ */
+export const MAX_PATTERNS = 3;
+/** Kept for callers that still cap a frozen frame list. */
+export { MAX_FRAMES };
 /**
  * Rows asked for per pattern.
  *
@@ -292,6 +302,50 @@ export class TsukubaWebCorpusScraper {
     }
 
     return { headword, alternates, patterns, frames, examples, url };
+  }
+
+  /**
+   * ONE pattern's collocations, on demand — the middle panel of the site's own
+   * 語彙プロファイル.
+   *
+   * The counterpart to freezing the index whole: the index says 風 attaches 20
+   * ways and how often each is used, and this answers "what attaches THAT way"
+   * for the one you actually opened. A single rate-limited request, so the
+   * profile deepens where you look instead of paying up front for 20 drills
+   * whose results are mostly never read.
+   */
+  async drillPattern(headwordId: string, pattern: TwcPattern): Promise<TwcFrame | null> {
+    const url = TsukubaWebCorpusScraper.pageFor(headwordId);
+    this.options.onProgress?.(`${pattern.name} — 共起語を取得中…`);
+    const list = await this.collocates(headwordId, pattern.id, url);
+    // A pattern the corpus counts but whose drill-down comes back empty is a
+    // rejected request, not an empty pattern — do not publish it as one.
+    if (!list.rows.length) return null;
+    return toFrame(posOfId(headwordId), pattern, list);
+  }
+
+  /**
+   * ONE collocation's attested sentences — the site's right-hand panel.
+   *
+   * `expectFreq` is that collocation's own corpus frequency; `parseExamples`
+   * verifies the response against it, because identity here is a number and
+   * never a string (the grid is lemmatised, the sentences are surface).
+   */
+  async drillExamples(
+    headwordId: string,
+    collocation: { id: string; text: string; freq: number },
+    frameLabel: string,
+  ): Promise<TwcExample[]> {
+    const url = TsukubaWebCorpusScraper.pageFor(headwordId);
+    this.options.onProgress?.(`「${collocation.text}」の用例を取得中…`);
+    const got = await this.examples(headwordId, collocation.id, collocation.freq, url);
+    if (got.mismatch) {
+      throw new Error(`用例の件数が共起頻度と一致しません（${collocation.text}）— 取り込みを中止しました`);
+    }
+    // Stamped with the pairing we asked for; it cannot be recovered afterwards.
+    return got.rows.map((r) => ({
+      ...r, collocationId: collocation.id, collocate: collocation.text, frame: frameLabel,
+    }));
   }
 
   /** The TWC page for one lemma — where the profile's truncations stay reachable. */

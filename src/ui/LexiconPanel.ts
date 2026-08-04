@@ -114,6 +114,20 @@ export interface LexiconDeps {
   generateScaffold?: (p: PatternEntry) => Promise<number>;
   /** §22.7: fetch + freeze the 語法プロフィール (absent = corpus disabled). */
   fetchGoho?: (p: PatternEntry) => Promise<boolean>;
+  /**
+   * §22.7 drill: fetch ONE indexed pattern's collocations and freeze them.
+   *
+   * The index names every way the word attaches; this opens one of them. A
+   * rate-limited round trip, so it happens when you ask, not up front for
+   * twenty patterns you will not read.
+   */
+  drillPattern?: (p: PatternEntry, patternId: string) => Promise<boolean>;
+  /** §22.7 drill: fetch ONE collocation's attested sentences and freeze them. */
+  drillExamples?: (
+    p: PatternEntry,
+    frameLabel: string,
+    collocation: { id: string; text: string; freq: number },
+  ) => Promise<boolean>;
   /** §22.7: capture a corpus example as a curated-stratum attestation. */
   captureCorpus?: (
     p: PatternEntry,
@@ -1123,11 +1137,85 @@ export class LexiconPanel {
         }
       }
 
-      // §22.7 — the GRAMMAR half: one block per way the word attaches. A flat
-      // chip row cannot say that 「風が吹く」 and 「そよ風」 are the same word in
-      // two different positions, and that distinction is the whole reason to
-      // consult a corpus rather than a list.
-      for (const f of goho.frames ?? []) {
+      /**
+       * §22.7 — the GRAMMAR half, as the corpus itself organises it.
+       *
+       * NINJAL-LWP's own 語彙プロファイル is three panels: every way the word
+       * attaches, grouped into categories, on the left; that way's collocations
+       * in the middle; that collocation's 用例 on the right. This box used to be
+       * a flat list of the six most frequent ways, which meant 風's 助詞＋形容詞,
+       * 助動詞, 接頭辞・接尾辞 and 動詞連用形＋風 categories were not truncated —
+       * they were absent, with nothing on screen to say so.
+       *
+       * The index is now frozen whole (one request), so every way is named and
+       * ranked here whether or not it has been opened. An unopened row is a
+       * labelled hole, not a gap: it says what it is, how often it happens, and
+       * that a tap will fetch it (§27.0.2 — a hole is held open on purpose, and
+       * it is legible).
+       */
+      const drilled = new Map<string, GohoFrame>();
+      for (const f of goho.frames ?? []) if (f.patternId) drilled.set(f.patternId, f);
+
+      if (goho.index?.length) {
+        // Category order follows the index's own frequency ranking — the first
+        // category to appear is the one holding the word's commonest behaviour,
+        // which is the order the site presents too.
+        const byCat = new Map<string, typeof goho.index>();
+        for (const row of goho.index) {
+          const cat = row.category || 'その他';
+          if (!byCat.has(cat)) byCat.set(cat, []);
+          byCat.get(cat)!.push(row);
+        }
+        for (const [cat, rows] of byCat) {
+          const catFreq = rows.reduce((n, r) => n + r.freq, 0);
+          const catHead = g.createDiv('jp-lex-goho-cat');
+          catHead.createSpan({ text: cat, cls: 'jp-lex-goho-cat-name' });
+          catHead.createSpan({
+            text: `${rows.length}通り · ${catFreq.toLocaleString()}回`,
+            cls: 'jp-lex-goho-cat-count',
+          });
+          for (const row of rows) {
+            const frame = drilled.get(row.id);
+            const box = g.createDiv(`jp-lex-goho-frame${frame ? '' : ' jp-lex-goho-frame--shut'}`);
+            const head = box.createDiv('jp-lex-goho-frame-head');
+            head.createSpan({ text: row.name, cls: 'jp-lex-goho-arrow' });
+            // The share as a BAR, not only a number: 88.2% and 3.1% are the
+            // shape of the word's behaviour, and a bar is read at a glance
+            // where two decimal figures are compared by arithmetic.
+            const bar = head.createDiv('jp-lex-goho-bar');
+            bar.createDiv('jp-lex-goho-bar-fill').style.width =
+              `${Math.max(1, Math.min(100, row.share))}%`;
+            bar.title = `${row.name} — コーパス中 ${row.freq.toLocaleString()}回 · ${p.key}の全用例の${row.share}%`;
+            head.createSpan({ text: `${row.share}%`, cls: 'jp-lex-goho-share' });
+            head.createSpan({ text: `${row.freq.toLocaleString()}回`, cls: 'jp-lex-goho-count' });
+
+            if (frame) {
+              this.renderGohoFrameBody(box, p, goho, frame);
+            } else if (this.deps.drillPattern) {
+              const open = box.createEl('button', {
+                cls: 'jp-lex-goho-open',
+                text: '＋ 共起語を取得',
+                attr: { title: `${row.name} の共起語をコーパスから取得します（1リクエスト）` },
+              });
+              open.onclick = async () => {
+                open.disabled = true;
+                open.setText('取得中…');
+                try { await this.deps.drillPattern!(p, row.id); } catch (e) { new Notice(String(e)); }
+                this.rerender();
+              };
+            } else {
+              // No drill available (TWC off, or a profile frozen by Hyogen).
+              // The row still states what exists rather than pretending it does not.
+              box.createDiv({ cls: 'jp-lex-goho-shut-note', text: '未取得' });
+            }
+          }
+        }
+      }
+
+      // Frames the index does not account for: Hyogen's sections, and profiles
+      // frozen before the index existed. They keep the original head, because
+      // their identity is a direction and a sense rather than a pattern id.
+      for (const f of (goho.frames ?? []).filter((x) => !x.patternId || !goho.index?.length)) {
         const box = g.createDiv('jp-lex-goho-frame');
         const head = box.createDiv('jp-lex-goho-frame-head');
         // 'unmarked' means the source made no positional claim (TWC's 近接動詞
@@ -1150,47 +1238,10 @@ export class LexiconPanel {
             ? `この付き方はコーパス中 ${f.freq.toLocaleString()}回 — ${p.key}の全用例の${f.share}%`
             : `${p.key}の全用例の${f.share}%`;
         }
-        // The cap must never read as the total (§28 S6). `atLeast` means even
-        // the total is a floor — "24 / 1,000+件", never a confident 1,000.
-        const more = f.atLeast ? '+' : '';
-        head.createSpan({
-          text: f.total > f.items.length
-            ? `${f.items.length} / ${f.total.toLocaleString()}${more}件`
-            : `${f.total}${more}件`,
-          cls: 'jp-lex-goho-count',
-        });
-        const chips = box.createDiv('jp-lex-goho-chips');
-        // `measured` is parallel to `items` when the source has association
-        // measures; sources without them (Hyogen) fall through unchanged.
-        for (const { text: it, m } of this.gohoChipOrder(f)) {
-          const chip = chips.createEl('button', { text: it, cls: 'jp-lex-goho-chip' });
-          if (m) {
-            // Show the number the box is currently RANKED by, so the ordering
-            // on screen is always explained by the figure next to it.
-            chip.createSpan({
-              text: this.gohoSort === 'dice' ? m.logDice.toFixed(1) : String(m.freq),
-              cls: 'jp-lex-goho-chip-freq',
-            });
-            // Frequency alone cannot separate 「風を」(common because を is) from
-            // 「クーラーの風」(rare, but the pairing IS the word). MI can.
-            chip.title = `${it} — ${m.freq.toLocaleString()}回 · MI ${m.mi.toFixed(2)} · logDice ${m.logDice.toFixed(2)}\n台帳へ取り込む（📊 コーパス層）`;
-          } else {
-            chip.title = `${arrow} — 台帳へ取り込む（📊 コーパス層）`;
-          }
-          chip.onclick = () => this.deps.captureCorpus
-            ? this.deps.captureCorpus(p, it)
-            : this.deps.openDict(it);
-          // §29 — a collocate is a THING, so it is carryable. Dragging it into
-          // Apple Notes or an editor pane beats reading it off the screen and
-          // retyping it, which is what a click-only chip leaves you doing.
-          makeDraggable(chip, () => ({
-            kind: 'entry',
-            text: it,
-            label: it,
-            sub: m ? `${goho.source} · ${m.freq.toLocaleString()}回` : goho.source,
-            meta: { headword: p.key, frame: f.label, source: goho.source },
-          }));
-        }
+        // The count lives in the body now, once, so a frame cannot print it
+        // twice with two different roundings (§28 S6 is about one true number,
+        // not about mentioning it often).
+        this.renderGohoFrameBody(box, p, goho, f);
       }
 
       // The particle facets: the rest of the corpus, reachable rather than lost.
@@ -1235,7 +1286,37 @@ export class LexiconPanel {
             : `用例 ${shownEx.length}件（うち出典つき ${attested}件）`,
         });
       }
+      /**
+       * Grouped under the collocation they attest, the way the corpus's own
+       * right-hand panel is headed 「のをいる 22,351件」.
+       *
+       * A sentence is evidence for ONE pairing. Eight of them in a flat list
+       * under a whole word reads as eight facts about the word; under their
+       * collocation they read as what they are — and the count says how many
+       * more the corpus holds behind the ones taken.
+       */
+      const exGroups = new Map<string, GohoExample[]>();
       for (const ex of shownEx) {
+        const key = ex.collocate ?? '';
+        if (!exGroups.has(key)) exGroups.set(key, []);
+        exGroups.get(key)!.push(ex);
+      }
+      for (const [collocate, group] of exGroups) {
+        if (collocate) {
+          const head = g.createDiv('jp-lex-goho-exgroup');
+          head.createSpan({ text: collocate, cls: 'jp-lex-goho-exgroup-word' });
+          const held = (goho.frames ?? [])
+            .flatMap((f) => f.measured ?? [])
+            .find((m) => m.text === collocate)?.freq;
+          if (held) {
+            head.createSpan({
+              text: `${group.length} / ${held.toLocaleString()}件`,
+              cls: 'jp-lex-goho-exgroup-count',
+              attr: { title: `コーパスは「${collocate}」の用例を ${held.toLocaleString()}件もっています` },
+            });
+          }
+        }
+        for (const ex of group) {
         const kind = ex.kind ?? (ex.url ? 'attested' : 'phrase');
         const row = g.createDiv(`jp-lex-goho-ex jp-lex-goho-ex--${kind}`);
         const quote = row.createSpan({ cls: 'jp-lex-leaf-quote jp-lex-tappable' });
@@ -1285,6 +1366,7 @@ export class LexiconPanel {
           sub: cited || goho.source,
           meta: { headword: p.key, source: cited || goho.source, url: ex.url, frame: ex.frame },
         }));
+        }
       }
     } else if (goho) {
       // fetched but empty: no box (a box must carry data, §26.0 test e) —
@@ -1373,6 +1455,100 @@ export class LexiconPanel {
    * `m` undefined and its page order intact. Sorting a list that has nothing to
    * sort by would silently reorder Hyogen's items for no reason.
    */
+  /**
+   * What attaches THIS way — the middle panel of the corpus's own profile.
+   *
+   * Two renderings, because the two sources are carrying different things and
+   * flattening them to one shape is what made the box feel unlike either.
+   *
+   * A **measured** source (TWC) gets rows: the collocation, its frequency, MI
+   * and logDice. Three numbers per item is a table, and a table is right here —
+   * that is what the site shows, and comparing 「風を」(freq 145, MI 4.11)
+   * against 「クーラーの風」(freq 3, MI 9.2) is the entire reason to consult a
+   * corpus instead of a word list. Each row can fetch its own 用例.
+   *
+   * An **unmeasured** source (Hyogen) gets a flowing block, because that is
+   * what its items are: 青空文庫 phrases, listed the way the site lists them.
+   * Rendering 24 of them as bordered chips turned language into a spreadsheet
+   * with nothing to put in the columns.
+   */
+  private renderGohoFrameBody(
+    box: HTMLElement,
+    p: PatternEntry,
+    goho: NonNullable<PatternEntry['payload']['goho']>,
+    f: GohoFrame,
+  ): void {
+    const rows = this.gohoChipOrder(f);
+    const measured = rows.some((r) => r.m);
+
+    // How much of this pattern is on screen, against how much exists. `total`
+    // is the corpus's own 種類 count now, so this is exact rather than a hedge.
+    if (f.total > f.items.length) {
+      box.createDiv({
+        cls: 'jp-lex-goho-count',
+        text: `${f.items.length} / ${f.total.toLocaleString()}${f.atLeast ? '+' : ''}種類を表示`,
+      });
+    }
+
+    if (!measured) {
+      const block = box.createDiv('jp-lex-goho-block');
+      for (const { text: it } of rows) {
+        const item = block.createSpan({ text: it, cls: 'jp-lex-goho-phrase jp-lex-tappable' });
+        item.title = `${it} — 台帳へ取り込む（📊 コーパス層）`;
+        item.onclick = () => this.deps.captureCorpus
+          ? this.deps.captureCorpus(p, it)
+          : this.deps.openDict(it);
+        makeDraggable(item, () => ({
+          kind: 'entry', text: it, label: it, sub: goho.source,
+          meta: { headword: p.key, frame: f.label, source: goho.source },
+        }));
+      }
+      return;
+    }
+
+    // Which collocations already have their sentences, so a row can say so
+    // rather than offering to fetch what is already held.
+    const haveEx = new Set((goho.sourced ?? []).map((e) => e.collocate).filter(Boolean) as string[]);
+
+    const grid = box.createDiv('jp-lex-goho-grid');
+    for (const { text: it, m } of rows) {
+      const row = grid.createDiv('jp-lex-goho-row');
+      const word = row.createSpan({ text: it, cls: 'jp-lex-goho-word jp-lex-tappable' });
+      word.title = `${it} — 台帳へ取り込む（📊 コーパス層）`;
+      word.onclick = () => this.deps.captureCorpus
+        ? this.deps.captureCorpus(p, it)
+        : this.deps.openDict(it);
+      if (m) {
+        row.createSpan({ text: m.freq.toLocaleString(), cls: 'jp-lex-goho-num jp-lex-goho-num--freq' });
+        row.createSpan({ text: m.mi.toFixed(2), cls: 'jp-lex-goho-num' });
+        row.createSpan({ text: m.logDice.toFixed(2), cls: 'jp-lex-goho-num' });
+        // The 用例 for THIS pairing, on request. The corpus holds `m.freq` of
+        // them; the profile takes a page and says so.
+        if (this.deps.drillExamples && m.id && !haveEx.has(it)) {
+          const b = row.createEl('button', {
+            text: '用例', cls: 'jp-lex-goho-exbtn',
+            attr: { title: `「${it}」の用例を取得（コーパスに ${m.freq.toLocaleString()}件）` },
+          });
+          b.onclick = async () => {
+            b.disabled = true;
+            b.setText('…');
+            try {
+              await this.deps.drillExamples!(p, f.label, { id: m.id!, text: it, freq: m.freq });
+            } catch (e) { new Notice(String(e)); }
+            this.rerender();
+          };
+        } else if (haveEx.has(it)) {
+          row.createSpan({ text: '✓用例', cls: 'jp-lex-goho-hasex', attr: { title: '用例は取り込み済みです' } });
+        }
+      }
+      makeDraggable(row, () => ({
+        kind: 'entry', text: it, label: it,
+        sub: m ? `${goho.source} · ${m.freq.toLocaleString()}回` : goho.source,
+        meta: { headword: p.key, frame: f.label, source: goho.source },
+      }));
+    }
+  }
+
   private gohoChipOrder(f: GohoFrame): Array<{ text: string; m?: GohoMeasured }> {
     const rows = f.items.map((text, i) => {
       const m = f.measured?.[i];

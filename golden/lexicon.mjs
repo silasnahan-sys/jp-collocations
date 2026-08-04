@@ -239,6 +239,17 @@ console.log('══ §22.7 the frozen 語法 profile is INDEXED ══');
   check('the grammar itself is searchable too',
     US.unifiedSearch({ patterns, collocations: [], query: '名詞＋の＋風' }).some((r) => r.id === 'g1'));
 
+  // An UNDRILLED way of attaching is still a way this word attaches. It would
+  // be strange for 「風が＋形容詞」 to become findable only once you happened to
+  // open it, so the index is indexed, not just the drilled frames.
+  const indexed = pat('g6', 'collocation', 'かぜ', [], {
+    goho: { fetchedAt: 1, source: 'twc', collocates: [], examples: [], frames: [],
+      index: [{ id: 'C001', name: '風が＋形容詞', category: '助詞＋形容詞', freq: 8, share: 2.5 }] },
+  });
+  const idxHit = US.unifiedSearch({ patterns: [indexed], collocations: [], query: '風が＋形容詞' });
+  check('an unopened pattern is findable by name', idxHit.length === 1 && idxHit[0].id === 'g6');
+  check('and is marked as a corpus match', idxHit[0].viaCorpus === true);
+
   // §28 stratum order, as arithmetic: a corpus hit can make an entry findable;
   // it can never make it outrank an entry the user named themselves.
   const rival = pat('g3', 'collocation', 'クーラーの風', [att('yt', 'T/C.md', 3, 'クーラーの風が寒い')]);

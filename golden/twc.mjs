@@ -173,12 +173,23 @@ console.log('\n══ frames: what the profile actually freezes ══');
   check(`truncation stays honest: ${cut.frames[0].items.length} shown of ${cut.frames[0].total}`,
     cut.frames[0].items.length === G.FRAME_ITEMS && cut.frames[0].total === 50);
 
-  // …and when even the TOTAL is a cap, it must not pass for a count. 走る's
-  // 走る＋名詞 returns the requested 100 rows and has more; rendering that as
-  // "100件" would be a number the corpus never said.
+  // A total the SOURCE stated stays exact even when the fetch was truncated.
+  //
+  // This check used to assert the opposite, and was right to at the time: with
+  // no 種類 count available the only number in hand was "how many rows came
+  // back", so a truncated fetch had to hedge. `records` changed the facts —
+  // TWC states 「のを… 3,868種類」 whether or not you took all of them — and
+  // hedging a number the corpus is certain about is its own kind of dishonesty.
   const capped = G.profileFromFrames({ frames: [{ ...many, complete: false }] }, '風', 'twc', 0);
-  check('an incomplete list marks its total as a floor', capped.frames[0].atLeast === true);
-  check('…while a complete one does not', cut.frames[0].atLeast === undefined);
+  check('a STATED total is exact even when the fetch was cut short',
+    capped.frames[0].atLeast === undefined && capped.frames[0].total === 50);
+  check('…and a complete one likewise', cut.frames[0].atLeast === undefined);
+  // The '+' survives for the case it was really about: no total was ever
+  // stated, so the count is just what we happened to receive.
+  const unknown = G.profileFromFrames(
+    { frames: [{ ...frames[1], items: Array.from({ length: 30 }, (_, i) => `y${i}`), total: undefined, complete: false }] },
+    '風', 'twc', 0);
+  check('an UNSTATED total is a floor', unknown.frames[0].atLeast === true);
   check('and a whole pattern that fits is reported exactly',
     T.parseCollocates(fx('twc-colloc-kaze-J001.json'), 'N.25644.J001').complete === true);
 }
@@ -304,6 +315,63 @@ console.log('\n══ examples land on the collocate they were FETCHED for ═�
     T.citationsByCollocation(stamped).get(target.id));
   check('and a sentence with neither document nor url contributes none',
     T.citationsByCollocation(stamped.map((s) => ({ ...s, source: '', url: '' }))).size === 0);
+}
+
+console.log('\n══ the category grouping the site shows, and we were discarding ══');
+{
+  // NINJAL-LWP's left-hand panel groups the ways a word attaches — 助詞＋動詞,
+  // 他の名詞との共起, 接頭辞・接尾辞. That grouping is carried by the pattern
+  // id's letter prefix, and nothing read it: 20 ways arrived as one flat
+  // frequency-ordered list and the grammatical shape was thrown away.
+  const pats = T.parsePatterns(fx('twc-patterns-kaze.json'));
+  check('every pattern is categorised or honestly blank',
+    pats.every((p) => typeof p.category === 'string'));
+
+  const cat = (id) => pats.find((p) => p.id === id)?.category;
+  check('J001 風＋助詞 → 助詞', cat('J001') === '助詞', cat('J001'));
+  check('A005 風を… → 助詞＋動詞', cat('A005') === '助詞＋動詞', cat('A005'));
+  check('H007 名詞＋の＋風 → 他の名詞との共起', cat('H007') === '他の名詞との共起', cat('H007'));
+  check('C001 風が＋形容詞 → 助詞＋形容詞', cat('C001') === '助詞＋形容詞', cat('C001'));
+  check('I001 接頭辞＋風 → 接頭辞・接尾辞', cat('I001') === '接頭辞・接尾辞', cat('I001'));
+  check('K001 風＋助動詞 → 助動詞', cat('K001') === '助動詞', cat('K001'));
+  check('B002 動詞連用形＋風 → 動詞', cat('B002') === '動詞', cat('B002'));
+
+  // The 風 fixture partitions into 7 groups across 20 patterns — six of which
+  // used to be dropped entirely by MAX_FRAMES, categories and all.
+  const groups = new Set(pats.map((p) => p.category));
+  check(`${pats.length} patterns fall into ${groups.size} categories`, groups.size === 7, [...groups].join(' / '));
+
+  // An UNMEASURED prefix must not be handed an invented label — same rule as
+  // `posOfId` returning '' rather than guessing a part of speech.
+  check('an unknown prefix is blank, never a guess', T.patternCategory('Z999') === '');
+  check('and a malformed id does not throw', T.patternCategory('') === '' && T.patternCategory('123') === '');
+  check('the category rides into the frame',
+    T.toFrame('名詞', pats.find((p) => p.id === 'H007'),
+      T.parseCollocates(fx('twc-colloc-kaze-H007.json'), 'N.25644.H007')).category === '他の名詞との共起');
+}
+
+console.log('\n══ the count printed was the PAGE SIZE, not the count ══');
+{
+  // `records` is the site's own 種類 figure (「のを… 3,868種類」) and nothing read
+  // it. `toFrame` reported `measured.length` — how many rows one request
+  // returned — so a pattern with thousands of kinds rendered as "24 / 100+件".
+  // The fixtures fit on one page, which is precisely why this survived.
+  const list = T.parseCollocates(fx('twc-colloc-kaze-H007.json'), 'N.25644.H007');
+  check('records is parsed', list.records === 15, String(list.records));
+  check('and equals the row count when it all fits on one page', list.records === list.rows.length);
+
+  const pats = T.parsePatterns(fx('twc-patterns-kaze.json'));
+  // Simulate the real shape: server holds 3,868, hands back a page of 100.
+  const paged = { ...list, rows: list.rows.slice(0, 4), records: 3868, complete: false };
+  const frame = T.toFrame('名詞', pats.find((p) => p.id === 'H007'), paged);
+  check('the frame reports the CORPUS total, not the page', frame.total === 3868, String(frame.total));
+  check('and knows it does not hold them all', frame.complete === false);
+  const frozen = G.profileFromFrames({ frames: [frame] }, '風', 'twc', 0);
+  check('which survives the freeze as an exact number, unhedged',
+    frozen.frames[0].total === 3868 && frozen.frames[0].atLeast === undefined);
+  // A single-page pattern still says complete, so the UI offers no false depth.
+  check('a pattern that fits is complete',
+    T.toFrame('名詞', pats.find((p) => p.id === 'H007'), list).complete === true);
 }
 
 console.log('\n══ the two kinds of example evidence stay apart (§28 S3) ══');

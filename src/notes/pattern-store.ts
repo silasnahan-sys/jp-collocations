@@ -22,7 +22,7 @@
  */
 
 import { normalizeJapanese } from '../utils/japanese.ts';
-import type { GohoProfile } from '../scraper/goho.ts';
+import type { GohoProfile, GohoFrame, GohoExample } from '../scraper/goho.ts';
 import { splitPatternParts } from './pipeline.ts';
 import type { NoteClass } from './note-types.ts';
 
@@ -441,6 +441,70 @@ export class PatternStore {
     const e = this.entries.get(id);
     if (!e || e.payload.goho) return false;
     e.payload = { ...e.payload, goho };
+    e.updatedAt = Date.now();
+    await this.persist();
+    return true;
+  }
+
+  /**
+   * §22.7 drill-down: ADD a piece to a frozen profile without altering it.
+   *
+   * `setGoho` refuses to overwrite because §2.4 says a later site change must
+   * not be able to rewrite a past entry. That is right, and it is also why the
+   * profile could never get deeper than its first fetch: a corpus whose own UI
+   * is a three-pane drill-down was being reduced to one snapshot forever.
+   *
+   * This is the reconciliation. **Fill-only, never replace.** A frame whose
+   * pattern is already frozen is dropped, not merged; an example already held
+   * is dropped, not re-recorded. So the invariant that matters — nothing
+   * already written can change — survives, while a pattern you open for the
+   * first time can record what it found. What grows is coverage; what is
+   * frozen stays frozen.
+   *
+   * Returns false when the entry has no profile yet (nothing to extend — fetch
+   * first) or when every piece offered was already present.
+   */
+  async extendGoho(
+    id: string,
+    patch: { frame?: GohoFrame; examples?: GohoExample[] },
+  ): Promise<boolean> {
+    const e = this.entries.get(id);
+    const goho = e?.payload.goho;
+    if (!e || !goho) return false;
+
+    let changed = false;
+    const frames = [...(goho.frames ?? [])];
+    if (patch.frame) {
+      // Identity is the pattern id where the source has one (TWC); a source
+      // without ids falls back to the head line, which is what distinguishes
+      // its sections (Hyogen's 「～ 風[名詞]2」).
+      const key = (f: { patternId?: string; label: string }): string => f.patternId || f.label;
+      if (!frames.some((f) => key(f) === key(patch.frame!))) {
+        frames.push(patch.frame);
+        changed = true;
+      }
+    }
+
+    const sourced = [...(goho.sourced ?? [])];
+    if (patch.examples?.length) {
+      const seen = new Set(sourced.map((s) => s.text));
+      for (const ex of patch.examples) {
+        if (!ex.text || seen.has(ex.text)) continue;
+        seen.add(ex.text);
+        sourced.push(ex);
+        changed = true;
+      }
+    }
+    if (!changed) return false;
+
+    e.payload = {
+      ...e.payload,
+      goho: {
+        ...goho,
+        frames,
+        ...(sourced.length ? { sourced, examples: sourced.map((s) => s.text) } : {}),
+      },
+    };
     e.updatedAt = Date.now();
     await this.persist();
     return true;

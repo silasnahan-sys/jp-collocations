@@ -73,6 +73,9 @@ export interface TwcPattern {
   freq: number;
   /** percent of the headword's occurrences, as the site reports it. */
   share: number;
+  /** the site's own grouping for this pattern, from the id prefix. '' when the
+   *  prefix has not been measured — see `patternCategory`. */
+  category: string;
 }
 
 export interface TwcCollocate {
@@ -97,6 +100,17 @@ export interface TwcCollocationList {
   rows: TwcCollocate[];
   /** false when the server reported further pages — the count is a floor. */
   complete: boolean;
+  /**
+   * How many DISTINCT collocations this pattern has — the site's own 種類 count
+   * (「のを… 3,868種類」 in its grid header).
+   *
+   * The envelope's `records`, which nothing read until now. Without it the only
+   * number available was `rows.length`, i.e. how big a page we asked for, and
+   * the panel printed that as the total — so a pattern with 3,868 kinds
+   * rendered as "24 / 100+件". The cap must never read as the count (§28 S6),
+   * and reading a page size as a count is a stronger version of the same lie.
+   */
+  records: number;
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -113,6 +127,51 @@ const POS_BY_PREFIX: Record<string, string> = {
 export function posOfId(headwordId: string): string {
   const m = /^([A-Z]+)\./.exec(headwordId ?? '');
   return m ? (POS_BY_PREFIX[m[1]] ?? '') : '';
+}
+
+/**
+ * Pattern-id prefix → the category NINJAL-LWP files that pattern under.
+ *
+ * This is the grouping in the site's own left-hand panel — 助詞＋動詞, 他の名詞
+ * との共起, 接頭辞・接尾辞 — and it was being discarded. `posOfId` reads the
+ * HEADWORD id's prefix; nothing read the PATTERN id's, so 20 ways of attaching
+ * arrived as one flat frequency-ordered list and the grammatical shape of the
+ * profile was thrown away on the floor.
+ *
+ * Measured off a live 風 lookup (`golden/fixtures/twc-patterns-kaze.json`),
+ * where the prefixes partition exactly as the site groups them:
+ *
+ *   A×7  風を… 風が… 風に… 風で…      → 助詞＋動詞
+ *   B×1  動詞連用形＋風                 → 動詞
+ *   C×3  風が＋形容詞 風に＋形容詞      → 助詞＋形容詞
+ *   H×6  風＋名詞 名詞＋の＋風 並立     → 他の名詞との共起
+ *   I×1  接頭辞＋風                     → 接頭辞・接尾辞
+ *   J×1  風＋助詞                       → 助詞
+ *   K×1  風＋助動詞                     → 助動詞
+ *
+ * **Only those seven are in the table, because only those seven were measured.**
+ * The site's panel for の shows further groups (形容詞, 連体詞, 副詞化, 体言止め,
+ * 未分類) whose prefixes have not been observed, and assigning them a letter
+ * from the pattern of the others would be inventing data — the same reason
+ * `posOfId` returns '' for an unknown prefix rather than guessing. An
+ * uncategorised pattern still renders: it keeps its own `name`, which is the
+ * part that actually says what it is.
+ */
+const CATEGORY_BY_PREFIX: Record<string, string> = {
+  A: '助詞＋動詞',
+  B: '動詞',
+  C: '助詞＋形容詞',
+  H: '他の名詞との共起',
+  I: '接頭辞・接尾辞',
+  J: '助詞',
+  K: '助動詞',
+};
+
+/** The category for a pattern id (`H007` → 他の名詞との共起), or '' when the
+ *  prefix has not been measured. Never a guess. */
+export function patternCategory(patternId: string): string {
+  const m = /^([A-Z]+)/.exec(patternId ?? '');
+  return m ? (CATEGORY_BY_PREFIX[m[1]] ?? '') : '';
 }
 
 /** `N.25644` + `H007` → `N.25644.H007`, the key both the URL and the body need. */
@@ -192,7 +251,7 @@ export function parsePatterns(json: unknown): TwcPattern[] {
     const id = str(r.id);
     const name = str(r.name);
     if (!id || !name) continue;
-    out.push({ id, name, freq: num(r.freq), share: num(r.percentage) });
+    out.push({ id, name, freq: num(r.freq), share: num(r.percentage), category: patternCategory(id) });
   }
   return out.sort((a, b) => b.freq - a.freq);
 }
@@ -230,7 +289,10 @@ export function parseCollocates(json: unknown, expectKey: string): TwcCollocatio
   }
   // `total` is a PAGE count. One page means what we hold is the whole list.
   const pages = num(g.total);
-  return { patternId, rows, complete: pages <= 1 };
+  // `records` is the row count the server holds. On a single-page response it
+  // equals `rows.length`, which is why the fixtures never exposed the bug.
+  const records = num((g as { records?: number }).records) || rows.length;
+  return { patternId, rows, complete: pages <= 1, records };
 }
 
 // ── examples ─────────────────────────────────────────────────────────────────
@@ -401,12 +463,18 @@ export interface TwcFrame {
   direction: TwcDirection;
   label: string;
   items: string[];
+  /** the pattern's DISTINCT-collocation count (`records`), not the page size. */
   total: number;
   freq: number;
   share: number;
   measured: TwcMeasured[];
   /** false when the source had more collocates than were fetched. */
   complete: boolean;
+  /** `H007` — which pattern this frame drilled, so a frozen frame can be
+   *  matched back to its row in the index. */
+  patternId: string;
+  /** the index category this pattern sits under. */
+  category: string;
 }
 
 /**
@@ -439,11 +507,20 @@ export function toFrame(
     pos: headwordPos,
     direction,
     label: pattern.name,
+    patternId: pattern.id,
+    category: pattern.category,
     items: measured.map((c) => c.text),
-    total: measured.length,
+    // The pattern's real 種類 count. This used to be `measured.length` — how
+    // many rows one request returned — so a truncated frame reported the page
+    // size as its total.
+    total: Math.max(list.records, measured.length),
     freq: pattern.freq,
     share: pattern.share,
     measured: measured.map((c) => ({ text: c.text, freq: c.freq, mi: c.mi, logDice: c.logDice, id: c.id })),
-    complete: list.complete,
+    // "we hold every distinct collocation this pattern has" — which is a
+    // different question from "is the total we print exact". Since `records`
+    // arrived, the total IS exact even when this is false, so the UI can offer
+    // to fetch more without the count having to hedge.
+    complete: measured.length >= list.records,
   };
 }

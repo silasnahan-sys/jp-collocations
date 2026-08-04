@@ -13396,7 +13396,7 @@ var FRAME_ITEMS = 24;
 var MAX_FRAMES = 6;
 var MAX_EXAMPLES = 8;
 function profileFromFrames(input, key, source, now) {
-  var _a2, _b2, _c2, _d2;
+  var _a2, _b2, _c2, _d2, _e2;
   const nKey = norm(key);
   const frames = [...input.frames].sort((a, b) => {
     var _a3, _b3;
@@ -13407,12 +13407,24 @@ function profileFromFrames(input, key, source, now) {
       pos: f.pos,
       direction: f.direction,
       label: f.label,
+      ...f.patternId ? { patternId: f.patternId } : {},
+      ...f.category ? { category: f.category } : {},
       ...f.sense !== void 0 ? { sense: f.sense } : {},
       items: f.items.slice(0, FRAME_ITEMS),
       // A source may know its true total exceeds what it handed us; only fall
       // back to counting when it does not say (§28 S6).
       total: (_a3 = f.total) != null ? _a3 : f.items.length,
-      ...f.complete === false ? { atLeast: true } : {},
+      /**
+       * The total is a FLOOR only when the source never stated one.
+       *
+       * This used to be "the source was truncated", which conflated two
+       * different facts. Since `records` arrived, TWC states an exact 種類 count
+       * (「のを… 3,868種類」) even on a truncated fetch, so "24 / 3,868件" is a
+       * true sentence and rendering it as "3,868+件" would hedge a number the
+       * corpus was certain about. The '+' now appears only where the count
+       * really is just "how many we happened to receive".
+       */
+      ...f.complete === false && f.total === void 0 ? { atLeast: true } : {},
       ...f.freq !== void 0 ? { freq: f.freq } : {},
       ...f.share !== void 0 ? { share: f.share } : {},
       // Copied field-by-field rather than passed through: an adapter's row type
@@ -13473,7 +13485,11 @@ function profileFromFrames(input, key, source, now) {
     examples: kept.map((e) => e.text),
     ...kept.length ? { sourced: kept } : {},
     frames,
-    ...((_d2 = input.facets) == null ? void 0 : _d2.length) ? { facets: input.facets } : {},
+    // Every way of attaching, drilled or not. Frozen whole because it is ONE
+    // request and because the alternative — keeping six and discarding the
+    // rest — throws away categories, not just rows.
+    ...((_d2 = input.index) == null ? void 0 : _d2.length) ? { index: input.index } : {},
+    ...((_e2 = input.facets) == null ? void 0 : _e2.length) ? { facets: input.facets } : {},
     ...input.total ? { sourceTotal: input.total } : {}
   };
 }
@@ -13490,6 +13506,20 @@ function posOfId(headwordId) {
   var _a2;
   const m = /^([A-Z]+)\./.exec(headwordId != null ? headwordId : "");
   return m ? (_a2 = POS_BY_PREFIX[m[1]]) != null ? _a2 : "" : "";
+}
+var CATEGORY_BY_PREFIX = {
+  A: "\u52A9\u8A5E\uFF0B\u52D5\u8A5E",
+  B: "\u52D5\u8A5E",
+  C: "\u52A9\u8A5E\uFF0B\u5F62\u5BB9\u8A5E",
+  H: "\u4ED6\u306E\u540D\u8A5E\u3068\u306E\u5171\u8D77",
+  I: "\u63A5\u982D\u8F9E\u30FB\u63A5\u5C3E\u8F9E",
+  J: "\u52A9\u8A5E",
+  K: "\u52A9\u52D5\u8A5E"
+};
+function patternCategory(patternId) {
+  var _a2;
+  const m = /^([A-Z]+)/.exec(patternId != null ? patternId : "");
+  return m ? (_a2 = CATEGORY_BY_PREFIX[m[1]]) != null ? _a2 : "" : "";
 }
 var collocationKey = (headwordId, patternId) => `${headwordId}.${patternId}`;
 function splitBraces(surface) {
@@ -13545,7 +13575,7 @@ function parsePatterns(json) {
     const name = str(r2.name);
     if (!id || !name)
       continue;
-    out.push({ id, name, freq: num(r2.freq), share: num(r2.percentage) });
+    out.push({ id, name, freq: num(r2.freq), share: num(r2.percentage), category: patternCategory(id) });
   }
   return out.sort((a, b) => b.freq - a.freq);
 }
@@ -13572,7 +13602,8 @@ function parseCollocates(json, expectKey) {
     });
   }
   const pages = num(g.total);
-  return { patternId, rows, complete: pages <= 1 };
+  const records = num(g.records) || rows.length;
+  return { patternId, rows, complete: pages <= 1, records };
 }
 function parseExamples(json, expectFreq) {
   const g = json != null ? json : {};
@@ -13650,12 +13681,21 @@ function toFrame(headwordPos, pattern, list) {
     pos: headwordPos,
     direction,
     label: pattern.name,
+    patternId: pattern.id,
+    category: pattern.category,
     items: measured.map((c) => c.text),
-    total: measured.length,
+    // The pattern's real 種類 count. This used to be `measured.length` — how
+    // many rows one request returned — so a truncated frame reported the page
+    // size as its total.
+    total: Math.max(list.records, measured.length),
     freq: pattern.freq,
     share: pattern.share,
     measured: measured.map((c) => ({ text: c.text, freq: c.freq, mi: c.mi, logDice: c.logDice, id: c.id })),
-    complete: list.complete
+    // "we hold every distinct collocation this pattern has" — which is a
+    // different question from "is the total we print exact". Since `records`
+    // arrived, the total IS exact even when this is false, so the UI can offer
+    // to fetch more without the count having to hedge.
+    complete: measured.length >= list.records
   };
 }
 
@@ -13665,14 +13705,14 @@ var DEFAULT_TWC_OPTIONS = {
   rateLimit: 3e3,
   maxPerPattern: 20
 };
-var MAX_PATTERNS = MAX_FRAMES;
+var MAX_PATTERNS = 3;
 var ROWS = 100;
 var PATTERN_ROWS = 1e3;
 var EXAMPLE_BATCHES = 3;
 var EXAMPLE_PER_BATCH = 4;
 var EXAMPLE_TARGET = 8;
 var EXAMPLE_ROWS = 20;
-var TsukubaWebCorpusScraper = class {
+var TsukubaWebCorpusScraper = class _TsukubaWebCorpusScraper {
   constructor(app, store, options) {
     this.queue = [];
     this.running = false;
@@ -13808,6 +13848,47 @@ var TsukubaWebCorpusScraper = class {
       }
     }
     return { headword, alternates, patterns, frames, examples, url };
+  }
+  /**
+   * ONE pattern's collocations, on demand — the middle panel of the site's own
+   * 語彙プロファイル.
+   *
+   * The counterpart to freezing the index whole: the index says 風 attaches 20
+   * ways and how often each is used, and this answers "what attaches THAT way"
+   * for the one you actually opened. A single rate-limited request, so the
+   * profile deepens where you look instead of paying up front for 20 drills
+   * whose results are mostly never read.
+   */
+  async drillPattern(headwordId, pattern) {
+    var _a2, _b2;
+    const url = _TsukubaWebCorpusScraper.pageFor(headwordId);
+    (_b2 = (_a2 = this.options).onProgress) == null ? void 0 : _b2.call(_a2, `${pattern.name} \u2014 \u5171\u8D77\u8A9E\u3092\u53D6\u5F97\u4E2D\u2026`);
+    const list = await this.collocates(headwordId, pattern.id, url);
+    if (!list.rows.length)
+      return null;
+    return toFrame(posOfId(headwordId), pattern, list);
+  }
+  /**
+   * ONE collocation's attested sentences — the site's right-hand panel.
+   *
+   * `expectFreq` is that collocation's own corpus frequency; `parseExamples`
+   * verifies the response against it, because identity here is a number and
+   * never a string (the grid is lemmatised, the sentences are surface).
+   */
+  async drillExamples(headwordId, collocation, frameLabel) {
+    var _a2, _b2;
+    const url = _TsukubaWebCorpusScraper.pageFor(headwordId);
+    (_b2 = (_a2 = this.options).onProgress) == null ? void 0 : _b2.call(_a2, `\u300C${collocation.text}\u300D\u306E\u7528\u4F8B\u3092\u53D6\u5F97\u4E2D\u2026`);
+    const got = await this.examples(headwordId, collocation.id, collocation.freq, url);
+    if (got.mismatch) {
+      throw new Error(`\u7528\u4F8B\u306E\u4EF6\u6570\u304C\u5171\u8D77\u983B\u5EA6\u3068\u4E00\u81F4\u3057\u307E\u305B\u3093\uFF08${collocation.text}\uFF09\u2014 \u53D6\u308A\u8FBC\u307F\u3092\u4E2D\u6B62\u3057\u307E\u3057\u305F`);
+    }
+    return got.rows.map((r2) => ({
+      ...r2,
+      collocationId: collocation.id,
+      collocate: collocation.text,
+      frame: frameLabel
+    }));
   }
   /** The TWC page for one lemma — where the profile's truncations stay reachable. */
   static pageFor(headwordId) {
@@ -22028,7 +22109,7 @@ function matchScore(surface, q, mode, boost = 0) {
 }
 var CORPUS_INDEX_CAP = 48;
 function corpusSurfaces(p) {
-  var _a2, _b2, _c2;
+  var _a2, _b2, _c2, _d2;
   const goho = p.payload.goho;
   if (!goho)
     return [];
@@ -22041,15 +22122,17 @@ function corpusSurfaces(p) {
     seen.add(t);
     out.push(t);
   };
-  for (const f of (_a2 = goho.frames) != null ? _a2 : [])
+  for (const t of (_a2 = goho.index) != null ? _a2 : [])
+    push(t.name);
+  for (const f of (_b2 = goho.frames) != null ? _b2 : [])
     push(f.label);
-  const frames = (_b2 = goho.frames) != null ? _b2 : [];
+  const frames = (_c2 = goho.frames) != null ? _c2 : [];
   const deepest = frames.reduce((n, f) => Math.max(n, f.items.length), 0);
   for (let i = 0; i < deepest && out.length < CORPUS_INDEX_CAP; i++) {
     for (const f of frames)
       push(f.items[i]);
   }
-  for (const c of (_c2 = goho.collocates) != null ? _c2 : [])
+  for (const c of (_d2 = goho.collocates) != null ? _d2 : [])
     push(c);
   return out;
 }
@@ -22950,6 +23033,64 @@ var PatternStore = class {
     if (!e || e.payload.goho)
       return false;
     e.payload = { ...e.payload, goho };
+    e.updatedAt = Date.now();
+    await this.persist();
+    return true;
+  }
+  /**
+   * §22.7 drill-down: ADD a piece to a frozen profile without altering it.
+   *
+   * `setGoho` refuses to overwrite because §2.4 says a later site change must
+   * not be able to rewrite a past entry. That is right, and it is also why the
+   * profile could never get deeper than its first fetch: a corpus whose own UI
+   * is a three-pane drill-down was being reduced to one snapshot forever.
+   *
+   * This is the reconciliation. **Fill-only, never replace.** A frame whose
+   * pattern is already frozen is dropped, not merged; an example already held
+   * is dropped, not re-recorded. So the invariant that matters — nothing
+   * already written can change — survives, while a pattern you open for the
+   * first time can record what it found. What grows is coverage; what is
+   * frozen stays frozen.
+   *
+   * Returns false when the entry has no profile yet (nothing to extend — fetch
+   * first) or when every piece offered was already present.
+   */
+  async extendGoho(id, patch) {
+    var _a2, _b2, _c2;
+    const e = this.entries.get(id);
+    const goho = e == null ? void 0 : e.payload.goho;
+    if (!e || !goho)
+      return false;
+    let changed = false;
+    const frames = [...(_a2 = goho.frames) != null ? _a2 : []];
+    if (patch.frame) {
+      const key = (f) => f.patternId || f.label;
+      if (!frames.some((f) => key(f) === key(patch.frame))) {
+        frames.push(patch.frame);
+        changed = true;
+      }
+    }
+    const sourced = [...(_b2 = goho.sourced) != null ? _b2 : []];
+    if ((_c2 = patch.examples) == null ? void 0 : _c2.length) {
+      const seen = new Set(sourced.map((s) => s.text));
+      for (const ex of patch.examples) {
+        if (!ex.text || seen.has(ex.text))
+          continue;
+        seen.add(ex.text);
+        sourced.push(ex);
+        changed = true;
+      }
+    }
+    if (!changed)
+      return false;
+    e.payload = {
+      ...e.payload,
+      goho: {
+        ...goho,
+        frames,
+        ...sourced.length ? { sourced, examples: sourced.map((s) => s.text) } : {}
+      }
+    };
     e.updatedAt = Date.now();
     await this.persist();
     return true;
@@ -25346,7 +25487,7 @@ var LexiconPanel = class {
   }
   // ── detail view ────────────────────────────────────────────
   renderDetail(root) {
-    var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t;
+    var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k, _l, _m, _n, _o, _p, _q, _r, _s, _t, _u, _v, _w, _x, _y;
     const p = this.deps.patterns().find((x) => x.id === this.selectedId);
     if (!p) {
       this.selectedId = null;
@@ -25555,7 +25696,64 @@ var LexiconPanel = class {
           };
         }
       }
-      for (const f of (_m = goho.frames) != null ? _m : []) {
+      const drilled = /* @__PURE__ */ new Map();
+      for (const f of (_m = goho.frames) != null ? _m : [])
+        if (f.patternId)
+          drilled.set(f.patternId, f);
+      if ((_n = goho.index) == null ? void 0 : _n.length) {
+        const byCat = /* @__PURE__ */ new Map();
+        for (const row of goho.index) {
+          const cat = row.category || "\u305D\u306E\u4ED6";
+          if (!byCat.has(cat))
+            byCat.set(cat, []);
+          byCat.get(cat).push(row);
+        }
+        for (const [cat, rows] of byCat) {
+          const catFreq = rows.reduce((n, r2) => n + r2.freq, 0);
+          const catHead = g.createDiv("jp-lex-goho-cat");
+          catHead.createSpan({ text: cat, cls: "jp-lex-goho-cat-name" });
+          catHead.createSpan({
+            text: `${rows.length}\u901A\u308A \xB7 ${catFreq.toLocaleString()}\u56DE`,
+            cls: "jp-lex-goho-cat-count"
+          });
+          for (const row of rows) {
+            const frame = drilled.get(row.id);
+            const box = g.createDiv(`jp-lex-goho-frame${frame ? "" : " jp-lex-goho-frame--shut"}`);
+            const head2 = box.createDiv("jp-lex-goho-frame-head");
+            head2.createSpan({ text: row.name, cls: "jp-lex-goho-arrow" });
+            const bar = head2.createDiv("jp-lex-goho-bar");
+            bar.createDiv("jp-lex-goho-bar-fill").style.width = `${Math.max(1, Math.min(100, row.share))}%`;
+            bar.title = `${row.name} \u2014 \u30B3\u30FC\u30D1\u30B9\u4E2D ${row.freq.toLocaleString()}\u56DE \xB7 ${p.key}\u306E\u5168\u7528\u4F8B\u306E${row.share}%`;
+            head2.createSpan({ text: `${row.share}%`, cls: "jp-lex-goho-share" });
+            head2.createSpan({ text: `${row.freq.toLocaleString()}\u56DE`, cls: "jp-lex-goho-count" });
+            if (frame) {
+              this.renderGohoFrameBody(box, p, goho, frame);
+            } else if (this.deps.drillPattern) {
+              const open = box.createEl("button", {
+                cls: "jp-lex-goho-open",
+                text: "\uFF0B \u5171\u8D77\u8A9E\u3092\u53D6\u5F97",
+                attr: { title: `${row.name} \u306E\u5171\u8D77\u8A9E\u3092\u30B3\u30FC\u30D1\u30B9\u304B\u3089\u53D6\u5F97\u3057\u307E\u3059\uFF081\u30EA\u30AF\u30A8\u30B9\u30C8\uFF09` }
+              });
+              open.onclick = async () => {
+                open.disabled = true;
+                open.setText("\u53D6\u5F97\u4E2D\u2026");
+                try {
+                  await this.deps.drillPattern(p, row.id);
+                } catch (e) {
+                  new import_obsidian10.Notice(String(e));
+                }
+                this.rerender();
+              };
+            } else {
+              box.createDiv({ cls: "jp-lex-goho-shut-note", text: "\u672A\u53D6\u5F97" });
+            }
+          }
+        }
+      }
+      for (const f of ((_o = goho.frames) != null ? _o : []).filter((x) => {
+        var _a3;
+        return !x.patternId || !((_a3 = goho.index) == null ? void 0 : _a3.length);
+      })) {
         const box = g.createDiv("jp-lex-goho-frame");
         const head2 = box.createDiv("jp-lex-goho-frame-head");
         const arrow = f.direction === "head-final" ? `\uFF5E${p.key}` : f.direction === "compound" ? `${p.key}\uFF0B` : f.direction === "unmarked" ? p.key : `${p.key}\uFF5E`;
@@ -25570,35 +25768,9 @@ var LexiconPanel = class {
           const s = head2.createSpan({ text: `${f.share}%`, cls: "jp-lex-goho-share" });
           s.title = f.freq !== void 0 ? `\u3053\u306E\u4ED8\u304D\u65B9\u306F\u30B3\u30FC\u30D1\u30B9\u4E2D ${f.freq.toLocaleString()}\u56DE \u2014 ${p.key}\u306E\u5168\u7528\u4F8B\u306E${f.share}%` : `${p.key}\u306E\u5168\u7528\u4F8B\u306E${f.share}%`;
         }
-        const more = f.atLeast ? "+" : "";
-        head2.createSpan({
-          text: f.total > f.items.length ? `${f.items.length} / ${f.total.toLocaleString()}${more}\u4EF6` : `${f.total}${more}\u4EF6`,
-          cls: "jp-lex-goho-count"
-        });
-        const chips = box.createDiv("jp-lex-goho-chips");
-        for (const { text: it, m } of this.gohoChipOrder(f)) {
-          const chip = chips.createEl("button", { text: it, cls: "jp-lex-goho-chip" });
-          if (m) {
-            chip.createSpan({
-              text: this.gohoSort === "dice" ? m.logDice.toFixed(1) : String(m.freq),
-              cls: "jp-lex-goho-chip-freq"
-            });
-            chip.title = `${it} \u2014 ${m.freq.toLocaleString()}\u56DE \xB7 MI ${m.mi.toFixed(2)} \xB7 logDice ${m.logDice.toFixed(2)}
-\u53F0\u5E33\u3078\u53D6\u308A\u8FBC\u3080\uFF08\u{1F4CA} \u30B3\u30FC\u30D1\u30B9\u5C64\uFF09`;
-          } else {
-            chip.title = `${arrow} \u2014 \u53F0\u5E33\u3078\u53D6\u308A\u8FBC\u3080\uFF08\u{1F4CA} \u30B3\u30FC\u30D1\u30B9\u5C64\uFF09`;
-          }
-          chip.onclick = () => this.deps.captureCorpus ? this.deps.captureCorpus(p, it) : this.deps.openDict(it);
-          makeDraggable(chip, () => ({
-            kind: "entry",
-            text: it,
-            label: it,
-            sub: m ? `${goho.source} \xB7 ${m.freq.toLocaleString()}\u56DE` : goho.source,
-            meta: { headword: p.key, frame: f.label, source: goho.source }
-          }));
-        }
+        this.renderGohoFrameBody(box, p, goho, f);
       }
-      if (((_n = goho.facets) == null ? void 0 : _n.length) && this.deps.openUrl) {
+      if (((_p = goho.facets) == null ? void 0 : _p.length) && this.deps.openUrl) {
         const fr = g.createDiv("jp-lex-goho-facets");
         fr.createSpan({ text: "\u7D5E\u8FBC\u307F", cls: "jp-lex-goho-facets-label" });
         for (const f of goho.facets) {
@@ -25607,14 +25779,14 @@ var LexiconPanel = class {
           a.onclick = () => this.deps.openUrl(f.url);
         }
       }
-      if (!((_o = goho.frames) == null ? void 0 : _o.length) && goho.collocates.length) {
+      if (!((_q = goho.frames) == null ? void 0 : _q.length) && goho.collocates.length) {
         const chips = g.createDiv("jp-lex-goho-chips");
         for (const c of goho.collocates) {
           const chip = chips.createEl("button", { text: c, cls: "jp-lex-goho-chip" });
           chip.onclick = () => this.deps.openDict(c);
         }
       }
-      const shownEx = ((_p = goho.sourced) == null ? void 0 : _p.length) ? goho.sourced : goho.examples.map((text) => ({ text, kind: "phrase" }));
+      const shownEx = ((_r = goho.sourced) == null ? void 0 : _r.length) ? goho.sourced : goho.examples.map((text) => ({ text, kind: "phrase" }));
       if (shownEx.length) {
         const attested = shownEx.filter((e) => {
           var _a3;
@@ -25625,46 +25797,70 @@ var LexiconPanel = class {
           text: attested === shownEx.length ? `\u7528\u4F8B ${shownEx.length}\u4EF6\uFF08\u51FA\u5178\u3064\u304D\uFF09` : attested === 0 ? `\u7528\u4F8B ${shownEx.length}\u4EF6\uFF08${goho.source}\u306E\u53CE\u9332\u53E5\uFF09` : `\u7528\u4F8B ${shownEx.length}\u4EF6\uFF08\u3046\u3061\u51FA\u5178\u3064\u304D ${attested}\u4EF6\uFF09`
         });
       }
+      const exGroups = /* @__PURE__ */ new Map();
       for (const ex of shownEx) {
-        const kind = (_q = ex.kind) != null ? _q : ex.url ? "attested" : "phrase";
-        const row = g.createDiv(`jp-lex-goho-ex jp-lex-goho-ex--${kind}`);
-        const quote = row.createSpan({ cls: "jp-lex-leaf-quote jp-lex-tappable" });
-        const [open, close] = kind === "attested" ? ["\u300C", "\u300D"] : ["\u3008", "\u3009"];
-        const [s, e] = (_r = ex.span) != null ? _r : [0, 0];
-        if (e > s && e <= ex.text.length) {
-          quote.appendText(`${open}${ex.text.slice(0, s)}`);
-          quote.createSpan({ text: ex.text.slice(s, e), cls: "jp-lex-goho-hit" });
-          quote.appendText(`${ex.text.slice(e)}${close}`);
-        } else {
-          quote.setText(`${open}${ex.text}${close}`);
-        }
-        if (ex.frame)
-          row.createSpan({ text: ex.frame, cls: "jp-lex-goho-exframe" });
-        const cited = ex.source || hostOf2(ex.url);
-        if (cited) {
-          const cite = row.createSpan({ text: cited, cls: "jp-lex-goho-cite" });
-          cite.title = ex.url ? `${cited}
-${ex.url}` : cited;
-          if (ex.url && this.deps.openUrl) {
-            cite.addClass("jp-lex-tappable");
-            cite.onclick = () => this.deps.openUrl(ex.url);
+        const key = (_s = ex.collocate) != null ? _s : "";
+        if (!exGroups.has(key))
+          exGroups.set(key, []);
+        exGroups.get(key).push(ex);
+      }
+      for (const [collocate, group] of exGroups) {
+        if (collocate) {
+          const head2 = g.createDiv("jp-lex-goho-exgroup");
+          head2.createSpan({ text: collocate, cls: "jp-lex-goho-exgroup-word" });
+          const held = (_u = ((_t = goho.frames) != null ? _t : []).flatMap((f) => {
+            var _a3;
+            return (_a3 = f.measured) != null ? _a3 : [];
+          }).find((m) => m.text === collocate)) == null ? void 0 : _u.freq;
+          if (held) {
+            head2.createSpan({
+              text: `${group.length} / ${held.toLocaleString()}\u4EF6`,
+              cls: "jp-lex-goho-exgroup-count",
+              attr: { title: `\u30B3\u30FC\u30D1\u30B9\u306F\u300C${collocate}\u300D\u306E\u7528\u4F8B\u3092 ${held.toLocaleString()}\u4EF6\u3082\u3063\u3066\u3044\u307E\u3059` }
+            });
           }
         }
-        if (this.deps.captureCorpus) {
-          const cap = row.createEl("button", {
-            text: "\u{1F3F7}\uFE0F",
-            cls: "jp-lex-leaf-btn",
-            attr: { title: kind === "attested" ? "\u3053\u306E\u7528\u4F8B\u3092\u53F0\u5E33\u3078\uFF08\u{1F4CA} \u30B3\u30FC\u30D1\u30B9\u5C64 \u2014 \u51FA\u5178\u3064\u304D\uFF09" : `\u3053\u306E\u53E5\u3092\u53F0\u5E33\u3078\uFF08\u{1F4CA} \u30B3\u30FC\u30D1\u30B9\u5C64 \u2014 ${goho.source}\u306E\u53CE\u9332\u53E5\uFF09` }
-          });
-          cap.onclick = () => this.deps.captureCorpus(p, ex.text, { sourceName: ex.source, url: ex.url });
+        for (const ex of group) {
+          const kind = (_v = ex.kind) != null ? _v : ex.url ? "attested" : "phrase";
+          const row = g.createDiv(`jp-lex-goho-ex jp-lex-goho-ex--${kind}`);
+          const quote = row.createSpan({ cls: "jp-lex-leaf-quote jp-lex-tappable" });
+          const [open, close] = kind === "attested" ? ["\u300C", "\u300D"] : ["\u3008", "\u3009"];
+          const [s, e] = (_w = ex.span) != null ? _w : [0, 0];
+          if (e > s && e <= ex.text.length) {
+            quote.appendText(`${open}${ex.text.slice(0, s)}`);
+            quote.createSpan({ text: ex.text.slice(s, e), cls: "jp-lex-goho-hit" });
+            quote.appendText(`${ex.text.slice(e)}${close}`);
+          } else {
+            quote.setText(`${open}${ex.text}${close}`);
+          }
+          if (ex.frame)
+            row.createSpan({ text: ex.frame, cls: "jp-lex-goho-exframe" });
+          const cited = ex.source || hostOf2(ex.url);
+          if (cited) {
+            const cite = row.createSpan({ text: cited, cls: "jp-lex-goho-cite" });
+            cite.title = ex.url ? `${cited}
+${ex.url}` : cited;
+            if (ex.url && this.deps.openUrl) {
+              cite.addClass("jp-lex-tappable");
+              cite.onclick = () => this.deps.openUrl(ex.url);
+            }
+          }
+          if (this.deps.captureCorpus) {
+            const cap = row.createEl("button", {
+              text: "\u{1F3F7}\uFE0F",
+              cls: "jp-lex-leaf-btn",
+              attr: { title: kind === "attested" ? "\u3053\u306E\u7528\u4F8B\u3092\u53F0\u5E33\u3078\uFF08\u{1F4CA} \u30B3\u30FC\u30D1\u30B9\u5C64 \u2014 \u51FA\u5178\u3064\u304D\uFF09" : `\u3053\u306E\u53E5\u3092\u53F0\u5E33\u3078\uFF08\u{1F4CA} \u30B3\u30FC\u30D1\u30B9\u5C64 \u2014 ${goho.source}\u306E\u53CE\u9332\u53E5\uFF09` }
+            });
+            cap.onclick = () => this.deps.captureCorpus(p, ex.text, { sourceName: ex.source, url: ex.url });
+          }
+          makeDraggable(row, () => ({
+            kind: "quote",
+            text: ex.text,
+            label: ex.text,
+            sub: cited || goho.source,
+            meta: { headword: p.key, source: cited || goho.source, url: ex.url, frame: ex.frame }
+          }));
         }
-        makeDraggable(row, () => ({
-          kind: "quote",
-          text: ex.text,
-          label: ex.text,
-          sub: cited || goho.source,
-          meta: { headword: p.key, source: cited || goho.source, url: ex.url, frame: ex.frame }
-        }));
       }
     } else if (goho) {
       root.createDiv({ cls: "jp-lex-empty", text: "\u8A9E\u6CD5: \u30B3\u30FC\u30D1\u30B9\u306B\u8A72\u5F53\u306A\u3057\uFF08\u53D6\u5F97\u6E08\u307F \u2014 \u518D\u53D6\u5F97\u3057\u307E\u305B\u3093\uFF09" });
@@ -25683,7 +25879,7 @@ ${ex.url}` : cited;
         this.rerender();
       };
     }
-    if ((_s = p.payload.scaffold) == null ? void 0 : _s.length) {
+    if ((_x = p.payload.scaffold) == null ? void 0 : _x.length) {
       const sc = knowledgeBox(root, "\u4EEE\u4F8B\u6587 \u2014 \u751F\u6210\uFF08\u5B9F\u4F8B\u304C\u5165\u308B\u3068\u81EA\u52D5\u5F15\u9000\uFF09", "gen");
       for (const line of p.payload.scaffold) {
         const r2 = sc.createDiv("jp-lex-scaffold-line");
@@ -25705,7 +25901,7 @@ ${ex.url}` : cited;
         bits.push(legacy.notes);
       for (const b of bits)
         lg.createDiv({ text: b, cls: "jp-lex-detail-payload-line" });
-      for (const ex of ((_t = legacy.exampleSentences) != null ? _t : []).slice(0, 3)) {
+      for (const ex of ((_y = legacy.exampleSentences) != null ? _y : []).slice(0, 3)) {
         const exEl = lg.createDiv({ text: `\u300C${ex}\u300D`, cls: "jp-lex-row-ex jp-lex-tappable" });
         exEl.addEventListener("click", (evt) => this.tapLookup(evt));
       }
@@ -25755,6 +25951,89 @@ ${ex.url}` : cited;
    * `m` undefined and its page order intact. Sorting a list that has nothing to
    * sort by would silently reorder Hyogen's items for no reason.
    */
+  /**
+   * What attaches THIS way — the middle panel of the corpus's own profile.
+   *
+   * Two renderings, because the two sources are carrying different things and
+   * flattening them to one shape is what made the box feel unlike either.
+   *
+   * A **measured** source (TWC) gets rows: the collocation, its frequency, MI
+   * and logDice. Three numbers per item is a table, and a table is right here —
+   * that is what the site shows, and comparing 「風を」(freq 145, MI 4.11)
+   * against 「クーラーの風」(freq 3, MI 9.2) is the entire reason to consult a
+   * corpus instead of a word list. Each row can fetch its own 用例.
+   *
+   * An **unmeasured** source (Hyogen) gets a flowing block, because that is
+   * what its items are: 青空文庫 phrases, listed the way the site lists them.
+   * Rendering 24 of them as bordered chips turned language into a spreadsheet
+   * with nothing to put in the columns.
+   */
+  renderGohoFrameBody(box, p, goho, f) {
+    var _a2;
+    const rows = this.gohoChipOrder(f);
+    const measured = rows.some((r2) => r2.m);
+    if (f.total > f.items.length) {
+      box.createDiv({
+        cls: "jp-lex-goho-count",
+        text: `${f.items.length} / ${f.total.toLocaleString()}${f.atLeast ? "+" : ""}\u7A2E\u985E\u3092\u8868\u793A`
+      });
+    }
+    if (!measured) {
+      const block = box.createDiv("jp-lex-goho-block");
+      for (const { text: it } of rows) {
+        const item = block.createSpan({ text: it, cls: "jp-lex-goho-phrase jp-lex-tappable" });
+        item.title = `${it} \u2014 \u53F0\u5E33\u3078\u53D6\u308A\u8FBC\u3080\uFF08\u{1F4CA} \u30B3\u30FC\u30D1\u30B9\u5C64\uFF09`;
+        item.onclick = () => this.deps.captureCorpus ? this.deps.captureCorpus(p, it) : this.deps.openDict(it);
+        makeDraggable(item, () => ({
+          kind: "entry",
+          text: it,
+          label: it,
+          sub: goho.source,
+          meta: { headword: p.key, frame: f.label, source: goho.source }
+        }));
+      }
+      return;
+    }
+    const haveEx = new Set(((_a2 = goho.sourced) != null ? _a2 : []).map((e) => e.collocate).filter(Boolean));
+    const grid = box.createDiv("jp-lex-goho-grid");
+    for (const { text: it, m } of rows) {
+      const row = grid.createDiv("jp-lex-goho-row");
+      const word = row.createSpan({ text: it, cls: "jp-lex-goho-word jp-lex-tappable" });
+      word.title = `${it} \u2014 \u53F0\u5E33\u3078\u53D6\u308A\u8FBC\u3080\uFF08\u{1F4CA} \u30B3\u30FC\u30D1\u30B9\u5C64\uFF09`;
+      word.onclick = () => this.deps.captureCorpus ? this.deps.captureCorpus(p, it) : this.deps.openDict(it);
+      if (m) {
+        row.createSpan({ text: m.freq.toLocaleString(), cls: "jp-lex-goho-num jp-lex-goho-num--freq" });
+        row.createSpan({ text: m.mi.toFixed(2), cls: "jp-lex-goho-num" });
+        row.createSpan({ text: m.logDice.toFixed(2), cls: "jp-lex-goho-num" });
+        if (this.deps.drillExamples && m.id && !haveEx.has(it)) {
+          const b = row.createEl("button", {
+            text: "\u7528\u4F8B",
+            cls: "jp-lex-goho-exbtn",
+            attr: { title: `\u300C${it}\u300D\u306E\u7528\u4F8B\u3092\u53D6\u5F97\uFF08\u30B3\u30FC\u30D1\u30B9\u306B ${m.freq.toLocaleString()}\u4EF6\uFF09` }
+          });
+          b.onclick = async () => {
+            b.disabled = true;
+            b.setText("\u2026");
+            try {
+              await this.deps.drillExamples(p, f.label, { id: m.id, text: it, freq: m.freq });
+            } catch (e) {
+              new import_obsidian10.Notice(String(e));
+            }
+            this.rerender();
+          };
+        } else if (haveEx.has(it)) {
+          row.createSpan({ text: "\u2713\u7528\u4F8B", cls: "jp-lex-goho-hasex", attr: { title: "\u7528\u4F8B\u306F\u53D6\u308A\u8FBC\u307F\u6E08\u307F\u3067\u3059" } });
+        }
+      }
+      makeDraggable(row, () => ({
+        kind: "entry",
+        text: it,
+        label: it,
+        sub: m ? `${goho.source} \xB7 ${m.freq.toLocaleString()}\u56DE` : goho.source,
+        meta: { headword: p.key, frame: f.label, source: goho.source }
+      }));
+    }
+  }
   gohoChipOrder(f) {
     const rows = f.items.map((text, i) => {
       var _a2;
@@ -49612,106 +49891,87 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
         // restriction, 青空文庫-derived); its structured profile carries the
         // direction / sense / POS / particle-facet grammar that the old flat
         // `collocates: string[]` threw away.
-        fetchGoho: this.settings.hyogenEnabled || this.settings.twcEnabled ? async (p) => {
-          var _a3, _b3;
-          const word = (_a3 = p.payload.lemma) != null ? _a3 : p.key;
+        // §22.7 drill-down: the index says HOW the word attaches; these two open
+        // one way, and then one collocation inside it. Each freezes what it
+        // finds through `extendGoho`, which is fill-only — so the profile gets
+        // deeper where you look without anything already recorded being
+        // rewritten (§2.4 survives; only coverage grows).
+        drillPattern: this.settings.twcEnabled ? async (p, patternId) => {
+          var _a3, _b3, _c3;
+          const pat = (_b3 = (_a3 = p.payload.goho) == null ? void 0 : _a3.index) == null ? void 0 : _b3.find((t) => t.id === patternId);
+          if (!pat)
+            return false;
+          const word = (_c3 = p.payload.lemma) != null ? _c3 : p.key;
+          const progress = new import_obsidian37.Notice(`\u8A9E\u6CD5: ${pat.name} \u3092\u53D6\u5F97\u4E2D\u2026`, 0);
           try {
-            if (this.settings.twcEnabled) {
-              const progress = new import_obsidian37.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u3092\u7167\u4F1A\u4E2D\u2026`, 0);
-              const twc = new TsukubaWebCorpusScraper(this.app, this.store, {
-                rateLimit: this.settings.twcRateLimit,
-                onProgress: (msg) => progress.setMessage(`\u8A9E\u6CD5: ${msg}`)
-              });
-              let prof;
-              try {
-                prof = await twc.profile(word);
-              } finally {
-                progress.hide();
-              }
-              if (prof == null ? void 0 : prof.frames.length) {
-                const shown = prof.frames.length;
-                const profile2 = profileFromFrames(
-                  {
-                    frames: prof.frames,
-                    // The ways of attaching that were counted but not drilled
-                    // into stay reachable rather than silently dropped (§28 S6),
-                    // and so is the other word spelled the same way — 風 is
-                    // 形容動詞 フウ (80,779例) and 名詞 カゼ (322例) in this corpus.
-                    facets: [
-                      { label: `\u5168${prof.patterns.length}\u30D1\u30BF\u30FC\u30F3\u3092\u898B\u308B`, url: prof.url },
-                      ...prof.alternates.map((a) => ({
-                        label: `${a.headword}\u3008${a.yomi}\u30FB${a.pos}\u3009${a.freq.toLocaleString()}\u4F8B`,
-                        url: TsukubaWebCorpusScraper.pageFor(a.id)
-                      }))
-                    ],
-                    total: prof.headword.freq,
-                    // Attested sentences, each carrying the document and URL it
-                    // came from — §28 S2, provenance is never dropped.
-                    // `attested`: TWC names the document AND links it, so each
-                    // of these is a citation, not a listing (cf. Hyogen's
-                    // `phrase` items). `frame`/`collocate` are what the batch
-                    // was requested for — the pairing cannot be recovered from
-                    // the text afterwards, so it travels with the sentence.
-                    examples: prof.examples.map((e) => ({
-                      text: e.text,
-                      source: e.source,
-                      url: e.url,
-                      span: e.span,
-                      ref: e.ref,
-                      kind: "attested",
-                      frame: e.frame,
-                      collocate: e.collocate
-                    }))
-                  },
-                  p.key,
-                  "NINJAL-LWP for TWC",
-                  Date.now()
-                );
-                const ok2 = await this.patternStore.setGoho(p.id, profile2);
-                if (ok2) {
-                  const ex = ((_b3 = profile2.sourced) == null ? void 0 : _b3.length) ? ` \xB7 \u7528\u4F8B${profile2.sourced.length}\u4EF6\uFF08\u51FA\u5178\u3064\u304D\uFF09` : "";
-                  const alt = prof.alternates.length ? ` \uFF0F \u5225\u8A9E\u7FA9${prof.alternates.length}\u4EF6\u306F\u7D5E\u8FBC\u307F\u304B\u3089` : "";
-                  new import_obsidian37.Notice(
-                    `\u8A9E\u6CD5\u30D7\u30ED\u30D5\u30A3\u30FC\u30EB\u3008${prof.headword.yomi}\u30FB${prof.headword.pos}\u3009: ${shown}/${prof.patterns.length}\u901A\u308A\u306E\u4ED8\u304D\u65B9 \xB7 ${prof.headword.freq.toLocaleString()}\u4F8B\uFF08\u8868\u793A\u306F\u5404${FRAME_ITEMS}\u4EF6\uFF09${ex}${alt}`,
-                    7e3
-                  );
-                }
-                return ok2;
-              }
-              if (!this.settings.hyogenEnabled) {
-                new import_obsidian37.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u306F TWC \u306E\u898B\u51FA\u3057\u8A9E\u306B\u3042\u308A\u307E\u305B\u3093`, 6e3);
-                return false;
-              }
-            }
-            if (!this.settings.hyogenEnabled)
-              return false;
-            const hy = await new HyogenScraper(this.app, this.store, { rateLimit: 0 }).profile(word);
-            if (!hy.total) {
-              new import_obsidian37.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u306F Hyogen \u306B\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F`, 6e3);
+            const twc = new TsukubaWebCorpusScraper(this.app, this.store, {
+              rateLimit: this.settings.twcRateLimit,
+              onProgress: (msg) => progress.setMessage(`\u8A9E\u6CD5: ${msg}`)
+            });
+            const senses = await twc.resolve(word);
+            if (!senses[0]) {
+              new import_obsidian37.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u306F TWC \u306E\u898B\u51FA\u3057\u8A9E\u306B\u3042\u308A\u307E\u305B\u3093`, 5e3);
               return false;
             }
-            const hyEx = hyogenExamples(hy, HyogenScraper.pageFor(word));
-            const profile = profileFromFrames(
-              { frames: hy.sections, facets: hy.facets, total: hy.total, examples: hyEx },
-              p.key,
-              "hyogen",
-              Date.now()
-            );
-            const ok = await this.patternStore.setGoho(p.id, profile);
-            if (ok) {
-              const ex = hyEx.length ? ` \xB7 \u7528\u4F8B${hyEx.length}\u4EF6\uFF08\u9752\u7A7A\u6587\u5EAB\uFF09` : "";
-              new import_obsidian37.Notice(
-                `\u8A9E\u6CD5\u30D7\u30ED\u30D5\u30A3\u30FC\u30EB: ${hy.sections.length}\u901A\u308A\u306E\u4ED8\u304D\u65B9 / ${hy.total.toLocaleString()}\u4F8B\uFF08\u8868\u793A\u306F\u5404${FRAME_ITEMS}\u4EF6\uFF09${ex}`,
-                7e3
-              );
+            await sleep(this.settings.twcRateLimit);
+            const frame = await twc.drillPattern(senses[0].id, {
+              id: pat.id,
+              name: pat.name,
+              freq: pat.freq,
+              share: pat.share,
+              category: pat.category
+            });
+            if (!frame) {
+              new import_obsidian37.Notice(`\u8A9E\u6CD5: ${pat.name} \u306F\u5171\u8D77\u8A9E\u304C\u8FD4\u308A\u307E\u305B\u3093\u3067\u3057\u305F`, 5e3);
+              return false;
             }
+            const ok = await this.patternStore.extendGoho(p.id, { frame });
+            if (ok)
+              new import_obsidian37.Notice(`${pat.name}: ${frame.total.toLocaleString()}\u7A2E\u985E\u306E\u3046\u3061 ${frame.items.length}\u4EF6\u3092\u5C55\u958B`, 5e3);
             return ok;
           } catch (e) {
-            console.error("[jp-collocations] goho fetch failed:", e);
             new import_obsidian37.Notice(`\u8A9E\u6CD5\u306E\u53D6\u5F97\u306B\u5931\u6557: ${e instanceof Error ? e.message : String(e)}`, 8e3);
             return false;
+          } finally {
+            progress.hide();
           }
         } : void 0,
+        drillExamples: this.settings.twcEnabled ? async (p, frameLabel, colloc) => {
+          var _a3;
+          const word = (_a3 = p.payload.lemma) != null ? _a3 : p.key;
+          const progress = new import_obsidian37.Notice(`\u7528\u4F8B: \u300C${colloc.text}\u300D\u3092\u53D6\u5F97\u4E2D\u2026`, 0);
+          try {
+            const twc = new TsukubaWebCorpusScraper(this.app, this.store, {
+              rateLimit: this.settings.twcRateLimit,
+              onProgress: (msg) => progress.setMessage(msg)
+            });
+            const senses = await twc.resolve(word);
+            if (!senses[0])
+              return false;
+            await sleep(this.settings.twcRateLimit);
+            const rows = await twc.drillExamples(senses[0].id, colloc, frameLabel);
+            const ok = await this.patternStore.extendGoho(p.id, {
+              examples: rows.map((e) => ({
+                text: e.text,
+                source: e.source,
+                url: e.url,
+                span: e.span,
+                ref: e.ref,
+                kind: "attested",
+                frame: e.frame,
+                collocate: e.collocate
+              }))
+            });
+            new import_obsidian37.Notice(ok ? `\u300C${colloc.text}\u300D\u306E\u7528\u4F8B ${rows.length}\u4EF6\u3092\u53D6\u308A\u8FBC\u307F\u307E\u3057\u305F\uFF08\u5168${colloc.freq.toLocaleString()}\u4EF6\u4E2D\uFF09` : `\u300C${colloc.text}\u300D\u306E\u7528\u4F8B\u306F\u53D6\u5F97\u6E08\u307F\u3067\u3059`, 5e3);
+            return ok;
+          } catch (e) {
+            new import_obsidian37.Notice(`\u7528\u4F8B\u306E\u53D6\u5F97\u306B\u5931\u6557: ${e instanceof Error ? e.message : String(e)}`, 8e3);
+            return false;
+          } finally {
+            progress.hide();
+          }
+        } : void 0,
+        fetchGoho: this.settings.hyogenEnabled || this.settings.twcEnabled ? (p) => this.freezeGoho(p) : void 0,
         captureCorpus: (p, example, prov) => {
           var _a3, _b3, _c3, _d3;
           new CaptureModal(this.app, {
@@ -55032,7 +55292,7 @@ ${msg}
     let fetched = 0, noCaps = 0, failed = 0, existed = 0;
     const newFiles = [];
     const progress = new import_obsidian37.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u3092\u53D6\u5F97\u4E2D\u2026 0/${list.length}`, 0);
-    const sleep = (ms) => new Promise((r2) => setTimeout(r2, ms));
+    const sleep2 = (ms) => new Promise((r2) => setTimeout(r2, ms));
     const THROTTLE_MS = 3500;
     const MAX_RETRIES = 3;
     let didNetFetch = false;
@@ -55048,7 +55308,7 @@ ${msg}
         continue;
       }
       if (didNetFetch)
-        await sleep(THROTTLE_MS);
+        await sleep2(THROTTLE_MS);
       didNetFetch = true;
       let attempt = 0, settled = false;
       while (!settled) {
@@ -55074,7 +55334,7 @@ ${msg}
             attempt++;
             const backoff = 2e4 * attempt;
             progress.setMessage(`\u30EC\u30FC\u30C8\u5236\u9650(429) \u2014 ${backoff / 1e3}\u79D2\u5F85\u3063\u3066\u518D\u8A66\u884C ${attempt}/${MAX_RETRIES}\uFF08${v.id}\uFF09`);
-            await sleep(backoff);
+            await sleep2(backoff);
             continue;
           }
           failed++;
@@ -55389,7 +55649,6 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
     );
   }
   async fetchFromHyogen() {
-    var _a2;
     if (!this.settings.hyogenEnabled) {
       new import_obsidian37.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
@@ -55398,50 +55657,235 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
       new import_obsidian37.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
-    if ((_a2 = this.scraper) == null ? void 0 : _a2.isRunning()) {
-      new import_obsidian37.Notice("Scraper is already running.");
+    const { found, missing } = this.entriesForWords(this.settings.hyogenWordList);
+    if (!found.length) {
+      new import_obsidian37.Notice("\u8A9E\u6CD5: \u8A2D\u5B9A\u306E\u8A9E\u306B\u5BFE\u5FDC\u3059\u308B\u53F0\u5E33\u30A8\u30F3\u30C8\u30EA\u304C\u3042\u308A\u307E\u305B\u3093\u3002", 8e3);
       return;
     }
-    this.scraper = new HyogenScraper(this.app, this.store, {
-      rateLimit: this.settings.hyogenRateLimit,
-      onProgress: (msg) => new import_obsidian37.Notice(msg, 3e3),
-      onEntry: () => this.refreshViews()
-    });
-    this.scraper.enqueue(this.settings.hyogenWordList);
-    new import_obsidian37.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
-    const count = await this.scraper.run();
-    new import_obsidian37.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    let ok = 0, already = 0;
+    for (const p of found) {
+      if (p.payload.goho) {
+        already++;
+        continue;
+      }
+      if (await this.freezeGoho(p))
+        ok++;
+    }
+    const parts = [`\u8A9E\u6CD5: ${ok}\u8A9E\u3092\u53D6\u5F97`];
+    if (already)
+      parts.push(`${already}\u8A9E\u306F\u53D6\u5F97\u6E08\u307F\uFF08\u56FA\u5B9A\uFF09`);
+    if (missing.length)
+      parts.push(`\u53F0\u5E33\u306B\u306A\u3057: ${missing.slice(0, 5).join("\u30FB")}${missing.length > 5 ? "\u2026" : ""}`);
+    new import_obsidian37.Notice(parts.join(" / "), 8e3);
     this.refreshViews();
   }
-  async fetchFromTWC(words) {
+  /**
+   * §22.7 — fetch a 語法プロフィール for ONE catalog entry and freeze it.
+   *
+   * §28 S5 says every medium funnels into the same path, and this is that path
+   * for the corpus. The 語彙 panel's button, the `fetch-twc` command and the
+   * word-list command all end here, so a profile means the same thing however
+   * you asked for it — a frozen structure hanging off an entry you classified,
+   * never a pile of rows.
+   *
+   * NINJAL-LWP first when it is on: it is the only source that says how OFTEN
+   * each way of attaching is used and whether a pairing is selective (MI /
+   * logDice) rather than merely frequent. Hyogen answers when TWC is off or
+   * does not have the word — it has the 青空文庫 phrases TWC's grid does not.
+   */
+  async freezeGoho(p) {
+    var _a2, _b2;
+    const word = (_a2 = p.payload.lemma) != null ? _a2 : p.key;
+    try {
+      if (this.settings.twcEnabled) {
+        const progress = new import_obsidian37.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u3092\u7167\u4F1A\u4E2D\u2026`, 0);
+        const twc = new TsukubaWebCorpusScraper(this.app, this.store, {
+          rateLimit: this.settings.twcRateLimit,
+          onProgress: (msg) => progress.setMessage(`\u8A9E\u6CD5: ${msg}`)
+        });
+        let prof;
+        try {
+          prof = await twc.profile(word);
+        } finally {
+          progress.hide();
+        }
+        if (prof == null ? void 0 : prof.frames.length) {
+          const shown = prof.frames.length;
+          const profile2 = profileFromFrames(
+            {
+              frames: prof.frames,
+              // EVERY way the word attaches, drilled or not — the site's own
+              // left-hand panel. One request gets all of them, so keeping six
+              // and discarding fourteen was never a saving; it just deleted
+              // whole categories (助詞＋形容詞, 助動詞, 接頭辞・接尾辞) silently.
+              index: prof.patterns.map((t) => ({
+                id: t.id,
+                name: t.name,
+                category: t.category,
+                freq: t.freq,
+                share: t.share
+              })),
+              // The other word spelled the same way stays reachable — 風 is
+              // 形容動詞 フウ (80,779例) and 名詞 カゼ (322例) in this corpus.
+              facets: [
+                { label: `\u5168${prof.patterns.length}\u30D1\u30BF\u30FC\u30F3\u3092\u898B\u308B`, url: prof.url },
+                ...prof.alternates.map((a) => ({
+                  label: `${a.headword}\u3008${a.yomi}\u30FB${a.pos}\u3009${a.freq.toLocaleString()}\u4F8B`,
+                  url: TsukubaWebCorpusScraper.pageFor(a.id)
+                }))
+              ],
+              total: prof.headword.freq,
+              // `attested`: TWC names the document AND links it, so each of
+              // these is a citation, not a listing (cf. Hyogen's `phrase`
+              // items). `frame`/`collocate` are what the batch was requested
+              // for — the pairing cannot be recovered from the text afterwards.
+              examples: prof.examples.map((e) => ({
+                text: e.text,
+                source: e.source,
+                url: e.url,
+                span: e.span,
+                ref: e.ref,
+                kind: "attested",
+                frame: e.frame,
+                collocate: e.collocate
+              }))
+            },
+            p.key,
+            "NINJAL-LWP for TWC",
+            Date.now()
+          );
+          const ok2 = await this.patternStore.setGoho(p.id, profile2);
+          if (ok2) {
+            const ex = ((_b2 = profile2.sourced) == null ? void 0 : _b2.length) ? ` \xB7 \u7528\u4F8B${profile2.sourced.length}\u4EF6\uFF08\u51FA\u5178\u3064\u304D\uFF09` : "";
+            const alt = prof.alternates.length ? ` \uFF0F \u5225\u8A9E\u7FA9${prof.alternates.length}\u4EF6\u306F\u7D5E\u8FBC\u307F\u304B\u3089` : "";
+            new import_obsidian37.Notice(
+              `\u8A9E\u6CD5\u30D7\u30ED\u30D5\u30A3\u30FC\u30EB\u3008${prof.headword.yomi}\u30FB${prof.headword.pos}\u3009: ${prof.patterns.length}\u901A\u308A\u306E\u4ED8\u304D\u65B9\u3092\u8A18\u9332\uFF08${shown}\u4EF6\u3092\u5C55\u958B\u6E08\u307F \u2014 \u6B8B\u308A\u306F\u9805\u76EE\u3092\u30BF\u30C3\u30D7\u3067\u53D6\u5F97\uFF09\xB7 ${prof.headword.freq.toLocaleString()}\u4F8B${ex}${alt}`,
+              7e3
+            );
+          }
+          return ok2;
+        }
+        if (!this.settings.hyogenEnabled) {
+          new import_obsidian37.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u306F TWC \u306E\u898B\u51FA\u3057\u8A9E\u306B\u3042\u308A\u307E\u305B\u3093`, 6e3);
+          return false;
+        }
+      }
+      if (!this.settings.hyogenEnabled)
+        return false;
+      const hy = await new HyogenScraper(this.app, this.store, { rateLimit: 0 }).profile(word);
+      if (!hy.total) {
+        new import_obsidian37.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u306F Hyogen \u306B\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F`, 6e3);
+        return false;
+      }
+      const hyEx = hyogenExamples(hy, HyogenScraper.pageFor(word));
+      const profile = profileFromFrames(
+        { frames: hy.sections, facets: hy.facets, total: hy.total, examples: hyEx },
+        p.key,
+        "hyogen",
+        Date.now()
+      );
+      const ok = await this.patternStore.setGoho(p.id, profile);
+      if (ok) {
+        const ex = hyEx.length ? ` \xB7 \u7528\u4F8B${hyEx.length}\u4EF6\uFF08\u9752\u7A7A\u6587\u5EAB\uFF09` : "";
+        new import_obsidian37.Notice(
+          `\u8A9E\u6CD5\u30D7\u30ED\u30D5\u30A3\u30FC\u30EB: ${hy.sections.length}\u901A\u308A\u306E\u4ED8\u304D\u65B9 / ${hy.total.toLocaleString()}\u4F8B\uFF08\u8868\u793A\u306F\u5404${FRAME_ITEMS}\u4EF6\uFF09${ex}`,
+          7e3
+        );
+      }
+      return ok;
+    } catch (e) {
+      console.error("[jp-collocations] goho fetch failed:", e);
+      new import_obsidian37.Notice(`\u8A9E\u6CD5\u306E\u53D6\u5F97\u306B\u5931\u6557: ${e instanceof Error ? e.message : String(e)}`, 8e3);
+      return false;
+    }
+  }
+  /**
+   * The catalog entries these words name, if any.
+   *
+   * Deliberately does NOT create one for a word with no entry. The corpus is a
+   * recall machine and the hand is the classifier (§12): manufacturing a
+   * catalog entry out of a scrape would be the machine filing a noticing you
+   * never had, and the six classes are human-assigned by construction. A word
+   * with no entry is reported, not invented.
+   */
+  entriesForWords(words) {
     var _a2;
+    const norm10 = (s) => normalizeJapanese(s).replace(/\s+/g, "");
+    const byKey = /* @__PURE__ */ new Map();
+    for (const e of this.patternStore.all()) {
+      for (const k of [e.key, (_a2 = e.payload.lemma) != null ? _a2 : ""]) {
+        const n = norm10(k);
+        if (n && !byKey.has(n))
+          byKey.set(n, e);
+      }
+    }
+    const found = [];
+    const missing = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const w of words) {
+      const hit = byKey.get(norm10(w));
+      if (hit && !seen.has(hit.id)) {
+        seen.add(hit.id);
+        found.push(hit);
+      } else if (!hit)
+        missing.push(w);
+    }
+    return { found, missing };
+  }
+  /**
+   * Fetch 語法 profiles for words, onto the entries that are those words.
+   *
+   * This used to call `scraper.run()`, which wrote up to `MAX_FRAMES ×
+   * maxPerPattern` = **120 flat `CollocationEntry` rows per word** into the
+   * legacy store — 600+ corpus rows sitting above the user's own noticings in
+   * the 語彙 list, each showing its raw `freq=… MI=… logDice=… — URL` string as
+   * its gloss. That is the §28 stratum order inverted in the most visible
+   * surface in the plugin, and the same data in a worse shape than the frozen
+   * profile already holds it in.
+   *
+   * The corpus is still fully reachable: it is indexed for search (badged 📊),
+   * it contributes to every context card, and it is the 語法 box on the entry.
+   */
+  async fetchFromTWC(words) {
     if (!this.settings.twcEnabled) {
       new import_obsidian37.Notice("TWC\u691C\u7D22\u306F\u7121\u52B9\u3067\u3059\u3002\u8A2D\u5B9A\u3067\u6709\u52B9\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
       return;
     }
-    if ((_a2 = this.twcScraper) == null ? void 0 : _a2.isRunning()) {
-      new import_obsidian37.Notice("TWC\u30B9\u30AF\u30EC\u30FC\u30D1\u30FC\u306F\u5B9F\u884C\u4E2D\u3067\u3059\u3002");
+    const { found, missing } = this.entriesForWords(words);
+    if (!found.length) {
+      new import_obsidian37.Notice(
+        `\u8A9E\u6CD5: \u300C${words.join("\u30FB")}\u300D\u306B\u5BFE\u5FDC\u3059\u308B\u53F0\u5E33\u30A8\u30F3\u30C8\u30EA\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u5148\u306B\u5206\u985E\u3057\u3066\u53F0\u5E33\u306B\u5165\u308C\u3066\u304F\u3060\u3055\u3044\uFF08\u30B3\u30FC\u30D1\u30B9\u306F\u53F0\u5E33\u3092\u4F5C\u308A\u307E\u305B\u3093\uFF09`,
+        8e3
+      );
       return;
     }
-    this.twcScraper = new TsukubaWebCorpusScraper(this.app, this.store, {
-      rateLimit: this.settings.twcRateLimit,
-      onProgress: (msg) => new import_obsidian37.Notice(msg, 3e3),
-      onEntry: () => this.refreshViews()
-    });
-    this.twcScraper.enqueue(words);
-    new import_obsidian37.Notice(`TWC: ${words.length}\u8A9E\u306E\u5171\u8D77\u30D7\u30ED\u30D5\u30A1\u30A4\u30EB\u3092\u53D6\u5F97\u4E2D...`);
-    const count = await this.twcScraper.run();
-    new import_obsidian37.Notice(`TWC\u5B8C\u4E86: ${count}\u4EF6\u306E\u5171\u8D77\u30C7\u30FC\u30BF\u3092\u8FFD\u52A0\u3057\u307E\u3057\u305F\u3002`);
+    let ok = 0, already = 0;
+    for (const p of found) {
+      if (p.payload.goho) {
+        already++;
+        continue;
+      }
+      if (await this.freezeGoho(p))
+        ok++;
+    }
+    const parts = [`\u8A9E\u6CD5: ${ok}\u8A9E\u3092\u53D6\u5F97`];
+    if (already)
+      parts.push(`${already}\u8A9E\u306F\u53D6\u5F97\u6E08\u307F\uFF08\u56FA\u5B9A\uFF09`);
+    if (missing.length)
+      parts.push(`\u53F0\u5E33\u306B\u306A\u3057: ${missing.slice(0, 5).join("\u30FB")}${missing.length > 5 ? "\u2026" : ""}`);
+    new import_obsidian37.Notice(parts.join(" / "), 8e3);
     this.refreshViews();
   }
   async fetchFromTWCWordlist() {
-    const entries = this.store.exportAll();
-    const headwords = [...new Set(entries.map((e) => e.headword))].slice(0, 50);
-    if (headwords.length === 0) {
-      new import_obsidian37.Notice("\u8A9E\u5F59\u30C7\u30FC\u30BF\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u5148\u306B\u30A8\u30F3\u30C8\u30EA\u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+    const keys = this.patternStore.all().filter((e) => !e.payload.goho).slice(0, 50).map((e) => {
+      var _a2;
+      return (_a2 = e.payload.lemma) != null ? _a2 : e.key;
+    });
+    if (keys.length === 0) {
+      new import_obsidian37.Notice("\u8A9E\u6CD5\u3092\u672A\u53D6\u5F97\u306E\u53F0\u5E33\u30A8\u30F3\u30C8\u30EA\u304C\u3042\u308A\u307E\u305B\u3093\u3002", 6e3);
       return;
     }
-    await this.fetchFromTWC(headwords);
+    await this.fetchFromTWC(keys);
   }
 };
 // ── Vault-native mirror (DESIGN §19): catalog + gold as plain files ──

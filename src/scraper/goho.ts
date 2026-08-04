@@ -30,6 +30,10 @@ export interface GohoFrame {
   sense?: number;
   /** the head line verbatim (「～ 風[名詞]2」) — displayed, never re-derived. */
   label: string;
+  /** `H007` — which index row this frame drilled, when the source has ids. */
+  patternId?: string;
+  /** the index category this pattern sits under ('' when unmeasured). */
+  category?: string;
   /** examples of THIS behaviour, full phrases, verbatim. */
   items: string[];
   /** how many the source actually has, when more than `items` holds (§28 S6:
@@ -127,6 +131,33 @@ export interface GohoExample {
   collocate?: string;
 }
 
+/**
+ * One row of the profile's INDEX: a way the word attaches, whether or not its
+ * collocations have been fetched yet.
+ *
+ * This is the left-hand panel of NINJAL-LWP's own 語彙プロファイル, and its
+ * absence was the biggest thing separating this box from the site. 風 has 20
+ * patterns across 7 categories; the profile kept the top six by frequency and
+ * the rest — 助詞＋形容詞, 助動詞, 接頭辞・接尾辞, 動詞連用形＋風 — did not get
+ * truncated with a count, they vanished. A profile that silently drops whole
+ * grammatical categories is not a profile of the word.
+ *
+ * The index is cheap: `/patternfreqorder/` returns every pattern in ONE
+ * request. Fetching it whole and drilling on demand is strictly better than
+ * guessing which six matter.
+ */
+export interface GohoPattern {
+  /** `H007` — keys the collocation endpoint, and matches `GohoFrame.patternId`. */
+  id: string;
+  /** 「風＋助詞」「名詞＋の＋風」 — the grammar, verbatim. */
+  name: string;
+  /** the site's own grouping. '' when the id prefix has not been measured. */
+  category: string;
+  freq: number;
+  /** percent of the headword's occurrences. */
+  share: number;
+}
+
 export interface GohoProfile {
   fetchedAt: number;
   source: string;
@@ -137,7 +168,17 @@ export interface GohoProfile {
   /** the same sentences carrying their provenance, when the source supplies it.
    *  Parallel to `examples`, never instead of it (§28 S1). */
   sourced?: GohoExample[];
-  /** §22.7 the grammatical half — how the word attaches, and what attaches. */
+  /**
+   * EVERY way the word attaches, whether drilled or not — the complete
+   * enumeration, so nothing is dropped without being counted.
+   *
+   * `frames` is the subset that has actually been fetched. An index row with no
+   * matching frame is a real, named, ranked way of attaching that you have not
+   * opened yet — a hole with a label on it, not a gap in the data.
+   */
+  index?: GohoPattern[];
+  /** the ways whose collocations have been fetched. Keyed to `index` by
+   *  `GohoFrame.patternId`. */
   frames?: GohoFrame[];
   /** particle facets the source offers (の～ / は～ / が～ / を～) with their URLs,
    *  so the profile can say "there are 12,147 more of these, here". */
@@ -208,9 +249,12 @@ export function profileFromFrames(
     frames: Array<{
       pos: string; direction: string; sense?: number; label: string; items: string[];
       freq?: number; share?: number; measured?: GohoMeasured[]; total?: number;
+      patternId?: string; category?: string;
       /** false when the source had more than it returned. */
       complete?: boolean;
     }>;
+    /** the complete enumeration of ways-of-attaching, drilled or not. */
+    index?: GohoPattern[];
     facets?: Array<{ label: string; url: string }>;
     total?: number;
     /** attested sentences with provenance. When a source supplies these, they
@@ -230,12 +274,24 @@ export function profileFromFrames(
     .slice(0, MAX_FRAMES)
     .map((f) => ({
       pos: f.pos, direction: f.direction, label: f.label,
+      ...(f.patternId ? { patternId: f.patternId } : {}),
+      ...(f.category ? { category: f.category } : {}),
       ...(f.sense !== undefined ? { sense: f.sense } : {}),
       items: f.items.slice(0, FRAME_ITEMS),
       // A source may know its true total exceeds what it handed us; only fall
       // back to counting when it does not say (§28 S6).
       total: f.total ?? f.items.length,
-      ...(f.complete === false ? { atLeast: true } : {}),
+      /**
+       * The total is a FLOOR only when the source never stated one.
+       *
+       * This used to be "the source was truncated", which conflated two
+       * different facts. Since `records` arrived, TWC states an exact 種類 count
+       * (「のを… 3,868種類」) even on a truncated fetch, so "24 / 3,868件" is a
+       * true sentence and rendering it as "3,868+件" would hedge a number the
+       * corpus was certain about. The '+' now appears only where the count
+       * really is just "how many we happened to receive".
+       */
+      ...(f.complete === false && f.total === undefined ? { atLeast: true } : {}),
       ...(f.freq !== undefined ? { freq: f.freq } : {}),
       ...(f.share !== undefined ? { share: f.share } : {}),
       // Copied field-by-field rather than passed through: an adapter's row type
@@ -306,6 +362,10 @@ export function profileFromFrames(
     examples: kept.map((e) => e.text),
     ...(kept.length ? { sourced: kept } : {}),
     frames,
+    // Every way of attaching, drilled or not. Frozen whole because it is ONE
+    // request and because the alternative — keeping six and discarding the
+    // rest — throws away categories, not just rows.
+    ...(input.index?.length ? { index: input.index } : {}),
     ...(input.facets?.length ? { facets: input.facets } : {}),
     ...(input.total ? { sourceTotal: input.total } : {}),
   };
