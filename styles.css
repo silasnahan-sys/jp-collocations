@@ -5211,6 +5211,41 @@
 
 /* ── Monokakido-style unified lexicon panel ─────────────────── */
 .jp-lex { display: flex; flex-direction: column; gap: 8px; }
+/**
+ * The panel mounts onto `.jp-col-results`, so ONE element is both the bounded
+ * scroller (`flex: 1; overflow-y: auto`) and this flex column. Flex items
+ * default to `flex-shrink: 1`, so when the content is taller than the pane the
+ * children SQUASH to fit instead of overflowing it — and a container whose
+ * content never overflows has nothing to scroll. The visible result is a page
+ * that will not scroll while its tall boxes are crushed and clipped by their
+ * own `overflow: hidden`.
+ *
+ * Latent since the panel was written; it only surfaced when the 語法 drill-down
+ * made an entry taller than the pane for the first time. Children keep their
+ * content height, the column overflows, and `overflow-y: auto` does its job.
+ */
+.jp-lex > * { flex-shrink: 0; }
+
+/**
+ * The same defect, everywhere else it exists.
+ *
+ * Every selector below is a flex column that is ALSO height-bounded (`flex: 1`
+ * or a `max-height`) and scrollable. In that combination a child's default
+ * `flex-shrink: 1` wins over its content height: the rows compress to fit, the
+ * container never overflows, and `overflow-y: auto` therefore never produces a
+ * scrollbar. It reads as "the list is stuck and the rows look wrong" rather
+ * than as a layout rule doing what it was told.
+ *
+ * Found by scanning for the pattern after the 語彙 pane hit it. Fixed together
+ * because a per-file fix would leave five of these waiting for whichever list
+ * grows past its box first.
+ */
+.jp-tray-list > *,
+.jp-x-collection-list > *,
+.jp-flow-videos > *,
+.jpc-bigdict-list > *,
+.jp-plexbrowse-list > *,
+.jp-drop-sheet > * { flex-shrink: 0; }
 .jp-lex-searchrow { position: relative; }
 .jp-lex-search {
   width: 100%; font-size: 1rem; padding: 9px 12px; border-radius: 10px;
