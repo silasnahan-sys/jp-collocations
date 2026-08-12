@@ -28,10 +28,11 @@
 // The ONE frame key space (frames.ts is itself pure). A second normalization
 // here would mean a want and the dictionary's reach-for query could never agree
 // about what shape they were both circling.
-import { toFrame } from '../dictionary/frames.ts';
+import { toFrame, normalizeFrame } from '../dictionary/frames.ts';
 
 /** Why an offer was made. Weak by design; none of these is a claim of meaning. */
 export type OfferReason =
+  | 'intention'  // a curated source files it under the very thing you asked for
   | 'token'      // shares a written token with the want
   | 'frame'      // realizes a frame the want was circling
   | 'juxtapose'; // arrived while this reach was open — pure co-presence
@@ -142,11 +143,37 @@ function framesTouch(a: string, b: string): boolean {
   return a.includes(b) || b.includes(a);
 }
 
+/**
+ * The want, read as an INTENTION key.
+ *
+ * The same normalization the meaning-side index is keyed with, so a want typed
+ * in English and a dictionary row filed under that English meet without a
+ * second normalization — the identical arrangement `frameOfWant` has with the
+ * frame index.
+ *
+ * Unlike a frame, an intention needs no slot: "undergo" is a complete want.
+ */
+function intentionOfWant(r: Pick<Reach, 'want' | 'gloss'>): string[] {
+  const out: string[] = [];
+  for (const raw of [r.want, r.gloss]) {
+    const k = normalizeFrame(String(raw ?? '')).toLowerCase().trim();
+    if (k && !out.includes(k)) out.push(k);
+  }
+  return out;
+}
+
 export interface Incoming {
   surface: string;
   source?: ReachOffer['source'];
   /** normalized frame key, when the incoming item has one (frames.ts). */
   frameKey?: string;
+  /**
+   * normalized intention key, when the item came from a source that files it
+   * under a meaning — i.e. the meaning-side dictionary index.
+   */
+  intentionKey?: string;
+  /** the English the source filed it under, verbatim, for the offer's `why`. */
+  intention?: string;
   at: number;
 }
 
@@ -175,6 +202,7 @@ export function collide(
     const seen = new Set(r.offers.map((o) => o.surface));
     const tokens = wantTokens(r.want + (r.gloss ? ' ' + r.gloss : ''));
     const wantFrame = frameOfWant(r);
+    const wantIntents = intentionOfWant(r);
     let jux = 0;
 
     for (const item of incoming) {
@@ -185,7 +213,17 @@ export function collide(
       let reason: OfferReason | null = null;
       let why = '';
 
-      if (hit) {
+      // FIRST, and deliberately: an English want cannot token-match a Japanese
+      // surface (`surface.includes(token)` is false by construction), and it
+      // has no slots so it is not a frame either. Before the intention index
+      // existed there was therefore no branch an English want could reach —
+      // which is why the one open reach on this vault had received zero offers.
+      if (item.intentionKey && wantIntents.includes(item.intentionKey.toLowerCase())) {
+        reason = 'intention';
+        // Still never "this means that": it reports where a book FILED it.
+        why = `辞書が「${item.intention ?? item.intentionKey}」の項に入れています` +
+          `（誰かの分類であって、意味の同一ではありません）`;
+      } else if (hit) {
         reason = 'token';
         why = `「${hit}」を含みます（意味ではなく表記の一致）`;
       } else if (item.frameKey && wantFrame && framesTouch(wantFrame, item.frameKey)) {

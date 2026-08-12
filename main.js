@@ -10727,7 +10727,581 @@ __export(main_exports, {
   default: () => JPCollocationsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian37 = require("obsidian");
+var import_obsidian38 = require("obsidian");
+
+// src/ui/suite-nav.ts
+var STACK_CAP = 24;
+function samePlace(a, b) {
+  if (!a || !b || a.kind !== b.kind)
+    return false;
+  if (a.kind === "surface" && b.kind === "surface")
+    return a.surface === b.surface;
+  if (a.kind === "editor" && b.kind === "editor")
+    return a.path === b.path;
+  return false;
+}
+var here = (stack) => {
+  var _a2;
+  return (_a2 = stack[stack.length - 1]) != null ? _a2 : null;
+};
+function goTo(stack, to, cap = STACK_CAP) {
+  const at = stack.findIndex((p) => samePlace(p, to));
+  if (at === stack.length - 1)
+    return [...stack.slice(0, -1), to];
+  if (at >= 0)
+    return [...stack.slice(0, at), to];
+  const next = [...stack, to];
+  return next.length > cap ? next.slice(next.length - cap) : next;
+}
+function back(stack) {
+  if (stack.length < 2)
+    return { stack: [...stack], to: null };
+  const next = stack.slice(0, -1);
+  return { stack: next, to: next[next.length - 1] };
+}
+function toggle(stack, surface, replaceHere) {
+  const base = replaceHere ? [...stack.slice(0, -1), replaceHere] : [...stack];
+  const top = here(base);
+  if ((top == null ? void 0 : top.kind) === "surface" && top.surface === surface) {
+    const r2 = back(base);
+    return r2.to ? { ...r2, action: "back" } : { stack: base, to: null, action: "back" };
+  }
+  const next = goTo(base, { kind: "surface", surface });
+  return { stack: next, to: here(next), action: "go" };
+}
+var SIDE_MIN_WIDTH = 880;
+function presentation(posture2, windowWidth) {
+  if (posture2 !== "desk")
+    return "full";
+  return windowWidth >= SIDE_MIN_WIDTH ? "side" : "full";
+}
+var MOUSE_BACK = 3;
+var MOUSE_FORWARD = 4;
+function mouseIntent(button) {
+  if (button === MOUSE_BACK)
+    return "back";
+  if (button === MOUSE_FORWARD)
+    return "forward";
+  return null;
+}
+
+// src/ui/posture.ts
+var import_obsidian = require("obsidian");
+
+// src/ui/physics.ts
+var criticallyDamped = (stiffness, mass = 1) => ({
+  stiffness,
+  damping: 2 * Math.sqrt(stiffness * mass),
+  mass
+});
+var REST_PX = 0.5;
+var MAX_SETTLE_MS = 900;
+function springAt(x0, v0, t, s) {
+  const w0 = Math.sqrt(s.stiffness / s.mass);
+  const zeta = s.damping / (2 * Math.sqrt(s.stiffness * s.mass));
+  if (zeta < 1) {
+    const wd = w0 * Math.sqrt(1 - zeta * zeta);
+    const b = (v0 + zeta * w0 * x0) / wd;
+    return Math.exp(-zeta * w0 * t) * (x0 * Math.cos(wd * t) + b * Math.sin(wd * t));
+  }
+  return (x0 + (v0 + w0 * x0) * t) * Math.exp(-w0 * t);
+}
+function springFrames(dx, dy, vx, vy, s, fps = 60) {
+  const out = [];
+  const maxN = Math.ceil(MAX_SETTLE_MS / 1e3 * fps);
+  let quiet = 0;
+  for (let i = 0; i <= maxN; i++) {
+    const t = i / fps;
+    const x = springAt(dx, vx, t, s);
+    const y = springAt(dy, vy, t, s);
+    out.push({ t, x, y });
+    quiet = Math.abs(x) < REST_PX && Math.abs(y) < REST_PX ? quiet + 1 : 0;
+    if (quiet >= 3)
+      break;
+  }
+  out.push({ t: out.length / fps, x: 0, y: 0 });
+  return out;
+}
+function springKeyframes(dx, dy, vx, vy, s) {
+  const frames = springFrames(dx, dy, vx, vy, s);
+  return {
+    keys: frames.map((f) => ({
+      transform: `translate(${f.x.toFixed(2)}px, ${f.y.toFixed(2)}px)`
+    })),
+    ms: Math.max(1, frames.length - 1) * (1e3 / 60)
+  };
+}
+var RUBBER = 0.55;
+function rubberBand(over, dim, c = RUBBER) {
+  if (over === 0 || dim <= 0)
+    return 0;
+  const sign = over < 0 ? -1 : 1;
+  const x = Math.abs(over);
+  return sign * (1 - 1 / (x * c / dim + 1)) * dim;
+}
+function throwVelocity(trail, windowMs = 90) {
+  if (trail.length < 2)
+    return { vx: 0, vy: 0 };
+  const last = trail[trail.length - 1];
+  let first = trail[0];
+  for (const s of trail) {
+    if (last.t - s.t <= windowMs) {
+      first = s;
+      break;
+    }
+  }
+  const dt = (last.t - first.t) / 1e3;
+  if (dt <= 1e-3)
+    return { vx: 0, vy: 0 };
+  return { vx: (last.x - first.x) / dt, vy: (last.y - first.y) / dt };
+}
+function pushSample(trail, s, cap = 8) {
+  trail.push(s);
+  if (trail.length > cap)
+    trail.shift();
+}
+
+// src/ui/floating-rail.ts
+var DEFAULT_RAIL = { edge: "right", y: 0.72, collapsed: false };
+var clamp01 = (n) => n < 0 ? 0 : n > 1 ? 1 : n;
+var railTravel = (box, railH, inset) => Math.max(0, box.height - railH - inset * 2);
+function railTop(state, box, railH, inset) {
+  return inset + clamp01(state.y) * railTravel(box, railH, inset);
+}
+var FLING_VX = 420;
+function snapRail(railLeft, railTopPx, railW, railH, box, inset, vx = 0) {
+  const centreX = railLeft + railW / 2;
+  const travel = railTravel(box, railH, inset);
+  const thrown = Math.abs(vx) >= FLING_VX;
+  return {
+    edge: thrown ? vx > 0 ? "right" : "left" : centreX < box.width / 2 ? "left" : "right",
+    y: travel <= 0 ? 0 : clamp01((railTopPx - inset) / travel)
+  };
+}
+var RAIL_SPRING = criticallyDamped(550);
+function clampDrag(startLeft, startTop, dx, dy, railW, railH, box, inset) {
+  const maxLeft = Math.max(inset, box.width - railW - inset);
+  const maxTop = Math.max(inset, box.height - railH - inset);
+  const left = Math.min(Math.max(startLeft + dx, inset), maxLeft);
+  const top = Math.min(Math.max(startTop + dy, inset), maxTop);
+  return { dx: left - startLeft, dy: top - startTop };
+}
+function resistDrag(startLeft, startTop, dx, dy, railW, railH, box, inset) {
+  const maxLeft = Math.max(inset, box.width - railW - inset);
+  const maxTop = Math.max(inset, box.height - railH - inset);
+  const soft = (v, lo, hi, dim) => v < lo ? lo + rubberBand(v - lo, dim) : v > hi ? hi + rubberBand(v - hi, dim) : v;
+  return {
+    dx: soft(startLeft + dx, inset, maxLeft, box.width) - startLeft,
+    dy: soft(startTop + dy, inset, maxTop, box.height) - startTop
+  };
+}
+var MOVE_SLOP = 8;
+function isTap(dx, dy) {
+  return Math.hypot(dx, dy) <= MOVE_SLOP;
+}
+var INSET = 6;
+var reducedMotion = () => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+function mountFloatingRail(rail, deps) {
+  let state = deps.state ? { ...deps.state } : { ...DEFAULT_RAIL, edge: deps.hand };
+  const grip = rail.createDiv("jp-rail-grip");
+  grip.setAttribute("aria-label", "\u30C4\u30FC\u30EB\u30D0\u30FC\u3092\u79FB\u52D5\uFF08\u9577\u62BC\u3057\u3067\u79FB\u52D5\u30FB\u30BF\u30C3\u30D7\u3067\u7573\u3080\uFF09");
+  grip.setAttr("role", "button");
+  const box = () => {
+    const p = rail.parentElement;
+    if (!p)
+      return { width: window.innerWidth, height: window.innerHeight };
+    const bar = p.querySelector(":scope > .jp-slatebar");
+    const reserved = bar ? bar.offsetHeight + 8 : 0;
+    return { width: p.clientWidth, height: Math.max(0, p.clientHeight - reserved) };
+  };
+  const apply = () => {
+    rail.toggleClass("jp-slaterail--collapsed", state.collapsed);
+    rail.removeClass("jp-slaterail--left");
+    rail.removeClass("jp-slaterail--right");
+    rail.addClass(`jp-slaterail--${state.edge}`);
+    rail.style.transform = "";
+    rail.style.top = `${railTop(state, box(), rail.offsetHeight, INSET)}px`;
+  };
+  requestAnimationFrame(apply);
+  const settle2 = (vx, vy) => {
+    const before = rail.getBoundingClientRect();
+    apply();
+    if (reducedMotion() || typeof rail.animate !== "function")
+      return;
+    const after = rail.getBoundingClientRect();
+    const dx = before.left - after.left;
+    const dy = before.top - after.top;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1 && Math.hypot(vx, vy) < 60)
+      return;
+    const { keys, ms } = springKeyframes(dx, dy, vx, vy, RAIL_SPRING);
+    rail.animate(keys, { duration: ms, easing: "linear" });
+  };
+  let drag = null;
+  let trail = [];
+  grip.addEventListener("pointerdown", (e) => {
+    var _a2, _b2, _c2;
+    if (e.button !== 0 || drag)
+      return;
+    e.preventDefault();
+    e.stopPropagation();
+    const r2 = rail.getBoundingClientRect();
+    const p = (_a2 = rail.parentElement) == null ? void 0 : _a2.getBoundingClientRect();
+    drag = {
+      id: e.pointerId,
+      x: e.clientX,
+      y: e.clientY,
+      left: r2.left - ((_b2 = p == null ? void 0 : p.left) != null ? _b2 : 0),
+      top: r2.top - ((_c2 = p == null ? void 0 : p.top) != null ? _c2 : 0)
+    };
+    trail = [{ t: e.timeStamp, x: e.clientX, y: e.clientY }];
+    try {
+      grip.setPointerCapture(e.pointerId);
+    } catch (e2) {
+    }
+    rail.addClass("jp-slaterail--moving");
+  });
+  const onMove = (e) => {
+    if (!drag || e.pointerId !== drag.id)
+      return;
+    const c = resistDrag(
+      drag.left,
+      drag.top,
+      e.clientX - drag.x,
+      e.clientY - drag.y,
+      rail.offsetWidth,
+      rail.offsetHeight,
+      box(),
+      INSET
+    );
+    trail.push({ t: e.timeStamp, x: e.clientX, y: e.clientY });
+    if (trail.length > 8)
+      trail.shift();
+    rail.style.transform = `translate(${c.dx}px, ${c.dy}px)`;
+  };
+  const onUp = (e) => {
+    if (!drag || e.pointerId !== drag.id)
+      return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    const started = drag;
+    drag = null;
+    rail.removeClass("jp-slaterail--moving");
+    try {
+      grip.releasePointerCapture(e.pointerId);
+    } catch (e2) {
+    }
+    const { vx, vy } = throwVelocity(trail);
+    trail = [];
+    if (isTap(dx, dy)) {
+      state = { ...state, collapsed: !state.collapsed };
+      settle2(0, 0);
+    } else {
+      const c = clampDrag(
+        started.left,
+        started.top,
+        dx,
+        dy,
+        rail.offsetWidth,
+        rail.offsetHeight,
+        box(),
+        INSET
+      );
+      state = {
+        ...state,
+        ...snapRail(
+          started.left + c.dx,
+          started.top + c.dy,
+          rail.offsetWidth,
+          rail.offsetHeight,
+          box(),
+          INSET,
+          vx
+        )
+      };
+      settle2(vx, vy);
+    }
+    deps.save(state);
+  };
+  const onCancel = (e) => {
+    if (!drag || e.pointerId !== drag.id)
+      return;
+    drag = null;
+    trail = [];
+    rail.removeClass("jp-slaterail--moving");
+    settle2(0, 0);
+  };
+  window.addEventListener("pointermove", onMove, true);
+  window.addEventListener("pointerup", onUp, true);
+  window.addEventListener("pointercancel", onCancel, true);
+  const reflow = () => {
+    if (!drag)
+      apply();
+  };
+  window.addEventListener("resize", reflow);
+  window.addEventListener("orientationchange", reflow);
+  const obs = new MutationObserver(() => {
+    if (rail.isConnected)
+      return;
+    window.removeEventListener("pointermove", onMove, true);
+    window.removeEventListener("pointerup", onUp, true);
+    window.removeEventListener("pointercancel", onCancel, true);
+    window.removeEventListener("resize", reflow);
+    window.removeEventListener("orientationchange", reflow);
+    obs.disconnect();
+  });
+  if (rail.parentElement)
+    obs.observe(rail.parentElement, { childList: true });
+}
+
+// src/ui/posture.ts
+var cfg = {};
+function configurePosture(next) {
+  cfg = { ...cfg, ...next };
+  if (next.penNativeDrag && next.penNativeDrag !== "unknown")
+    verdicts.pen = next.penNativeDrag;
+  if (next.touchNativeDrag && next.touchNativeDrag !== "unknown")
+    verdicts.touch = next.touchNativeDrag;
+  applyPostureClasses();
+}
+function isCoarse() {
+  try {
+    return window.matchMedia("(pointer: coarse)").matches;
+  } catch (e) {
+    return import_obsidian.Platform.isMobile;
+  }
+}
+function posture() {
+  if (cfg.override && cfg.override !== "auto")
+    return cfg.override;
+  if (sawPenHover)
+    return "slate";
+  if (import_obsidian.Platform.isPhone)
+    return "thumb";
+  if (import_obsidian.Platform.isTablet)
+    return "slate";
+  if (import_obsidian.Platform.isMobile)
+    return "slate";
+  if (isCoarse() && window.innerWidth >= 700)
+    return "slate";
+  return "desk";
+}
+var isThumb = () => posture() === "thumb";
+var isSlate = () => posture() === "slate";
+var isTouchy = () => posture() !== "desk";
+function hand() {
+  var _a2;
+  return (_a2 = cfg.hand) != null ? _a2 : "right";
+}
+var sawPen = false;
+var sawPenHover = false;
+var penWatchers = /* @__PURE__ */ new Set();
+var penSeen = () => sawPen;
+function onPenFirstSeen(cb) {
+  if (sawPen) {
+    cb();
+    return () => {
+    };
+  }
+  penWatchers.add(cb);
+  return () => {
+    penWatchers.delete(cb);
+  };
+}
+function notePen() {
+  var _a2;
+  if (sawPen)
+    return;
+  sawPen = true;
+  (_a2 = document.body) == null ? void 0 : _a2.addClass("jp-pen");
+  for (const cb of penWatchers) {
+    try {
+      cb();
+    } catch (e) {
+    }
+  }
+  penWatchers.clear();
+}
+function watchForPen() {
+  const seen = (e) => {
+    if (e.pointerType !== "pen")
+      return;
+    if (e.type === "pointermove" && e.buttons === 0 && !sawPenHover) {
+      sawPenHover = true;
+      notePen();
+      applyPostureClasses();
+      return;
+    }
+    notePen();
+  };
+  const opts = { capture: true, passive: true };
+  document.addEventListener("pointerdown", seen, opts);
+  document.addEventListener("pointermove", seen, opts);
+  return () => {
+    document.removeEventListener("pointerdown", seen, opts);
+    document.removeEventListener("pointermove", seen, opts);
+  };
+}
+var verdicts = { pen: "unknown", touch: "unknown" };
+var declines = { pen: 0, touch: 0 };
+var DECLINES_TO_CONVICT = 3;
+function dragPointer(pointerType) {
+  return pointerType === "pen" || pointerType === "touch" ? pointerType : null;
+}
+var penDragVerdict = () => verdicts.pen;
+function noteDragPress(pointerType, sawNative) {
+  var _a2, _b2;
+  const p = dragPointer(pointerType);
+  if (!p || verdicts[p] === "yes")
+    return;
+  if (sawNative) {
+    verdicts[p] = "yes";
+    declines[p] = 0;
+    (_a2 = cfg.onDragVerdict) == null ? void 0 : _a2.call(cfg, p, "yes");
+    return;
+  }
+  if (verdicts[p] === "no")
+    return;
+  if (++declines[p] >= DECLINES_TO_CONVICT) {
+    verdicts[p] = "no";
+    (_b2 = cfg.onDragVerdict) == null ? void 0 : _b2.call(cfg, p, "no");
+  }
+}
+function dragCommitMs(pointerType) {
+  if (import_obsidian.Platform.isPhone)
+    return 380;
+  const p = dragPointer(pointerType);
+  if (p && verdicts[p] === "no")
+    return 380;
+  return 700;
+}
+function applyPostureClasses() {
+  const b = document.body;
+  if (!b)
+    return;
+  b.removeClass("jp-posture-desk");
+  b.removeClass("jp-posture-thumb");
+  b.removeClass("jp-posture-slate");
+  b.addClass(`jp-posture-${posture()}`);
+  b.toggleClass("jp-hand-left", hand() === "left");
+  b.toggleClass("jp-hand-right", hand() === "right");
+  const o = orientation();
+  b.toggleClass("jp-orient-portrait", o === "portrait");
+  b.toggleClass("jp-orient-landscape", o === "landscape");
+  if (sawPen)
+    b.addClass("jp-pen");
+}
+function orientation() {
+  try {
+    return window.innerHeight >= window.innerWidth ? "portrait" : "landscape";
+  } catch (e) {
+    return "landscape";
+  }
+}
+function watchViewport(onChange, debounceMs = 120) {
+  let last = `${posture()}/${orientation()}`;
+  let timer = null;
+  const settle2 = () => {
+    timer = null;
+    const now = `${posture()}/${orientation()}`;
+    applyPostureClasses();
+    if (now === last)
+      return;
+    last = now;
+    onChange(posture(), orientation());
+  };
+  const bump = () => {
+    if (timer)
+      clearTimeout(timer);
+    timer = setTimeout(settle2, debounceMs);
+  };
+  window.addEventListener("resize", bump);
+  window.addEventListener("orientationchange", bump);
+  return () => {
+    if (timer)
+      clearTimeout(timer);
+    window.removeEventListener("resize", bump);
+    window.removeEventListener("orientationchange", bump);
+  };
+}
+function dock(viewRoot, kind) {
+  var _a2;
+  const p = posture();
+  if (p === "desk")
+    return null;
+  const root = viewRoot;
+  const key = p === "thumb" || kind === "edge" ? "_jpDockEdge" : "_jpDockWide";
+  const live2 = root[key];
+  if (live2 && live2.parentElement === root)
+    return live2;
+  let el;
+  if (p === "thumb") {
+    el = viewRoot.createDiv("jp-thumbdock");
+  } else if (kind === "wide") {
+    el = viewRoot.createDiv("jp-slatebar");
+  } else {
+    viewRoot.addClass("jp-rail-host");
+    el = viewRoot.createDiv(`jp-slaterail jp-slaterail--${hand()}`);
+    mountFloatingRail(el, {
+      state: (_a2 = cfg.rail) != null ? _a2 : null,
+      hand: hand(),
+      save: (s) => {
+        var _a3;
+        cfg.rail = s;
+        (_a3 = cfg.onRail) == null ? void 0 : _a3.call(cfg, s);
+      }
+    });
+  }
+  root[key] = el;
+  return el;
+}
+function edgeDock(viewRoot) {
+  return dock(viewRoot, "edge");
+}
+function wideDock(viewRoot) {
+  return dock(viewRoot, "wide");
+}
+
+// src/ui/input-map.ts
+var DEFAULT_GESTURE_CONFIG = {
+  // A deliberate flick, not a nudge: low enough to feel light, high enough
+  // that a two-finger reposition mid-scroll never reaches it.
+  swipePx: 120,
+  pinchPx: 60,
+  restMs: 220,
+  axisRatio: 1.6
+};
+var idleGesture = () => ({ panX: 0, zoom: 0, latched: false, lastAt: 0 });
+function feedWheel(prev, e, cfg2 = DEFAULT_GESTURE_CONFIG) {
+  const rested = prev.lastAt > 0 && e.at - prev.lastAt > cfg2.restMs;
+  const s = rested ? { panX: 0, zoom: 0, latched: false, lastAt: e.at } : { ...prev, lastAt: e.at };
+  if (e.ctrlKey) {
+    const zoom = s.zoom - e.deltaY;
+    if (Math.abs(zoom) >= cfg2.pinchPx) {
+      const by = zoom > 0 ? 1 : -1;
+      return { state: { ...s, zoom: zoom - by * cfg2.pinchPx }, gesture: { kind: "density-step", by } };
+    }
+    return { state: { ...s, zoom }, gesture: null };
+  }
+  if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * cfg2.axisRatio) {
+    return { state: { ...s, panX: 0 }, gesture: null };
+  }
+  const panX = s.panX + e.deltaX;
+  if (s.latched || Math.abs(panX) < cfg2.swipePx)
+    return { state: { ...s, panX }, gesture: null };
+  return { state: { ...s, panX: 0, latched: true }, gesture: { kind: "surface-step", by: panX > 0 ? 1 : -1 } };
+}
+function stepIndex(length, current2, by) {
+  if (length <= 0)
+    return 0;
+  return Math.max(0, Math.min(length - 1, current2 + by));
+}
+var DENSITY_SCALES = [0.85, 0.925, 1, 1.1, 1.25];
+var DENSITY_DEFAULT = 2;
+var clampDensity = (level) => Math.max(0, Math.min(DENSITY_SCALES.length - 1, Math.round(level) || 0));
+var densityScale = (level) => DENSITY_SCALES[clampDensity(level)];
+var densityLabel = (level) => {
+  const l = clampDensity(level);
+  return `${Math.round(DENSITY_SCALES[l] * 100)}%${l === DENSITY_DEFAULT ? "\uFF08\u6A19\u6E96\uFF09" : ""}`;
+};
 
 // src/x/x-types.ts
 function emptyQuery(lang = "ja", product = "Latest") {
@@ -10926,19 +11500,19 @@ var DEFAULT_AUDIO_EXTRACTION = {
   preRollSec: 0,
   outputFolder: "JP Audio Clips"
 };
-function clipWindow(req, cfg) {
-  const start = Math.max(0, Math.floor(req.startSec - Math.max(0, cfg.preRollSec)));
-  const rawEnd = req.endSec != null ? Math.floor(req.endSec) : Math.floor(req.startSec + cfg.clipLengthSec);
+function clipWindow(req, cfg2) {
+  const start = Math.max(0, Math.floor(req.startSec - Math.max(0, cfg2.preRollSec)));
+  const rawEnd = req.endSec != null ? Math.floor(req.endSec) : Math.floor(req.startSec + cfg2.clipLengthSec);
   const end = Math.max(start + 1, rawEnd);
   return [start, end];
 }
-function buildYtdlpArgs(req, cfg, outPath, cookiesFile) {
-  const [start, end] = clipWindow(req, cfg);
+function buildYtdlpArgs(req, cfg2, outPath, cookiesFile) {
+  const [start, end] = clipWindow(req, cfg2);
   const args = [];
-  if (cfg.ffmpegPath)
-    args.push("--ffmpeg-location", cfg.ffmpegPath);
-  if (cfg.jsRuntime)
-    args.push("--js-runtimes", cfg.jsRuntime);
+  if (cfg2.ffmpegPath)
+    args.push("--ffmpeg-location", cfg2.ffmpegPath);
+  if (cfg2.jsRuntime)
+    args.push("--js-runtimes", cfg2.jsRuntime);
   if (cookiesFile)
     args.push("--cookies", cookiesFile);
   args.push(
@@ -10949,7 +11523,7 @@ function buildYtdlpArgs(req, cfg, outPath, cookiesFile) {
     `*${start}-${end}`,
     "-x",
     "--audio-format",
-    cfg.audioFormat,
+    cfg2.audioFormat,
     "--no-playlist",
     "--no-part",
     // Stall guards: abort a wedged network read, cap retries, quiet progress, and
@@ -11109,12 +11683,12 @@ function ffmpegBinFrom(ffmpegPath) {
   const exe = ffmpegPath.includes("\\") ? "ffmpeg.exe" : "ffmpeg";
   return ffmpegPath.replace(/[\\/]$/, "") + sep + exe;
 }
-function buildFullAudioArgs(cfg, videoId, outTemplate, cookiesFile) {
+function buildFullAudioArgs(cfg2, videoId, outTemplate, cookiesFile) {
   const args = [];
-  if (cfg.ffmpegPath)
-    args.push("--ffmpeg-location", cfg.ffmpegPath);
-  if (cfg.jsRuntime)
-    args.push("--js-runtimes", cfg.jsRuntime);
+  if (cfg2.ffmpegPath)
+    args.push("--ffmpeg-location", cfg2.ffmpegPath);
+  if (cfg2.jsRuntime)
+    args.push("--js-runtimes", cfg2.jsRuntime);
   if (cookiesFile)
     args.push("--cookies", cookiesFile);
   args.push(
@@ -11147,13 +11721,13 @@ function findByPrefix(dir, prefix) {
   }
   return null;
 }
-async function downloadFullAudio(cfg, videoId, folderAbs) {
-  const bin = cfg.ytdlpPath || "yt-dlp";
+async function downloadFullAudio(cfg2, videoId, folderAbs) {
+  const bin = cfg2.ytdlpPath || "yt-dlp";
   const prefix = `_srcaudio_${videoId}`;
   const outTemplate = `${folderAbs}/${prefix}.%(ext)s`;
-  const jar = ensureCookieJar(cfg.cookieHeader, cfg.cookieJarAbs, videoId);
+  const jar = ensureCookieJar(cfg2.cookieHeader, cfg2.cookieJarAbs, videoId);
   const cookiesFile = jar.path;
-  const args = buildFullAudioArgs(cfg, videoId, outTemplate, cookiesFile);
+  const args = buildFullAudioArgs(cfg2, videoId, outTemplate, cookiesFile);
   const command = commandLine(bin, args);
   const fs = nodeReq("fs");
   const stale = findByPrefix(folderAbs, prefix);
@@ -11176,19 +11750,19 @@ async function downloadFullAudio(cfg, videoId, folderAbs) {
   if (jar.temp)
     removeCookiesFile(cookiesFile);
   const src = findByPrefix(folderAbs, prefix);
-  const bytes = src && fs.existsSync(src) ? fs.statSync(src).size : 0;
-  if (res.code !== 0 || !src || bytes < 1024) {
+  const bytes2 = src && fs.existsSync(src) ? fs.statSync(src).size : 0;
+  if (res.code !== 0 || !src || bytes2 < 1024) {
     const jsHint = /No supported JavaScript runtime/i.test(res.stderr) ? "\nJavaScript \u30E9\u30F3\u30BF\u30A4\u30E0\uFF08deno \u304B node\uFF09\u304C\u5FC5\u8981\u3067\u3059\u3002" : "";
     const botHint = /confirm you.re not a bot|--cookies/i.test(res.stderr) && !cookiesFile ? "\nYouTube \u304C\u30ED\u30B0\u30A4\u30F3\u3092\u8981\u6C42\u3057\u3066\u3044\u307E\u3059 \u2014 \u8A2D\u5B9A\u300C\u8996\u8074\u5C65\u6B74\uFF08Cookie\uFF09\u300D\u306B youtube.com \u306E Cookie \u3092\u8CBC\u308B\u3068\u901A\u308A\u307E\u3059\u3002" : "";
-    return { ok: false, srcPath: "", bytes, command, error: `full-audio \u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5931\u6557 (exit ${res.code}, ${bytes}B)${jsHint}${botHint}`, stderrTail: tail(res.stderr) };
+    return { ok: false, srcPath: "", bytes: bytes2, command, error: `full-audio \u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5931\u6557 (exit ${res.code}, ${bytes2}B)${jsHint}${botHint}`, stderrTail: tail(res.stderr) };
   }
-  return { ok: true, srcPath: src, bytes, command };
+  return { ok: true, srcPath: src, bytes: bytes2, command };
 }
-async function clipFromLocal(cfg, srcPath, startSec, endSec, outPath) {
-  const ff = ffmpegBinFrom(cfg.ffmpegPath);
+async function clipFromLocal(cfg2, srcPath, startSec, endSec, outPath) {
+  const ff = ffmpegBinFrom(cfg2.ffmpegPath);
   const start = Math.max(0, Math.floor(startSec));
   const dur = Math.max(1, Math.floor(endSec) - start);
-  const codec = cfg.audioFormat === "mp3" ? ["-c:a", "libmp3lame", "-q:a", "4"] : cfg.audioFormat === "opus" ? ["-c:a", "libopus", "-b:a", "96k"] : ["-c:a", "copy"];
+  const codec = cfg2.audioFormat === "mp3" ? ["-c:a", "libmp3lame", "-q:a", "4"] : cfg2.audioFormat === "opus" ? ["-c:a", "libopus", "-b:a", "96k"] : ["-c:a", "copy"];
   const args = ["-y", "-ss", String(start), "-i", srcPath, "-t", String(dur), "-vn", ...codec, outPath];
   const command = commandLine(ff, args);
   const baseR = { ok: false, outPath: "", bytes: 0, durationSec: 0, command };
@@ -11200,17 +11774,17 @@ async function clipFromLocal(cfg, srcPath, startSec, endSec, outPath) {
   }
   const fs = nodeReq("fs");
   const exists = fs.existsSync(outPath);
-  const bytes = exists ? fs.statSync(outPath).size : 0;
-  if (res.code !== 0 || !exists || bytes < 512) {
-    return { ...baseR, error: `ffmpeg \u5207\u308A\u51FA\u3057\u5931\u6557 (exit ${res.code}, ${bytes}B)`, stderrTail: tail(res.stderr) };
+  const bytes2 = exists ? fs.statSync(outPath).size : 0;
+  if (res.code !== 0 || !exists || bytes2 < 512) {
+    return { ...baseR, error: `ffmpeg \u5207\u308A\u51FA\u3057\u5931\u6557 (exit ${res.code}, ${bytes2}B)`, stderrTail: tail(res.stderr) };
   }
-  const durationSec = await probeDuration(ffprobeFrom(cfg.ffmpegPath), outPath);
-  return { ok: true, outPath, bytes, durationSec, command };
+  const durationSec = await probeDuration(ffprobeFrom(cfg2.ffmpegPath), outPath);
+  return { ok: true, outPath, bytes: bytes2, durationSec, command };
 }
-async function extractClip(req, cfg, outPath) {
-  const bin = cfg.ytdlpPath || "yt-dlp";
-  const jar = ensureCookieJar(cfg.cookieHeader, cfg.cookieJarAbs, `clip_${req.videoId}`);
-  const args = buildYtdlpArgs(req, cfg, outPath, jar.path);
+async function extractClip(req, cfg2, outPath) {
+  const bin = cfg2.ytdlpPath || "yt-dlp";
+  const jar = ensureCookieJar(cfg2.cookieHeader, cfg2.cookieJarAbs, `clip_${req.videoId}`);
+  const args = buildYtdlpArgs(req, cfg2, outPath, jar.path);
   const command = commandLine(bin, args);
   const base = { ok: false, outPath: "", bytes: 0, durationSec: 0, command };
   let res;
@@ -11227,17 +11801,17 @@ async function extractClip(req, cfg, outPath) {
     removeCookiesFile(jar.path);
   const fs = nodeReq("fs");
   const exists = fs.existsSync(outPath);
-  const bytes = exists ? fs.statSync(outPath).size : 0;
-  if (res.code !== 0 || !exists || bytes < 1024) {
+  const bytes2 = exists ? fs.statSync(outPath).size : 0;
+  if (res.code !== 0 || !exists || bytes2 < 1024) {
     const jsHint = /No supported JavaScript runtime/i.test(res.stderr) ? "\nJavaScript \u30E9\u30F3\u30BF\u30A4\u30E0\uFF08deno \u304B node\uFF09\u304C\u5FC5\u8981\u3067\u3059\u3002\u8A2D\u5B9A\u3067 jsRuntime \u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002" : "";
     return {
       ...base,
-      error: `yt-dlp \u5931\u6557 (exit ${res.code}, ${bytes}B)${jsHint}`,
+      error: `yt-dlp \u5931\u6557 (exit ${res.code}, ${bytes2}B)${jsHint}`,
       stderrTail: tail(res.stderr)
     };
   }
-  const durationSec = await probeDuration(ffprobeFrom(cfg.ffmpegPath), outPath);
-  return { ok: true, outPath, bytes, durationSec, command };
+  const durationSec = await probeDuration(ffprobeFrom(cfg2.ffmpegPath), outPath);
+  return { ok: true, outPath, bytes: bytes2, durationSec, command };
 }
 function detectTools() {
   const notes = [];
@@ -11298,8 +11872,8 @@ function detectTools() {
   }
   return { ytdlp, ffmpeg, jsRuntime, notes };
 }
-function clipNameFor(req, cfg) {
-  return clipFileName(req.videoId, Math.floor(req.startSec), cfg.audioFormat);
+function clipNameFor(req, cfg2) {
+  return clipFileName(req.videoId, Math.floor(req.startSec), cfg2.audioFormat);
 }
 
 // src/types.ts
@@ -11777,6 +12351,18 @@ var DEFAULT_JIMAKU_SETTINGS = {
   apiKey: "",
   mode: "fallback"
 };
+var DEFAULT_POSTURE_SETTINGS = {
+  hand: "right",
+  override: "auto",
+  density: 2,
+  // exactly 1× — nothing resizes itself on first run
+  // ON by default. The alternative is the behaviour that shipped — the show
+  // keeps playing while you type with your eyes down — and nobody watching a
+  // drama wants that; it is the single change most likely to be missed if it
+  // has to be found in settings first.
+  autoPauseOnWrite: true,
+  penNativeDrag: "unknown"
+};
 var DEFAULT_SRS_SETTINGS = {
   tagPrefix: "flashcards/jp",
   speakerFormat: "icon",
@@ -11814,7 +12400,170 @@ var DEFAULT_SETTINGS = {
   },
   plex: { ...DEFAULT_PLEX_SETTINGS },
   jimaku: { ...DEFAULT_JIMAKU_SETTINGS },
-  bigDict: { exportFolder: "", root: "JP Dictionaries", backupFile: "" }
+  bigDict: { exportFolder: "", root: "JP Dictionaries", backupFile: "" },
+  posture: { ...DEFAULT_POSTURE_SETTINGS }
+};
+
+// src/ui/PenProbeModal.ts
+var import_obsidian2 = require("obsidian");
+var PenProbeModal = class extends import_obsidian2.Modal {
+  constructor(app) {
+    super(app);
+    this.seen = {
+      types: /* @__PURE__ */ new Set(),
+      hoverBeforeContact: false,
+      dragstartFor: /* @__PURE__ */ new Set(),
+      maxPressure: 0,
+      sawTilt: false,
+      sawAltitude: false,
+      presses: 0,
+      longestPressMs: 0
+    };
+    this.liveEl = null;
+    this.downAt = 0;
+    this.downType = "";
+  }
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass("jp-penprobe");
+    contentEl.createEl("h3", { text: "\u270E \u30DA\u30F3\uFF0F\u30C9\u30E9\u30C3\u30B0\u8ABF\u67FB" });
+    contentEl.createEl("p", {
+      cls: "jp-penprobe-lead",
+      text: "\u3053\u306E\u7AEF\u672B\u304C Apple Pencil \u3092\u3069\u3046\u6271\u3046\u304B\u3092\u5B9F\u6E2C\u3057\u307E\u3059\u3002\u4E0B\u306E\u30D1\u30C3\u30C9\u3092 \u2460\u30DA\u30F3\u3092\u6D6E\u304B\u305B\u3066\u8FD1\u3065\u3051\u308B \u2461\u30BF\u30C3\u30D7 \u2462\u9577\u62BC\u3057\u3057\u3066\u30C9\u30E9\u30C3\u30B0 \u306E\u9806\u306B\u8A66\u3057\u3066\u304F\u3060\u3055\u3044\u3002"
+    });
+    const pad4 = contentEl.createDiv("jp-penprobe-pad");
+    pad4.setText("\u3053\u3053\u3092\u62BC\u3059 / \u9577\u62BC\u3057\u3057\u3066\u30C9\u30E9\u30C3\u30B0");
+    pad4.setAttribute("draggable", "true");
+    pad4.addEventListener("pointerover", (e) => this.note(e, "over"));
+    pad4.addEventListener("pointermove", (e) => this.note(e, "move"));
+    pad4.addEventListener("pointerdown", (e) => {
+      this.downAt = Date.now();
+      this.downType = e.pointerType;
+      this.seen.presses++;
+      this.note(e, "down");
+    });
+    const up = (e) => {
+      if (this.downAt) {
+        this.seen.longestPressMs = Math.max(this.seen.longestPressMs, Date.now() - this.downAt);
+        this.downAt = 0;
+      }
+      this.note(e, "up");
+    };
+    pad4.addEventListener("pointerup", up);
+    pad4.addEventListener("pointercancel", up);
+    pad4.addEventListener("dragstart", (e) => {
+      var _a2;
+      this.seen.dragstartFor.add(this.downType || "unknown");
+      (_a2 = e.dataTransfer) == null ? void 0 : _a2.setData("text/plain", "jp-collocations pen probe");
+      this.repaint();
+    });
+    this.liveEl = contentEl.createDiv("jp-penprobe-live");
+    const acts = contentEl.createDiv("jp-penprobe-acts");
+    const copy = acts.createEl("button", { text: "\u{1F4CB} \u30EC\u30DD\u30FC\u30C8\u3092\u30B3\u30D4\u30FC", cls: "mod-cta" });
+    copy.onclick = () => {
+      void navigator.clipboard.writeText(this.report().join("\n")).then(() => new import_obsidian2.Notice("\u{1F4CB} \u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F")).catch(() => new import_obsidian2.Notice("\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u306B\u66F8\u3051\u307E\u305B\u3093\u3067\u3057\u305F"));
+    };
+    const reset = acts.createEl("button", { text: "\u3084\u308A\u76F4\u3059" });
+    reset.onclick = () => {
+      this.seen = {
+        types: /* @__PURE__ */ new Set(),
+        hoverBeforeContact: false,
+        dragstartFor: /* @__PURE__ */ new Set(),
+        maxPressure: 0,
+        sawTilt: false,
+        sawAltitude: false,
+        presses: 0,
+        longestPressMs: 0
+      };
+      this.repaint();
+    };
+    this.repaint();
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+  note(e, phase) {
+    this.seen.types.add(e.pointerType);
+    if (e.pressure > this.seen.maxPressure)
+      this.seen.maxPressure = e.pressure;
+    if (e.tiltX || e.tiltY)
+      this.seen.sawTilt = true;
+    const withAngle = e;
+    if (typeof withAngle.altitudeAngle === "number")
+      this.seen.sawAltitude = true;
+    if (e.pointerType === "pen" && phase !== "down" && e.buttons === 0 && e.pressure === 0) {
+      this.seen.hoverBeforeContact = true;
+    }
+    this.repaint();
+  }
+  mq(q) {
+    try {
+      return window.matchMedia(q).matches ? "YES" : "no";
+    } catch (e) {
+      return "?";
+    }
+  }
+  report() {
+    const s = this.seen;
+    const pen = s.types.has("pen");
+    const L = [];
+    L.push("## \u270E pen / drag probe");
+    L.push("");
+    L.push("### \u3053\u306E\u7AEF\u672B");
+    L.push(`- posture: **${posture()}** (hand: ${hand()})`);
+    L.push(`- Platform: isPhone=${import_obsidian2.Platform.isPhone} isTablet=${import_obsidian2.Platform.isTablet} isMobile=${import_obsidian2.Platform.isMobile} isDesktopApp=${import_obsidian2.Platform.isDesktopApp} isIosApp=${import_obsidian2.Platform.isIosApp}`);
+    L.push(`- window: ${window.innerWidth}\xD7${window.innerHeight} @${window.devicePixelRatio}x`);
+    L.push(`- isCoarse(): ${isCoarse()}`);
+    L.push(`- media \`(pointer: coarse)\`: ${this.mq("(pointer: coarse)")}`);
+    L.push(`- media \`(pointer: fine)\`: ${this.mq("(pointer: fine)")}`);
+    L.push(`- media \`(hover: hover)\`: ${this.mq("(hover: hover)")}`);
+    L.push(`- media \`(any-pointer: fine)\`: ${this.mq("(any-pointer: fine)")}`);
+    L.push(`- media \`(any-hover: hover)\`: ${this.mq("(any-hover: hover)")}`);
+    L.push("");
+    L.push("### \u89B3\u6E2C");
+    L.push(`- pointerType seen: **${[...s.types].join(", ") || "(none yet)"}**`);
+    L.push(`- presses: ${s.presses} (longest ${s.longestPressMs}ms)`);
+    L.push(`- pen ever seen (global latch): ${penSeen()}`);
+    L.push(`- **Pencil hover before contact: ${s.hoverBeforeContact ? "YES" : "no"}**`);
+    L.push(`- max pressure: ${s.maxPressure.toFixed(3)}`);
+    L.push(`- tilt reported: ${s.sawTilt} / altitudeAngle present: ${s.sawAltitude}`);
+    L.push(`- **dragstart fired for: ${[...s.dragstartFor].join(", ") || "NOTHING"}**`);
+    L.push(`- pen drag verdict (live, from real carries): **${penDragVerdict()}**`);
+    L.push("");
+    L.push("### \u5224\u5B9A");
+    if (!pen) {
+      L.push("- \u30DA\u30F3\u304C\u307E\u3060\u89B3\u6E2C\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002Pencil \u3067\u30D1\u30C3\u30C9\u306B\u89E6\u308C\u3066\u304F\u3060\u3055\u3044\u3002");
+    } else if (s.dragstartFor.has("pen") || penDragVerdict() === "yes") {
+      const src = s.dragstartFor.has("pen") ? "\u3053\u306E\u753B\u9762\u3067\u306E\u9577\u62BC\u3057" : "\u5B9F\u969B\u306E\u30AB\u30FC\u30C9\u306E\u6301\u3061\u51FA\u3057";
+      L.push(`- \u2705 **\u30DA\u30F3\u3067\u30CD\u30A4\u30C6\u30A3\u30D6\u30C9\u30E9\u30C3\u30B0\u304C\u767A\u706B\u3059\u308B**\uFF08\u8A3C\u62E0: ${src}\uFF09 \u2192 \u4ED6\u30A2\u30D7\u30EA\u3078\u306E\u6301\u3061\u51FA\u3057\u306F '
+        + 'HTML5 drag \u3067\u53EF\u80FD\u3002\`pointer-drag.ts\` \u306E 700ms \u5F85\u6A5F\u306F\u6B63\u3057\u3044\uFF08\u30D7\u30E9\u30C3\u30C8\u30D5\u30A9\u30FC\u30E0\u306B\u5148\u3092\u8B72\u308B\u305F\u3081\uFF09\u3002`);
+      if (!s.dragstartFor.has("pen")) {
+        L.push("  - \u306A\u304A\u3001\u3053\u306E\u753B\u9762\u306E\u9577\u62BC\u3057\u3067\u306F\u767A\u706B\u3057\u3066\u3044\u307E\u305B\u3093\u3002\u5224\u5B9A\u306F\u5B9F\u30AB\u30FC\u30C9\u306E\u8A18\u9332\u3092\u512A\u5148\u3057\u307E\u3059\uFF08\u3053\u306E\u753B\u9762\u306E\u30D1\u30C3\u30C9\u3088\u308A\u3001\u5B9F\u969B\u306B draggable \u306A\u884C\u306E\u307B\u3046\u304C\u6761\u4EF6\u304C\u672C\u756A\u306B\u8FD1\u3044\u305F\u3081\uFF09\u3002");
+      }
+    } else if (s.presses > 0) {
+      L.push("- \u26A0\uFE0F **\u307E\u3060\u30DA\u30F3\u3067\u306E\u30CD\u30A4\u30C6\u30A3\u30D6\u30C9\u30E9\u30C3\u30B0\u3092\u89B3\u6E2C\u3067\u304D\u3066\u3044\u307E\u305B\u3093** \u2192 \u73FE\u6642\u70B9\u3067\u306F\u30A2\u30D7\u30EA\u5185\u306E\u5408\u6210\u30C9\u30E9\u30C3\u30B0\u306E\u307F\u3002\u6301\u3061\u51FA\u3057\u306F\u5171\u6709\u30B7\u30FC\u30C8 / `obsidian://jpc-capture` \u5074\u3067\u89E3\u304F\u5FC5\u8981\u304C\u3042\u308A\u307E\u3059\u3002\uFF08\u8F9E\u66F8\u3084\u30C8\u30EC\u30A4\u306E\u5B9F\u30AB\u30FC\u30C9\u3092\u6570\u56DE\u30DA\u30F3\u3067\u6301\u3061\u4E0A\u3052\u3066\u304B\u3089\u3001\u518D\u5EA6\u3053\u306E\u691C\u67FB\u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u5224\u5B9A\u306F\u305D\u3061\u3089\u306E\u8A18\u9332\u3092\u512A\u5148\u3057\u307E\u3059\u3002\uFF09");
+    }
+    if (s.hoverBeforeContact) {
+      L.push("- \u2705 \u30DB\u30D0\u30FC\u304C\u5C4A\u304F \u2192 \u9451\u8CDE\u30E2\u30FC\u30C9\u306E\u8F9E\u66F8\u30D4\u30FC\u30AF\u306F\u3053\u306E\u7AEF\u672B\u3067\u6A5F\u80FD\u3057\u307E\u3059\u3002");
+    } else if (pen) {
+      L.push("- \u26A0\uFE0F \u30DB\u30D0\u30FC\u672A\u89B3\u6E2C\uFF08M2 \u672A\u6E80\u306E iPad\u3001\u307E\u305F\u306F Pencil \u7B2C1\u4E16\u4EE3\u306E\u53EF\u80FD\u6027\uFF09\u3002\u30D4\u30FC\u30AF\u306F\u89E6\u308C\u305F\u77AC\u9593\u306B\u3057\u304B\u51FA\u307E\u305B\u3093\u3002");
+    }
+    return L;
+  }
+  repaint() {
+    if (!this.liveEl)
+      return;
+    this.liveEl.empty();
+    for (const line of this.report()) {
+      if (line.startsWith("### ")) {
+        this.liveEl.createDiv({ cls: "jp-penprobe-h", text: line.slice(4) });
+      } else if (line.startsWith("## ") || !line.trim()) {
+        continue;
+      } else {
+        this.liveEl.createDiv({ cls: "jp-penprobe-row", text: line.replace(/^- /, "").replace(/\*\*/g, "") });
+      }
+    }
+  }
 };
 
 // src/data/seed-data.ts
@@ -12291,46 +13040,105 @@ var CollocationStore = class {
 };
 
 // src/data/data-manager.ts
+var PARTS_KEY = "_parts";
+var DEFAULT_MIN_CHARS = 64 * 1024;
+var PARTITIONABLE = /^_[A-Za-z0-9_-]+$/;
 var DataManager = class {
   // no parameter properties: golden suites run this file under Node's
   // strip-only TS loader, which rejects them
-  constructor(io, path, bakPath, debounceMs = 800) {
+  constructor(io, path, bakPath, debounceMs = 800, partition) {
     this.blob = {};
-    /** Last serialization known to be fully on disk — the .bak source. */
-    this.lastGoodText = null;
+    /** Last serialization known to be fully on disk, per file path — the .bak
+     *  source. Keyed by path so each file backs up only its own history. */
+    this.lastGood = /* @__PURE__ */ new Map();
     this.writeChain = Promise.resolve();
     this.timer = null;
     this.waiters = [];
-    this.dirty = false;
+    /** Store keys changed since the last completed write. */
+    this.dirtyKeys = /* @__PURE__ */ new Set();
+    /** The settings slice / small-key body changed, or the manifest must move. */
+    this.mainDirty = false;
+    /** Keys currently living in their own file, per the manifest we will write. */
+    this.parts = /* @__PURE__ */ new Set();
+    /** Listed by the manifest but unreadable — reads see nothing, writes refuse. */
+    this.quarantined = /* @__PURE__ */ new Set();
     /** Completed main-file writes this session (debug dump + goldens). */
     this.writes = 0;
+    /** Completed partition-file writes this session. */
+    this.partWrites = 0;
+    var _a2, _b2;
     this.io = io;
     this.path = path;
     this.bakPath = bakPath;
     this.debounceMs = debounceMs;
+    this.partDir = (_a2 = partition == null ? void 0 : partition.dir) != null ? _a2 : null;
+    this.minChars = (_b2 = partition == null ? void 0 : partition.minChars) != null ? _b2 : DEFAULT_MIN_CHARS;
+  }
+  /** Where a store key's own file lives. Injective over PARTITIONABLE keys. */
+  partPath(key) {
+    return `${this.partDir}/part${key}.json`;
   }
   async load() {
     const raw = await this.io.read(this.path).catch(() => null);
     if (raw == null) {
       this.blob = {};
-      return { restoredFromBackup: false, corrupt: false };
+      return { restoredFromBackup: false, corrupt: false, missingPartitions: [] };
     }
     const main = parseObjectOrNull(raw);
+    let restoredFromBackup = false;
     if (main) {
       this.blob = main;
-      this.lastGoodText = raw;
-      return { restoredFromBackup: false, corrupt: false };
-    }
-    const bakRaw = await this.io.read(this.bakPath).catch(() => null);
-    const bak = bakRaw ? parseObjectOrNull(bakRaw) : null;
-    if (bak && bakRaw) {
+      this.lastGood.set(this.path, raw);
+    } else {
+      const bakRaw = await this.io.read(this.bakPath).catch(() => null);
+      const bak = bakRaw ? parseObjectOrNull(bakRaw) : null;
+      if (!bak || !bakRaw) {
+        this.blob = {};
+        return { restoredFromBackup: false, corrupt: true, missingPartitions: [] };
+      }
       this.blob = bak;
-      this.lastGoodText = bakRaw;
-      void this.schedule();
-      return { restoredFromBackup: true, corrupt: false };
+      restoredFromBackup = true;
+      this.mainDirty = true;
     }
-    this.blob = {};
-    return { restoredFromBackup: false, corrupt: true };
+    const missingPartitions = await this.loadPartitions();
+    if (restoredFromBackup)
+      void this.schedule();
+    return { restoredFromBackup, corrupt: false, missingPartitions };
+  }
+  /** Pull every key the manifest promises back into the canonical blob. */
+  async loadPartitions() {
+    const listed = this.blob[PARTS_KEY];
+    delete this.blob[PARTS_KEY];
+    if (!this.partDir || !Array.isArray(listed))
+      return [];
+    const missing = [];
+    for (const key of listed) {
+      if (typeof key !== "string" || !PARTITIONABLE.test(key))
+        continue;
+      const p = this.partPath(key);
+      const text = await this.io.read(p).catch(() => null);
+      let value = text == null ? void 0 : parseAnyOrUndefined(text);
+      let fromBak = false;
+      if (value === void 0) {
+        const bakText = await this.io.read(`${p}.bak`).catch(() => null);
+        value = bakText == null ? void 0 : parseAnyOrUndefined(bakText);
+        if (value !== void 0) {
+          fromBak = true;
+          this.dirtyKeys.add(key);
+        }
+      }
+      if (value === void 0) {
+        missing.push(key);
+        this.quarantined.add(key);
+        this.parts.add(key);
+        continue;
+      }
+      this.blob[key] = value;
+      this.parts.add(key);
+      if (text != null && !fromBak)
+        this.lastGood.set(p, text);
+    }
+    return missing;
   }
   get(key) {
     return this.blob[key];
@@ -12338,30 +13146,66 @@ var DataManager = class {
   has(key) {
     return key in this.blob;
   }
+  /** Keys whose file could not be read. Writes to these are refused. */
+  quarantinedKeys() {
+    return [...this.quarantined];
+  }
+  /** Keys currently stored in their own file (debug dump). */
+  partitionedKeys() {
+    return [...this.parts].sort();
+  }
   /** The live canonical blob — READ-ONLY convenience for load-time wiring.
    *  Mutate only through setKey/setSettings/mutate so writes get scheduled. */
   snapshot() {
     return this.blob;
   }
   setKey(key, value) {
+    if (this.quarantined.has(key)) {
+      return Promise.reject(new Error(
+        `[jp-collocations] refusing to write "${key}": its partition file is missing. The in-memory value is a default, not your data.`
+      ));
+    }
     this.blob[key] = value;
-    return this.schedule();
+    return this.schedule(key);
   }
   deleteKey(key) {
     delete this.blob[key];
+    this.quarantined.delete(key);
+    return this.schedule(key);
+  }
+  /** Apply an in-place migration; schedules a write only if fn reports change.
+   *  A migration may touch anything, so this dirties every key. */
+  mutate(fn) {
+    if (!fn(this.blob))
+      return Promise.resolve();
+    for (const k of Object.keys(this.blob))
+      this.dirtyKeys.add(k);
     return this.schedule();
   }
-  /** Apply an in-place migration; schedules a write only if fn reports change. */
-  mutate(fn) {
-    return fn(this.blob) ? this.schedule() : Promise.resolve();
+  /**
+   * Move keys between inline and their own file to match the current sizes,
+   * without changing any value. Call once after load(): it makes the FIRST
+   * expensive write happen at startup rather than under the user's first tap,
+   * and it is a no-op when the layout is already right.
+   */
+  repartition() {
+    if (!this.partDir || !this.planLayout())
+      return Promise.resolve();
+    return this.schedule();
   }
   /** Overwrite .bak with the CURRENT on-disk state. Call after a migration
    *  that removed secrets — the normal rolling backup is one generation
    *  behind, which would keep the secret-bearing version alive in a synced
    *  file. Costs one backup generation; the corpus is intact in main. */
   async alignBackup() {
-    if (this.lastGoodText != null)
-      await this.io.write(this.bakPath, this.lastGoodText);
+    const main = this.lastGood.get(this.path);
+    if (main != null)
+      await this.io.write(this.bakPath, main);
+    for (const key of this.parts) {
+      const t = this.lastGood.get(this.partPath(key));
+      if (t != null)
+        await this.io.write(`${this.partPath(key)}.bak`, t);
+    }
   }
   /** The settings-shaped view: every top-level key that is not a _store. */
   settingsSlice() {
@@ -12380,10 +13224,14 @@ var DataManager = class {
     for (const [k, v] of Object.entries(settings))
       if (!k.startsWith("_"))
         this.blob[k] = v;
+    this.mainDirty = true;
     return this.schedule();
   }
-  schedule() {
-    this.dirty = true;
+  schedule(key) {
+    if (key)
+      this.dirtyKeys.add(key);
+    else
+      this.mainDirty = true;
     const done = new Promise((res) => this.waiters.push(res));
     if (this.timer)
       clearTimeout(this.timer);
@@ -12392,6 +13240,45 @@ var DataManager = class {
     }, this.debounceMs);
     return done;
   }
+  /**
+   * Decide which keys deserve their own file. Returns true when the layout
+   * moved, and dirties both the moved keys and the main file (the manifest
+   * changed, and so did what main carries inline).
+   */
+  planLayout() {
+    var _a2, _b2;
+    if (!this.partDir)
+      return false;
+    const demoteAt = Math.floor(this.minChars / 2);
+    let moved = false;
+    for (const [k, v] of Object.entries(this.blob)) {
+      if (!PARTITIONABLE.test(k) || this.quarantined.has(k))
+        continue;
+      const size = (_b2 = (_a2 = JSON.stringify(v)) == null ? void 0 : _a2.length) != null ? _b2 : 0;
+      const isPart = this.parts.has(k);
+      const want = isPart ? size >= demoteAt : size >= this.minChars;
+      if (want === isPart)
+        continue;
+      if (want)
+        this.parts.add(k);
+      else
+        this.parts.delete(k);
+      this.dirtyKeys.add(k);
+      moved = true;
+    }
+    for (const k of [...this.parts]) {
+      if (this.quarantined.has(k))
+        continue;
+      if (!(k in this.blob)) {
+        this.parts.delete(k);
+        this.dirtyKeys.add(k);
+        moved = true;
+      }
+    }
+    if (moved)
+      this.mainDirty = true;
+    return moved;
+  }
   /** Write now if dirty. Chained onto any in-flight write — never overlaps.
    *  Call on plugin unload. */
   flush() {
@@ -12399,22 +13286,67 @@ var DataManager = class {
       clearTimeout(this.timer);
       this.timer = null;
     }
-    if (!this.dirty)
+    if (!this.dirtyKeys.size && !this.mainDirty)
       return this.writeChain;
-    this.dirty = false;
+    this.planLayout();
+    const partsToWrite = [];
+    const filesToDrop = [];
+    for (const key of this.dirtyKeys) {
+      if (!this.partDir)
+        continue;
+      const p = this.partPath(key);
+      if (this.parts.has(key))
+        partsToWrite.push({ path: p, text: JSON.stringify(this.blob[key]) });
+      else if (this.lastGood.has(p))
+        filesToDrop.push(p);
+    }
+    const mainObj = {};
+    for (const [k, v] of Object.entries(this.blob))
+      if (!this.parts.has(k))
+        mainObj[k] = v;
+    if (this.parts.size)
+      mainObj[PARTS_KEY] = [...this.parts].sort();
+    const mainText = JSON.stringify(mainObj);
+    this.dirtyKeys.clear();
+    this.mainDirty = false;
     const waiters = this.waiters;
     this.waiters = [];
-    const text = JSON.stringify(this.blob);
     this.writeChain = this.writeChain.then(async () => {
-      if (this.lastGoodText != null && this.lastGoodText !== text) {
-        await this.io.write(this.bakPath, this.lastGoodText);
+      for (const { path, text } of partsToWrite) {
+        const prev = this.lastGood.get(path);
+        if (prev === text)
+          continue;
+        if (prev != null)
+          await this.io.write(`${path}.bak`, prev);
+        await this.io.write(path, text);
+        this.lastGood.set(path, text);
+        this.partWrites++;
       }
-      await this.io.write(this.path, text);
-      this.lastGoodText = text;
-      this.writes++;
+      const prevMain = this.lastGood.get(this.path);
+      if (prevMain !== mainText) {
+        if (prevMain != null)
+          await this.io.write(this.bakPath, prevMain);
+        await this.io.write(this.path, mainText);
+        this.lastGood.set(this.path, mainText);
+        this.writes++;
+      }
+      for (const path of filesToDrop) {
+        this.lastGood.delete(path);
+        if (this.io.remove)
+          await this.io.remove(path).catch(() => {
+          });
+        else
+          await this.io.write(path, "").catch(() => {
+          });
+      }
     }).catch((e) => {
       console.error("[jp-collocations] blob write failed", e);
-      this.dirty = true;
+      this.mainDirty = true;
+      for (const { path } of partsToWrite) {
+        for (const [k] of Object.entries(this.blob))
+          if (this.partPath(k) === path)
+            this.dirtyKeys.add(k);
+      }
     }).finally(() => {
       for (const w of waiters)
         w();
@@ -12428,6 +13360,14 @@ function parseObjectOrNull(s) {
     return v && typeof v === "object" && !Array.isArray(v) ? v : null;
   } catch (e) {
     return null;
+  }
+}
+function parseAnyOrUndefined(s) {
+  try {
+    const v = JSON.parse(s);
+    return v === void 0 ? void 0 : v;
+  } catch (e) {
+    return void 0;
   }
 }
 
@@ -13118,7 +14058,7 @@ var SearchEngine = class {
 };
 
 // src/scraper/HyogenScraper.ts
-var import_obsidian = require("obsidian");
+var import_obsidian3 = require("obsidian");
 
 // src/scraper/hyogen-parse.ts
 var ITEM_SEP = "\u3000\u3000";
@@ -13291,7 +14231,7 @@ var _HyogenScraper = class _HyogenScraper {
    */
   async profile(word) {
     const url = _HyogenScraper.pageFor(word);
-    const response = await (0, import_obsidian.requestUrl)({ url, method: "GET", throw: false });
+    const response = await (0, import_obsidian3.requestUrl)({ url, method: "GET", throw: false });
     if (response.status !== 200)
       throw new Error(`HTTP ${response.status}`);
     return parseHyogenProfile(response.text, word);
@@ -13303,7 +14243,7 @@ var _HyogenScraper = class _HyogenScraper {
   }
   async fetchWord(word) {
     const url = _HyogenScraper.pageFor(word);
-    const response = await (0, import_obsidian.requestUrl)({ url, method: "GET" });
+    const response = await (0, import_obsidian3.requestUrl)({ url, method: "GET" });
     if (response.status !== 200) {
       throw new Error(`HTTP ${response.status}`);
     }
@@ -13388,7 +14328,6 @@ _HyogenScraper.MAX_PER_SECTION = 40;
 var HyogenScraper = _HyogenScraper;
 
 // src/ui/pointer-drag.ts
-var import_obsidian2 = require("obsidian");
 var zones = /* @__PURE__ */ new Set();
 function registerPointerDropZone(z) {
   zones.add(z);
@@ -13398,7 +14337,6 @@ function registerPointerDropZone(z) {
 }
 var SLOP = 10;
 var ARM_MS = 350;
-var COMMIT_MS = import_obsidian2.Platform.isPhone ? 380 : 700;
 var live = null;
 var pointerDragActive = () => live !== null;
 function abortPointerDrag() {
@@ -13526,6 +14464,7 @@ function bindPointerDrag(el, payload, pill) {
     if (e.pointerType === "mouse" || e.button !== 0 || live)
       return;
     const pid = e.pointerId, x0 = e.clientX, y0 = e.clientY;
+    const kind = e.pointerType;
     let armTimer = window.setTimeout(
       () => el.addClass("jp-draggable--arming"),
       ARM_MS
@@ -13546,7 +14485,10 @@ function bindPointerDrag(el, payload, pill) {
       el.removeEventListener("pointerup", done);
       el.removeEventListener("pointercancel", done);
     };
-    const onNative = () => done();
+    const onNative = () => {
+      noteDragPress(kind, true);
+      done();
+    };
     const onCandidateMove = (ev) => {
       if (ev.pointerId !== pid)
         return;
@@ -13554,12 +14496,13 @@ function bindPointerDrag(el, payload, pill) {
         done();
     };
     commitTimer = window.setTimeout(() => {
+      noteDragPress(kind, false);
       const p = payload();
       done();
       if (!p || !p.text.trim())
         return;
       beginPointerDrag(el, p, pill(p), pid, x0, y0);
-    }, COMMIT_MS);
+    }, dragCommitMs(e.pointerType));
     el.addEventListener("dragstart", onNative);
     el.addEventListener("pointermove", onCandidateMove);
     el.addEventListener("pointerup", done);
@@ -13567,8 +14510,99 @@ function bindPointerDrag(el, payload, pill) {
   });
 }
 
+// src/ui/hover-peek.ts
+var DWELL_MS = 320;
+var HoverPeek = class {
+  /** @param resolveAt screen point → peek data, or null when no word there. */
+  constructor(resolveAt) {
+    this.resolveAt = resolveAt;
+    this.timer = null;
+    this.el = null;
+    this.key = "";
+  }
+  /** Wire a container. `hitSelector` scopes peeks to hoverable text spans. */
+  attach(container, hitSelector) {
+    const overOrMove = (e) => {
+      var _a2;
+      if (e.pointerType === "touch")
+        return;
+      if (pointerDragActive()) {
+        this.cancel();
+        return;
+      }
+      const t = e.target;
+      if ((_a2 = t == null ? void 0 : t.closest) == null ? void 0 : _a2.call(t, hitSelector))
+        this.schedule(e.clientX, e.clientY);
+      else
+        this.cancel();
+    };
+    container.addEventListener("pointerover", overOrMove);
+    container.addEventListener("pointermove", overOrMove);
+    container.addEventListener("pointerdown", () => this.cancel());
+    container.addEventListener("pointerleave", () => this.cancel());
+  }
+  schedule(x, y) {
+    if (this.timer)
+      clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      const data = this.resolveAt(x, y);
+      if (!data) {
+        this.remove();
+        return;
+      }
+      if (data.headword === this.key && this.el)
+        return;
+      this.remove();
+      this.key = data.headword;
+      this.el = this.build(data, x, y);
+    }, DWELL_MS);
+  }
+  build(data, x, y) {
+    var _a2;
+    const el = document.body.createDiv("jp-lex-peek");
+    const top = el.createDiv("jp-lex-peek-top");
+    top.createSpan({ text: data.headword, cls: "jp-lex-peek-hw" });
+    if (data.reading && data.reading !== data.headword) {
+      top.createSpan({ text: data.reading, cls: "jp-lex-peek-reading" });
+    }
+    if ((_a2 = data.deinflection) == null ? void 0 : _a2.length) {
+      top.createSpan({ text: `\u3008${data.deinflection.join("+")}\u3009`, cls: "jp-lex-deinflect" });
+    }
+    if (data.def)
+      el.createDiv({ text: data.def.slice(0, 140), cls: "jp-lex-peek-def" });
+    const pad4 = 12;
+    el.style.left = `${Math.min(x + pad4, window.innerWidth - 300)}px`;
+    el.style.top = `${Math.max(pad4, y - el.offsetHeight - pad4 - 8)}px`;
+    return el;
+  }
+  cancel() {
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this.remove();
+  }
+  remove() {
+    var _a2;
+    (_a2 = this.el) == null ? void 0 : _a2.remove();
+    this.el = null;
+    this.key = "";
+  }
+};
+function definitionsPreview(defs) {
+  return defs.map((d) => {
+    var _a2, _b2;
+    if (typeof d === "string")
+      return d;
+    if (!d || typeof d !== "object")
+      return "";
+    const o = d;
+    return String((_b2 = (_a2 = o.text) != null ? _a2 : o.gloss) != null ? _b2 : "");
+  }).filter(Boolean).join(" / ");
+}
+
 // src/scraper/TsukubaWebCorpusScraper.ts
-var import_obsidian3 = require("obsidian");
+var import_obsidian4 = require("obsidian");
 
 // src/scraper/goho.ts
 var norm = (s) => normalizeJapanese(s).replace(/\s+/g, "");
@@ -14152,7 +15186,7 @@ var TsukubaWebCorpusScraper = class _TsukubaWebCorpusScraper {
    */
   async post(url, fields, referer) {
     const body2 = Object.entries(fields).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
-    const resp = await (0, import_obsidian3.requestUrl)({
+    const resp = await (0, import_obsidian4.requestUrl)({
       url,
       method: "POST",
       headers: {
@@ -14236,11 +15270,11 @@ var TsukubaWebCorpusScraper = class _TsukubaWebCorpusScraper {
 };
 
 // src/ui/CollocationView.ts
-var import_obsidian11 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 
 // src/ui/AddEntryModal.ts
-var import_obsidian4 = require("obsidian");
-var AddEntryModal = class extends import_obsidian4.Modal {
+var import_obsidian5 = require("obsidian");
+var AddEntryModal = class extends import_obsidian5.Modal {
   constructor(app, store, onSave, existing) {
     super(app);
     // Form state
@@ -14277,52 +15311,52 @@ var AddEntryModal = class extends import_obsidian4.Modal {
     contentEl.empty();
     contentEl.addClass("jp-col-modal");
     contentEl.createEl("h2", { text: this.existing ? "Edit Entry" : "Add Collocation Entry" });
-    new import_obsidian4.Setting(contentEl).setName("Headword *").setDesc("Main word (e.g. \u98A8)").addText((t) => t.setValue(this.headword).onChange((v) => {
+    new import_obsidian5.Setting(contentEl).setName("Headword *").setDesc("Main word (e.g. \u98A8)").addText((t) => t.setValue(this.headword).onChange((v) => {
       this.headword = v;
       this.headwordPOS = detectPOS(v);
     }));
-    new import_obsidian4.Setting(contentEl).setName("Reading").setDesc("Hiragana reading (e.g. \u304B\u305C)").addText((t) => t.setValue(this.headwordReading).onChange((v) => {
+    new import_obsidian5.Setting(contentEl).setName("Reading").setDesc("Hiragana reading (e.g. \u304B\u305C)").addText((t) => t.setValue(this.headwordReading).onChange((v) => {
       this.headwordReading = v;
     }));
-    new import_obsidian4.Setting(contentEl).setName("Collocate *").setDesc("Collocating word/phrase (e.g. \u304C\u5439\u304F)").addText((t) => t.setValue(this.collocate).onChange((v) => {
+    new import_obsidian5.Setting(contentEl).setName("Collocate *").setDesc("Collocating word/phrase (e.g. \u304C\u5439\u304F)").addText((t) => t.setValue(this.collocate).onChange((v) => {
       this.collocate = v;
     }));
-    new import_obsidian4.Setting(contentEl).setName("Full Phrase").setDesc("Complete phrase (auto-generated if empty)").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
+    new import_obsidian5.Setting(contentEl).setName("Full Phrase").setDesc("Complete phrase (auto-generated if empty)").addText((t) => t.setValue(this.fullPhrase).onChange((v) => {
       this.fullPhrase = v;
     }));
-    new import_obsidian4.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
+    new import_obsidian5.Setting(contentEl).setName("Headword POS").addDropdown((d) => {
       for (const pos of Object.values(PartOfSpeech))
         d.addOption(pos, pos);
       d.setValue(this.headwordPOS).onChange((v) => {
         this.headwordPOS = v;
       });
     });
-    new import_obsidian4.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
+    new import_obsidian5.Setting(contentEl).setName("Collocate POS").addDropdown((d) => {
       for (const pos of Object.values(PartOfSpeech))
         d.addOption(pos, pos);
       d.setValue(this.collocatePOS).onChange((v) => {
         this.collocatePOS = v;
       });
     });
-    new import_obsidian4.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u304C+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
+    new import_obsidian5.Setting(contentEl).setName("Pattern").setDesc("Grammar pattern (e.g. N+\u304C+V)").addText((t) => t.setValue(this.pattern).onChange((v) => {
       this.pattern = v;
     }));
-    new import_obsidian4.Setting(contentEl).setName("Example Sentences").setDesc("One per line").addTextArea((t) => {
+    new import_obsidian5.Setting(contentEl).setName("Example Sentences").setDesc("One per line").addTextArea((t) => {
       t.setValue(this.exampleSentences).onChange((v) => {
         this.exampleSentences = v;
       });
       t.inputEl.rows = 3;
     });
-    new import_obsidian4.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags").addText((t) => t.setValue(this.tags).onChange((v) => {
+    new import_obsidian5.Setting(contentEl).setName("Tags").setDesc("Comma-separated tags").addText((t) => t.setValue(this.tags).onChange((v) => {
       this.tags = v;
     }));
-    new import_obsidian4.Setting(contentEl).setName("Notes").addTextArea((t) => {
+    new import_obsidian5.Setting(contentEl).setName("Notes").addTextArea((t) => {
       t.setValue(this.notes).onChange((v) => {
         this.notes = v;
       });
       t.inputEl.rows = 2;
     });
-    new import_obsidian4.Setting(contentEl).setName("Frequency").setDesc("1-100 importance score").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
+    new import_obsidian5.Setting(contentEl).setName("Frequency").setDesc("1-100 importance score").addSlider((s) => s.setLimits(1, 100, 1).setValue(this.frequency).setDynamicTooltip().onChange((v) => {
       this.frequency = v;
     }));
     const btnRow = contentEl.createDiv("jp-col-modal-btns");
@@ -14334,7 +15368,7 @@ var AddEntryModal = class extends import_obsidian4.Modal {
   handleSave() {
     var _a2, _b2, _c2, _d2, _e2, _f2;
     if (!this.headword.trim() || !this.collocate.trim()) {
-      new import_obsidian4.Notice("Headword and Collocate are required.");
+      new import_obsidian5.Notice("Headword and Collocate are required.");
       return;
     }
     const now = Date.now();
@@ -14358,10 +15392,10 @@ var AddEntryModal = class extends import_obsidian4.Modal {
     };
     if (this.existing) {
       this.store.update(entry2);
-      new import_obsidian4.Notice(`Updated: ${phrase}`);
+      new import_obsidian5.Notice(`Updated: ${phrase}`);
     } else {
       this.store.add(entry2);
-      new import_obsidian4.Notice(`Added: ${phrase}`);
+      new import_obsidian5.Notice(`Added: ${phrase}`);
     }
     this.onSave();
     this.close();
@@ -14372,7 +15406,7 @@ var AddEntryModal = class extends import_obsidian4.Modal {
 };
 
 // src/ui/CardPreviewModal.ts
-var import_obsidian5 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 
 // src/discourse/discourse-patterns.ts
 var _counter = {};
@@ -20059,7 +21093,7 @@ function generateChunkCard(chunk, options) {
   if (chunk.sourceFile) {
     backLines.push(`\u{1F4C4} [[${chunk.sourceFile}]]`);
   }
-  const back = backLines.join("\n");
+  const back2 = backLines.join("\n");
   const difficulty = Math.min(5, Math.max(
     1,
     Math.ceil(allPatterns.length / 3) + (chunk.speakerCount > 1 ? 1 : 0)
@@ -20075,13 +21109,13 @@ function generateChunkCard(chunk, options) {
   const markdown = `${tagLine}
 ${front}
 ?
-${back}
+${back2}
 `;
   return {
     id: chunk.id,
     type: "discourse-chunk",
     front,
-    back,
+    back: back2,
     tags,
     sourceFile: chunk.sourceFile,
     difficulty,
@@ -20120,7 +21154,7 @@ function generateCollocationCard(entry2, options) {
   if (entry2.tags.length > 0) {
     backLines.push("", entry2.tags.map((t) => `\`${t}\``).join(" "));
   }
-  const back = backLines.join("\n");
+  const back2 = backLines.join("\n");
   const tags = [
     `${options.tagPrefix}/collocation`,
     `${options.tagPrefix}/pos/${entry2.headwordPOS}`
@@ -20129,7 +21163,7 @@ function generateCollocationCard(entry2, options) {
   const markdown = `${tagLine}
 ${front}
 ?
-${back}
+${back2}
 `;
   const difficulty = Math.min(5, Math.max(
     1,
@@ -20139,7 +21173,7 @@ ${back}
     id: `col-${entry2.id}`,
     type: "collocation",
     front,
-    back,
+    back: back2,
     tags,
     difficulty,
     markdown
@@ -20159,7 +21193,7 @@ function generatePatternCards(chunk, options) {
           "",
           `> \u4F55\u304C\u5165\u308B\uFF1F (${p.pattern.categoryLabel})`
         ].join("\n");
-        const back = [
+        const back2 = [
           `**${p.pattern.surface}** \u2014 ${p.pattern.gloss}`,
           "",
           options.includeEnglish ? `${p.pattern.glossEn}` : "",
@@ -20191,14 +21225,14 @@ function generatePatternCards(chunk, options) {
           id: `pat-${p.pattern.id}-${chunk.id}`,
           type: "discourse-chunk",
           front,
-          back,
+          back: back2,
           tags,
           sourceFile: chunk.sourceFile,
           difficulty: Math.min(5, p.pattern.frequencyTier + 1),
           markdown: `${tagLine}
 ${front}
 ?
-${back}
+${back2}
 `
         });
       }
@@ -20283,7 +21317,7 @@ function generateContextChunkCards(text, sourceFile, options = {}) {
     backLines.push(`\u{1F3AD} ${analysis.register}`);
     if (sourceFile)
       backLines.push(`\u{1F4C4} [[${sourceFile}]]`);
-    const back = backLines.join("\n");
+    const back2 = backLines.join("\n");
     const tags = [`${opts.tagPrefix}/context-chunk`];
     if (analysis.register)
       tags.push(`${opts.tagPrefix}/register/${analysis.register}`);
@@ -20291,7 +21325,7 @@ function generateContextChunkCards(text, sourceFile, options = {}) {
     const markdown = `${tageLine}
 ${front}
 ?
-${back}
+${back2}
 `;
     const difficulty = Math.min(5, Math.max(
       1,
@@ -20301,7 +21335,7 @@ ${back}
       id: `ctx-chunk-${ci}-${Date.now()}`,
       type: "context-chunk",
       front,
-      back,
+      back: back2,
       tags,
       sourceFile,
       difficulty,
@@ -20384,7 +21418,7 @@ function generatePhraseInContextCard(selection, fullText, selectionStart, source
   }
   if (sourceFile)
     backLines.push(`\u{1F4C4} [[${sourceFile}]]`);
-  const back = backLines.join("\n");
+  const back2 = backLines.join("\n");
   const tags = [`${opts.tagPrefix}/phrase-in-context`];
   if (collocation)
     tags.push(`${opts.tagPrefix}/collocation/${collocation.type}`);
@@ -20392,13 +21426,13 @@ function generatePhraseInContextCard(selection, fullText, selectionStart, source
   const markdown = `${tagLine}
 ${front}
 ?
-${back}
+${back2}
 `;
   return {
     id: `pic-${Date.now()}-${selectionStart}`,
     type: "phrase-in-context",
     front,
-    back,
+    back: back2,
     tags,
     sourceFile,
     difficulty: collocation ? Math.min(5, Math.max(1, Math.ceil((1 - collocation.confidence) * 5))) : 3,
@@ -20514,19 +21548,19 @@ function buildRelationChunkCard(chunkText, chunkIdx, totalChunks, sourceFile, op
   }
   if (sourceFile)
     backLines.push(`\u{1F4C4} [[${sourceFile}]]`);
-  const back = backLines.join("\n");
+  const back2 = backLines.join("\n");
   const tags = [`${opts.tagPrefix}/relation-chunk`];
   const tagLine = tags.map((t) => `#${t}`).join(" ");
   const markdown = `${tagLine}
 ${front}
 ?
-${back}
+${back2}
 `;
   return {
     id: `relchunk-${chunkIdx}-${Date.now()}`,
     type: "relation-chunk",
     front,
-    back,
+    back: back2,
     tags,
     sourceFile,
     difficulty: Math.min(5, Math.max(1, sections.length + (sectionRelations.length > 2 ? 1 : 0))),
@@ -20569,7 +21603,7 @@ function buildSection(id, text, start, end, allPatterns, _fullText) {
 }
 
 // src/ui/CardPreviewModal.ts
-var CardPreviewModal = class extends import_obsidian5.Modal {
+var CardPreviewModal = class extends import_obsidian6.Modal {
   constructor(app, sourceText, collocations, sourceFile, options, injectedCards) {
     super(app);
     this.cards = [];
@@ -20676,19 +21710,19 @@ var CardPreviewModal = class extends import_obsidian5.Modal {
     copyCurrentBtn.addEventListener("click", () => this.copyCurrentCard());
     const optSection = contentEl.createDiv("jp-srs-options");
     optSection.createEl("h4", { text: "\u2699\uFE0F \u30AA\u30D7\u30B7\u30E7\u30F3", cls: "jp-srs-opt-title" });
-    new import_obsidian5.Setting(optSection).setName("\u30EC\u30B8\u30B9\u30BF\u30FC\u8868\u793A").addToggle((t) => t.setValue(this.options.includeRegister).onChange((v) => {
+    new import_obsidian6.Setting(optSection).setName("\u30EC\u30B8\u30B9\u30BF\u30FC\u8868\u793A").addToggle((t) => t.setValue(this.options.includeRegister).onChange((v) => {
       this.options.includeRegister = v;
       this.regenerate();
     }));
-    new import_obsidian5.Setting(optSection).setName("\u95A2\u4FC2\u77E2\u5370").addToggle((t) => t.setValue(this.options.includeRelations).onChange((v) => {
+    new import_obsidian6.Setting(optSection).setName("\u95A2\u4FC2\u77E2\u5370").addToggle((t) => t.setValue(this.options.includeRelations).onChange((v) => {
       this.options.includeRelations = v;
       this.regenerate();
     }));
-    new import_obsidian5.Setting(optSection).setName("\u82F1\u8A9E\u30B0\u30ED\u30B9").addToggle((t) => t.setValue(this.options.includeEnglish).onChange((v) => {
+    new import_obsidian6.Setting(optSection).setName("\u82F1\u8A9E\u30B0\u30ED\u30B9").addToggle((t) => t.setValue(this.options.includeEnglish).onChange((v) => {
       this.options.includeEnglish = v;
       this.regenerate();
     }));
-    new import_obsidian5.Setting(optSection).setName("\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7").addToggle((t) => t.setValue(this.options.includeTimestamps).onChange((v) => {
+    new import_obsidian6.Setting(optSection).setName("\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7").addToggle((t) => t.setValue(this.options.includeTimestamps).onChange((v) => {
       this.options.includeTimestamps = v;
       this.regenerate();
     }));
@@ -21086,23 +22120,23 @@ var CardPreviewModal = class extends import_obsidian5.Modal {
       const file = existing;
       const currentContent = await this.app.vault.read(file);
       await this.app.vault.modify(file, currentContent + "\n\n" + content);
-      new import_obsidian5.Notice(`\u{1F4DD} ${this.cards.length} cards appended to ${targetPath}`);
+      new import_obsidian6.Notice(`\u{1F4DD} ${this.cards.length} cards appended to ${targetPath}`);
     } else {
       await this.app.vault.create(targetPath, content);
-      new import_obsidian5.Notice(`\u{1F4DD} ${this.cards.length} cards written to ${targetPath}`);
+      new import_obsidian6.Notice(`\u{1F4DD} ${this.cards.length} cards written to ${targetPath}`);
     }
     this.close();
   }
   async copyCards() {
     const content = buildCardFileContent(this.cards);
     await navigator.clipboard.writeText(content);
-    new import_obsidian5.Notice(`\u{1F4CB} ${this.cards.length} cards copied to clipboard`);
+    new import_obsidian6.Notice(`\u{1F4CB} ${this.cards.length} cards copied to clipboard`);
   }
   async copyCurrentCard() {
     const card = this.cards[this.currentIndex];
     if (card) {
       await navigator.clipboard.writeText(card.markdown);
-      new import_obsidian5.Notice("\u{1F4CB} Card copied to clipboard");
+      new import_obsidian6.Notice("\u{1F4CB} Card copied to clipboard");
     }
   }
   regenerate() {
@@ -21254,7 +22288,7 @@ function getRegisterProgression(tree) {
 }
 
 // src/ui/LexiconPanel.ts
-var import_obsidian10 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 
 // src/dictionary/deinflect.ts
 var RULES = [
@@ -21814,11 +22848,11 @@ function applyComponentSplit(lines, turns, ti, unitStart, kind) {
     if (unitStart <= 0)
       return null;
     const floor = prevSpeaker != null ? prevSpeaker : cur.speaker;
-    const split = splitTurnAt(lines, turns, ti, unitStart, floor);
-    if (!split)
+    const split2 = splitTurnAt(lines, turns, ti, unitStart, floor);
+    if (!split2)
       return null;
     const headKey = turnKey(cur);
-    return split.map((t) => turnKey(t) === headKey ? { ...t, speaker: listener } : t);
+    return split2.map((t) => turnKey(t) === headKey ? { ...t, speaker: listener } : t);
   }
   if (unitStart <= 0) {
     if (cur.speaker === listener)
@@ -23880,98 +24914,93 @@ function renderXUsage(host, u, deps) {
   return body2;
 }
 
-// src/ui/hover-peek.ts
-var DWELL_MS = 320;
-var HoverPeek = class {
-  /** @param resolveAt screen point → peek data, or null when no word there. */
-  constructor(resolveAt) {
-    this.resolveAt = resolveAt;
-    this.timer = null;
-    this.el = null;
-    this.key = "";
+// src/ui/word-at.ts
+function wordAtPoint(x, y, lookup) {
+  var _a2, _b2;
+  const range = (_a2 = document.caretRangeFromPoint) == null ? void 0 : _a2.call(document, x, y);
+  const node = range == null ? void 0 : range.startContainer;
+  if (!range || !node || node.nodeType !== Node.TEXT_NODE)
+    return null;
+  const text = (_b2 = node.textContent) != null ? _b2 : "";
+  const off = Math.min(range.startOffset, Math.max(0, text.length - 1));
+  for (let n = Math.min(8, text.length - off); n >= 1; n--) {
+    const probe = text.slice(off, off + n).trim();
+    if (!probe || !/[぀-ヿ㐀-䶿一-鿿]/.test(probe))
+      continue;
+    const hits = lookup(probe);
+    if (hits.length)
+      return hits[0];
   }
-  /** Wire a container. `hitSelector` scopes peeks to hoverable text spans. */
-  attach(container, hitSelector) {
-    const overOrMove = (e) => {
-      var _a2;
-      if (e.pointerType === "touch")
-        return;
-      if (pointerDragActive()) {
-        this.cancel();
-        return;
-      }
-      const t = e.target;
-      if ((_a2 = t == null ? void 0 : t.closest) == null ? void 0 : _a2.call(t, hitSelector))
-        this.schedule(e.clientX, e.clientY);
-      else
-        this.cancel();
-    };
-    container.addEventListener("pointerover", overOrMove);
-    container.addEventListener("pointermove", overOrMove);
-    container.addEventListener("pointerdown", () => this.cancel());
-    container.addEventListener("pointerleave", () => this.cancel());
-  }
-  schedule(x, y) {
-    if (this.timer)
-      clearTimeout(this.timer);
-    this.timer = setTimeout(() => {
-      const data = this.resolveAt(x, y);
-      if (!data) {
-        this.remove();
-        return;
-      }
-      if (data.headword === this.key && this.el)
-        return;
-      this.remove();
-      this.key = data.headword;
-      this.el = this.build(data, x, y);
-    }, DWELL_MS);
-  }
-  build(data, x, y) {
-    var _a2;
-    const el = document.body.createDiv("jp-lex-peek");
-    const top = el.createDiv("jp-lex-peek-top");
-    top.createSpan({ text: data.headword, cls: "jp-lex-peek-hw" });
-    if (data.reading && data.reading !== data.headword) {
-      top.createSpan({ text: data.reading, cls: "jp-lex-peek-reading" });
-    }
-    if ((_a2 = data.deinflection) == null ? void 0 : _a2.length) {
-      top.createSpan({ text: `\u3008${data.deinflection.join("+")}\u3009`, cls: "jp-lex-deinflect" });
-    }
-    if (data.def)
-      el.createDiv({ text: data.def.slice(0, 140), cls: "jp-lex-peek-def" });
-    const pad4 = 12;
-    el.style.left = `${Math.min(x + pad4, window.innerWidth - 300)}px`;
-    el.style.top = `${Math.max(pad4, y - el.offsetHeight - pad4 - 8)}px`;
-    return el;
-  }
-  cancel() {
-    if (this.timer) {
-      clearTimeout(this.timer);
-      this.timer = null;
-    }
-    this.remove();
-  }
-  remove() {
-    var _a2;
-    (_a2 = this.el) == null ? void 0 : _a2.remove();
-    this.el = null;
-    this.key = "";
-  }
-};
-function definitionsPreview(defs) {
-  return defs.map((d) => {
-    var _a2;
-    return typeof d === "string" ? d : d && typeof d === "object" && "text" in d ? String((_a2 = d.text) != null ? _a2 : "") : "";
-  }).filter(Boolean).join(" / ");
+  return null;
 }
 
 // src/ui/drop-router.ts
-var import_obsidian6 = require("obsidian");
+var import_obsidian7 = require("obsidian");
+
+// src/notes/resource-url.ts
+var LOCAL_FILE = "_capacitor_file_";
+function split(url) {
+  const m = /^([a-z][a-z0-9+.\-]*):\/\/[^/]*\/?(.*)$/i.exec(url);
+  return m ? { scheme: m[1].toLowerCase(), rest: m[2] } : null;
+}
+function isDeviceUrl(url) {
+  const s = split(url.trim());
+  if (!s)
+    return false;
+  if (s.scheme === "app" || s.scheme === "capacitor" || s.scheme === "file")
+    return true;
+  return (s.scheme === "http" || s.scheme === "https") && s.rest.startsWith(LOCAL_FILE);
+}
+function isRemoteUrl(url) {
+  const t = url.trim();
+  return /^https?:\/\/\S+$/i.test(t) && !isDeviceUrl(t);
+}
+function pathTails(src) {
+  if (!src)
+    return [];
+  const s = src.trim();
+  if (!s || /^(?:data|blob):/i.test(s))
+    return [];
+  const noQuery = s.split("?")[0].split("#")[0];
+  const parts0 = split(noQuery);
+  let raw = noQuery;
+  if (parts0) {
+    if (!isDeviceUrl(noQuery))
+      return [];
+    raw = parts0.rest;
+  }
+  if (raw.startsWith(LOCAL_FILE))
+    raw = raw.slice(LOCAL_FILE.length);
+  let decoded = raw;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch (e) {
+  }
+  const parts = decoded.split("/").filter((p) => p.length > 0);
+  return parts.map((_, i) => parts.slice(i).join("/"));
+}
+function vaultPathOf(src, inVault) {
+  const tails = pathTails(src);
+  if (!tails.length)
+    return null;
+  if (inVault) {
+    for (const t of tails) {
+      const hit = inVault(t);
+      if (hit)
+        return hit;
+    }
+    return null;
+  }
+  const decoded = tails[0];
+  const at = decoded.lastIndexOf("/attachments/");
+  return at >= 0 ? decoded.slice(at + 1) : decoded;
+}
+function looksLikeImageUrl(url) {
+  return /\.(?:png|jpe?g|webp|gif|bmp|heic|avif)$/i.test(url.split("?")[0].split("#")[0]);
+}
 
 // src/notes/drop-intent.ts
 var JP2 = /[぀-ゟ゠-ヿ㐀-䶿一-鿿ｦ-ﾟ]/;
-var URL_ONLY = /^https?:\/\/\S+$/;
 var CUE = /\d{1,2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[,.]\d{3}/;
 var X_STATUS = /(?:^|\/\/)(?:www\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status(?:es)?\/(\d{5,25})/;
 function parseTimeParam(url) {
@@ -24032,7 +25061,7 @@ function titleFromFilename(name) {
   return name.replace(/\.[^.]+$/, "").replace(/\.(ja|jpn|japanese)$/i, "").trim();
 }
 function dropIntents(sample, ctx) {
-  var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2;
+  var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k;
   const out = [];
   const seen = /* @__PURE__ */ new Set();
   const push = (i) => {
@@ -24040,6 +25069,10 @@ function dropIntents(sample, ctx) {
       seen.add(i.action);
       out.push(i);
     }
+  };
+  const clip = (s) => {
+    const one = s.replace(/\s+/g, " ").trim();
+    return [...one].length > 18 ? `${[...one].slice(0, 18).join("")}\u2026` : one;
   };
   const files = (_a2 = sample.files) != null ? _a2 : [];
   const preview = !!sample.preview;
@@ -24061,6 +25094,15 @@ function dropIntents(sample, ctx) {
     }
     if (imgs.length) {
       const n = imgs.length;
+      if (text && !preview) {
+        push({
+          action: "image-pair",
+          icon: "\u{1F5BC}",
+          label: "\u753B\u50CF\u3068\u6587\u3092\u307E\u3068\u3081\u3066",
+          detail: n > 1 ? `${n}\u679A + \u300C${clip(text)}\u300D` : `\u753B\u50CF + \u300C${clip(text)}\u300D`,
+          payload: { fileIdx: imgs.map((x) => x.i), text }
+        });
+      }
       if ((_e2 = ctx.can) == null ? void 0 : _e2.ocr) {
         push({
           action: "image-ocr",
@@ -24093,7 +25135,52 @@ function dropIntents(sample, ctx) {
     if (out.length)
       return out;
   }
-  const linkish = uri != null ? uri : URL_ONLY.test(text) ? text : null;
+  const vaultImage = (path, said) => {
+    var _a3, _b3;
+    if (said && !preview) {
+      push({
+        action: "image-pair",
+        icon: "\u{1F5BC}",
+        label: "\u753B\u50CF\u3068\u6587\u3092\u307E\u3068\u3081\u3066",
+        detail: `\u753B\u50CF + \u300C${clip(said)}\u300D`,
+        payload: { imagePaths: [path], text: said }
+      });
+    }
+    if ((_a3 = ctx.can) == null ? void 0 : _a3.ocr) {
+      push({
+        action: "image-ocr",
+        icon: "\u{1F50E}",
+        label: "OCR\u3057\u3066\u53D6\u308A\u8FBC\u3080",
+        detail: "\u5439\u304D\u51FA\u3057\u3092\u62BD\u51FA\u3057\u3066\u30C8\u30EC\u30A4\u3078",
+        payload: { imagePaths: [path] }
+      });
+    }
+    push({
+      action: "image-tray",
+      icon: "\u{1F5BC}",
+      label: "\u753B\u50CF\u3092\u30C8\u30EC\u30A4\u3078",
+      detail: (_b3 = path.split("/").pop()) != null ? _b3 : "\u753B\u50CF",
+      payload: { imagePaths: [path] }
+    });
+    return out;
+  };
+  const held = uri && isDeviceUrl(uri) ? vaultPathOf(uri, ctx.inVault) : null;
+  if (held && looksLikeImageUrl(held)) {
+    const said = isJustEmbed(text) || text === uri ? "" : text;
+    return vaultImage(held, said);
+  }
+  if (held) {
+    push({
+      action: "tray",
+      icon: "\u2935",
+      label: "\u30C8\u30EC\u30A4\u3078",
+      detail: (_f2 = held.split("/").pop()) != null ? _f2 : held,
+      payload: { text: held }
+    });
+    return out;
+  }
+  const deviceish = !!uri && isDeviceUrl(uri);
+  const linkish = (_g2 = uri && !deviceish ? uri : null) != null ? _g2 : isRemoteUrl(text) ? text : null;
   if (preview && !linkish && kinds.includes("text/uri-list")) {
     push({
       action: "link",
@@ -24110,7 +25197,7 @@ function dropIntents(sample, ctx) {
     const videoId = parseYouTubeId(url);
     const isYouTubeHost = /(?:^|\/\/|\.)(?:youtube\.com|youtu\.be)\//.test(url);
     if (videoId && isYouTubeHost) {
-      const tSec = (_f2 = parseTimeParam(url)) != null ? _f2 : void 0;
+      const tSec = (_h2 = parseTimeParam(url)) != null ? _h2 : void 0;
       if (tSec != null) {
         push({
           action: "yt-mark",
@@ -24142,7 +25229,7 @@ function dropIntents(sample, ctx) {
       action: "link",
       icon: "\u{1F517}",
       label: "\u30EA\u30F3\u30AF\u3092\u4FDD\u7BA1",
-      detail: (_g2 = hostOf(url)) != null ? _g2 : url,
+      detail: (_i2 = hostOf(url)) != null ? _i2 : url,
       payload: { url, text: url }
     });
     return out;
@@ -24160,13 +25247,16 @@ function dropIntents(sample, ctx) {
     push({ action: "capture", icon: "\u26A1", label: "\u5206\u985E\u3057\u3066\u53F0\u5E33\u3078", detail: "6\u5206\u985E\u306E\u30AD\u30E3\u30D7\u30C1\u30E3\u3092\u958B\u304F", payload: {} });
     if (ctx.surface === "dict")
       push({ action: "lookup", icon: "\u{1F50D}", label: "\u8F9E\u66F8\u3067\u5F15\u304F", detail: "\u898B\u51FA\u3057\u3092\u63A2\u3059", payload: {} });
-    if (ctx.surface === "x" && ((_h2 = ctx.can) == null ? void 0 : _h2.x))
+    if (ctx.surface === "x" && ((_j2 = ctx.can) == null ? void 0 : _j2.x))
       push({ action: "x-search", icon: "\u{1D54F}", label: "X \u3067\u691C\u7D22", detail: "\u5B9F\u969B\u306E\u4F7F\u308F\u308C\u65B9\u3092\u898B\u308B", payload: {} });
     push({ action: "tray", icon: "\u2935", label: "\u30C8\u30EC\u30A4\u3078", detail: "\u3042\u3068\u3067\u5206\u985E\u3059\u308B", payload: {} });
     return out;
   }
   if (!text)
     return out;
+  const shown = ctx.inVault ? embedTarget(text, ctx.inVault) : null;
+  if (shown && looksLikeImageUrl(shown))
+    return vaultImage(shown, "");
   if (/^!?\[\[[^\]]+\]\]$/.test(text))
     return out;
   if (looksLikeSubtitle(text)) {
@@ -24224,7 +25314,7 @@ function dropIntents(sample, ctx) {
   if (wordish) {
     push({ action: "lookup", icon: "\u{1F50D}", label: "\u8F9E\u66F8\u3067\u5F15\u304F", detail: `\u300C${oneLine}\u300D\u3092\u5F15\u304F`, payload: { text: oneLine } });
   }
-  if ((_i2 = ctx.can) == null ? void 0 : _i2.x) {
+  if ((_k = ctx.can) == null ? void 0 : _k.x) {
     push({ action: "x-search", icon: "\u{1D54F}", label: "X \u3067\u691C\u7D22", detail: "\u5B9F\u969B\u306E\u4F7F\u308F\u308C\u65B9\u3092\u898B\u308B", payload: { text } });
   }
   push({ action: "tray", icon: "\u2935", label: "\u30C8\u30EC\u30A4\u3078", detail: "\u3042\u3068\u3067\u5206\u985E\u3059\u308B", payload: { text } });
@@ -24239,9 +25329,43 @@ function hostOf(url) {
   const m = url.match(/^https?:\/\/([^/?#]+)/i);
   return m ? m[1].replace(/^www\./, "") : null;
 }
+function embedTarget(text, inVault) {
+  var _a2, _b2;
+  const t = text.trim();
+  const wiki = /^!\[\[([^\]|#^]+)(?:[|#^][^\]]*)?\]\]$/.exec(t);
+  const md = /^!\[[^\]\n]*\]\(([^)\s]+)\)$/.exec(t);
+  const raw = ((_b2 = (_a2 = wiki == null ? void 0 : wiki[1]) != null ? _a2 : md == null ? void 0 : md[1]) != null ? _b2 : "").trim();
+  if (!raw)
+    return null;
+  let target = raw;
+  try {
+    target = decodeURIComponent(raw);
+  } catch (e) {
+  }
+  return inVault(target);
+}
+function isJustEmbed(text) {
+  const t = text.trim();
+  if (!t)
+    return true;
+  return /^!\[\[[^\]]*\]\]$/.test(t) || /^!\[[^\]\n]*\]\([^)\s]*\)$/.test(t);
+}
 
 // src/ui/drop-router.ts
 var MAX_CARDS = 4;
+var bytes = /* @__PURE__ */ new WeakMap();
+function holdBytes(files) {
+  for (const f of files)
+    dropBytes(f);
+}
+function dropBytes(f) {
+  const held = bytes.get(f);
+  if (held)
+    return held;
+  const fresh = f.arrayBuffer().then((b) => b, () => null);
+  bytes.set(f, fresh);
+  return fresh;
+}
 function attachDropRouter(root, deps) {
   const host = root;
   if (host._jpcDrop)
@@ -24255,7 +25379,8 @@ function attachDropRouter(root, deps) {
     return {
       surface: typeof deps.surface === "function" ? deps.surface() : deps.surface,
       entryKey: (_a2 = deps.entryKey) == null ? void 0 : _a2.call(deps),
-      can: (_c2 = (_b2 = deps.can) == null ? void 0 : _b2.call(deps)) != null ? _c2 : {}
+      can: (_c2 = (_b2 = deps.can) == null ? void 0 : _b2.call(deps)) != null ? _c2 : {},
+      ...deps.inVault ? { inVault: deps.inVault } : {}
     };
   };
   const teardown = () => {
@@ -24301,6 +25426,7 @@ function attachDropRouter(root, deps) {
   const realSample = (dt) => {
     var _a2;
     const files = Array.from((_a2 = dt.files) != null ? _a2 : []);
+    holdBytes(files);
     return {
       sample: {
         text: dt.getData("text/plain") || void 0,
@@ -24378,7 +25504,7 @@ function attachDropRouter(root, deps) {
     flash(root, e.clientX, e.clientY);
     teardown();
     if (aimed && chosen.action !== aimed) {
-      new import_obsidian6.Notice(`\u843D\u3068\u3057\u305F\u3082\u306E\u306F\u5225\u7269\u3067\u3057\u305F \u2192 ${chosen.icon} ${chosen.label}`, 4e3);
+      new import_obsidian7.Notice(`\u843D\u3068\u3057\u305F\u3082\u306E\u306F\u5225\u7269\u3067\u3057\u305F \u2192 ${chosen.icon} ${chosen.label}`, 4e3);
     }
     void deps.run(chosen, files);
   };
@@ -24391,6 +25517,7 @@ function attachDropRouter(root, deps) {
     if (!cb)
       return;
     const files = Array.from((_a2 = cb.files) != null ? _a2 : []);
+    holdBytes(files);
     const sample = {
       text: cb.getData("text/plain") || void 0,
       uriList: cb.getData("text/uri-list") || void 0,
@@ -24426,7 +25553,8 @@ function attachDropRouter(root, deps) {
   };
   const carried = (p) => ({
     text: p.text,
-    kinds: ["text/plain", "text/html", "application/x-jpc-drag"],
+    kinds: p.url ? ["text/plain", "text/html", "text/uri-list", "application/x-jpc-drag"] : ["text/plain", "text/html", "application/x-jpc-drag"],
+    ...p.url ? { uriList: p.url } : {},
     files: []
   });
   const detachZone = registerPointerDropZone({
@@ -24481,7 +25609,6 @@ function flash(root, clientX, clientY) {
 }
 
 // src/ui/selection-echo.ts
-var import_obsidian7 = require("obsidian");
 var MIN_CHARS = 2;
 var MAX_VERBS = 4;
 function attachSelectionEcho(root, deps) {
@@ -24491,7 +25618,9 @@ function attachSelectionEcho(root, deps) {
   root.addClass("jp-echo-host");
   let bar = null;
   let timer = null;
+  let seq = 0;
   const hide = () => {
+    seq++;
     bar == null ? void 0 : bar.remove();
     bar = null;
   };
@@ -24502,6 +25631,53 @@ function attachSelectionEcho(root, deps) {
       entryKey: (_a2 = deps.entryKey) == null ? void 0 : _a2.call(deps),
       can: (_c2 = (_b2 = deps.can) == null ? void 0 : _b2.call(deps)) != null ? _c2 : {}
     };
+  };
+  const place = (rect) => {
+    if (!bar || isThumb())
+      return;
+    const box = root.getBoundingClientRect();
+    const barW = bar.offsetWidth || 240;
+    const bias = isSlate() ? hand() === "right" ? -barW / 3 : barW / 3 : 0;
+    const left = Math.min(
+      Math.max(8, rect.left - box.left + rect.width / 2 - barW / 2 + bias),
+      Math.max(8, box.width - barW - 8)
+    );
+    const above = rect.top - box.top - bar.offsetHeight - 8;
+    bar.style.left = `${left}px`;
+    bar.style.top = above > 4 ? `${above}px` : `${rect.bottom - box.top + 8}px`;
+  };
+  const fillHead = (head, d, whenNone = "\u8F9E\u66F8\u306B\u8A72\u5F53\u306A\u3057") => {
+    var _a2;
+    head.empty();
+    head.removeClass("jp-echo-head--waiting");
+    if (!d) {
+      head.addClass("jp-echo-head--none");
+      head.createSpan({ text: whenNone, cls: "jp-echo-head-hw" });
+      return;
+    }
+    const top = head.createDiv("jp-echo-head-top");
+    top.createSpan({ text: d.headword, cls: "jp-echo-head-hw" });
+    if (d.reading && d.reading !== d.headword) {
+      top.createSpan({ text: d.reading, cls: "jp-echo-head-reading" });
+    }
+    if ((_a2 = d.deinflection) == null ? void 0 : _a2.length) {
+      top.createSpan({ text: `\u3008${d.deinflection.join("+")}\u3009`, cls: "jp-lex-deinflect" });
+    }
+    if (d.def)
+      head.createDiv({ text: d.def.slice(0, 160), cls: "jp-echo-head-def" });
+    if (!deps.open)
+      return;
+    const hw = d.headword;
+    head.addClass("jp-echo-head--open");
+    head.title = `${hw} \u3092\u8F9E\u66F8\u3067\u958B\u304F`;
+    head.addEventListener("pointerdown", (e) => {
+      var _a3;
+      e.preventDefault();
+      e.stopPropagation();
+      hide();
+      (_a3 = window.getSelection()) == null ? void 0 : _a3.removeAllRanges();
+      deps.open(hw);
+    });
   };
   const show = () => {
     var _a2;
@@ -24518,15 +25694,48 @@ function attachSelectionEcho(root, deps) {
     }
     if (bar == null ? void 0 : bar.contains(anchor.nodeType === 1 ? anchor : anchor.parentNode))
       return;
-    const intents = dropIntents({ text }, ctx()).slice(0, MAX_VERBS);
-    if (!intents.length) {
+    const shots = imagesIn(sel.rangeCount ? sel.getRangeAt(0) : null, deps.inVault);
+    const intents = dropIntents(
+      shots.length ? { text, files: shots.map((p) => ({ name: p, type: "image/png" })) } : { text },
+      ctx()
+    ).slice(0, MAX_VERBS);
+    for (const i of intents)
+      if (shots.length)
+        i.payload.imagePaths = shots;
+    if (!intents.length && !deps.look) {
       hide();
       return;
     }
     hide();
-    bar = root.createDiv(`jp-echo${import_obsidian7.Platform.isPhone ? " jp-echo--foot" : ""}`);
+    const mine = ++seq;
+    const rect = sel.getRangeAt(0).getBoundingClientRect();
+    bar = root.createDiv(`jp-echo${isThumb() ? " jp-echo--foot" : ""}`);
+    if (deps.look) {
+      const head = bar.createDiv("jp-echo-head jp-echo-head--waiting");
+      head.createSpan({
+        cls: "jp-echo-head-hw",
+        text: [...text].length > 18 ? `${[...text].slice(0, 18).join("")}\u2026` : text
+      });
+      void deps.look(text).then(
+        (d) => {
+          if (mine === seq && bar) {
+            fillHead(head, d);
+            place(rect);
+          }
+        },
+        // A shelf that fails to answer says so. It must never look like "no
+        // such word", which is a different and much stronger claim.
+        () => {
+          if (mine === seq && bar) {
+            fillHead(head, null, "\u8F9E\u66F8\u3092\u8AAD\u3081\u307E\u305B\u3093\u3067\u3057\u305F");
+            place(rect);
+          }
+        }
+      );
+    }
+    const verbs = bar.createDiv("jp-echo-verbs");
     for (const intent of intents) {
-      const b = bar.createEl("button", { cls: "jp-echo-btn", attr: { title: intent.detail } });
+      const b = verbs.createEl("button", { cls: "jp-echo-btn", attr: { title: intent.detail } });
       b.createSpan({ cls: "jp-echo-icon", text: intent.icon });
       b.createSpan({ cls: "jp-echo-label", text: intent.label });
       b.addEventListener("pointerdown", (e) => {
@@ -24538,18 +25747,7 @@ function attachSelectionEcho(root, deps) {
         deps.run(intent);
       });
     }
-    if (import_obsidian7.Platform.isPhone)
-      return;
-    const rect = sel.getRangeAt(0).getBoundingClientRect();
-    const box = root.getBoundingClientRect();
-    const barW = bar.offsetWidth || 240;
-    const left = Math.min(
-      Math.max(8, rect.left - box.left + rect.width / 2 - barW / 2),
-      Math.max(8, box.width - barW - 8)
-    );
-    const above = rect.top - box.top - bar.offsetHeight - 8;
-    bar.style.left = `${left}px`;
-    bar.style.top = above > 4 ? `${above}px` : `${rect.bottom - box.top + 8}px`;
+    place(rect);
   };
   const onChange = () => {
     if (timer)
@@ -24576,26 +25774,74 @@ function attachSelectionEcho(root, deps) {
   host._jpcEcho = detach;
   return detach;
 }
+function imagesIn(range, inVault) {
+  var _a2, _b2, _c2;
+  const out = [];
+  const host = range == null ? void 0 : range.commonAncestorContainer;
+  if (!host)
+    return out;
+  const scope = host.nodeType === 1 ? host : host.parentElement;
+  if (typeof (scope == null ? void 0 : scope.querySelectorAll) !== "function")
+    return out;
+  for (const img of Array.from(scope.querySelectorAll("img"))) {
+    if (typeof range.intersectsNode === "function" && !range.intersectsNode(img))
+      continue;
+    const p = (_c2 = vaultPathOf((_a2 = img.getAttribute("src")) != null ? _a2 : "", inVault)) != null ? _c2 : inVault ? inVault((_b2 = embedLink(img)) != null ? _b2 : "") : null;
+    if (p && !out.includes(p))
+      out.push(p);
+  }
+  return out;
+}
+function embedLink(img) {
+  var _a2;
+  let n = img.parentElement;
+  for (let up = 0; n && up < 3; up++, n = n.parentElement) {
+    const cls = typeof n.className === "string" ? n.className : "";
+    if (!cls.includes("internal-embed"))
+      continue;
+    const s = (_a2 = n.getAttribute) == null ? void 0 : _a2.call(n, "src");
+    if (s)
+      return s;
+  }
+  return null;
+}
 
 // src/ui/view-chrome.ts
-var import_obsidian9 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 
 // src/ui/surface-bar.ts
 var import_obsidian8 = require("obsidian");
 var ITEMS = [
   { id: "lexicon", label: "\u8A9E\u5F59", icon: "library" },
   { id: "dict", label: "\u8F9E\u66F8", icon: "book-open" },
-  { id: "x", label: "\u{1D54F}", icon: "search" },
+  { id: "x", label: "\u{1D54F}", icon: "search", caption: "\u{1D54F}\u691C\u7D22" },
   { id: "tray", label: "\u30C8\u30EC\u30A4", icon: "inbox" },
   { id: "review", label: "\u5FA9\u7FD2", icon: "layers" },
-  { id: "capture", label: "\u26A1", icon: "zap" }
+  { id: "capture", label: "\u26A1", icon: "zap", caption: "\u5206\u985E" }
 ];
+var PLACES = ["lexicon", "dict", "x", "tray", "review"];
+var TOOLS = ["capture"];
+var NEXT = {
+  lexicon: ["dict", "tray"],
+  dict: ["lexicon", "capture"],
+  x: ["tray", "capture"],
+  tray: ["capture", "lexicon"],
+  review: ["dict", "lexicon"],
+  capture: ["tray", "lexicon"]
+};
+var SURFACE_LABEL = Object.fromEntries(ITEMS.map((i) => [i.id, i.label]));
 function renderSurfaceBar(host, deps) {
-  var _a2;
-  const bar = host.createDiv(`jp-surfbar${import_obsidian8.Platform.isPhone ? " jp-surfbar--foot" : ""}`);
+  var _a2, _b2, _c2, _d2;
+  const layout = (_a2 = deps.layout) != null ? _a2 : isThumb() ? "foot" : isSlate() ? "rail" : "inline";
+  const dock2 = layout === "foot" ? " jp-surfbar--foot" : layout === "rail" ? " jp-surfbar--rail" : "";
+  const bar = host.createDiv(`jp-surfbar${dock2}`);
+  const next = (_b2 = NEXT[deps.current]) != null ? _b2 : [];
   for (const it of ITEMS) {
+    if (deps.only && !deps.only.includes(it.id))
+      continue;
+    const lit = it.id !== deps.current && next.includes(it.id) ? " jp-surfbar-btn--next" : "";
     const btn = bar.createEl("button", {
-      cls: `jp-surfbar-btn${it.id === deps.current ? " jp-surfbar-btn--on" : ""}`,
+      cls: `jp-surfbar-btn${it.id === deps.current ? " jp-surfbar-btn--on" : ""}${lit}`,
       attr: { "aria-label": it.label, title: it.label }
     });
     const glyph = btn.createSpan("jp-surfbar-glyph");
@@ -24603,9 +25849,8 @@ function renderSurfaceBar(host, deps) {
       glyph.setText(it.label);
     else
       (0, import_obsidian8.setIcon)(glyph, it.icon);
-    if (it.id !== "x" && it.id !== "capture")
-      btn.createSpan({ cls: "jp-surfbar-label", text: it.label });
-    const n = (_a2 = deps.badge) == null ? void 0 : _a2.call(deps, it.id);
+    btn.createSpan({ cls: "jp-surfbar-label", text: (_c2 = it.caption) != null ? _c2 : it.label });
+    const n = (_d2 = deps.badge) == null ? void 0 : _d2.call(deps, it.id);
     if (n && n > 0)
       btn.createSpan({ cls: "jp-surfbar-badge", text: n > 99 ? "99+" : String(n) });
     btn.onclick = () => {
@@ -24616,7 +25861,414 @@ function renderSurfaceBar(host, deps) {
   return bar;
 }
 
+// src/ui/touch-nav.ts
+var DEFAULT_EDGE = {
+  zone: 30,
+  slop: 10,
+  axisRatio: 1.4,
+  commitPx: 96,
+  commitVx: 380,
+  flickFloor: 0.35
+};
+var inEdgeZone = (x, cfg2 = DEFAULT_EDGE) => x >= 0 && x <= cfg2.zone;
+function decideAxis(dx, dy, cfg2 = DEFAULT_EDGE) {
+  const ax = Math.abs(dx), ay = Math.abs(dy);
+  if (ax < cfg2.slop && ay < cfg2.slop)
+    return "undecided";
+  if (dx > 0 && ax >= ay * cfg2.axisRatio)
+    return "nav";
+  if (ay >= cfg2.slop)
+    return "abandoned";
+  return "undecided";
+}
+function pullFor(dx, cfg2 = DEFAULT_EDGE) {
+  if (dx <= 0)
+    return 0;
+  if (dx <= cfg2.commitPx)
+    return dx;
+  return cfg2.commitPx + rubberBand(dx - cfg2.commitPx, cfg2.commitPx * 2);
+}
+function commits(dx, vx, cfg2 = DEFAULT_EDGE) {
+  if (dx >= cfg2.commitPx)
+    return true;
+  return vx >= cfg2.commitVx && dx >= cfg2.commitPx * cfg2.flickFloor;
+}
+var SETTLE = criticallyDamped(550);
+var reducedMotion2 = () => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+var GUARDED = 'input, textarea, select, [contenteditable="true"], .jp-rail-grip, .jp-slaterail, [draggable="true"]';
+function inHorizontalScroller(from, root) {
+  for (let el = from; el && el !== root; el = el.parentElement) {
+    const e = el;
+    if (e.scrollWidth > e.clientWidth + 1 && e.scrollLeft > 0)
+      return true;
+  }
+  return false;
+}
+function attachEdgeBack(host, deps, cfg2 = DEFAULT_EDGE) {
+  const marked2 = host;
+  if (marked2._jpEdgeBack)
+    return marked2._jpEdgeBack;
+  host.addClass("jp-nav-host");
+  let drag = null;
+  let trail = [];
+  let tab = null;
+  const clear = () => {
+    drag = null;
+    trail = [];
+    tab == null ? void 0 : tab.remove();
+    tab = null;
+  };
+  const show = (label, y) => {
+    tab = host.createDiv("jp-edgeback");
+    tab.createSpan({ cls: "jp-edgeback-arrow", text: "\u2039" });
+    tab.createSpan({ cls: "jp-edgeback-label", text: label });
+    tab.style.top = `${y}px`;
+  };
+  const onDown = (e) => {
+    if (drag || e.pointerType === "mouse" || !e.isPrimary)
+      return;
+    const r2 = host.getBoundingClientRect();
+    if (!inEdgeZone(e.clientX - r2.left, cfg2))
+      return;
+    const t = e.target;
+    if (t == null ? void 0 : t.closest(GUARDED))
+      return;
+    if (inHorizontalScroller(t, host))
+      return;
+    if (!deps.peek())
+      return;
+    drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, axis: "undecided" };
+    trail = [{ t: e.timeStamp, x: e.clientX, y: e.clientY }];
+  };
+  const onMove = (e) => {
+    if (!drag || e.pointerId !== drag.id)
+      return;
+    const dx = e.clientX - drag.x0;
+    const dy = e.clientY - drag.y0;
+    pushSample(trail, { t: e.timeStamp, x: e.clientX, y: e.clientY });
+    if (drag.axis === "undecided") {
+      const next = decideAxis(dx, dy, cfg2);
+      if (next === "abandoned") {
+        clear();
+        return;
+      }
+      if (next === "undecided")
+        return;
+      drag.axis = "nav";
+      const label = deps.peek();
+      if (!label) {
+        clear();
+        return;
+      }
+      show(label, e.clientY - host.getBoundingClientRect().top);
+    }
+    e.preventDefault();
+    const pull = pullFor(dx, cfg2);
+    if (tab) {
+      tab.style.transform = `translateX(${pull.toFixed(1)}px)`;
+      tab.toggleClass("jp-edgeback--armed", commits(dx, 0, cfg2));
+    }
+  };
+  const onUp = (e) => {
+    if (!drag || e.pointerId !== drag.id)
+      return;
+    const dx = e.clientX - drag.x0;
+    const locked = drag.axis === "nav";
+    const { vx } = throwVelocity(trail);
+    const el = tab;
+    const pull = pullFor(dx, cfg2);
+    drag = null;
+    trail = [];
+    tab = null;
+    if (!locked) {
+      el == null ? void 0 : el.remove();
+      return;
+    }
+    if (commits(dx, vx, cfg2)) {
+      el == null ? void 0 : el.remove();
+      deps.go();
+      return;
+    }
+    if (!el)
+      return;
+    if (reducedMotion2() || typeof el.animate !== "function") {
+      el.remove();
+      return;
+    }
+    const { keys, ms } = springKeyframes(pull, 0, vx, 0, SETTLE);
+    const anim = el.animate(keys, { duration: ms, easing: "linear" });
+    anim.onfinish = () => el.remove();
+    anim.oncancel = () => el.remove();
+  };
+  const onCancel = (e) => {
+    if (!drag || e.pointerId !== drag.id)
+      return;
+    clear();
+  };
+  host.addEventListener("pointerdown", onDown, true);
+  host.addEventListener("pointermove", onMove, true);
+  host.addEventListener("pointerup", onUp, true);
+  host.addEventListener("pointercancel", onCancel, true);
+  const detach = () => {
+    host.removeEventListener("pointerdown", onDown, true);
+    host.removeEventListener("pointermove", onMove, true);
+    host.removeEventListener("pointerup", onUp, true);
+    host.removeEventListener("pointercancel", onCancel, true);
+    clear();
+    delete marked2._jpEdgeBack;
+  };
+  marked2._jpEdgeBack = detach;
+  return detach;
+}
+
+// src/ui/clipboard-door.ts
+var import_obsidian9 = require("obsidian");
+function clipboardSample(take) {
+  var _a2, _b2;
+  const t = ((_a2 = take.text) != null ? _a2 : "").trim();
+  const files = (_b2 = take.files) != null ? _b2 : [];
+  const asUri = t && !/\s/.test(t) && (isDeviceUrl(t) || isRemoteUrl(t)) ? t : null;
+  return {
+    ...t ? { text: t } : {},
+    ...asUri ? { uriList: asUri } : {},
+    kinds: [
+      ...t ? ["text/plain"] : [],
+      ...asUri ? ["text/uri-list"] : [],
+      ...files.length ? ["Files"] : []
+    ],
+    files
+  };
+}
+function clipboardIntent(text, ctx) {
+  var _a2, _b2;
+  const sample = clipboardSample({ text, files: ctx.files });
+  if (!sample.text && !((_a2 = sample.files) != null ? _a2 : []).length)
+    return null;
+  return (_b2 = dropIntents(sample, ctx)[0]) != null ? _b2 : null;
+}
+function extOf(mime) {
+  var _a2, _b2, _c2;
+  const sub = (_c2 = (_b2 = (_a2 = mime.split("/")[1]) == null ? void 0 : _a2.split("+")[0]) == null ? void 0 : _b2.toLowerCase()) != null ? _c2 : "png";
+  return sub === "jpeg" ? "jpg" : sub.replace(/[^a-z0-9]/g, "") || "png";
+}
+async function readClipboard() {
+  var _a2;
+  const cb = navigator.clipboard;
+  if (typeof (cb == null ? void 0 : cb.read) === "function") {
+    try {
+      const items = await cb.read();
+      const files = [];
+      let text = "";
+      for (const item of items) {
+        const img = item.types.find((t) => t.startsWith("image/"));
+        if (img) {
+          const blob = await item.getType(img);
+          files.push(new File([blob], `clipboard-${Date.now()}-${files.length}.${extOf(img)}`, { type: img }));
+        }
+        if (!text && item.types.includes("text/plain")) {
+          text = await (await item.getType("text/plain")).text();
+        }
+      }
+      return { text, files };
+    } catch (e) {
+    }
+  }
+  return { text: (_a2 = await cb.readText()) != null ? _a2 : "", files: [] };
+}
+var lastTaken = "";
+function isFreshClipboard(key) {
+  const t = (key != null ? key : "").trim();
+  return !!t && t !== lastTaken;
+}
+function freshnessKey(take) {
+  var _a2, _b2;
+  const t = ((_a2 = take.text) != null ? _a2 : "").trim();
+  const shape = ((_b2 = take.files) != null ? _b2 : []).map((f) => {
+    var _a3, _b3;
+    return `${(_a3 = f.type) != null ? _a3 : "?"}:${(_b3 = f.size) != null ? _b3 : 0}`;
+  }).join("|");
+  return shape ? `${t}\0${shape}` : t;
+}
+async function receiveClipboard(deps) {
+  var _a2;
+  let take;
+  try {
+    take = await readClipboard();
+  } catch (e) {
+    new import_obsidian9.Notice(
+      "\u{1F4CB} \u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u3092\u8AAD\u3081\u307E\u305B\u3093\u3067\u3057\u305F\u3002\niPad \u3067\u306F\u4E00\u5EA6\u3060\u3051\u51FA\u308B\u300C\u30DA\u30FC\u30B9\u30C8\u300D\u3092\u8A31\u53EF\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
+      9e3
+    );
+    return;
+  }
+  const text = take.text.trim();
+  if (!text && !take.files.length) {
+    new import_obsidian9.Notice("\u{1F4CB} \u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u304C\u7A7A\u3067\u3059", 4e3);
+    return;
+  }
+  const key = freshnessKey(take);
+  if (!isFreshClipboard(key)) {
+    new import_obsidian9.Notice("\u{1F4CB} \u3055\u3063\u304D\u53D7\u3051\u53D6\u3063\u305F\u3082\u306E\u3068\u540C\u3058\u3067\u3059", 4e3);
+    return;
+  }
+  const intent = clipboardIntent(text, {
+    surface: deps.surface(),
+    can: deps.can(),
+    entryKey: (_a2 = deps.entryKey) == null ? void 0 : _a2.call(deps),
+    files: take.files.map((f) => ({ name: f.name, type: f.type })),
+    ...deps.inVault ? { inVault: deps.inVault } : {}
+  });
+  if (!intent) {
+    new import_obsidian9.Notice("\u{1F4CB} \u53D7\u3051\u53D6\u308C\u308B\u5F62\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3067\u3057\u305F", 5e3);
+    return;
+  }
+  lastTaken = key;
+  await deps.run(intent, take.files);
+}
+function mountClipboardDoor(host, deps) {
+  const btn = host.createEl("button", {
+    cls: "jp-surfbar-btn jp-cbdoor",
+    attr: { "aria-label": "\u53D7\u3051\u53D6\u308B", title: "\u30B3\u30D4\u30FC\u3057\u305F\u3082\u306E\u3092\u53D7\u3051\u53D6\u308B" }
+  });
+  btn.createSpan({ cls: "jp-surfbar-glyph", text: "\u{1F4CB}" });
+  btn.onclick = () => {
+    void receiveClipboard(deps);
+  };
+  return btn;
+}
+
+// src/ui/pane-size.ts
+var PANE_SIZES = ["xs", "sm", "md", "lg"];
+function paneSize(width) {
+  if (!(width > 0))
+    return "md";
+  if (width < 440)
+    return "xs";
+  if (width < 620)
+    return "sm";
+  if (width < 900)
+    return "md";
+  return "lg";
+}
+var paneSizeOf = (el) => paneSize(el.clientWidth);
+var isNarrowPane = (s) => s === "xs" || s === "sm";
+var CLASSES = PANE_SIZES.map((s) => `jp-pane-${s}`);
+function applyPaneSize(el, size, width) {
+  for (const c of CLASSES)
+    el.classList.remove(c);
+  el.classList.add(`jp-pane-${size}`);
+  if (width && width > 0)
+    el.style.setProperty("--jp-pane-w", `${Math.round(width)}px`);
+}
+function observePane(el, onChange) {
+  const host = el;
+  if (host._jpcPane)
+    return host._jpcPane;
+  let last = null;
+  const measure = (w) => {
+    const size = paneSize(w);
+    if (size === last) {
+      if (w > 0)
+        el.style.setProperty("--jp-pane-w", `${Math.round(w)}px`);
+      return;
+    }
+    last = size;
+    applyPaneSize(el, size, w);
+    onChange == null ? void 0 : onChange(size, w);
+  };
+  measure(el.clientWidth);
+  const RO = globalThis.ResizeObserver;
+  let ro = null;
+  if (RO) {
+    ro = new RO((entries) => {
+      var _a2, _b2, _c2, _d2, _e2;
+      for (const e of entries) {
+        const w = (_e2 = (_d2 = (_b2 = (_a2 = e.contentBoxSize) == null ? void 0 : _a2[0]) == null ? void 0 : _b2.inlineSize) != null ? _d2 : (_c2 = e.contentRect) == null ? void 0 : _c2.width) != null ? _e2 : 0;
+        measure(w);
+      }
+    });
+    ro.observe(el);
+  }
+  const detach = () => {
+    ro == null ? void 0 : ro.disconnect();
+    for (const c of CLASSES)
+      el.classList.remove(c);
+    el.style.removeProperty("--jp-pane-w");
+    delete host._jpcPane;
+  };
+  host._jpcPane = detach;
+  return detach;
+}
+
+// src/ui/bar-retreat.ts
+var HIDE_AFTER = 14;
+var END_ZONE = 72;
+var initialRetreat = (y = 0) => ({ at: "here", y });
+function nextRetreat(prev, y, max) {
+  const dy = y - prev.y;
+  if (max <= END_ZONE)
+    return { at: "here", y };
+  if (y <= END_ZONE || y >= max - END_ZONE)
+    return { at: "here", y };
+  if (dy < 0)
+    return { at: "here", y };
+  if (dy >= HIDE_AFTER)
+    return { at: "away", y };
+  return { at: prev.at, y: prev.y };
+}
+function scrollerFor(el) {
+  let n = el;
+  while (n) {
+    const s = getComputedStyle(n).overflowY;
+    if ((s === "auto" || s === "scroll") && n.scrollHeight > n.clientHeight + 1)
+      return n;
+    n = n.parentElement;
+  }
+  return null;
+}
+function armBarRetreat(from, bar) {
+  const host = bar;
+  if (host._jpcRetreat)
+    return host._jpcRetreat;
+  const scroller = scrollerFor(from);
+  if (!scroller)
+    return () => {
+    };
+  let state = initialRetreat(scroller.scrollTop);
+  let queued = false;
+  const settle2 = () => {
+    queued = false;
+    const max = scroller.scrollHeight - scroller.clientHeight;
+    const next = nextRetreat(state, scroller.scrollTop, max);
+    if (next.at !== state.at)
+      bar.toggleClass("jp-surfbar--away", next.at === "away");
+    state = next;
+  };
+  const onScroll = () => {
+    if (queued)
+      return;
+    queued = true;
+    window.requestAnimationFrame(settle2);
+  };
+  scroller.addEventListener("scroll", onScroll, { passive: true });
+  const detach = () => {
+    scroller.removeEventListener("scroll", onScroll);
+    bar.removeClass("jp-surfbar--away");
+    delete host._jpcRetreat;
+  };
+  host._jpcRetreat = detach;
+  return detach;
+}
+
 // src/ui/view-chrome.ts
+var AS_DROP = {
+  lexicon: "lexicon",
+  dict: "dict",
+  x: "x",
+  tray: "tray",
+  review: "tray",
+  capture: "tray"
+};
 function armDrops(host, chrome, surface, opts = {}) {
   if (!chrome.onDrop)
     return;
@@ -24628,7 +26280,8 @@ function armDrops(host, chrome, surface, opts = {}) {
       return (_b2 = (_a2 = chrome.dropCan) == null ? void 0 : _a2.call(chrome)) != null ? _b2 : {};
     },
     run: (intent, files) => chrome.onDrop(intent, files),
-    paste: opts.paste
+    paste: opts.paste,
+    ...chrome.inVault ? { inVault: chrome.inVault } : {}
   });
 }
 function armSelectionEcho(host, chrome, surface, opts = {}) {
@@ -24641,25 +26294,80 @@ function armSelectionEcho(host, chrome, surface, opts = {}) {
       var _a2, _b2;
       return (_b2 = (_a2 = chrome.dropCan) == null ? void 0 : _a2.call(chrome)) != null ? _b2 : {};
     },
-    run: (intent) => chrome.onDrop(intent, [])
+    run: (intent) => chrome.onDrop(intent, []),
+    ...chrome.lookUp ? { look: chrome.lookUp } : {},
+    ...chrome.openWord ? { open: chrome.openWord } : {},
+    ...chrome.inVault ? { inVault: chrome.inVault } : {}
   });
 }
-function thumbDock(viewRoot) {
-  if (!import_obsidian9.Platform.isPhone)
-    return null;
-  return viewRoot.createDiv("jp-thumbdock");
-}
-function mountSurfaceBar(host, chrome, current2) {
+function mountSurfaceBar(viewRoot, chrome, current2, fallback) {
+  var _a2, _b2;
   if (!chrome.openSurface)
     return;
-  renderSurfaceBar(host, {
+  observePane(viewRoot);
+  const home = fallback != null ? fallback : viewRoot;
+  const places = (_a2 = wideDock(viewRoot)) != null ? _a2 : home;
+  const tools = (_b2 = edgeDock(viewRoot)) != null ? _b2 : home;
+  const deps = {
     current: current2,
     open: (s) => chrome.openSurface(s),
     badge: (s) => {
-      var _a2;
-      return (_a2 = chrome.surfaceBadge) == null ? void 0 : _a2.call(chrome, s);
+      var _a3;
+      return (_a3 = chrome.surfaceBadge) == null ? void 0 : _a3.call(chrome, s);
     }
+  };
+  const retreatIfFooted = (el) => {
+    if (el.hasClass("jp-surfbar--foot") && isNarrowPane(paneSizeOf(viewRoot))) {
+      armBarRetreat(viewRoot, el);
+    }
+  };
+  if (places === tools) {
+    retreatIfFooted(renderSurfaceBar(places, deps));
+  } else {
+    retreatIfFooted(renderSurfaceBar(places, { ...deps, only: PLACES, layout: "foot" }));
+    renderSurfaceBar(tools, { ...deps, only: TOOLS, layout: "rail" });
+  }
+  if (chrome.onDrop) {
+    mountClipboardDoor(tools, {
+      surface: () => AS_DROP[current2],
+      can: () => {
+        var _a3, _b3;
+        return (_b3 = (_a3 = chrome.dropCan) == null ? void 0 : _a3.call(chrome)) != null ? _b3 : {};
+      },
+      run: (intent, files) => chrome.onDrop(intent, files),
+      // Same oracle the drop road gets. Without it a copied `![[パネル.png]]`
+      // or `app://…` is unresolvable, and the door can only read a picture the
+      // vault is already holding as a wish or a link.
+      ...chrome.inVault ? { inVault: chrome.inVault } : {}
+    });
+  }
+  mountDismiss(tools, chrome);
+  armEdgeBack(viewRoot, chrome);
+}
+function armEdgeBack(viewRoot, chrome) {
+  if (!chrome.dismiss || !chrome.backPeek)
+    return;
+  attachEdgeBack(viewRoot, {
+    peek: () => chrome.backPeek(),
+    go: () => chrome.dismiss()
   });
+}
+function mountDismiss(host, chrome) {
+  var _a2;
+  if (!isTouchy())
+    return;
+  const isDock = host.hasClass("jp-thumbdock") || host.hasClass("jp-slaterail");
+  const dock2 = isDock ? host : (_a2 = edgeDock(host)) != null ? _a2 : host;
+  if (dock2.querySelector(".jp-dismiss"))
+    return;
+  const b = dock2.createEl("button", { cls: "jp-dismiss", attr: { "aria-label": "\u9589\u3058\u3066\u623B\u308B" } });
+  (0, import_obsidian10.setIcon)(b, "corner-up-left");
+  b.createSpan({ text: "\u623B\u308B" });
+  b.onclick = (e) => {
+    var _a3;
+    e.preventDefault();
+    (_a3 = chrome.dismiss) == null ? void 0 : _a3.call(chrome);
+  };
 }
 
 // src/ui/drag-out.ts
@@ -24680,15 +26388,17 @@ function defaultHtml(p) {
       return body2;
   }
 }
-function makeDraggable(el, payload) {
-  const host = el;
+function makeDraggable(el, payload, opts = {}) {
+  var _a2;
+  const from = (_a2 = opts.grip) != null ? _a2 : el;
+  const host = from;
   if (host._jpcDrag)
     return;
   host._jpcDrag = true;
-  el.setAttribute("draggable", "true");
-  el.addClass("jp-draggable");
-  el.addEventListener("dragstart", (e) => {
-    var _a2, _b2;
+  from.setAttribute("draggable", "true");
+  from.addClass("jp-draggable");
+  from.addEventListener("dragstart", (e) => {
+    var _a3, _b2;
     const p = payload();
     if (!p || !p.text.trim() || !e.dataTransfer) {
       e.preventDefault();
@@ -24696,17 +26406,21 @@ function makeDraggable(el, payload) {
     }
     e.dataTransfer.effectAllowed = "copy";
     e.dataTransfer.setData("text/plain", p.text);
-    e.dataTransfer.setData("text/html", (_a2 = p.html) != null ? _a2 : defaultHtml(p));
+    e.dataTransfer.setData("text/html", (_a3 = p.html) != null ? _a3 : defaultHtml(p));
+    if (p.url)
+      e.dataTransfer.setData("text/uri-list", p.url);
     e.dataTransfer.setData("application/x-jpc-drag", JSON.stringify({
       kind: p.kind,
       text: p.text,
+      ...p.path ? { path: p.path } : {},
       ...(_b2 = p.meta) != null ? _b2 : {}
     }));
     e.dataTransfer.setDragImage(...dragPill(p));
     el.addClass("jp-draggable--lifted");
   });
-  el.addEventListener("dragend", () => el.removeClass("jp-draggable--lifted"));
-  bindPointerDrag(el, payload, dragPillEl);
+  from.addEventListener("dragend", () => el.removeClass("jp-draggable--lifted"));
+  if (opts.synthetic !== false)
+    bindPointerDrag(from, payload, dragPillEl);
 }
 function dragPillEl(p) {
   var _a2;
@@ -25019,8 +26733,8 @@ var LexiconPanel = class {
   }
   // ── list view ──────────────────────────────────────────────
   renderList(root) {
-    const dock = thumbDock(root);
-    const searchRow = (dock != null ? dock : root).createDiv("jp-lex-searchrow");
+    const dock2 = wideDock(root);
+    const searchRow = (dock2 != null ? dock2 : root).createDiv("jp-lex-searchrow");
     const input = searchRow.createEl("input", {
       type: "search",
       cls: "jp-lex-search",
@@ -25435,7 +27149,7 @@ var LexiconPanel = class {
         html: `<b>${e.headword}</b>${e.reading ? `\uFF08${e.reading}\uFF09` : ""}${e.gloss ? ` \u2014 ${e.gloss}` : ""}` + (e.example ? `<blockquote>${e.example}</blockquote>` : ""),
         meta: { patternId: e.kind === "pattern" ? e.id : void 0, cls: e.cls }
       };
-    });
+    }, { grip: top });
   }
   /**
    * §27.2 — the production half, from the vault sidecars.
@@ -25540,8 +27254,8 @@ var LexiconPanel = class {
       return;
     }
     const def = NOTE_TYPES[p.class];
-    const back = root.createEl("button", { cls: "jp-lex-back", text: "\u2190 \u4E00\u89A7\u3078" });
-    back.onclick = () => {
+    const back2 = root.createEl("button", { cls: "jp-lex-back", text: "\u2190 \u4E00\u89A7\u3078" });
+    back2.onclick = () => {
       this.selectedId = null;
       this.restoreScroll = true;
       this.stopAudio();
@@ -25641,15 +27355,15 @@ var LexiconPanel = class {
         const r2 = await this.deps.findExamples(p);
         const total = r2.swept + r2.x;
         this.lastFind = { id: p.id, total };
-        new import_obsidian10.Notice(total ? `\u5019\u88DC: \u8D70\u67FB ${r2.swept}\u4EF6 \u30FB \u{1D54F} ${r2.x}\u4EF6 \u2014 \u2753\u5019\u88DC\u3067 \u2713\u2715 \u3057\u3066\u304F\u3060\u3055\u3044` : "\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F \u2014 \u805E\u304D\u306B\u884C\u304D\u307E\u3057\u3087\u3046\uFF08\u4E0B\u306E\u63D0\u6848\u3078\uFF09");
+        new import_obsidian11.Notice(total ? `\u5019\u88DC: \u8D70\u67FB ${r2.swept}\u4EF6 \u30FB \u{1D54F} ${r2.x}\u4EF6 \u2014 \u2753\u5019\u88DC\u3067 \u2713\u2715 \u3057\u3066\u304F\u3060\u3055\u3044` : "\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F \u2014 \u805E\u304D\u306B\u884C\u304D\u307E\u3057\u3087\u3046\uFF08\u4E0B\u306E\u63D0\u6848\u3078\uFF09");
       } catch (err) {
-        new import_obsidian10.Notice(`\u691C\u7D22\u5931\u6557: ${String(err)}`);
+        new import_obsidian11.Notice(`\u691C\u7D22\u5931\u6557: ${String(err)}`);
       } finally {
         this.findBusy = false;
         this.rerender();
       }
     });
-    act("\u{1F4CB}", "\u30B3\u30D4\u30FC", () => navigator.clipboard.writeText(p.key).then(() => new import_obsidian10.Notice("\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F")));
+    act("\u{1F4CB}", "\u30B3\u30D4\u30FC", () => navigator.clipboard.writeText(p.key).then(() => new import_obsidian11.Notice("\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F")));
     act("\u{1F5D1}", "\u53F0\u5E33\u304B\u3089\u524A\u9664", async () => {
       await this.deps.deletePattern(p.id);
       this.selectedId = null;
@@ -25708,9 +27422,9 @@ var LexiconPanel = class {
           gen.disabled = true;
           try {
             const n = await this.deps.generateScaffold(p);
-            new import_obsidian10.Notice(n ? `\u751F\u6210: ${n}\u6587\uFF08\u691C\u8A3C\u6E08\u307F\uFF09 \u2014 \u5B9F\u4F8B\u304C\u5165\u308B\u3068\u81EA\u52D5\u5F15\u9000\u3057\u307E\u3059` : "\u751F\u6210\u5931\u6557\uFF08\u691C\u8A3C\u3067\u5168\u6EC5\uFF09");
+            new import_obsidian11.Notice(n ? `\u751F\u6210: ${n}\u6587\uFF08\u691C\u8A3C\u6E08\u307F\uFF09 \u2014 \u5B9F\u4F8B\u304C\u5165\u308B\u3068\u81EA\u52D5\u5F15\u9000\u3057\u307E\u3059` : "\u751F\u6210\u5931\u6557\uFF08\u691C\u8A3C\u3067\u5168\u6EC5\uFF09");
           } catch (err) {
-            new import_obsidian10.Notice(`\u751F\u6210\u5931\u6557: ${String(err)}`);
+            new import_obsidian11.Notice(`\u751F\u6210\u5931\u6557: ${String(err)}`);
           }
           this.rerender();
         };
@@ -25785,7 +27499,7 @@ var LexiconPanel = class {
                 try {
                   await this.deps.drillPattern(p, row.id);
                 } catch (e) {
-                  new import_obsidian10.Notice(String(e));
+                  new import_obsidian11.Notice(String(e));
                 }
                 this.rerender();
               };
@@ -25868,6 +27582,11 @@ var LexiconPanel = class {
         for (const ex of group) {
           const kind = (_v = ex.kind) != null ? _v : ex.url ? "attested" : "phrase";
           const row = g.createDiv(`jp-lex-goho-ex jp-lex-goho-ex--${kind}`);
+          const exgrip = row.createSpan({
+            text: "\u283F",
+            cls: "jp-lex-exgrip",
+            attr: { title: "\u3053\u306E\u7528\u4F8B\u3092\u6301\u3061\u51FA\u3059\uFF08\u30C9\u30E9\u30C3\u30B0\uFF09" }
+          });
           const quote = row.createSpan({ cls: "jp-lex-leaf-quote jp-lex-tappable" });
           const [open, close] = kind === "attested" ? ["\u300C", "\u300D"] : ["\u3008", "\u3009"];
           const [s, e] = (_w = ex.span) != null ? _w : [0, 0];
@@ -25904,7 +27623,7 @@ ${ex.url}` : cited;
             label: ex.text,
             sub: cited || goho.source,
             meta: { headword: p.key, source: cited || goho.source, url: ex.url, frame: ex.frame }
-          }));
+          }), { grip: exgrip });
         }
       }
     } else if (goho) {
@@ -25917,9 +27636,9 @@ ${ex.url}` : cited;
         try {
           const ok = await this.deps.fetchGoho(p);
           if (!ok)
-            new import_obsidian10.Notice("\u8A9E\u6CD5\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+            new import_obsidian11.Notice("\u8A9E\u6CD5\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
         } catch (e) {
-          new import_obsidian10.Notice(String(e));
+          new import_obsidian11.Notice(String(e));
         }
         this.rerender();
       };
@@ -25964,24 +27683,12 @@ ${ex.url}` : cited;
       this.deps.openDict(hit.term.expression);
   }
   /** Longest dictionary-validated word at a screen point (shared by tap
-   *  飛び込み and hover peek — no tokenizer guessing, dictionary or nothing). */
+   *  飛び込み and hover peek — no tokenizer guessing, dictionary or nothing).
+   *
+   *  The body moved to `ui/word-at.ts` so the transcript resolves a hovered
+   *  word by the SAME rule rather than a second copy of it. */
   wordAt(x, y) {
-    var _a2, _b2;
-    const range = (_a2 = document.caretRangeFromPoint) == null ? void 0 : _a2.call(document, x, y);
-    const node = range == null ? void 0 : range.startContainer;
-    if (!range || !node || node.nodeType !== Node.TEXT_NODE)
-      return null;
-    const text = (_b2 = node.textContent) != null ? _b2 : "";
-    const off = Math.min(range.startOffset, Math.max(0, text.length - 1));
-    for (let n = Math.min(8, text.length - off); n >= 1; n--) {
-      const probe = text.slice(off, off + n).trim();
-      if (!probe || !/[぀-ヿ㐀-䶿一-鿿]/.test(probe))
-        continue;
-      const hits = this.deps.dictLookup(probe);
-      if (hits.length)
-        return hits[0];
-    }
-    return null;
+    return wordAtPoint(x, y, (probe) => this.deps.dictLookup(probe));
   }
   cancelPeek() {
     var _a2;
@@ -26066,7 +27773,7 @@ ${ex.url}` : cited;
             try {
               await this.deps.drillExamples(p, f.label, { id: m.id, text: it, freq: m.freq });
             } catch (e) {
-              new import_obsidian10.Notice(String(e));
+              new import_obsidian11.Notice(String(e));
             }
             this.rerender();
           };
@@ -26080,7 +27787,7 @@ ${ex.url}` : cited;
         label: it,
         sub: m ? `${goho.source} \xB7 ${m.freq.toLocaleString()}\u56DE` : goho.source,
         meta: { headword: p.key, frame: f.label, source: goho.source }
-      }));
+      }), { grip: word });
     }
     this.gohoMoreButton(box, key, all.length - rows.length);
   }
@@ -26210,7 +27917,7 @@ ${ex.url}` : cited;
     const isManga = ((_a2 = leaf.att.medium) != null ? _a2 : leaf.att.source) === "manga" && !!((_b2 = leaf.att.scene) == null ? void 0 : _b2.image);
     if (leaf.source === "yt" && leaf.file || isManga) {
       const expand = meta.createEl("button", { cls: "jp-lex-leaf-btn", attr: { title: isManga ? "\u6587\u8108\u3092\u958B\u304F\uFF08\u30B3\u30DE\u753B\u50CF\uFF09" : "\u6587\u8108\u3092\u958B\u304F\uFF08\u524D\u5F8C\u306E\u30BF\u30FC\u30F3\uFF09" } });
-      (0, import_obsidian10.setIcon)(expand, "chevrons-up-down");
+      (0, import_obsidian11.setIcon)(expand, "chevrons-up-down");
       let ctxEl = null;
       expand.onclick = (e) => {
         e.stopPropagation();
@@ -26230,7 +27937,7 @@ ${ex.url}` : cited;
             void this.toggleClip(leaf, btn);
           } : void 0,
           onOpen: (att) => {
-            void this.deps.openAttestation(att).catch((err) => new import_obsidian10.Notice(String(err)));
+            void this.deps.openAttestation(att).catch((err) => new import_obsidian11.Notice(String(err)));
           }
         });
       };
@@ -26240,22 +27947,27 @@ ${ex.url}` : cited;
     }
     if (leaf.clipEligible) {
       const play = meta.createEl("button", { cls: "jp-lex-leaf-btn", attr: { title: "\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u518D\u751F" } });
-      (0, import_obsidian10.setIcon)(play, this.playingKey === this.leafKey(leaf) ? "pause" : "play");
+      (0, import_obsidian11.setIcon)(play, this.playingKey === this.leafKey(leaf) ? "pause" : "play");
       play.onclick = (e) => {
         e.stopPropagation();
         void this.toggleClip(leaf, play);
       };
     }
     const jump = meta.createEl("button", { cls: "jp-lex-leaf-btn", attr: { title: "\u51FA\u5178\u3092\u958B\u304F" } });
-    (0, import_obsidian10.setIcon)(jump, leaf.source === "x" || leaf.source === "web" ? "external-link" : "corner-down-right");
+    (0, import_obsidian11.setIcon)(jump, leaf.source === "x" || leaf.source === "web" ? "external-link" : "corner-down-right");
     jump.onclick = (e) => {
       e.stopPropagation();
-      void this.deps.openAttestation(leaf.att).catch((err) => new import_obsidian10.Notice(String(err)));
+      void this.deps.openAttestation(leaf.att).catch((err) => new import_obsidian11.Notice(String(err)));
     };
     if (!(leaf.suggested && candidateOf)) {
       const at = leaf.tStartSec != null ? `${Math.floor(leaf.tStartSec / 60)}:${String(Math.floor(leaf.tStartSec % 60)).padStart(2, "0")}` : void 0;
       const where = (_f2 = (_c2 = leaf.att.scene) == null ? void 0 : _c2.sourceName) != null ? _f2 : (_e2 = (_d2 = leaf.file) == null ? void 0 : _d2.split("/").pop()) == null ? void 0 : _e2.replace(/\.md$/, "");
       const cite = [where, at].filter(Boolean).join(" ");
+      const leafgrip = meta.createSpan({
+        text: "\u283F",
+        cls: "jp-lex-exgrip",
+        attr: { title: "\u3053\u306E\u7528\u4F8B\u3092\u6301\u3061\u51FA\u3059\uFF08\u30C9\u30E9\u30C3\u30B0\uFF09" }
+      });
       makeDraggable(row, () => {
         var _a3, _b3, _c3, _d3;
         return {
@@ -26270,14 +27982,14 @@ ${ex.url}` : cited;
             deepLink: (_d3 = leaf.att.scene) == null ? void 0 : _d3.deepLink
           }
         };
-      });
+      }, { grip: leafgrip });
     }
     if (leaf.suggested && candidateOf) {
       const yes = meta.createEl("button", { text: "\u2713", cls: "jp-lex-leaf-btn jp-lex-cand-yes", attr: { title: "\u672C\u7269 \u2014 \u78BA\u5B9A\u7528\u4F8B\u306B\u3059\u308B\uFF08\u30AD\u30FC: \u23CE / \u53F3\u30B9\u30EF\u30A4\u30D7\uFF09" } });
       yes.onclick = async (e) => {
         e.stopPropagation();
         await this.deps.ratifyAttestation(candidateOf, leaf.att);
-        new import_obsidian10.Notice("\u2713 \u78BA\u5B9A\u3057\u307E\u3057\u305F");
+        new import_obsidian11.Notice("\u2713 \u78BA\u5B9A\u3057\u307E\u3057\u305F");
         this.rerender();
       };
       const no = meta.createEl("button", { text: "\u2715", cls: "jp-lex-leaf-btn jp-lex-cand-no", attr: { title: "\u9055\u3046 \u2014 \u5426\u8A8D\uFF08\u518D\u63D0\u6848\u3055\u308C\u307E\u305B\u3093\uFF09\uFF08\u30AD\u30FC: x / \u5DE6\u30B9\u30EF\u30A4\u30D7\uFF09" } });
@@ -26290,7 +28002,7 @@ ${ex.url}` : cited;
         row,
         () => {
           void this.deps.ratifyAttestation(candidateOf, leaf.att).then(() => {
-            new import_obsidian10.Notice("\u2713 \u78BA\u5B9A\u3057\u307E\u3057\u305F");
+            new import_obsidian11.Notice("\u2713 \u78BA\u5B9A\u3057\u307E\u3057\u305F");
             this.rerender();
           });
         },
@@ -26308,25 +28020,25 @@ ${ex.url}` : cited;
     const key = this.leafKey(leaf);
     if (this.playingKey === key) {
       this.stopAudio();
-      (0, import_obsidian10.setIcon)(btn, "play");
+      (0, import_obsidian11.setIcon)(btn, "play");
       return;
     }
     const clip = await this.deps.resolveClip(leaf.att);
     if (!clip) {
-      new import_obsidian10.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u304C\u672A\u53D6\u5F97\u3067\u3059\uFF08Download Audio Clips \u3092\u5B9F\u884C\uFF09", 5e3);
+      new import_obsidian11.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u304C\u672A\u53D6\u5F97\u3067\u3059\uFF08Download Audio Clips \u3092\u5B9F\u884C\uFF09", 5e3);
       return;
     }
     this.stopAudio();
     this.audio = new Audio(clip.src);
     this.playingKey = key;
-    (0, import_obsidian10.setIcon)(btn, "pause");
+    (0, import_obsidian11.setIcon)(btn, "pause");
     this.audio.onended = () => {
       if (this.playingKey === key) {
         this.stopAudio();
-        (0, import_obsidian10.setIcon)(btn, "play");
+        (0, import_obsidian11.setIcon)(btn, "play");
       }
     };
-    this.audio.play().catch(() => new import_obsidian10.Notice("\u518D\u751F\u306B\u5931\u6557\u3057\u307E\u3057\u305F"));
+    this.audio.play().catch(() => new import_obsidian11.Notice("\u518D\u751F\u306B\u5931\u6557\u3057\u307E\u3057\u305F"));
   }
   // ── legacy collocation detail (kept usable) ──
   renderCollocationDetail(c) {
@@ -26335,8 +28047,8 @@ ${ex.url}` : cited;
       return;
     const root = this.container;
     root.empty();
-    const back = root.createEl("button", { cls: "jp-lex-back", text: "\u2190 \u4E00\u89A7\u3078" });
-    back.onclick = () => this.rerender();
+    const back2 = root.createEl("button", { cls: "jp-lex-back", text: "\u2190 \u4E00\u89A7\u3078" });
+    back2.onclick = () => this.rerender();
     const head = root.createDiv("jp-lex-detail-head");
     const titleRow = head.createDiv("jp-lex-detail-titlerow");
     titleRow.createSpan({ text: "\u{1F4DA}", cls: "jp-lex-row-legacy" });
@@ -26373,7 +28085,7 @@ function setCollocationViewResolver(r2) {
   collocationViewResolver = r2;
 }
 var JP_COLLOCATIONS_VIEW_TYPE = "jp-collocations-view";
-var CollocationView = class extends import_obsidian11.ItemView {
+var CollocationView = class extends import_obsidian12.ItemView {
   constructor(leaf, store, engine, settings, contextEngine, dictStore, lexDeps) {
     super(leaf);
     this.results = [];
@@ -26442,9 +28154,8 @@ var CollocationView = class extends import_obsidian11.ItemView {
     const container = this.containerEl.children[1];
     container.empty();
     container.addClass("jp-collocations-view");
-    const dock = thumbDock(container);
     const header = container.createDiv("jp-col-header");
-    mountSurfaceBar(dock != null ? dock : header, this.chrome, "lexicon");
+    mountSurfaceBar(container, this.chrome, "lexicon", header);
     header.createEl("h4", { text: "JP \u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3", cls: "jp-col-title" });
     this.tabBar = container.createDiv("jp-col-tab-bar");
     const tabs = [
@@ -26993,14 +28704,14 @@ var CollocationView = class extends import_obsidian11.ItemView {
     var _a2;
     const btns = [
       { text: "\u{1F4CB}", title: "Copy", fn: () => {
-        navigator.clipboard.writeText(entry2.fullPhrase).then(() => new import_obsidian11.Notice(`Copied: ${entry2.fullPhrase}`));
+        navigator.clipboard.writeText(entry2.fullPhrase).then(() => new import_obsidian12.Notice(`Copied: ${entry2.fullPhrase}`));
       } },
       { text: "\u{1F4E5}", title: "Insert", fn: () => {
         var _a3;
         const editor = (_a3 = this.app.workspace.activeEditor) == null ? void 0 : _a3.editor;
         if (editor) {
           editor.replaceSelection(entry2.fullPhrase);
-          new import_obsidian11.Notice(`Inserted`);
+          new import_obsidian12.Notice(`Inserted`);
         }
       } },
       { text: "\u270F\uFE0F", title: "Edit", fn: () => {
@@ -27013,7 +28724,7 @@ var CollocationView = class extends import_obsidian11.ItemView {
       } },
       { text: "\xD7", title: "Delete", cls: "jp-col-action-btn--danger", fn: () => {
         this.store.delete(entry2.id);
-        new import_obsidian11.Notice(`Deleted`);
+        new import_obsidian12.Notice(`Deleted`);
         this.refresh();
       } }
     ];
@@ -27344,8 +29055,8 @@ var CollocationView = class extends import_obsidian11.ItemView {
 };
 
 // src/ui/SearchModal.ts
-var import_obsidian12 = require("obsidian");
-var SearchModal = class extends import_obsidian12.SuggestModal {
+var import_obsidian13 = require("obsidian");
+var SearchModal = class extends import_obsidian13.SuggestModal {
   constructor(app, engine) {
     super(app);
     this.engine = engine;
@@ -27381,19 +29092,19 @@ var SearchModal = class extends import_obsidian12.SuggestModal {
     const editor = (_a2 = this.app.workspace.activeEditor) == null ? void 0 : _a2.editor;
     if (editor) {
       editor.replaceSelection(entry2.fullPhrase);
-      new import_obsidian12.Notice(`Inserted: ${entry2.fullPhrase}`);
+      new import_obsidian13.Notice(`Inserted: ${entry2.fullPhrase}`);
     } else {
       navigator.clipboard.writeText(entry2.fullPhrase).then(() => {
-        new import_obsidian12.Notice(`Copied: ${entry2.fullPhrase}`);
+        new import_obsidian13.Notice(`Copied: ${entry2.fullPhrase}`);
       }).catch(() => {
-        new import_obsidian12.Notice("No active editor. Clipboard copy failed.");
+        new import_obsidian13.Notice("No active editor. Clipboard copy failed.");
       });
     }
   }
 };
 
 // src/ui/SettingsTab.ts
-var import_obsidian13 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 
 // src/notes/claude-client.ts
 var OCR_MODEL_DEFAULT = "claude-haiku-4-5-20251001";
@@ -28108,12 +29819,12 @@ function pickJimakuEntry(entries, show, season) {
 }
 var TEXT_SUB_EXTS = /* @__PURE__ */ new Set(["srt", "ass", "ssa", "vtt", "sbv", "txt"]);
 var ARCHIVE_EXTS = /* @__PURE__ */ new Set(["zip", "rar", "7z", "tar", "gz"]);
-var extOf = (name) => {
+var extOf2 = (name) => {
   var _a2, _b2;
   return ((_b2 = (_a2 = name.match(/\.([A-Za-z0-9]{1,5})$/)) == null ? void 0 : _a2[1]) != null ? _b2 : "").toLowerCase();
 };
-var isTextSubtitleFile = (name) => TEXT_SUB_EXTS.has(extOf(name));
-var isArchiveFile = (name) => ARCHIVE_EXTS.has(extOf(name));
+var isTextSubtitleFile = (name) => TEXT_SUB_EXTS.has(extOf2(name));
+var isArchiveFile = (name) => ARCHIVE_EXTS.has(extOf2(name));
 var NOISE_RE = /\b(?:\d{3,4}p|x?26[45]|hevc|avc|aac|flac|opus|10\s?bit|8\s?bit|bd(?:rip)?|web(?:-?dl|rip)?|hdtv|dvd(?:rip)?|amzn|nf|crunchyroll|multi|dual|[0-9a-f]{8}|v\d)\b/gi;
 function episodeNumberFrom(raw) {
   if (!raw)
@@ -28159,7 +29870,7 @@ function pickJimakuFile(files, opts = {}) {
       else
         n -= 40;
     }
-    const e = extOf(f.name);
+    const e = extOf2(f.name);
     n += e === "srt" ? 6 : e === "ass" || e === "ssa" ? 5 : e === "vtt" ? 4 : 1;
     if (SIGNS_RE.test(f.name))
       n -= 400;
@@ -28182,7 +29893,7 @@ function jimakuFileRefusal(files, episode) {
     return null;
   const archives = files.filter((f) => isArchiveFile(f.name));
   if (archives.length && archives.length === files.length) {
-    return `\u5B57\u5E55\u304C\u30A2\u30FC\u30AB\u30A4\u30D6\uFF08${[...new Set(archives.map((f) => extOf(f.name)))].join("\u3001")}\uFF09\u3067\u306E\u307F\u914D\u5E03\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u30D7\u30E9\u30B0\u30A4\u30F3\u3067\u306F\u5C55\u958B\u3067\u304D\u306A\u3044\u306E\u3067\u3001jimaku.cc \u304B\u3089\u624B\u52D5\u3067\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u53D6\u308A\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\u3002`;
+    return `\u5B57\u5E55\u304C\u30A2\u30FC\u30AB\u30A4\u30D6\uFF08${[...new Set(archives.map((f) => extOf2(f.name)))].join("\u3001")}\uFF09\u3067\u306E\u307F\u914D\u5E03\u3055\u308C\u3066\u3044\u307E\u3059\u3002\u30D7\u30E9\u30B0\u30A4\u30F3\u3067\u306F\u5C55\u958B\u3067\u304D\u306A\u3044\u306E\u3067\u3001jimaku.cc \u304B\u3089\u624B\u52D5\u3067\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u3057\u3066\u53D6\u308A\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\u3002`;
   }
   if (episode != null) {
     const eps = [...new Set(files.map((f) => episodeNumberFrom(f.name).episode).filter((e) => e != null))];
@@ -28470,7 +30181,7 @@ var USERSCRIPT_SOURCE = [
 ].join("\n");
 
 // src/ui/SettingsTab.ts
-var SettingsTab = class extends import_obsidian13.PluginSettingTab {
+var SettingsTab = class extends import_obsidian14.PluginSettingTab {
   constructor(app, plugin, settings, store, getScraper, onSettingsChange) {
     super(app, plugin);
     this.host = plugin;
@@ -28540,7 +30251,7 @@ var SettingsTab = class extends import_obsidian13.PluginSettingTab {
         });
       }
     };
-    new import_obsidian13.Setting(wrap).setName("\u898B\u3064\u304B\u3089\u306A\u3044\u8F9E\u66F8\u3092\u4FEE\u5FA9").setDesc("\u30B7\u30E3\u30FC\u30C9\u306F\u3042\u308B\u306E\u306B meta.json \u304C\u7121\u3044\u30D5\u30A9\u30EB\u30C0\u3092\u63A2\u3057\u3066\u4F5C\u308A\u76F4\u3057\u307E\u3059\uFF08\u4E2D\u65AD\u3057\u305F\u5909\u63DB\u306E\u5FA9\u65E7\uFF09\u3002").addButton((b) => b.setButtonText("\u4FEE\u5FA9").onClick(async () => {
+    new import_obsidian14.Setting(wrap).setName("\u898B\u3064\u304B\u3089\u306A\u3044\u8F9E\u66F8\u3092\u4FEE\u5FA9").setDesc("\u30B7\u30E3\u30FC\u30C9\u306F\u3042\u308B\u306E\u306B meta.json \u304C\u7121\u3044\u30D5\u30A9\u30EB\u30C0\u3092\u63A2\u3057\u3066\u4F5C\u308A\u76F4\u3057\u307E\u3059\uFF08\u4E2D\u65AD\u3057\u305F\u5909\u63DB\u306E\u5FA9\u65E7\uFF09\u3002").addButton((b) => b.setButtonText("\u4FEE\u5FA9").onClick(async () => {
       var _a2, _b2;
       b.setDisabled(true).setButtonText("\u4FEE\u5FA9\u4E2D\u2026");
       try {
@@ -28559,15 +30270,15 @@ var SettingsTab = class extends import_obsidian13.PluginSettingTab {
     containerEl.empty();
     containerEl.createEl("h2", { text: "JP Collocations Settings" });
     containerEl.createEl("h3", { text: "Hyogen Scraper" });
-    new import_obsidian13.Setting(containerEl).setName("Enable Hyogen scraping").setDesc("Allow fetching from collocation.hyogen.info").addToggle((t) => t.setValue(this.settings.hyogenEnabled).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Enable Hyogen scraping").setDesc("Allow fetching from collocation.hyogen.info").addToggle((t) => t.setValue(this.settings.hyogenEnabled).onChange(async (v) => {
       this.settings.hyogenEnabled = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("Rate limit (ms)").setDesc("Minimum milliseconds between requests (default: 2000)").addSlider((s) => s.setLimits(1e3, 1e4, 500).setValue(this.settings.hyogenRateLimit).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Rate limit (ms)").setDesc("Minimum milliseconds between requests (default: 2000)").addSlider((s) => s.setLimits(1e3, 1e4, 500).setValue(this.settings.hyogenRateLimit).setDynamicTooltip().onChange(async (v) => {
       this.settings.hyogenRateLimit = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("Word list to scrape").setDesc("Comma-separated list of Japanese words to fetch from Hyogen").addTextArea((t) => {
+    new import_obsidian14.Setting(containerEl).setName("Word list to scrape").setDesc("Comma-separated list of Japanese words to fetch from Hyogen").addTextArea((t) => {
       t.setValue(this.settings.hyogenWordList.join(", ")).onChange(async (v) => {
         this.settings.hyogenWordList = v.split(",").map((w) => w.trim()).filter(Boolean);
         await this.onSettingsChange();
@@ -28575,11 +30286,11 @@ var SettingsTab = class extends import_obsidian13.PluginSettingTab {
       t.inputEl.rows = 3;
     });
     containerEl.createEl("h3", { text: "\u7B51\u6CE2\u30A6\u30A7\u30D6\u30B3\u30FC\u30D1\u30B9 (TWC)" });
-    new import_obsidian13.Setting(containerEl).setName("Enable TWC lookup").setDesc("Fetch collocation profiles from Tsukuba Web Corpus (\u7814\u7A76\u30FB\u6559\u80B2\u76EE\u7684\u306E\u307F)").addToggle((t) => t.setValue(this.settings.twcEnabled).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Enable TWC lookup").setDesc("Fetch collocation profiles from Tsukuba Web Corpus (\u7814\u7A76\u30FB\u6559\u80B2\u76EE\u7684\u306E\u307F)").addToggle((t) => t.setValue(this.settings.twcEnabled).onChange(async (v) => {
       this.settings.twcEnabled = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("TWC rate limit (ms)").setDesc("Minimum milliseconds between TWC requests (default: 3000)").addSlider((s) => s.setLimits(2e3, 15e3, 500).setValue(this.settings.twcRateLimit).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("TWC rate limit (ms)").setDesc("Minimum milliseconds between TWC requests (default: 3000)").addSlider((s) => s.setLimits(2e3, 15e3, 500).setValue(this.settings.twcRateLimit).setDynamicTooltip().onChange(async (v) => {
       this.settings.twcRateLimit = v;
       await this.onSettingsChange();
     }));
@@ -28588,29 +30299,29 @@ var SettingsTab = class extends import_obsidian13.PluginSettingTab {
       text: "\u30ED\u30B0\u30A4\u30F3\u4E2D\u306E x.com \u304B\u3089 auth_token \u3068 ct0 \u30AF\u30C3\u30AD\u30FC\u3092\u8CBC\u308A\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\uFF08\u7AEF\u672B\u5185\u306E\u307F\u4FDD\u5B58\uFF09\u3002\u8A73\u7D30\u306F\u30B5\u30A4\u30C9\u30D0\u30FC\u306E \u{1D54F} \u30D3\u30E5\u30FC\u306E \u{1F511} \u304B\u3089\u3082\u8A2D\u5B9A\u3067\u304D\u307E\u3059\u3002\u975E\u516C\u5F0F\u30A8\u30F3\u30C9\u30DD\u30A4\u30F3\u30C8\u3092\u4F7F\u3046\u305F\u3081\u3001ToS \u3068\u30EC\u30FC\u30C8\u5236\u9650\u306B\u3054\u6CE8\u610F\u304F\u3060\u3055\u3044\u3002",
       cls: "setting-item-description"
     });
-    new import_obsidian13.Setting(containerEl).setName("\u30E9\u30A4\u30D6\u53D6\u5F97\u3092\u6709\u52B9\u5316").setDesc("\u30AA\u30D5\u306B\u3059\u308B\u3068\u30AD\u30E3\u30C3\u30B7\u30E5\u6E08\u307F\u30B3\u30FC\u30D1\u30B9\u306E\u307F\u3067\u691C\u7D22\u3057\u307E\u3059").addToggle((t) => t.setValue(this.settings.x.enabled).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u30E9\u30A4\u30D6\u53D6\u5F97\u3092\u6709\u52B9\u5316").setDesc("\u30AA\u30D5\u306B\u3059\u308B\u3068\u30AD\u30E3\u30C3\u30B7\u30E5\u6E08\u307F\u30B3\u30FC\u30D1\u30B9\u306E\u307F\u3067\u691C\u7D22\u3057\u307E\u3059").addToggle((t) => t.setValue(this.settings.x.enabled).onChange(async (v) => {
       this.settings.x.enabled = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("auth_token \u30AF\u30C3\u30AD\u30FC").addText((t) => {
+    new import_obsidian14.Setting(containerEl).setName("auth_token \u30AF\u30C3\u30AD\u30FC").addText((t) => {
       t.setValue(this.settings.x.authToken).onChange(async (v) => {
         this.settings.x.authToken = v.trim();
         await this.onSettingsChange();
       });
       t.inputEl.type = "password";
     });
-    new import_obsidian13.Setting(containerEl).setName("ct0 (csrf) \u30AF\u30C3\u30AD\u30FC").addText((t) => {
+    new import_obsidian14.Setting(containerEl).setName("ct0 (csrf) \u30AF\u30C3\u30AD\u30FC").addText((t) => {
       t.setValue(this.settings.x.csrfToken).onChange(async (v) => {
         this.settings.x.csrfToken = v.trim();
         await this.onSettingsChange();
       });
       t.inputEl.type = "password";
     });
-    new import_obsidian13.Setting(containerEl).setName("\u65E2\u5B9A\u306E\u8A00\u8A9E\u30D5\u30A3\u30EB\u30BF").setDesc("\u65B0\u898F\u691C\u7D22\u306E lang:\uFF08\u7A7A\u6B04\u3067\u5168\u8A00\u8A9E\uFF09").addText((t) => t.setValue(this.settings.x.defaultLang).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u65E2\u5B9A\u306E\u8A00\u8A9E\u30D5\u30A3\u30EB\u30BF").setDesc("\u65B0\u898F\u691C\u7D22\u306E lang:\uFF08\u7A7A\u6B04\u3067\u5168\u8A00\u8A9E\uFF09").addText((t) => t.setValue(this.settings.x.defaultLang).onChange(async (v) => {
       this.settings.x.defaultLang = v.trim();
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u65E2\u5B9A\u306E\u30BF\u30D6").addDropdown((d) => {
+    new import_obsidian14.Setting(containerEl).setName("\u65E2\u5B9A\u306E\u30BF\u30D6").addDropdown((d) => {
       d.addOption("Latest", "\u6700\u65B0");
       d.addOption("Top", "\u8A71\u984C");
       d.addOption("Media", "\u30E1\u30C7\u30A3\u30A2");
@@ -28619,15 +30330,15 @@ var SettingsTab = class extends import_obsidian13.PluginSettingTab {
         await this.onSettingsChange();
       });
     });
-    new import_obsidian13.Setting(containerEl).setName("1\u30DA\u30FC\u30B8\u306E\u53D6\u5F97\u4EF6\u6570").addSlider((s) => s.setLimits(10, 100, 10).setValue(this.settings.x.resultLimit).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("1\u30DA\u30FC\u30B8\u306E\u53D6\u5F97\u4EF6\u6570").addSlider((s) => s.setLimits(10, 100, 10).setValue(this.settings.x.resultLimit).setDynamicTooltip().onChange(async (v) => {
       this.settings.x.resultLimit = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u30CE\u30FC\u30C8\u66F8\u304D\u51FA\u3057\u30D5\u30A9\u30EB\u30C0").setDesc("\u30C4\u30A4\u30FC\u30C8\u3092\u30CE\u30FC\u30C8\u5316\u3059\u308B Vault \u30D5\u30A9\u30EB\u30C0\uFF08\u30D7\u30E9\u30B0\u30A4\u30F3\u304C\u81EA\u52D5\u7D22\u5F15\uFF09").addText((t) => t.setValue(this.settings.x.exportFolder).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u30CE\u30FC\u30C8\u66F8\u304D\u51FA\u3057\u30D5\u30A9\u30EB\u30C0").setDesc("\u30C4\u30A4\u30FC\u30C8\u3092\u30CE\u30FC\u30C8\u5316\u3059\u308B Vault \u30D5\u30A9\u30EB\u30C0\uFF08\u30D7\u30E9\u30B0\u30A4\u30F3\u304C\u81EA\u52D5\u7D22\u5F15\uFF09").addText((t) => t.setValue(this.settings.x.exportFolder).onChange(async (v) => {
       this.settings.x.exportFolder = v.trim() || "X Tweets";
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u30B3\u30EC\u30AF\u30B7\u30E7\u30F3\u30D5\u30A9\u30EB\u30C0").setDesc("\u{1F4DA} \u3067\u8FFD\u52A0\u3059\u308B\u5148\u3002\u30C6\u30FC\u30DE\u5225\u30CE\u30FC\u30C8\uFF08\u54F2\u5B66.md / \u7B4B\u30C8\u30EC.md \u2026\uFF09\u3092\u7F6E\u304F Vault \u30D5\u30A9\u30EB\u30C0").addText((t) => t.setValue(this.settings.x.collectionsFolder).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u30B3\u30EC\u30AF\u30B7\u30E7\u30F3\u30D5\u30A9\u30EB\u30C0").setDesc("\u{1F4DA} \u3067\u8FFD\u52A0\u3059\u308B\u5148\u3002\u30C6\u30FC\u30DE\u5225\u30CE\u30FC\u30C8\uFF08\u54F2\u5B66.md / \u7B4B\u30C8\u30EC.md \u2026\uFF09\u3092\u7F6E\u304F Vault \u30D5\u30A9\u30EB\u30C0").addText((t) => t.setValue(this.settings.x.collectionsFolder).onChange(async (v) => {
       this.settings.x.collectionsFolder = v.trim() || "JP Collections";
       await this.onSettingsChange();
     }));
@@ -28641,33 +30352,33 @@ var SettingsTab = class extends import_obsidian13.PluginSettingTab {
       text: "\u30BB\u30C3\u30C8\u30A2\u30C3\u30D7: \u2460 Orion \u3092\u65E2\u5B9A\u30D6\u30E9\u30A6\u30B6\u306B\u8A2D\u5B9A\uFF08\u8A2D\u5B9A\u2192\u30A2\u30D7\u30EA\u2192Orion\u2192\u30C7\u30D5\u30A9\u30EB\u30C8\u306E\u30D6\u30E9\u30A6\u30B6App\uFF09\u2192 \u2461 \u4E0B\u306E\u30DC\u30BF\u30F3\u3067\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u30B3\u30D4\u30FC \u2192 \u2462 Orion \u306B\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\u7BA1\u7406\uFF08Violentmonkey \u7B49\u3001\u307E\u305F\u306F Orion \u5185\u8535\u306E\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\uFF09\u3067\u65B0\u898F\u4F5C\u6210\u3057\u8CBC\u308A\u4ED8\u3051 \u2192 \u2463 Orion \u3067 x.com \u306B\u4E00\u5EA6\u30ED\u30B0\u30A4\u30F3\u3002\u4EE5\u964D\u306F Obsidian \u306E\u30B3\u30DE\u30F3\u30C9\u300CX \u5171\u8D77\u30C1\u30A7\u30C3\u30AF\uFF08\u30E2\u30D0\u30A4\u30EB\uFF09\u300D\u3067\u30012\u8A9E\u3092\u30B3\u30D4\u30FC(or \u9078\u629E)\u3057\u3066\u5B9F\u884C\u3059\u308B\u3060\u3051\u3002",
       cls: "setting-item-description"
     });
-    new import_obsidian13.Setting(xMobile).setName("\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u66F8\u304D\u51FA\u3059 / \u30B3\u30D4\u30FC").setDesc("Vault \u76F4\u4E0B\u306B JP-X-Cooc.user.js \u3092\u4F5C\u6210\u3057\u3001\u5185\u5BB9\u3092\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u306B\u3082\u30B3\u30D4\u30FC\u3057\u307E\u3059").addButton((b) => b.setButtonText("Vault \u306B\u66F8\u304D\u51FA\u3059").onClick(async () => {
+    new import_obsidian14.Setting(xMobile).setName("\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u66F8\u304D\u51FA\u3059 / \u30B3\u30D4\u30FC").setDesc("Vault \u76F4\u4E0B\u306B JP-X-Cooc.user.js \u3092\u4F5C\u6210\u3057\u3001\u5185\u5BB9\u3092\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u306B\u3082\u30B3\u30D4\u30FC\u3057\u307E\u3059").addButton((b) => b.setButtonText("Vault \u306B\u66F8\u304D\u51FA\u3059").onClick(async () => {
       const name = "JP-X-Cooc.user.js";
       try {
         await this.app.vault.adapter.write(name, USERSCRIPT_SOURCE);
-        new import_obsidian13.Notice(`\u66F8\u304D\u51FA\u3057\u307E\u3057\u305F: ${name}`);
+        new import_obsidian14.Notice(`\u66F8\u304D\u51FA\u3057\u307E\u3057\u305F: ${name}`);
       } catch (e) {
-        new import_obsidian13.Notice(`\u66F8\u304D\u51FA\u3057\u5931\u6557: ${e.message}`, 6e3);
+        new import_obsidian14.Notice(`\u66F8\u304D\u51FA\u3057\u5931\u6557: ${e.message}`, 6e3);
       }
     })).addButton((b) => b.setButtonText("\u30B3\u30D4\u30FC").onClick(async () => {
       try {
         await navigator.clipboard.writeText(USERSCRIPT_SOURCE);
-        new import_obsidian13.Notice("\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F");
+        new import_obsidian14.Notice("\u30E6\u30FC\u30B6\u30FC\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F");
       } catch (e) {
-        new import_obsidian13.Notice("\u30B3\u30D4\u30FC\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F", 5e3);
+        new import_obsidian14.Notice("\u30B3\u30D4\u30FC\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F", 5e3);
       }
     }));
     const xAdv = containerEl.createEl("details");
     xAdv.createEl("summary", { text: "\u8A73\u7D30\uFF08X \u304C\u4ED5\u69D8\u5909\u66F4\u3057\u305F\u6642\u306E\u307F\uFF09" });
-    new import_obsidian13.Setting(xAdv).setName("SearchTimeline queryId").setDesc("\u691C\u7D22\u304C 404/\u5931\u6557\u3059\u308B\u6642\u306F\u30D6\u30E9\u30A6\u30B6\u306E devtools \u304B\u3089\u6700\u65B0\u5024\u3092\u53D6\u5F97").addText((t) => t.setValue(this.settings.x.searchQueryId).onChange(async (v) => {
+    new import_obsidian14.Setting(xAdv).setName("SearchTimeline queryId").setDesc("\u691C\u7D22\u304C 404/\u5931\u6557\u3059\u308B\u6642\u306F\u30D6\u30E9\u30A6\u30B6\u306E devtools \u304B\u3089\u6700\u65B0\u5024\u3092\u53D6\u5F97").addText((t) => t.setValue(this.settings.x.searchQueryId).onChange(async (v) => {
       this.settings.x.searchQueryId = v.trim();
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(xAdv).setName("Bearer token").addText((t) => t.setValue(this.settings.x.bearerToken).onChange(async (v) => {
+    new import_obsidian14.Setting(xAdv).setName("Bearer token").addText((t) => t.setValue(this.settings.x.bearerToken).onChange(async (v) => {
       this.settings.x.bearerToken = v.trim();
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(xAdv).setName("Features JSON").setDesc("GraphQL feature \u30D5\u30E9\u30B0\u3002X \u306E\u30A8\u30E9\u30FC\u304C\u8981\u6C42\u3059\u308B\u30AD\u30FC\u3092\u3053\u3053\u3067\u8ABF\u6574").addTextArea((t) => {
+    new import_obsidian14.Setting(xAdv).setName("Features JSON").setDesc("GraphQL feature \u30D5\u30E9\u30B0\u3002X \u306E\u30A8\u30E9\u30FC\u304C\u8981\u6C42\u3059\u308B\u30AD\u30FC\u3092\u3053\u3053\u3067\u8ABF\u6574").addTextArea((t) => {
       t.setValue(this.settings.x.featuresJson).onChange(async (v) => {
         this.settings.x.featuresJson = v.trim();
         await this.onSettingsChange();
@@ -28679,7 +30390,7 @@ var SettingsTab = class extends import_obsidian13.PluginSettingTab {
     if (!this.settings.bigDict)
       this.settings.bigDict = { exportFolder: "", root: "JP Dictionaries", backupFile: "" };
     const big = this.settings.bigDict;
-    if (!import_obsidian13.Platform.isDesktopApp) {
+    if (!import_obsidian14.Platform.isDesktopApp) {
       containerEl.createEl("p", {
         text: "\u5909\u63DB\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u3067\u306E\u307F\u5B9F\u884C\u3067\u304D\u307E\u3059\uFF08\u30E2\u30D0\u30A4\u30EB\u306B\u306F Node \u304C\u3042\u308A\u307E\u305B\u3093\uFF09\u3002\u5909\u63DB\u6E08\u307F\u306E\u8F9E\u66F8\u306F\u30E2\u30D0\u30A4\u30EB\u3067\u3082\u8AAD\u3081\u307E\u3059\u3002",
         cls: "setting-item-description"
@@ -28687,21 +30398,21 @@ var SettingsTab = class extends import_obsidian13.PluginSettingTab {
     }
     const bigDesc = containerEl.createEl("p", { cls: "setting-item-description" });
     bigDesc.innerHTML = "\u82F1\u8F9E\u90CE\uFF08236\u4E07\u8A9E\uFF09\u306E\u3088\u3046\u306A\u5DE8\u5927\u8F9E\u66F8\u306F\u3001\u30D7\u30E9\u30B0\u30A4\u30F3\u306E\u30C7\u30FC\u30BF blob \u306B\u5165\u308C\u308B\u3068\u8D77\u52D5\u306E\u305F\u3073\u306B\u5168\u4F53\u304C\u8AAD\u307F\u66F8\u304D\u3055\u308C\u307E\u3059\u3002\u4EE3\u308F\u308A\u306B<b>\u91D1\u5EAB\u5185\u306E\u30B7\u30E3\u30FC\u30C9JSONL</b>\u3078\u5909\u63DB\u3057\u307E\u3059 \u2014 1\u56DE\u306E\u691C\u7D22\u3067\u8AAD\u3080\u30D5\u30A1\u30A4\u30EB\u306F1\u3064\u3060\u3051\u3001\u7D22\u5F15\u30D5\u30A1\u30A4\u30EB\u306F\u3042\u308A\u307E\u305B\u3093\u3002<br>Yomitan\u66F8\u304D\u51FA\u3057ZIP\u3092<b>\u5C55\u958B\u3057\u305F\u30D5\u30A9\u30EB\u30C0</b>\uFF08index.json \u3068 term_bank_*.json \u304C\u3042\u308B\u5834\u6240\uFF09\u3092\u6307\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002ZIP\u306F\u91D1\u5EAB\u306E\u5916\u306B\u7F6E\u3044\u305F\u307E\u307E\u3067\u69CB\u3044\u307E\u305B\u3093\uFF08\u5C55\u958B\u5F8C 522MB \u3092\u540C\u671F\u3059\u308B\u5FC5\u8981\u306F\u3042\u308A\u307E\u305B\u3093\uFF09\u3002";
-    new import_obsidian13.Setting(containerEl).setName("Yomitan\u66F8\u304D\u51FA\u3057\u30D5\u30A9\u30EB\u30C0\uFF08\u5C55\u958B\u6E08\u307F\uFF09").setDesc("\u4F8B: C:/Users/\u2026/eijiro-yomitan  \u2500\u2500 index.json \u3092\u542B\u3080\u30D5\u30A9\u30EB\u30C0").addText((t) => t.setPlaceholder("/path/to/extracted-export").setValue(big.exportFolder).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Yomitan\u66F8\u304D\u51FA\u3057\u30D5\u30A9\u30EB\u30C0\uFF08\u5C55\u958B\u6E08\u307F\uFF09").setDesc("\u4F8B: C:/Users/\u2026/eijiro-yomitan  \u2500\u2500 index.json \u3092\u542B\u3080\u30D5\u30A9\u30EB\u30C0").addText((t) => t.setPlaceholder("/path/to/extracted-export").setValue(big.exportFolder).onChange(async (v) => {
       big.exportFolder = v.trim();
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u5909\u63DB\u5148\u30D5\u30A9\u30EB\u30C0\uFF08\u91D1\u5EAB\u5185\uFF09").setDesc("\u30B7\u30E3\u30FC\u30C9\u306E\u7F6E\u304D\u5834\u6240\u3002\u30D5\u30A9\u30EB\u30C0\u3054\u3068\u524A\u9664\u3059\u308C\u3070\u30A2\u30F3\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB\u306B\u306A\u308A\u307E\u3059\u3002").addText((t) => t.setValue(big.root).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u5909\u63DB\u5148\u30D5\u30A9\u30EB\u30C0\uFF08\u91D1\u5EAB\u5185\uFF09").setDesc("\u30B7\u30E3\u30FC\u30C9\u306E\u7F6E\u304D\u5834\u6240\u3002\u30D5\u30A9\u30EB\u30C0\u3054\u3068\u524A\u9664\u3059\u308C\u3070\u30A2\u30F3\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB\u306B\u306A\u308A\u307E\u3059\u3002").addText((t) => t.setValue(big.root).onChange(async (v) => {
       big.root = v.trim() || "JP Dictionaries";
       await this.onSettingsChange();
     }));
     const backupDesc = containerEl.createEl("p", { cls: "setting-item-description" });
     backupDesc.innerHTML = "\u4E0A\u306F<b>1\u8F9E\u66F8\u305A\u3064</b>\u306EZIP\u66F8\u304D\u51FA\u3057\u7528\u3067\u3059\u3002Yomitan\u306E\u300C\u3059\u3079\u3066\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u300D\u3067\u4F5C\u3063\u305F<b>1\u3064\u306E\u5DE8\u5927JSON</b>\uFF08\u5B9F\u6E2C 12.7GB\u30FB36\u8F9E\u66F8\u30FB401\u4E07\u8A9E\uFF09\u306F\u3053\u3061\u3089\u304B\u3089\u3002\u30D5\u30A1\u30A4\u30EB\u5168\u4F53\u306F\u8AAD\u307F\u8FBC\u307E\u305A\u6D41\u3057\u8AAD\u307F\u3057\u307E\u3059 \u2014 \u5B9F\u6E2C 185\u79D2\u30FB\u30D4\u30FC\u30AF\u30E1\u30E2\u30EA1MB\u672A\u6E80\u3002<br>\u767B\u9332\u6E08\u307F36\u8F9E\u66F8\u306E\u307F\u3092\u5909\u63DB\u3057\u307E\u3059\uFF08terms\u8868\u306B\u306F\u524A\u9664\u6E08\u307F\u8F9E\u66F8\u306E\u6B8B\u9AB8\u304C97\u7A2E\u985E\u3076\u3093\u6B8B\u3063\u3066\u304A\u308A\u3001\u305D\u306E\u307E\u307E\u5909\u63DB\u3059\u308B\u3068\u4E0D\u8981\u306A\u30D5\u30A9\u30EB\u30C0\u304C61\u500B\u3067\u304D\u307E\u3059\uFF09\u3002";
-    new import_obsidian13.Setting(containerEl).setName("Yomitan\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7(.json)").setDesc("\u4F8B: C:/Users/\u2026/yomitan-dictionaries-\u2026.json").addText((t) => t.setPlaceholder("/path/to/yomitan-dictionaries-\u2026.json").setValue(big.backupFile).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Yomitan\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7(.json)").setDesc("\u4F8B: C:/Users/\u2026/yomitan-dictionaries-\u2026.json").addText((t) => t.setPlaceholder("/path/to/yomitan-dictionaries-\u2026.json").setValue(big.backupFile).onChange(async (v) => {
       big.backupFile = v.trim();
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u304B\u3089\u5168\u8F9E\u66F8\u3092\u5909\u63DB").setDesc("1\u56DE\u306E\u6D41\u3057\u8AAD\u307F\u306736\u8F9E\u66F8\u3076\u3093\u306E\u30B7\u30E3\u30FC\u30C9\u3092\u4F5C\u308A\u307E\u3059\u3002\u6642\u9593\u304C\u304B\u304B\u308A\u307E\u3059\uFF08\u5B9F\u6E2C3\u5206\uFF09\u3002").addButton((b) => b.setButtonText("\u5168\u8F9E\u66F8\u3092\u5909\u63DB").setDisabled(!import_obsidian13.Platform.isDesktopApp).onClick(async () => {
+    new import_obsidian14.Setting(containerEl).setName("\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u304B\u3089\u5168\u8F9E\u66F8\u3092\u5909\u63DB").setDesc("1\u56DE\u306E\u6D41\u3057\u8AAD\u307F\u306736\u8F9E\u66F8\u3076\u3093\u306E\u30B7\u30E3\u30FC\u30C9\u3092\u4F5C\u308A\u307E\u3059\u3002\u6642\u9593\u304C\u304B\u304B\u308A\u307E\u3059\uFF08\u5B9F\u6E2C3\u5206\uFF09\u3002").addButton((b) => b.setButtonText("\u5168\u8F9E\u66F8\u3092\u5909\u63DB").setDisabled(!import_obsidian14.Platform.isDesktopApp).onClick(async () => {
       var _a2, _b2;
       b.setDisabled(true).setButtonText("\u5909\u63DB\u4E2D\u2026");
       try {
@@ -28710,7 +30421,7 @@ var SettingsTab = class extends import_obsidian13.PluginSettingTab {
         b.setDisabled(false).setButtonText("\u5168\u8F9E\u66F8\u3092\u5909\u63DB");
       }
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u8F9E\u66F8\u3092\u5909\u63DB").setDesc("\u30B3\u30DE\u30F3\u30C9\u300C\u8F9E\u66F8: Convert Yomitan Export \u2192 Vault Sidecars\u300D\u3068\u540C\u3058\u3002\u518D\u5B9F\u884C\u3059\u308B\u3068\u4F5C\u308A\u76F4\u3057\u307E\u3059\u3002").addButton((b) => b.setButtonText("\u5909\u63DB\u3092\u5B9F\u884C").setDisabled(!import_obsidian13.Platform.isDesktopApp).onClick(async () => {
+    new import_obsidian14.Setting(containerEl).setName("\u8F9E\u66F8\u3092\u5909\u63DB").setDesc("\u30B3\u30DE\u30F3\u30C9\u300C\u8F9E\u66F8: Convert Yomitan Export \u2192 Vault Sidecars\u300D\u3068\u540C\u3058\u3002\u518D\u5B9F\u884C\u3059\u308B\u3068\u4F5C\u308A\u76F4\u3057\u307E\u3059\u3002").addButton((b) => b.setButtonText("\u5909\u63DB\u3092\u5B9F\u884C").setDisabled(!import_obsidian14.Platform.isDesktopApp).onClick(async () => {
       var _a2, _b2;
       b.setDisabled(true).setButtonText("\u5909\u63DB\u4E2D\u2026");
       try {
@@ -28722,7 +30433,7 @@ var SettingsTab = class extends import_obsidian13.PluginSettingTab {
     this.renderInstalledDictionaries(containerEl);
     containerEl.createEl("h3", { text: "\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7 (yt-dlp) \u2014 \u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u9650\u5B9A" });
     const audio = this.settings.audioExtraction;
-    if (!import_obsidian13.Platform.isDesktopApp) {
+    if (!import_obsidian14.Platform.isDesktopApp) {
       containerEl.createEl("p", {
         text: "\u3053\u306E\u6A5F\u80FD\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248 Obsidian \u3067\u306E\u307F\u52D5\u4F5C\u3057\u307E\u3059\uFF08\u30E2\u30D0\u30A4\u30EB\u306B\u306F child_process \u304C\u3042\u308A\u307E\u305B\u3093\uFF09\u3002",
         cls: "setting-item-description"
@@ -28730,23 +30441,23 @@ var SettingsTab = class extends import_obsidian13.PluginSettingTab {
     }
     const audioDesc = containerEl.createEl("p", { cls: "setting-item-description" });
     audioDesc.innerHTML = "\u7167\u5408\u30B9\u30D1\u30F3\u306E\u6642\u523B\u304B\u3089\u3001\u305D\u306E\u4E00\u77AC\u3060\u3051\u306E MP3 \u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u3057\u3066\u30AB\u30FC\u30C9\u306B\u57CB\u3081\u8FBC\u307F\u307E\u3059\uFF08Anki \u65B9\u5F0F\uFF09\u3002<br><b>\u8981\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB:</b> yt-dlp\u30FBffmpeg\u30FBJS \u30E9\u30F3\u30BF\u30A4\u30E0(deno \u304B node)\u3002<b>\u6CE8\u610F:</b> YouTube \u97F3\u58F0\u306E\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u306F ToS \u306E\u30B0\u30EC\u30FC\u30BE\u30FC\u30F3\u3067\u3059\u3002\u672C\u30D7\u30E9\u30B0\u30A4\u30F3\u306F\u30C0\u30A6\u30F3\u30ED\u30FC\u30C0\u3092\u540C\u68B1\u30FB\u81EA\u52D5\u30A4\u30F3\u30B9\u30C8\u30FC\u30EB\u3057\u307E\u305B\u3093\uFF08\u500B\u4EBA\u5229\u7528\u306E\u7BC4\u56F2\u3067\u81EA\u5DF1\u8CAC\u4EFB\uFF09\u3002";
-    new import_obsidian13.Setting(containerEl).setName("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97\u3092\u6709\u52B9\u5316").setDesc("\u30AA\u30D7\u30C8\u30A4\u30F3\u3002\u30AA\u30D5\u306E\u9593\u306F\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7\u306E\u6DF1\u30EA\u30F3\u30AF(youtu.be?t=)\u306E\u307F\u3002").addToggle((t) => t.setValue(audio.enabled).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97\u3092\u6709\u52B9\u5316").setDesc("\u30AA\u30D7\u30C8\u30A4\u30F3\u3002\u30AA\u30D5\u306E\u9593\u306F\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7\u306E\u6DF1\u30EA\u30F3\u30AF(youtu.be?t=)\u306E\u307F\u3002").addToggle((t) => t.setValue(audio.enabled).onChange(async (v) => {
       audio.enabled = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u4FDD\u5B58\u30D5\u30A9\u30EB\u30C0").setDesc("\u30AF\u30EA\u30C3\u30D7 (clip_<id>_<\u79D2>.mp3) \u306E\u51FA\u529B\u5148\uFF08vault \u76F8\u5BFE\uFF09\u3002").addText((t) => t.setValue(audio.outputFolder).setPlaceholder("JP Audio Clips").onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u4FDD\u5B58\u30D5\u30A9\u30EB\u30C0").setDesc("\u30AF\u30EA\u30C3\u30D7 (clip_<id>_<\u79D2>.mp3) \u306E\u51FA\u529B\u5148\uFF08vault \u76F8\u5BFE\uFF09\u3002").addText((t) => t.setValue(audio.outputFolder).setPlaceholder("JP Audio Clips").onChange(async (v) => {
       audio.outputFolder = v.trim() || "JP Audio Clips";
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u30AF\u30EA\u30C3\u30D7\u9577 (\u79D2)").setDesc("\u7D42\u4E86\u6642\u523B\u304C\u7121\u3044\u30B9\u30D1\u30F3\u3067\u4F7F\u3046\u9577\u3055\u3002").addSlider((s) => s.setLimits(4, 40, 1).setValue(audio.clipLengthSec).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u30AF\u30EA\u30C3\u30D7\u9577 (\u79D2)").setDesc("\u7D42\u4E86\u6642\u523B\u304C\u7121\u3044\u30B9\u30D1\u30F3\u3067\u4F7F\u3046\u9577\u3055\u3002").addSlider((s) => s.setLimits(4, 40, 1).setValue(audio.clipLengthSec).setDynamicTooltip().onChange(async (v) => {
       audio.clipLengthSec = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u30EA\u30FC\u30C9\u79D2 (\u524D)").setDesc("\u958B\u59CB\u306E\u5C11\u3057\u524D\u304B\u3089\u9332\u308B\u305F\u3081\u306E\u4F59\u767D\uFF08\u5185\u5BB9\u306E\u307F\u3002\u30D5\u30A1\u30A4\u30EB\u540D\u306F\u958B\u59CB\u79D2\u57FA\u6E96\uFF09\u3002").addSlider((s) => s.setLimits(0, 10, 1).setValue(audio.preRollSec).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u30EA\u30FC\u30C9\u79D2 (\u524D)").setDesc("\u958B\u59CB\u306E\u5C11\u3057\u524D\u304B\u3089\u9332\u308B\u305F\u3081\u306E\u4F59\u767D\uFF08\u5185\u5BB9\u306E\u307F\u3002\u30D5\u30A1\u30A4\u30EB\u540D\u306F\u958B\u59CB\u79D2\u57FA\u6E96\uFF09\u3002").addSlider((s) => s.setLimits(0, 10, 1).setValue(audio.preRollSec).setDynamicTooltip().onChange(async (v) => {
       audio.preRollSec = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u97F3\u58F0\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8").addDropdown((d) => {
+    new import_obsidian14.Setting(containerEl).setName("\u97F3\u58F0\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8").addDropdown((d) => {
       d.addOption("mp3", "mp3 (Obsidian \u518D\u751F\u5BFE\u5FDC)");
       d.addOption("m4a", "m4a");
       d.addOption("opus", "opus");
@@ -28763,30 +30474,30 @@ var SettingsTab = class extends import_obsidian13.PluginSettingTab {
     let ytComp = null;
     let ffComp = null;
     let jsComp = null;
-    new import_obsidian13.Setting(containerEl).setName("yt-dlp \u30D1\u30B9").setDesc("\u7A7A\u6B04\u306A\u3089 PATH \u306E 'yt-dlp' \u3092\u4F7F\u7528\u3002").addText((t) => {
+    new import_obsidian14.Setting(containerEl).setName("yt-dlp \u30D1\u30B9").setDesc("\u7A7A\u6B04\u306A\u3089 PATH \u306E 'yt-dlp' \u3092\u4F7F\u7528\u3002").addText((t) => {
       ytComp = t;
       t.setValue(audio.ytdlpPath).setPlaceholder("yt-dlp").onChange(async (v) => {
         audio.ytdlpPath = v.trim();
         await this.onSettingsChange();
       });
     });
-    new import_obsidian13.Setting(containerEl).setName("ffmpeg \u30C7\u30A3\u30EC\u30AF\u30C8\u30EA/\u30D0\u30A4\u30CA\u30EA").setDesc("\u7A7A\u6B04\u306A\u3089 PATH\u3002winget \u7248\u306F\u81EA\u52D5\u691C\u51FA\u3067\u304D\u307E\u3059\u3002").addText((t) => {
+    new import_obsidian14.Setting(containerEl).setName("ffmpeg \u30C7\u30A3\u30EC\u30AF\u30C8\u30EA/\u30D0\u30A4\u30CA\u30EA").setDesc("\u7A7A\u6B04\u306A\u3089 PATH\u3002winget \u7248\u306F\u81EA\u52D5\u691C\u51FA\u3067\u304D\u307E\u3059\u3002").addText((t) => {
       ffComp = t;
       t.setValue(audio.ffmpegPath).setPlaceholder("(auto)").onChange(async (v) => {
         audio.ffmpegPath = v.trim();
         await this.onSettingsChange();
       });
     });
-    new import_obsidian13.Setting(containerEl).setName("JS \u30E9\u30F3\u30BF\u30A4\u30E0").setDesc("\u7A7A\u6B04\u306A\u3089 deno \u3092\u81EA\u52D5\u4F7F\u7528\u3002node \u306E\u5834\u5408 'node:C:\\\\Program Files\\\\nodejs\\\\node.exe' \u306E\u5F62\u5F0F\u3002").addText((t) => {
+    new import_obsidian14.Setting(containerEl).setName("JS \u30E9\u30F3\u30BF\u30A4\u30E0").setDesc("\u7A7A\u6B04\u306A\u3089 deno \u3092\u81EA\u52D5\u4F7F\u7528\u3002node \u306E\u5834\u5408 'node:C:\\\\Program Files\\\\nodejs\\\\node.exe' \u306E\u5F62\u5F0F\u3002").addText((t) => {
       jsComp = t;
       t.setValue(audio.jsRuntime).setPlaceholder("(deno auto)").onChange(async (v) => {
         audio.jsRuntime = v.trim();
         await this.onSettingsChange();
       });
     });
-    new import_obsidian13.Setting(containerEl).setName("\u30C4\u30FC\u30EB\u3092\u81EA\u52D5\u691C\u51FA").setDesc("yt-dlp\u30FBffmpeg\u30FBJS \u30E9\u30F3\u30BF\u30A4\u30E0\u3092\u63A2\u3057\u3066\u4E0A\u306E\u6B04\u3092\u57CB\u3081\u307E\u3059\u3002").addButton((b) => b.setButtonText("\u81EA\u52D5\u691C\u51FA").setCta().onClick(async () => {
-      if (!import_obsidian13.Platform.isDesktopApp) {
-        new import_obsidian13.Notice("\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u306E\u307F");
+    new import_obsidian14.Setting(containerEl).setName("\u30C4\u30FC\u30EB\u3092\u81EA\u52D5\u691C\u51FA").setDesc("yt-dlp\u30FBffmpeg\u30FBJS \u30E9\u30F3\u30BF\u30A4\u30E0\u3092\u63A2\u3057\u3066\u4E0A\u306E\u6B04\u3092\u57CB\u3081\u307E\u3059\u3002").addButton((b) => b.setButtonText("\u81EA\u52D5\u691C\u51FA").setCta().onClick(async () => {
+      if (!import_obsidian14.Platform.isDesktopApp) {
+        new import_obsidian14.Notice("\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u306E\u307F");
         return;
       }
       try {
@@ -28807,51 +30518,75 @@ JS: ${d.jsRuntime || "(deno auto)"}
         ytComp == null ? void 0 : ytComp.setValue(audio.ytdlpPath);
         ffComp == null ? void 0 : ffComp.setValue(audio.ffmpegPath);
         jsComp == null ? void 0 : jsComp.setValue(audio.jsRuntime);
-        new import_obsidian13.Notice("\u691C\u51FA\u3057\u307E\u3057\u305F");
+        new import_obsidian14.Notice("\u691C\u51FA\u3057\u307E\u3057\u305F");
       } catch (e) {
         renderStatus(`\u691C\u51FA\u5931\u6557: ${String(e)}`);
       }
     }));
+    containerEl.createEl("h3", { text: "\u7AEF\u672B\u306E\u6301\u3061\u65B9\uFF08iPad / Apple Pencil\uFF09" });
+    if (!this.settings.posture)
+      this.settings.posture = { ...DEFAULT_POSTURE_SETTINGS };
+    const post = this.settings.posture;
+    const postDesc = containerEl.createEl("p", { cls: "setting-item-description" });
+    postDesc.innerHTML = "\u30BF\u30D6\u30EC\u30C3\u30C8\u306F\u300C\u5927\u304D\u306A\u30B9\u30DE\u30DB\u300D\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002\u7247\u624B\u306E\u89AA\u6307\u3067\u306F\u306A\u304F<b>\u30DA\u30F3\u3092\u6301\u3064\u5074\u306E\u7E01</b>\u304C\u5C4A\u304F\u7BC4\u56F2\u306A\u306E\u3067\u3001\u9451\u8CDE\u30E2\u30FC\u30C9\u306E\u64CD\u4F5C\u5217\u306F\u305D\u306E\u7E01\u306B\u51FA\u307E\u3059\u3002<br>\u30DA\u30F3\u306E\u6709\u7121\u306F\u691C\u51FA\u3067\u304D\u306A\u3044\uFF08iPadOS \u306F Pencil \u306E\u6709\u7121\u306B\u304B\u304B\u308F\u3089\u305A <code>pointer: coarse</code> \u3068\u5831\u544A\u3057\u307E\u3059\uFF09\u305F\u3081\u3001\u30DB\u30D0\u30FC\u8F9E\u66F8\u306A\u3069\u306E\u30DA\u30F3\u5C02\u7528\u6A5F\u80FD\u306F<b>\u5B9F\u969B\u306B\u30DA\u30F3\u304C\u4F7F\u308F\u308C\u305F\u77AC\u9593</b>\u306B\u6709\u52B9\u5316\u3055\u308C\u307E\u3059\u3002";
+    new import_obsidian14.Setting(containerEl).setName("\u30DA\u30F3\u3092\u6301\u3064\u624B").setDesc("\u9451\u8CDE\u30E2\u30FC\u30C9\u306E\u64CD\u4F5C\u5217\u3092\u3069\u3061\u3089\u5074\u306B\u51FA\u3059\u304B\u3002\u53CD\u5BFE\u5074\u3060\u3068\u6BCE\u56DE\u8155\u3092\u4F38\u3070\u3059\u3053\u3068\u306B\u306A\u308A\u307E\u3059\u3002").addDropdown((d) => d.addOption("right", "\u53F3\u624B").addOption("left", "\u5DE6\u624B").setValue(post.hand).onChange(async (v) => {
+      post.hand = v;
+      await this.onSettingsChange();
+      configurePosture({ hand: post.hand });
+    }));
+    new import_obsidian14.Setting(containerEl).setName("\u30E1\u30E2\u3092\u66F8\u304F\u9593\u306F\u81EA\u52D5\u3067\u4E00\u6642\u505C\u6B62").setDesc(
+      "\u6C17\u3065\u304D\u3092\u66F8\u304D\u59CB\u3081\u305F\u3089\u518D\u751F\u3092\u6B62\u3081\u3001\u66F8\u304D\u7D42\u308F\u3063\u305F\u3089\u518D\u958B\u3057\u307E\u3059\uFF08Plex \u540C\u671F\u4E2D\u306F\u6620\u50CF\u305D\u306E\u3082\u306E\u3001\u305D\u3046\u3067\u306A\u3051\u308C\u3070\u5B57\u5E55\u306E\u6642\u8A08\uFF09\u3002\u81EA\u5206\u3067\u6B62\u3081\u3066\u3044\u305F\u5834\u5408\u306F\u518D\u958B\u3057\u307E\u305B\u3093\u3002"
+    ).addToggle((t) => t.setValue(post.autoPauseOnWrite).onChange(async (v) => {
+      post.autoPauseOnWrite = v;
+      await this.onSettingsChange();
+    }));
+    new import_obsidian14.Setting(containerEl).setName("\u30EC\u30A4\u30A2\u30A6\u30C8\u306E\u4E0A\u66F8\u304D").setDesc("\u7AEF\u672B\u306E\u5224\u5B9A\u304C\u8AA4\u3063\u3066\u3044\u308B\u3068\u304D\u3060\u3051\u5909\u66F4\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u901A\u5E38\u306F\u300C\u81EA\u52D5\u300D\uFF09\u3002").addDropdown((d) => d.addOption("auto", "\u81EA\u52D5").addOption("desk", "\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\uFF08\u30DE\u30A6\u30B9\uFF09").addOption("slate", "\u30BF\u30D6\u30EC\u30C3\u30C8\uFF08\u7E01\u306E\u64CD\u4F5C\u5217\uFF09").addOption("thumb", "\u30B9\u30DE\u30DB\uFF08\u4E0B\u7AEF\u306E\u64CD\u4F5C\u5217\uFF09").setValue(post.override).onChange(async (v) => {
+      post.override = v;
+      await this.onSettingsChange();
+      configurePosture({ override: post.override });
+    }));
+    const verdict = containerEl.createEl("p", { cls: "setting-item-description" });
+    verdict.innerHTML = `\u5B9F\u6E2C\u5024 \u2014 \u3053\u306E\u7AEF\u672B\u3067\u30DA\u30F3\u304C\u30CD\u30A4\u30C6\u30A3\u30D6\u306E\u30C9\u30E9\u30C3\u30B0\u3092\u958B\u59CB\u3067\u304D\u308B\u304B: <b>${post.penNativeDrag === "yes" ? "\u3059\u308B\uFF08\u4ED6\u30A2\u30D7\u30EA\u3078\u6301\u3061\u51FA\u305B\u307E\u3059\uFF09" : post.penNativeDrag === "no" ? "\u3057\u306A\u3044\uFF08\u30A2\u30D7\u30EA\u5185\u306E\u79FB\u52D5\u306E\u307F\uFF09" : "\u672A\u6E2C\u5B9A"}</b>\u3002\u3053\u308C\u306F\u63A8\u6E2C\u3067\u306F\u306A\u304F\u5B9F\u969B\u306E\u30C9\u30E9\u30C3\u30B0\u304B\u3089\u5B66\u7FD2\u3057\u305F\u5024\u3067\u3001\u30B3\u30DE\u30F3\u30C9\u30D1\u30EC\u30C3\u30C8\u306E\u300C\u270E \u8ABF\u67FB: \u30DA\u30F3\uFF0F\u30C9\u30E9\u30C3\u30B0\u306E\u5B9F\u6E2C\u300D\u3067\u8A73\u3057\u304F\u78BA\u8A8D\u3067\u304D\u307E\u3059\u3002`;
     containerEl.createEl("h3", { text: "Plex / TV \u9023\u643A\uFF08\u9451\u8CDE\u30E2\u30FC\u30C9\uFF09" });
     const plex = this.settings.plex;
     const plexDesc = containerEl.createEl("p", { cls: "setting-item-description" });
     plexDesc.innerHTML = "\u9451\u8CDE\u30E2\u30FC\u30C9\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u3092 Plex \u306E\u518D\u751F\u4F4D\u7F6E\u306B\u81EA\u52D5\u540C\u671F\u3057\u307E\u3059\uFF08clock (b)\uFF09\u3002<br>\u30B5\u30FC\u30D0\u30FCURL \u3068 X-Plex-Token \u3092\u8A2D\u5B9A\u3059\u308B\u3068\u3001\u9451\u8CDE\u30E2\u30FC\u30C9\u306E\u30D8\u30C3\u30C0\u30FC\u306B\u300C\u{1F4FA} Plex\u540C\u671F\u300D\u304C\u51FA\u307E\u3059\u3002<br>\u30C7\u30D6\u30EA\u30FC\u30D5\u306E\u30DE\u30FC\u30AF\u306E \u{1F3AC} \u3067\u3001\u305D\u306E\u77AC\u9593\u306E\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\uFF0B\u9759\u6B62\u753B\u3092 Part \u304B\u3089\u5207\u308A\u51FA\u3057\u307E\u3059\uFF08ffmpeg\u3001\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u9650\u5B9A\uFF09\u3002<br><b>\u30C8\u30FC\u30AF\u30F3\u306F\u7AEF\u672B\u5185\u306E\u307F\uFF08\u540C\u671F\u3055\u308C\u308B blob \u306B\u306F\u4FDD\u5B58\u3055\u308C\u307E\u305B\u3093\uFF09\u3002</b>";
-    new import_obsidian13.Setting(containerEl).setName("\u30B5\u30FC\u30D0\u30FC URL").setDesc("\u4F8B: http://192.168.1.20:32400 \u2014 \u3053\u306E\u7AEF\u672B\u304B\u3089 LAN \u3067\u5230\u9054\u3067\u304D\u308B\u3053\u3068\u3002").addText((t) => t.setValue(plex.baseUrl).setPlaceholder("http://\u2026:32400").onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u30B5\u30FC\u30D0\u30FC URL").setDesc("\u4F8B: http://192.168.1.20:32400 \u2014 \u3053\u306E\u7AEF\u672B\u304B\u3089 LAN \u3067\u5230\u9054\u3067\u304D\u308B\u3053\u3068\u3002").addText((t) => t.setValue(plex.baseUrl).setPlaceholder("http://\u2026:32400").onChange(async (v) => {
       plex.baseUrl = v.trim();
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("X-Plex-Token").setDesc("\u79D8\u5BC6\u3002\u7AEF\u672B\u5185 localStorage \u306B\u4FDD\u5B58\u3055\u308C\u3001vault \u306E blob \u306B\u306F\u66F8\u304D\u8FBC\u307E\u308C\u307E\u305B\u3093\u3002").addText((t) => {
+    new import_obsidian14.Setting(containerEl).setName("X-Plex-Token").setDesc("\u79D8\u5BC6\u3002\u7AEF\u672B\u5185 localStorage \u306B\u4FDD\u5B58\u3055\u308C\u3001vault \u306E blob \u306B\u306F\u66F8\u304D\u8FBC\u307E\u308C\u307E\u305B\u3093\u3002").addText((t) => {
       t.setValue(plex.token).setPlaceholder("token").onChange(async (v) => {
         plex.token = v.trim();
         await this.onSettingsChange();
       });
       t.inputEl.type = "password";
     });
-    new import_obsidian13.Setting(containerEl).setName("\u30AF\u30EA\u30C3\u30D7\u306E\u524D\u5F8C\u4F59\u767D (\u79D2)").setDesc("\u30DE\u30FC\u30AF\u6642\u523B\u306E\u524D\u5F8C\u306B\u4F55\u79D2\u8DB3\u3057\u3066\u5207\u308A\u51FA\u3059\u304B\u3002").addSlider((s) => s.setLimits(0, 15, 1).setValue(plex.clipPreSec).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u30AF\u30EA\u30C3\u30D7\u306E\u524D\u5F8C\u4F59\u767D (\u79D2)").setDesc("\u30DE\u30FC\u30AF\u6642\u523B\u306E\u524D\u5F8C\u306B\u4F55\u79D2\u8DB3\u3057\u3066\u5207\u308A\u51FA\u3059\u304B\u3002").addSlider((s) => s.setLimits(0, 15, 1).setValue(plex.clipPreSec).setDynamicTooltip().onChange(async (v) => {
       plex.clipPreSec = v;
       plex.clipPostSec = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u63A5\u7D9A\u30C6\u30B9\u30C8").setDesc("/status/sessions \u3092\u53E9\u3044\u3066\u3001\u4ECA Plex \u3067\u518D\u751F\u4E2D\u306E\u9805\u76EE\u3092\u8868\u793A\u3057\u307E\u3059\uFF08\u30D5\u30A3\u30FC\u30EB\u30C9\u540D\u306E\u5B9F\u5730\u78BA\u8A8D\u306B\uFF09\u3002").addButton((b) => b.setButtonText("\u30C6\u30B9\u30C8").onClick(async () => {
+    new import_obsidian14.Setting(containerEl).setName("\u63A5\u7D9A\u30C6\u30B9\u30C8").setDesc("/status/sessions \u3092\u53E9\u3044\u3066\u3001\u4ECA Plex \u3067\u518D\u751F\u4E2D\u306E\u9805\u76EE\u3092\u8868\u793A\u3057\u307E\u3059\uFF08\u30D5\u30A3\u30FC\u30EB\u30C9\u540D\u306E\u5B9F\u5730\u78BA\u8A8D\u306B\uFF09\u3002").addButton((b) => b.setButtonText("\u30C6\u30B9\u30C8").onClick(async () => {
       var _a2;
       if (!plex.baseUrl.trim() || !plex.token.trim()) {
-        new import_obsidian13.Notice("\u30B5\u30FC\u30D0\u30FCURL \u3068 \u30C8\u30FC\u30AF\u30F3\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+        new import_obsidian14.Notice("\u30B5\u30FC\u30D0\u30FCURL \u3068 \u30C8\u30FC\u30AF\u30F3\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
         return;
       }
       let resp;
       try {
-        resp = await (0, import_obsidian13.requestUrl)({ url: plexSessionsUrl(plex.baseUrl, plex.token), method: "GET", headers: { Accept: "application/json" }, throw: false });
+        resp = await (0, import_obsidian14.requestUrl)({ url: plexSessionsUrl(plex.baseUrl, plex.token), method: "GET", headers: { Accept: "application/json" }, throw: false });
       } catch (e) {
-        new import_obsidian13.Notice(explainPlexTransportError(plex.baseUrl, e.message), 15e3);
+        new import_obsidian14.Notice(explainPlexTransportError(plex.baseUrl, e.message), 15e3);
         return;
       }
       const res = parsePlexSessions(resp.status, (_a2 = resp.text) != null ? _a2 : "");
       if (!res.ok) {
-        new import_obsidian13.Notice(`Plex: ${res.error}`, 8e3);
+        new import_obsidian14.Notice(`Plex: ${res.error}`, 8e3);
         return;
       }
       if (!res.sessions.length) {
-        new import_obsidian13.Notice("Plex: \u63A5\u7D9AOK \u2014 \u518D\u751F\u4E2D\u306E\u9805\u76EE\u306F\u3042\u308A\u307E\u305B\u3093\u3002", 6e3);
+        new import_obsidian14.Notice("Plex: \u63A5\u7D9AOK \u2014 \u518D\u751F\u4E2D\u306E\u9805\u76EE\u306F\u3042\u308A\u307E\u305B\u3093\u3002", 6e3);
         return;
       }
       const lines = res.sessions.map((s) => {
@@ -28861,9 +30596,9 @@ JS: ${d.jsRuntime || "(deno auto)"}
   ${subs.join("\n  ")}` : `${head}
   \uFF08\u5B57\u5E55\u30C8\u30E9\u30C3\u30AF\u60C5\u5831\u306A\u3057\uFF09`;
       });
-      new import_obsidian13.Notice("Plex \u63A5\u7D9AOK:\n" + lines.join("\n"), 15e3);
+      new import_obsidian14.Notice("Plex \u63A5\u7D9AOK:\n" + lines.join("\n"), 15e3);
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u5B57\u5E55\u304B\u3089\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u4F5C\u308B").setDesc(
+    new import_obsidian14.Setting(containerEl).setName("\u5B57\u5E55\u304B\u3089\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u4F5C\u308B").setDesc(
       "Plex \u304C\u6301\u3063\u3066\u3044\u308B\u5B57\u5E55\u3092\u305D\u306E\u307E\u307E\u53D6\u308A\u8FBC\u307F\u307E\u3059\u3002\u65E5\u672C\u8A9E\u30C8\u30E9\u30C3\u30AF\u304C\u7121\u3044\u4F5C\u54C1\u306F\u4E0B\u306E jimaku \u304B\u3089\u53D6\u5F97\u3057\u307E\u3059\u3002\u3069\u3061\u3089\u304B\u3089\u6765\u3066\u3082\u540C\u3058\u6A19\u6E96\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u306E\u3067\u3001\u7167\u5408\u30FB\u8D70\u67FB\u30FB\u8AC7\u8A71\u30E2\u30FC\u30C9\u30FB\u26A1 \u304C\u305D\u306E\u307E\u307E\u4F7F\u3048\u307E\u3059\u3002"
     ).addButton((b) => b.setButtonText("\u518D\u751F\u4E2D\u304B\u3089").onClick(async () => {
       var _a2, _b2;
@@ -28881,30 +30616,30 @@ JS: ${d.jsRuntime || "(deno auto)"}
     const jm = this.settings.jimaku;
     const jmDesc = containerEl.createEl("p", { cls: "setting-item-description" });
     jmDesc.innerHTML = "Plex \u304C\u51FA\u305B\u308B\u306E\u306F\u30D5\u30A1\u30A4\u30EB\u306B\u5165\u3063\u3066\u3044\u308B\u5B57\u5E55\u3060\u3051\u3067\u3001\u5B9F\u5199\u30C9\u30E9\u30DE\u3084\u53E4\u3044\u30A2\u30CB\u30E1\u306B\u306F\u65E5\u672C\u8A9E\u30C8\u30E9\u30C3\u30AF\u304C\u7121\u3044\u3053\u3068\u304C\u666E\u901A\u3067\u3059\u3002\u305D\u306E\u5834\u5408\u306B jimaku.cc \u304B\u3089\u5B57\u5E55\u3092\u53D6\u5F97\u3057\u307E\u3059\uFF08Plex \u306E\u9805\u76EEID\u306F\u6B8B\u308B\u306E\u3067\u3001\u{1F3AC}\u30AF\u30EA\u30C3\u30D7\u3082 Plex\u540C\u671F\u3082\u305D\u306E\u307E\u307E\u52D5\u304D\u307E\u3059\uFF09\u3002<br><b>API \u30AD\u30FC\u306F\u7AEF\u672B\u5185\u306E\u307F\uFF08\u540C\u671F\u3055\u308C\u308B blob \u306B\u306F\u4FDD\u5B58\u3055\u308C\u307E\u305B\u3093\uFF09\u3002</b>";
-    new import_obsidian13.Setting(containerEl).setName("API \u30AD\u30FC").setDesc("jimaku.cc \u306B\u30ED\u30B0\u30A4\u30F3 \u2192 \u30D7\u30ED\u30D5\u30A3\u30FC\u30EB \u2192 API \u30AD\u30FC\u3092\u767A\u884C\u3057\u3066\u8CBC\u308A\u4ED8\u3051\u3002\u7A7A\u6B04\u306A\u3089 jimaku \u306F\u4F7F\u3044\u307E\u305B\u3093\u3002").addText((t) => {
+    new import_obsidian14.Setting(containerEl).setName("API \u30AD\u30FC").setDesc("jimaku.cc \u306B\u30ED\u30B0\u30A4\u30F3 \u2192 \u30D7\u30ED\u30D5\u30A3\u30FC\u30EB \u2192 API \u30AD\u30FC\u3092\u767A\u884C\u3057\u3066\u8CBC\u308A\u4ED8\u3051\u3002\u7A7A\u6B04\u306A\u3089 jimaku \u306F\u4F7F\u3044\u307E\u305B\u3093\u3002").addText((t) => {
       t.setValue(jm.apiKey).setPlaceholder("jimaku API key").onChange(async (v) => {
         jm.apiKey = v.trim();
         await this.onSettingsChange();
       });
       t.inputEl.type = "password";
     });
-    new import_obsidian13.Setting(containerEl).setName("\u3044\u3064 jimaku \u3092\u4F7F\u3046\u304B").setDesc(
+    new import_obsidian14.Setting(containerEl).setName("\u3044\u3064 jimaku \u3092\u4F7F\u3046\u304B").setDesc(
       "\u300CPlex \u306B\u7121\u3044\u6642\u3060\u3051\u300D= \u5185\u8535\u5B57\u5E55\u3092\u512A\u5148\uFF08\u6620\u50CF\u3068\u5FC5\u305A\u540C\u671F\u3057\u3066\u3044\u307E\u3059\uFF09\u3002\u300C\u5E38\u306B jimaku \u3092\u512A\u5148\u300D= \u5185\u8535\u304C\u82F1\u8A9E\u306E\u307F/\u90E8\u5206\u7684\u306A\u4F5C\u54C1\u5411\u3051\uFF08\u30BA\u30EC\u305F\u3089\u9451\u8CDE\u30E2\u30FC\u30C9\u306E \u2316 \u3067\u5408\u308F\u305B\u307E\u3059\uFF09\u3002"
     ).addDropdown((d) => d.addOption("fallback", "Plex \u306B\u7121\u3044\u6642\u3060\u3051").addOption("always", "\u5E38\u306B jimaku \u3092\u512A\u5148").addOption("off", "\u4F7F\u308F\u306A\u3044").setValue(jm.mode).onChange(async (v) => {
       jm.mode = v;
       await this.onSettingsChange();
     }));
     let testQuery = "";
-    new import_obsidian13.Setting(containerEl).setName("\u63A5\u7D9A\u30C6\u30B9\u30C8 / \u624B\u52D5\u3067\u63A2\u3059").setDesc("\u4F5C\u54C1\u540D\u3067 jimaku \u3092\u691C\u7D22\u3057\u307E\u3059\uFF08\u30A2\u30CB\u30E1\u30FB\u5B9F\u5199\u306E\u4E21\u65B9\uFF09\u3002\u9078\u629E\u753B\u9762\u304B\u3089\u305D\u306E\u307E\u307E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u4F5C\u308C\u307E\u3059\u3002").addText((t) => t.setPlaceholder("\u4F8B: \u76F8\u68D2 / \u9032\u6483\u306E\u5DE8\u4EBA").onChange((v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u63A5\u7D9A\u30C6\u30B9\u30C8 / \u624B\u52D5\u3067\u63A2\u3059").setDesc("\u4F5C\u54C1\u540D\u3067 jimaku \u3092\u691C\u7D22\u3057\u307E\u3059\uFF08\u30A2\u30CB\u30E1\u30FB\u5B9F\u5199\u306E\u4E21\u65B9\uFF09\u3002\u9078\u629E\u753B\u9762\u304B\u3089\u305D\u306E\u307E\u307E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u4F5C\u308C\u307E\u3059\u3002").addText((t) => t.setPlaceholder("\u4F8B: \u76F8\u68D2 / \u9032\u6483\u306E\u5DE8\u4EBA").onChange((v) => {
       testQuery = v.trim();
     })).addButton((b) => b.setButtonText("\u691C\u7D22").onClick(async () => {
       var _a2, _b2;
       if (!jm.apiKey.trim()) {
-        new import_obsidian13.Notice("API \u30AD\u30FC\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+        new import_obsidian14.Notice("API \u30AD\u30FC\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
         return;
       }
       if (!testQuery) {
-        new import_obsidian13.Notice("\u4F5C\u54C1\u540D\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+        new import_obsidian14.Notice("\u4F5C\u54C1\u540D\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
         return;
       }
       b.setDisabled(true).setButtonText("\u691C\u7D22\u4E2D\u2026");
@@ -28913,14 +30648,14 @@ JS: ${d.jsRuntime || "(deno auto)"}
         if (!res)
           return;
         if (!res.ok) {
-          new import_obsidian13.Notice(`jimaku: ${res.error}`, 1e4);
+          new import_obsidian14.Notice(`jimaku: ${res.error}`, 1e4);
           return;
         }
         if (!res.entries.length) {
-          new import_obsidian13.Notice(`jimaku: \u300C${testQuery}\u300D\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002`, 8e3);
+          new import_obsidian14.Notice(`jimaku: \u300C${testQuery}\u300D\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002`, 8e3);
           return;
         }
-        new import_obsidian13.Notice(
+        new import_obsidian14.Notice(
           `jimaku \u63A5\u7D9AOK \u2014 ${res.entries.length}\u4EF6:
 ` + res.entries.slice(0, 8).map((e) => `\u30FB${describeJimakuEntry(e)}`).join("\n"),
           15e3
@@ -28936,23 +30671,23 @@ JS: ${d.jsRuntime || "(deno auto)"}
     const notes = this.settings.notes;
     const notesDesc = containerEl.createEl("p", { cls: "setting-item-description" });
     notesDesc.innerHTML = "\u52D5\u753B\u306E\u5B57\u5E55\u3092\u53D6\u5F97\u3057\u3066\u300C\u539F\u6587\u300D\u30CE\u30FC\u30C8\u3068\u3057\u3066\u51CD\u7D50\u3057\u3001\u30E1\u30E2\u3092\u7167\u5408\u3057\u307E\u3059\u3002<br><b>\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7:</b> yt-dlp \u7D4C\u7531\u304C\u78BA\u5B9F\uFF08YouTube \u306E JS \u30C1\u30E3\u30EC\u30F3\u30B8\u3092\u89E3\u3044\u3066\u5B57\u5E55\u3092\u53D6\u5F97\uFF09\u3002<b>\u30E2\u30D0\u30A4\u30EB:</b> HTTP \u76F4\u53D6\u5F97\uFF08PO \u30C8\u30FC\u30AF\u30F3\u3067\u7A7A\u306B\u306A\u308B\u5834\u5408\u306F\u624B\u52D5\u8CBC\u308A\u4ED8\u3051\u306B\u30D5\u30A9\u30FC\u30EB\u30D0\u30C3\u30AF\uFF09\u3002";
-    new import_obsidian13.Setting(containerEl).setName("\u4FDD\u5B58\u30D5\u30A9\u30EB\u30C0\uFF08\u6587\u5B57\u8D77\u3053\u3057\uFF09").setDesc("\u53D6\u5F97\u3057\u305F\u5B57\u5E55\u30CE\u30FC\u30C8\u306E\u51FA\u529B\u5148\uFF08vault \u76F8\u5BFE\uFF09\u3002").addText((t) => t.setValue(notes.transcriptFolder).setPlaceholder("Transcripts").onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u4FDD\u5B58\u30D5\u30A9\u30EB\u30C0\uFF08\u6587\u5B57\u8D77\u3053\u3057\uFF09").setDesc("\u53D6\u5F97\u3057\u305F\u5B57\u5E55\u30CE\u30FC\u30C8\u306E\u51FA\u529B\u5148\uFF08vault \u76F8\u5BFE\uFF09\u3002").addText((t) => t.setValue(notes.transcriptFolder).setPlaceholder("Transcripts").onChange(async (v) => {
       notes.transcriptFolder = v.trim() || "Transcripts";
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u5B57\u5E55\u306E\u8A00\u8A9E\uFF08\u512A\u5148\u9806\uFF09").setDesc("\u30AB\u30F3\u30DE\u533A\u5207\u308A\u3002\u4F8B: ja,en\u3002\u6700\u521D\u306B\u898B\u3064\u304B\u3063\u305F\u8A00\u8A9E\u3092\u4F7F\u7528\u3002").addText((t) => t.setValue(notes.langPref).setPlaceholder("ja").onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u5B57\u5E55\u306E\u8A00\u8A9E\uFF08\u512A\u5148\u9806\uFF09").setDesc("\u30AB\u30F3\u30DE\u533A\u5207\u308A\u3002\u4F8B: ja,en\u3002\u6700\u521D\u306B\u898B\u3064\u304B\u3063\u305F\u8A00\u8A9E\u3092\u4F7F\u7528\u3002").addText((t) => t.setValue(notes.langPref).setPlaceholder("ja").onChange(async (v) => {
       notes.langPref = v.trim() || "ja";
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u624B\u52D5\u5B57\u5E55\u3092\u512A\u5148").setDesc("\u4EBA\u624B\u306E\u5B57\u5E55\u304C\u3042\u308C\u3070\u81EA\u52D5\u5B57\u5E55(ASR)\u3088\u308A\u512A\u5148\u3002").addToggle((t) => t.setValue(notes.preferManual).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u624B\u52D5\u5B57\u5E55\u3092\u512A\u5148").setDesc("\u4EBA\u624B\u306E\u5B57\u5E55\u304C\u3042\u308C\u3070\u81EA\u52D5\u5B57\u5E55(ASR)\u3088\u308A\u512A\u5148\u3002").addToggle((t) => t.setValue(notes.preferManual).onChange(async (v) => {
       notes.preferManual = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("yt-dlp \u3067\u5B57\u5E55\u53D6\u5F97\uFF08\u63A8\u5968\u30FB\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\uFF09").setDesc("\u4E0A\u306E\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u8A2D\u5B9A\u306E yt-dlp/JS \u30E9\u30F3\u30BF\u30A4\u30E0\u306E\u30D1\u30B9\u3092\u5171\u7528\u3057\u307E\u3059\u3002").addToggle((t) => t.setValue(notes.useYtdlpTranscripts).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("yt-dlp \u3067\u5B57\u5E55\u53D6\u5F97\uFF08\u63A8\u5968\u30FB\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\uFF09").setDesc("\u4E0A\u306E\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u8A2D\u5B9A\u306E yt-dlp/JS \u30E9\u30F3\u30BF\u30A4\u30E0\u306E\u30D1\u30B9\u3092\u5171\u7528\u3057\u307E\u3059\u3002").addToggle((t) => t.setValue(notes.useYtdlpTranscripts).onChange(async (v) => {
       notes.useYtdlpTranscripts = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u5C65\u6B74\u53D6\u5F97\u306E\u4E0A\u9650\uFF08\u672C\uFF09").setDesc("\u8996\u8074\u5C65\u6B74\u306E\u4E00\u62EC\u53D6\u5F97\u3067\u51E6\u7406\u3059\u308B\u6700\u5927\u52D5\u753B\u6570\u3002").addSlider((s) => s.setLimits(1, 100, 1).setValue(notes.maxHistoryVideos).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u5C65\u6B74\u53D6\u5F97\u306E\u4E0A\u9650\uFF08\u672C\uFF09").setDesc("\u8996\u8074\u5C65\u6B74\u306E\u4E00\u62EC\u53D6\u5F97\u3067\u51E6\u7406\u3059\u308B\u6700\u5927\u52D5\u753B\u6570\u3002").addSlider((s) => s.setLimits(1, 100, 1).setValue(notes.maxHistoryVideos).setDynamicTooltip().onChange(async (v) => {
       notes.maxHistoryVideos = v;
       await this.onSettingsChange();
     }));
@@ -28960,43 +30695,43 @@ JS: ${d.jsRuntime || "(deno auto)"}
     const vs = this.settings.voiceSync;
     const vsDesc = containerEl.createEl("p", { cls: "setting-item-description" });
     vsDesc.innerHTML = "\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u30ED\u30FC\u30AB\u30EB\u3067\u518D\u89E3\u6790: <b>whisper.cpp</b>\uFF08\u304D\u308C\u3044\u306A\u65E5\u672C\u8A9E\uFF0B\u30C8\u30FC\u30AF\u30F3\u5358\u4F4D\u306E\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7\uFF09\uFF0B <b>sherpa-onnx</b>\uFF08\u8A71\u8005\u5206\u96E2\u30FB\u76F8\u69CC/\u5272\u308A\u8FBC\u307F\u691C\u51FA\uFF09\u3002\u30AB\u30FC\u30C9\u306B<b>\u8A71\u8005\u30AB\u30E9\u30FC\u306E\u30AB\u30E9\u30AA\u30B1\u30FB\u30D7\u30EC\u30FC\u30E4\u30FC</b>\uFF08\u5358\u8A9E\u30CF\u30A4\u30E9\u30A4\u30C8\u30FB\u30AF\u30EA\u30C3\u30AF\u3067\u30B7\u30FC\u30AF\uFF09\u304C\u57CB\u3081\u8FBC\u307E\u308C\u307E\u3059\u3002\u3059\u3079\u3066\u30AA\u30D5\u30E9\u30A4\u30F3\u30FB\u7121\u6599\u3002<br><b>\u5FC5\u8981\u30C4\u30FC\u30EB</b>\uFF081\u56DE\u3060\u3051\u914D\u7F6E\u3002\u65E2\u5B9A\u306E\u5834\u6240: <code>%LOCALAPPDATA%\\jp-collocations\\speech-tools\\</code>\uFF09: whisper.cpp \u306E <code>whisper-blas-bin-x64.zip</code> \u2192 <code>whisper/</code> \u306B\u5C55\u958B\u3001\u30E2\u30C7\u30EB <code>models/ggml-small.bin</code>\u3001sherpa-onnx \u306E <code>win-x64-static-MT-Release-no-tts</code> \u30D3\u30EB\u30C9\u3001<code>sherpa-onnx-pyannote-segmentation-3-0/model.onnx</code>\u3001<code>models/3dspeaker_embed.onnx</code>\u3002";
-    new import_obsidian13.Setting(containerEl).setName("VoiceSync \u3092\u6709\u52B9\u5316").setDesc("\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97\u6642\u306B\u81EA\u52D5\u3067\u89E3\u6790\u3057\u3001\u30AB\u30FC\u30C9\u306B\u8A71\u8005\u540C\u671F\u30D7\u30EC\u30FC\u30E4\u30FC\u3092\u57CB\u3081\u8FBC\u307F\u307E\u3059\uFF081\u30AF\u30EA\u30C3\u30D7 \u2248 20\u79D2 CPU\uFF09\u3002").addToggle((t) => t.setValue(vs.enabled).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("VoiceSync \u3092\u6709\u52B9\u5316").setDesc("\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97\u6642\u306B\u81EA\u52D5\u3067\u89E3\u6790\u3057\u3001\u30AB\u30FC\u30C9\u306B\u8A71\u8005\u540C\u671F\u30D7\u30EC\u30FC\u30E4\u30FC\u3092\u57CB\u3081\u8FBC\u307F\u307E\u3059\uFF081\u30AF\u30EA\u30C3\u30D7 \u2248 20\u79D2 CPU\uFF09\u3002").addToggle((t) => t.setValue(vs.enabled).onChange(async (v) => {
       vs.enabled = v;
       await this.onSettingsChange();
     }));
     for (const p of vs.profiles) {
-      new import_obsidian13.Setting(containerEl).setName(`\u{1F5E3} ${p.name}`).setDesc(`\u767B\u9332\u6E08\u307F\u306E\u58F0\uFF08${p.durSec.toFixed(1)}s\uFF09\u2014 ${p.refWav}`).addButton((b) => b.setButtonText("\u524A\u9664").setWarning().onClick(async () => {
+      new import_obsidian14.Setting(containerEl).setName(`\u{1F5E3} ${p.name}`).setDesc(`\u767B\u9332\u6E08\u307F\u306E\u58F0\uFF08${p.durSec.toFixed(1)}s\uFF09\u2014 ${p.refWav}`).addButton((b) => b.setButtonText("\u524A\u9664").setWarning().onClick(async () => {
         vs.profiles = vs.profiles.filter((x) => x.name !== p.name);
         await this.onSettingsChange();
         this.display();
       }));
     }
-    new import_obsidian13.Setting(containerEl).setName("\u8A71\u8005\u5206\u96E2\u306E\u611F\u5EA6").setDesc("\u4F4E\u3044\u307B\u3069\u591A\u304F\u306E\u58F0\u3092\u691C\u51FA\uFF08\u5408\u4F53\u3057\u306B\u304F\u3044\u304C\u5206\u88C2\u3057\u3084\u3059\u3044\uFF09\u3002\u65E2\u5B9A 0.55 \u2014 \u5225\u4EBA\u306E\u58F0\u306E\u6DF7\u5165\u3092\u512A\u5148\u7684\u306B\u9632\u304E\u307E\u3059\u3002").addSlider((s) => s.setLimits(0.4, 0.9, 0.05).setValue(vs.clusterThreshold || 0.55).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u8A71\u8005\u5206\u96E2\u306E\u611F\u5EA6").setDesc("\u4F4E\u3044\u307B\u3069\u591A\u304F\u306E\u58F0\u3092\u691C\u51FA\uFF08\u5408\u4F53\u3057\u306B\u304F\u3044\u304C\u5206\u88C2\u3057\u3084\u3059\u3044\uFF09\u3002\u65E2\u5B9A 0.55 \u2014 \u5225\u4EBA\u306E\u58F0\u306E\u6DF7\u5165\u3092\u512A\u5148\u7684\u306B\u9632\u304E\u307E\u3059\u3002").addSlider((s) => s.setLimits(0.4, 0.9, 0.05).setValue(vs.clusterThreshold || 0.55).setDynamicTooltip().onChange(async (v) => {
       vs.clusterThreshold = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u30C4\u30FC\u30EB\u30D5\u30A9\u30EB\u30C0").setDesc("\u7A7A = \u65E2\u5B9A\uFF08%LOCALAPPDATA%\\jp-collocations\\speech-tools\uFF09\u3002").addText((t) => t.setValue(vs.toolsDir).setPlaceholder("(\u65E2\u5B9A)").onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u30C4\u30FC\u30EB\u30D5\u30A9\u30EB\u30C0").setDesc("\u7A7A = \u65E2\u5B9A\uFF08%LOCALAPPDATA%\\jp-collocations\\speech-tools\uFF09\u3002").addText((t) => t.setValue(vs.toolsDir).setPlaceholder("(\u65E2\u5B9A)").onChange(async (v) => {
       vs.toolsDir = v.trim();
       await this.onSettingsChange();
     })).addButton((b) => b.setButtonText("\u30C4\u30FC\u30EB\u691C\u51FA").onClick(() => {
       const tools = detectSpeechTools(vs.toolsDir);
-      new import_obsidian13.Notice(tools.ready ? "\u2705 \u3059\u3079\u3066\u306E\u30C4\u30FC\u30EB\u3092\u691C\u51FA\u3057\u307E\u3057\u305F\u3002" : `\u672A\u691C\u51FA: ${[!tools.whisperCli && "whisper-cli", !tools.whisperModel && "whisper \u30E2\u30C7\u30EB", !tools.diarBin && "sherpa-onnx \u8A71\u8005\u5206\u96E2", !tools.segModel && "segmentation \u30E2\u30C7\u30EB", !tools.embModel && "embedding \u30E2\u30C7\u30EB"].filter(Boolean).join(", ")}`, 1e4);
+      new import_obsidian14.Notice(tools.ready ? "\u2705 \u3059\u3079\u3066\u306E\u30C4\u30FC\u30EB\u3092\u691C\u51FA\u3057\u307E\u3057\u305F\u3002" : `\u672A\u691C\u51FA: ${[!tools.whisperCli && "whisper-cli", !tools.whisperModel && "whisper \u30E2\u30C7\u30EB", !tools.diarBin && "sherpa-onnx \u8A71\u8005\u5206\u96E2", !tools.segModel && "segmentation \u30E2\u30C7\u30EB", !tools.embModel && "embedding \u30E2\u30C7\u30EB"].filter(Boolean).join(", ")}`, 1e4);
     }));
     containerEl.createEl("h3", { text: "\u624B\u66F8\u304DOCR\uFF08Claude API\uFF09" });
     const ocrDesc = containerEl.createEl("p", { cls: "setting-item-description" });
     ocrDesc.innerHTML = "Apple Pencil \u306A\u3069\u306E\u624B\u66F8\u304D\u30E1\u30E2\u306E<b>\u5199\u771F/\u30B9\u30AF\u30EA\u30FC\u30F3\u30B7\u30E7\u30C3\u30C8</b>\u3092\u30CE\u30FC\u30C8\u306B\u57CB\u3081\u8FBC\u307F\u3001\u30B3\u30DE\u30F3\u30C9\u300COCR Handwritten Note Images + Reconcile\u300D\u3092\u5B9F\u884C\u3059\u308B\u3068\u3001Claude \u304C\u8A9E\u53E5\u3092<b>\u66F8\u304B\u308C\u3066\u3044\u308B\u901A\u308A\u306B</b>\u62BD\u51FA\u3057\u3066\u30CE\u30FC\u30C8\u306B\u8FFD\u8A18\u3057\u3001\u305D\u306E\u307E\u307E\u6587\u5B57\u8D77\u3053\u3057\u3068\u7167\u5408\u3057\u307E\u3059\uFF08\u8AA4\u5B57\u306E\u6821\u6B63\u306F\u7167\u5408\u5074\u304C\u884C\u3044\u307E\u3059\uFF09\u3002<br>\u6587\u5B57\u8D77\u3053\u3057\u672C\u6587\u304C API \u306B\u9001\u3089\u308C\u308B\u3053\u3068\u306F\u3042\u308A\u307E\u305B\u3093\uFF08\u753B\u50CF\u3068\u30D7\u30ED\u30F3\u30D7\u30C8\u306E\u307F\uFF09\u3002\u30AD\u30FC\u306F X \u306E Cookie \u3068\u540C\u69D8\u306B\u30D7\u30E9\u30B0\u30A4\u30F3\u8A2D\u5B9A\u5185\u306B\u4FDD\u5B58\u3055\u308C\u307E\u3059\u3002\u30AD\u30FC\u306E\u767A\u884C: <a href='https://console.anthropic.com/'>console.anthropic.com</a>";
-    new import_obsidian13.Setting(containerEl).setName("Anthropic API \u30AD\u30FC").setDesc("sk-ant-\u2026\uFF08\u7A7A = OCR \u7121\u52B9\uFF09").addText((t) => {
+    new import_obsidian14.Setting(containerEl).setName("Anthropic API \u30AD\u30FC").setDesc("sk-ant-\u2026\uFF08\u7A7A = OCR \u7121\u52B9\uFF09").addText((t) => {
       t.inputEl.type = "password";
       t.setValue(notes.ocrApiKey).setPlaceholder("sk-ant-\u2026").onChange(async (v) => {
         notes.ocrApiKey = v.trim();
         await this.onSettingsChange();
       });
     });
-    new import_obsidian13.Setting(containerEl).setName("OCR \u30E2\u30C7\u30EB\uFF08\u4E0A\u66F8\u304D\uFF09").setDesc("\u7A7A = \u65E2\u5B9A\u306E Haiku\uFF08\u5B89\u4FA1\u30FB1\u30DA\u30FC\u30B8 \u2248 1,600 \u753B\u50CF\u30C8\u30FC\u30AF\u30F3\uFF09\u3002").addText((t) => t.setValue(notes.ocrModel).setPlaceholder("claude-haiku-4-5-20251001").onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("OCR \u30E2\u30C7\u30EB\uFF08\u4E0A\u66F8\u304D\uFF09").setDesc("\u7A7A = \u65E2\u5B9A\u306E Haiku\uFF08\u5B89\u4FA1\u30FB1\u30DA\u30FC\u30B8 \u2248 1,600 \u753B\u50CF\u30C8\u30FC\u30AF\u30F3\uFF09\u3002").addText((t) => t.setValue(notes.ocrModel).setPlaceholder("claude-haiku-4-5-20251001").onChange(async (v) => {
       notes.ocrModel = v.trim();
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u30A8\u30B9\u30AB\u30EC\u30FC\u30B7\u30E7\u30F3 \u30E2\u30C7\u30EB\uFF08\u4E0A\u66F8\u304D\uFF09").setDesc("\u4F4E\u78BA\u4FE1\u30FB\u89E3\u6790\u5931\u6557\u6642\u306B1\u56DE\u3060\u3051\u4F7F\u3046\u4E0A\u4F4D\u30E2\u30C7\u30EB\u3002\u7A7A = \u65E2\u5B9A\u306E Opus\u3002").addText((t) => t.setValue(notes.ocrEscalationModel).setPlaceholder("claude-opus-4-8").onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u30A8\u30B9\u30AB\u30EC\u30FC\u30B7\u30E7\u30F3 \u30E2\u30C7\u30EB\uFF08\u4E0A\u66F8\u304D\uFF09").setDesc("\u4F4E\u78BA\u4FE1\u30FB\u89E3\u6790\u5931\u6557\u6642\u306B1\u56DE\u3060\u3051\u4F7F\u3046\u4E0A\u4F4D\u30E2\u30C7\u30EB\u3002\u7A7A = \u65E2\u5B9A\u306E Opus\u3002").addText((t) => t.setValue(notes.ocrEscalationModel).setPlaceholder("claude-opus-4-8").onChange(async (v) => {
       notes.ocrEscalationModel = v.trim();
       await this.onSettingsChange();
     }));
@@ -29015,7 +30750,7 @@ JS: ${d.jsRuntime || "(deno auto)"}
       const nCookies = norm10.split(";").filter((s) => s.includes("=")).length;
       cookieStatus.setText(hasSap ? `\u2705 Cookie \u3092\u8A8D\u8B58\uFF08${nCookies}\u500B\u3001SAPISID \u3042\u308A\uFF09\u3002Health Check \u3067\u63A5\u7D9A\u78BA\u8A8D\u3067\u304D\u307E\u3059\u3002` : `\u26A0 SAPISID \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\uFF08${nCookies}\u500B\u691C\u51FA\uFF09\u3002\u30D5\u30EB Cookie \u304B Copy as cURL \u3092\u8CBC\u308A\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\u3002`);
     };
-    new import_obsidian13.Setting(containerEl).setName("YouTube Cookie / cURL").setDesc("\u30D5\u30EB cookie \u30D8\u30C3\u30C0\u3001\u307E\u305F\u306F\u300ECopy as cURL\u300F\u306E\u5185\u5BB9\u3092\u8CBC\u308A\u4ED8\u3051\u3002\u79D8\u5BC6\u60C5\u5831\u3068\u3057\u3066\u4FDD\u5B58\u3055\u308C\u307E\u3059\u3002").addTextArea((t) => {
+    new import_obsidian14.Setting(containerEl).setName("YouTube Cookie / cURL").setDesc("\u30D5\u30EB cookie \u30D8\u30C3\u30C0\u3001\u307E\u305F\u306F\u300ECopy as cURL\u300F\u306E\u5185\u5BB9\u3092\u8CBC\u308A\u4ED8\u3051\u3002\u79D8\u5BC6\u60C5\u5831\u3068\u3057\u3066\u4FDD\u5B58\u3055\u308C\u307E\u3059\u3002").addTextArea((t) => {
       t.setValue(hist.cookie).setPlaceholder("curl 'https://www.youtube.com/...' -H 'cookie: ...'  \uFF08\u307E\u305F\u306F\u30D5\u30EB cookie \u6587\u5B57\u5217\uFF09").onChange(async (v) => {
         hist.cookie = normalizeCookieInput(v);
         renderCookieStatus();
@@ -29025,14 +30760,14 @@ JS: ${d.jsRuntime || "(deno auto)"}
       t.inputEl.style.width = "100%";
     });
     renderCookieStatus();
-    new import_obsidian13.Setting(containerEl).setName("\u30C1\u30E3\u30F3\u30CD\u30EB\uFF08\u30D6\u30E9\u30F3\u30C9\u30A2\u30AB\u30A6\u30F3\u30C8\uFF09").setDesc(hist.pageId ? `\u73FE\u5728: ${hist.pageLabel || hist.pageId} \u2014 \u3053\u306E\u30C1\u30E3\u30F3\u30CD\u30EB\u306E\u8996\u8074\u5C65\u6B74\u3092\u8AAD\u307F\u307E\u3059\u3002` : "\u73FE\u5728: \u30E1\u30A4\u30F3\u30C1\u30E3\u30F3\u30CD\u30EB\u3002JP\u7528\u306A\u3069\u5225\u30C1\u30E3\u30F3\u30CD\u30EB\u3067\u8996\u8074\u3057\u3066\u3044\u308B\u5834\u5408\u3001\u5C65\u6B74\u306F\u30C1\u30E3\u30F3\u30CD\u30EB\u3054\u3068\u306B\u5225\u306A\u306E\u3067\u4E0B\u304B\u3089\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044\u3002").addButton((b) => b.setButtonText("\u30C1\u30E3\u30F3\u30CD\u30EB\u4E00\u89A7\u3092\u53D6\u5F97").onClick(async () => {
+    new import_obsidian14.Setting(containerEl).setName("\u30C1\u30E3\u30F3\u30CD\u30EB\uFF08\u30D6\u30E9\u30F3\u30C9\u30A2\u30AB\u30A6\u30F3\u30C8\uFF09").setDesc(hist.pageId ? `\u73FE\u5728: ${hist.pageLabel || hist.pageId} \u2014 \u3053\u306E\u30C1\u30E3\u30F3\u30CD\u30EB\u306E\u8996\u8074\u5C65\u6B74\u3092\u8AAD\u307F\u307E\u3059\u3002` : "\u73FE\u5728: \u30E1\u30A4\u30F3\u30C1\u30E3\u30F3\u30CD\u30EB\u3002JP\u7528\u306A\u3069\u5225\u30C1\u30E3\u30F3\u30CD\u30EB\u3067\u8996\u8074\u3057\u3066\u3044\u308B\u5834\u5408\u3001\u5C65\u6B74\u306F\u30C1\u30E3\u30F3\u30CD\u30EB\u3054\u3068\u306B\u5225\u306A\u306E\u3067\u4E0B\u304B\u3089\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044\u3002").addButton((b) => b.setButtonText("\u30C1\u30E3\u30F3\u30CD\u30EB\u4E00\u89A7\u3092\u53D6\u5F97").onClick(async () => {
       var _a2, _b2;
       b.setDisabled(true);
       try {
         const http = {
           post: async (url, body2, headers) => {
             var _a3;
-            const r2 = await (0, import_obsidian13.requestUrl)({ url, method: "POST", body: body2, headers, throw: false });
+            const r2 = await (0, import_obsidian14.requestUrl)({ url, method: "POST", body: body2, headers, throw: false });
             return { status: r2.status, text: (_a3 = r2.text) != null ? _a3 : "" };
           },
           get: async () => ({ status: 500, text: "" })
@@ -29040,38 +30775,38 @@ JS: ${d.jsRuntime || "(deno auto)"}
         const client = new YtHistoryClient(http, () => hist);
         const accounts = await client.listAccounts();
         if (!accounts.length) {
-          new import_obsidian13.Notice("\u30C1\u30E3\u30F3\u30CD\u30EB\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\uFF08Cookie \u3092\u78BA\u8A8D\uFF09\u3002");
+          new import_obsidian14.Notice("\u30C1\u30E3\u30F3\u30CD\u30EB\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\uFF08Cookie \u3092\u78BA\u8A8D\uFF09\u3002");
           return;
         }
         channelListEl.empty();
         for (const a of accounts) {
           const current2 = hist.pageId === ((_a2 = a.pageId) != null ? _a2 : "");
-          new import_obsidian13.Setting(channelListEl).setName(`${a.name} ${a.handle}`.trim()).setDesc(a.pageId ? `pageId: ${a.pageId}` : "\u30E1\u30A4\u30F3\uFF08\u65E2\u5B9A\uFF09").addButton((bb) => bb.setButtonText(current2 ? "\u2713 \u9078\u629E\u4E2D" : "\u3053\u306E\u30C1\u30E3\u30F3\u30CD\u30EB\u3092\u4F7F\u3046").setDisabled(current2).onClick(async () => {
+          new import_obsidian14.Setting(channelListEl).setName(`${a.name} ${a.handle}`.trim()).setDesc(a.pageId ? `pageId: ${a.pageId}` : "\u30E1\u30A4\u30F3\uFF08\u65E2\u5B9A\uFF09").addButton((bb) => bb.setButtonText(current2 ? "\u2713 \u9078\u629E\u4E2D" : "\u3053\u306E\u30C1\u30E3\u30F3\u30CD\u30EB\u3092\u4F7F\u3046").setDisabled(current2).onClick(async () => {
             var _a3;
             hist.pageId = (_a3 = a.pageId) != null ? _a3 : "";
             hist.pageLabel = `${a.name} ${a.handle}`.trim();
             await this.onSettingsChange();
-            new import_obsidian13.Notice(`\u8996\u8074\u5C65\u6B74\u306E\u30C1\u30E3\u30F3\u30CD\u30EB: ${hist.pageLabel}`);
+            new import_obsidian14.Notice(`\u8996\u8074\u5C65\u6B74\u306E\u30C1\u30E3\u30F3\u30CD\u30EB: ${hist.pageLabel}`);
             this.display();
           }));
         }
       } catch (e) {
-        new import_obsidian13.Notice(`\u30C1\u30E3\u30F3\u30CD\u30EB\u4E00\u89A7\u306E\u53D6\u5F97\u306B\u5931\u6557: ${(_b2 = e.message) != null ? _b2 : e}`, 1e4);
+        new import_obsidian14.Notice(`\u30C1\u30E3\u30F3\u30CD\u30EB\u4E00\u89A7\u306E\u53D6\u5F97\u306B\u5931\u6557: ${(_b2 = e.message) != null ? _b2 : e}`, 1e4);
       } finally {
         b.setDisabled(false);
       }
     }));
     const channelListEl = containerEl.createDiv();
-    new import_obsidian13.Setting(containerEl).setName("INNERTUBE API \u30AD\u30FC\uFF08\u4E0A\u7D1A\uFF09").setDesc("\u901A\u5E38\u306F\u65E2\u5B9A\u306E\u307E\u307E\u3067\u53EF\u3002\u30ED\u30FC\u30C6\u30FC\u30C8\u3057\u305F\u5834\u5408\u306E\u307F\u5909\u66F4\u3002").addText((t) => t.setValue(hist.apiKey).setPlaceholder("AIza...").onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("INNERTUBE API \u30AD\u30FC\uFF08\u4E0A\u7D1A\uFF09").setDesc("\u901A\u5E38\u306F\u65E2\u5B9A\u306E\u307E\u307E\u3067\u53EF\u3002\u30ED\u30FC\u30C6\u30FC\u30C8\u3057\u305F\u5834\u5408\u306E\u307F\u5909\u66F4\u3002").addText((t) => t.setValue(hist.apiKey).setPlaceholder("AIza...").onChange(async (v) => {
       hist.apiKey = v.trim() || "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8";
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u30AF\u30E9\u30A4\u30A2\u30F3\u30C8\u30D0\u30FC\u30B8\u30E7\u30F3\uFF08\u4E0A\u7D1A\uFF09").setDesc("WEB \u30AF\u30E9\u30A4\u30A2\u30F3\u30C8\u306E\u30D0\u30FC\u30B8\u30E7\u30F3\u3002\u7A7A\u30A8\u30E9\u30FC\u6642\u306B\u66F4\u65B0\u3002").addText((t) => t.setValue(hist.clientVersion).setPlaceholder("2.2024xxxx.xx.xx").onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u30AF\u30E9\u30A4\u30A2\u30F3\u30C8\u30D0\u30FC\u30B8\u30E7\u30F3\uFF08\u4E0A\u7D1A\uFF09").setDesc("WEB \u30AF\u30E9\u30A4\u30A2\u30F3\u30C8\u306E\u30D0\u30FC\u30B8\u30E7\u30F3\u3002\u7A7A\u30A8\u30E9\u30FC\u6642\u306B\u66F4\u65B0\u3002").addText((t) => t.setValue(hist.clientVersion).setPlaceholder("2.2024xxxx.xx.xx").onChange(async (v) => {
       hist.clientVersion = v.trim() || "2.20240726.00.00";
       await this.onSettingsChange();
     }));
     containerEl.createEl("h3", { text: "Display" });
-    new import_obsidian13.Setting(containerEl).setName("Default sort order").addDropdown((d) => {
+    new import_obsidian14.Setting(containerEl).setName("Default sort order").addDropdown((d) => {
       d.addOption("frequency", "Frequency");
       d.addOption("headword", "Headword (\u3042\u3044\u3046\u3048\u304A)");
       d.addOption("createdAt", "Date added");
@@ -29081,21 +30816,21 @@ JS: ${d.jsRuntime || "(deno auto)"}
         await this.onSettingsChange();
       });
     });
-    new import_obsidian13.Setting(containerEl).setName("Entries per page").addSlider((s) => s.setLimits(10, 200, 10).setValue(this.settings.entriesPerPage).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Entries per page").addSlider((s) => s.setLimits(10, 200, 10).setValue(this.settings.entriesPerPage).setDynamicTooltip().onChange(async (v) => {
       this.settings.entriesPerPage = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("Show readings").addToggle((t) => t.setValue(this.settings.showReadings).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Show readings").addToggle((t) => t.setValue(this.settings.showReadings).onChange(async (v) => {
       this.settings.showReadings = v;
       await this.onSettingsChange();
     }));
     containerEl.createEl("h3", { text: "Search" });
-    new import_obsidian13.Setting(containerEl).setName("Max results").addSlider((s) => s.setLimits(10, 500, 10).setValue(this.settings.maxResults).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Max results").addSlider((s) => s.setLimits(10, 500, 10).setValue(this.settings.maxResults).setDynamicTooltip().onChange(async (v) => {
       this.settings.maxResults = v;
       await this.onSettingsChange();
     }));
     containerEl.createEl("h3", { text: "Data Management" });
-    new import_obsidian13.Setting(containerEl).setName("Export data").setDesc("Export all collocations as a JSON file").addButton((b) => b.setButtonText("Export JSON").onClick(() => {
+    new import_obsidian14.Setting(containerEl).setName("Export data").setDesc("Export all collocations as a JSON file").addButton((b) => b.setButtonText("Export JSON").onClick(() => {
       const data = JSON.stringify(this.store.exportAll(), null, 2);
       const blob = new Blob([data], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -29104,9 +30839,9 @@ JS: ${d.jsRuntime || "(deno auto)"}
       a.download = "jp-collocations-export.json";
       a.click();
       URL.revokeObjectURL(url);
-      new import_obsidian13.Notice("Exported collocations.");
+      new import_obsidian14.Notice("Exported collocations.");
     }));
-    new import_obsidian13.Setting(containerEl).setName("Import data").setDesc("Import collocations from a JSON file").addButton((b) => b.setButtonText("Import JSON").onClick(() => {
+    new import_obsidian14.Setting(containerEl).setName("Import data").setDesc("Import collocations from a JSON file").addButton((b) => b.setButtonText("Import JSON").onClick(() => {
       const input = document.createElement("input");
       input.type = "file";
       input.accept = ".json";
@@ -29119,40 +30854,40 @@ JS: ${d.jsRuntime || "(deno auto)"}
         try {
           const parsed = JSON.parse(text);
           const count = this.store.bulkImport(parsed);
-          new import_obsidian13.Notice(`Imported ${count} entries.`);
+          new import_obsidian14.Notice(`Imported ${count} entries.`);
         } catch (e) {
-          new import_obsidian13.Notice("Failed to parse JSON file.");
+          new import_obsidian14.Notice("Failed to parse JSON file.");
         }
       };
       input.click();
     }));
-    new import_obsidian13.Setting(containerEl).setName("Reset to seed data").setDesc("Clear all data and restore the built-in collocations").addButton((b) => b.setButtonText("Reset").setWarning().onClick(async () => {
+    new import_obsidian14.Setting(containerEl).setName("Reset to seed data").setDesc("Clear all data and restore the built-in collocations").addButton((b) => b.setButtonText("Reset").setWarning().onClick(async () => {
       await this.store.resetToSeed();
-      new import_obsidian13.Notice("Reset to seed data.");
+      new import_obsidian14.Notice("Reset to seed data.");
     }));
-    new import_obsidian13.Setting(containerEl).setName("Clear all data").setDesc("Delete all collocation entries permanently").addButton((b) => b.setButtonText("Clear All").setWarning().onClick(async () => {
+    new import_obsidian14.Setting(containerEl).setName("Clear all data").setDesc("Delete all collocation entries permanently").addButton((b) => b.setButtonText("Clear All").setWarning().onClick(async () => {
       await this.store.clearAll();
-      new import_obsidian13.Notice("All data cleared.");
+      new import_obsidian14.Notice("All data cleared.");
     }));
     containerEl.createEl("h3", { text: "\u767A\u8A71\u30BB\u30C3\u30B7\u30E7\u30F3\uFF08\u306A\u308A\u304D\u308A\u30B9\u30D4\u30FC\u30AD\u30F3\u30B0\uFF09" });
-    new import_obsidian13.Setting(containerEl).setName("\u81EA\u5DF1\u8A55\u4FA1\u306E\u89B3\u70B9").setDesc("\u{1F3A4}\u306E\u5F8C\u306B0\u20134\u3067\u8A55\u4FA1\u3059\u308B\u89B3\u70B9\uFF08\u8AAD\u70B9\u30FB\u30AB\u30F3\u30DE\u533A\u5207\u308A\uFF09\u3002\u7DF4\u7FD2\u306E\u9032\u5316\u306B\u5408\u308F\u305B\u3066\u81EA\u7531\u306B\u5909\u66F4\u3092\u3002").addTextArea((t) => t.setValue(this.settings.speak.aspects.join("\u3001")).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u81EA\u5DF1\u8A55\u4FA1\u306E\u89B3\u70B9").setDesc("\u{1F3A4}\u306E\u5F8C\u306B0\u20134\u3067\u8A55\u4FA1\u3059\u308B\u89B3\u70B9\uFF08\u8AAD\u70B9\u30FB\u30AB\u30F3\u30DE\u533A\u5207\u308A\uFF09\u3002\u7DF4\u7FD2\u306E\u9032\u5316\u306B\u5408\u308F\u305B\u3066\u81EA\u7531\u306B\u5909\u66F4\u3092\u3002").addTextArea((t) => t.setValue(this.settings.speak.aspects.join("\u3001")).onChange(async (v) => {
       const aspects = v.split(/[、,]/).map((s) => s.trim()).filter(Boolean);
       if (aspects.length)
         this.settings.speak.aspects = aspects;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("\u76EE\u6A19\u30DD\u30A4\u30F3\u30C8").setDesc("\u{1F522}\u30AB\u30A6\u30F3\u30BF\u30FC\u5236\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u76EE\u6A19\uFF08\u8A55\u4FA1\u70B9\u306E\u5408\u8A08\u304C\u3053\u3053\u3078\u5411\u304B\u3046\uFF09").addText((t) => t.setValue(String(this.settings.speak.goalPoints)).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("\u76EE\u6A19\u30DD\u30A4\u30F3\u30C8").setDesc("\u{1F522}\u30AB\u30A6\u30F3\u30BF\u30FC\u5236\u306E\u30BB\u30C3\u30B7\u30E7\u30F3\u76EE\u6A19\uFF08\u8A55\u4FA1\u70B9\u306E\u5408\u8A08\u304C\u3053\u3053\u3078\u5411\u304B\u3046\uFF09").addText((t) => t.setValue(String(this.settings.speak.goalPoints)).onChange(async (v) => {
       const n = parseInt(v, 10);
       if (Number.isFinite(n) && n > 0)
         this.settings.speak.goalPoints = n;
       await this.onSettingsChange();
     }));
     containerEl.createEl("h3", { text: "SRS Card Generation" });
-    new import_obsidian13.Setting(containerEl).setName("Tag prefix").setDesc("Base tag for Spaced Repetition cards (e.g. flashcards/jp)").addText((t) => t.setValue(this.settings.srs.tagPrefix).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Tag prefix").setDesc("Base tag for Spaced Repetition cards (e.g. flashcards/jp)").addText((t) => t.setValue(this.settings.srs.tagPrefix).onChange(async (v) => {
       this.settings.srs.tagPrefix = v.trim() || "flashcards/jp";
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("Speaker format").setDesc("How to display speakers in discourse chunk cards").addDropdown((d) => {
+    new import_obsidian14.Setting(containerEl).setName("Speaker format").setDesc("How to display speakers in discourse chunk cards").addDropdown((d) => {
       d.addOption("icon", "Icon (\u{1F535}\u{1F7E0}\u{1F7E2}\u{1F7E3})");
       d.addOption("letter", "Letter (A/B/C/D)");
       d.addOption("number", "Number (1/2/3/4)");
@@ -29161,27 +30896,27 @@ JS: ${d.jsRuntime || "(deno auto)"}
         await this.onSettingsChange();
       });
     });
-    new import_obsidian13.Setting(containerEl).setName("Include register labels").addToggle((t) => t.setValue(this.settings.srs.includeRegister).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Include register labels").addToggle((t) => t.setValue(this.settings.srs.includeRegister).onChange(async (v) => {
       this.settings.srs.includeRegister = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("Include relation arrows").addToggle((t) => t.setValue(this.settings.srs.includeRelations).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Include relation arrows").addToggle((t) => t.setValue(this.settings.srs.includeRelations).onChange(async (v) => {
       this.settings.srs.includeRelations = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("Include English glosses").addToggle((t) => t.setValue(this.settings.srs.includeEnglish).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Include English glosses").addToggle((t) => t.setValue(this.settings.srs.includeEnglish).onChange(async (v) => {
       this.settings.srs.includeEnglish = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("Include timestamps").addToggle((t) => t.setValue(this.settings.srs.includeTimestamps).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Include timestamps").addToggle((t) => t.setValue(this.settings.srs.includeTimestamps).onChange(async (v) => {
       this.settings.srs.includeTimestamps = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("Max bits per card").setDesc("Maximum discourse chunks (spoiler blocks) per card").addSlider((s) => s.setLimits(2, 12, 1).setValue(this.settings.srs.maxBitsPerCard).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Max bits per card").setDesc("Maximum discourse chunks (spoiler blocks) per card").addSlider((s) => s.setLimits(2, 12, 1).setValue(this.settings.srs.maxBitsPerCard).setDynamicTooltip().onChange(async (v) => {
       this.settings.srs.maxBitsPerCard = v;
       await this.onSettingsChange();
     }));
-    new import_obsidian13.Setting(containerEl).setName("Output folder").setDesc("Folder for generated SRS card files").addText((t) => t.setValue(this.settings.srs.outputFolder).onChange(async (v) => {
+    new import_obsidian14.Setting(containerEl).setName("Output folder").setDesc("Folder for generated SRS card files").addText((t) => t.setValue(this.settings.srs.outputFolder).onChange(async (v) => {
       this.settings.srs.outputFolder = v.trim() || "JP SRS Cards";
       await this.onSettingsChange();
     }));
@@ -29200,7 +30935,7 @@ JS: ${d.jsRuntime || "(deno auto)"}
 };
 
 // src/ui/CaptureModal.ts
-var import_obsidian14 = require("obsidian");
+var import_obsidian15 = require("obsidian");
 
 // src/notes/token-canvas.ts
 var PUNCT_RE2 = /[、。！？!?・…‥「」『』()（）\s]/;
@@ -29645,7 +31380,7 @@ var DiscourseGoldStore = class {
 
 // src/ui/CaptureModal.ts
 init_relational();
-var CaptureModal = class extends import_obsidian14.Modal {
+var CaptureModal = class extends import_obsidian15.Modal {
   constructor(app, ctx, deps) {
     var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2;
     super(app);
@@ -29954,7 +31689,7 @@ var CaptureModal = class extends import_obsidian14.Modal {
     var _a2, _b2, _c2, _d2, _e2, _f2;
     const note = this.noteInput.value.trim();
     if (!note) {
-      new import_obsidian14.Notice("\u898B\u51FA\u3057\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
+      new import_obsidian15.Notice("\u898B\u51FA\u3057\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
       return;
     }
     const payload = {};
@@ -29997,12 +31732,12 @@ var CaptureModal = class extends import_obsidian14.Modal {
         });
       }
       const def = NOTE_TYPES[this.cls];
-      new import_obsidian14.Notice(`${def.emoji} ${def.label} \u3068\u3057\u3066\u53F0\u5E33\u306B\u8A18\u9332: ${entry2.key}`);
+      new import_obsidian15.Notice(`${def.emoji} ${def.label} \u3068\u3057\u3066\u53F0\u5E33\u306B\u8A18\u9332: ${entry2.key}`);
       (_f2 = (_e2 = this.deps).onSaved) == null ? void 0 : _f2.call(_e2, entry2);
       if (closeAfter)
         this.close();
     } catch (e) {
-      new import_obsidian14.Notice(`\u4FDD\u5B58\u306B\u5931\u6557: ${e.message}`, 6e3);
+      new import_obsidian15.Notice(`\u4FDD\u5B58\u306B\u5931\u6557: ${e.message}`, 6e3);
     }
   }
   onClose() {
@@ -30225,7 +31960,7 @@ var SrsStore = class {
 };
 
 // src/ui/ReviewView.ts
-var import_obsidian15 = require("obsidian");
+var import_obsidian16 = require("obsidian");
 
 // src/srs/review-cards.ts
 var DRILL = {
@@ -30259,7 +31994,7 @@ function buildReviewCard(p, gold) {
   const quote = att ? trimQuote(att.quote) : "";
   const terms = sweepTerms(p).length ? sweepTerms(p) : [p.key];
   const front = [];
-  const back = [];
+  const back2 = [];
   let answer = p.key;
   let wantsAudio = false;
   switch (p.class) {
@@ -30271,9 +32006,9 @@ function buildReviewCard(p, gold) {
       else
         front.push("\u{1F3A7} \u3053\u306E\u30BB\u30EA\u30D5\u3092\u805E\u304D\u53D6\u3063\u3066\u601D\u3044\u51FA\u3059");
       front.push(softHint(answer));
-      back.push(answer);
+      back2.push(answer);
       if (quote && quote !== p.key)
-        back.push(quote);
+        back2.push(quote);
       break;
     }
     case "skeletal": {
@@ -30283,13 +32018,13 @@ function buildReviewCard(p, gold) {
         if (quote)
           front.push(cloze(quote, parts.slice(1)));
         front.push(`${parts[0]} \u301C ${BLANK}`);
-        back.push(parts.map((x) => `**${x}**`).join(" \u301C "));
+        back2.push(parts.map((x) => `**${x}**`).join(" \u301C "));
       } else {
         front.push(quote ? cloze(quote, terms) : BLANK);
-        back.push(answer);
+        back2.push(answer);
       }
       if (quote)
-        back.push(quote);
+        back2.push(quote);
       break;
     }
     case "phrase_schema": {
@@ -30299,9 +32034,9 @@ function buildReviewCard(p, gold) {
         front.push(cloze(quote, terms));
       front.push("\u3053\u306E\u5834\u9762\u3067\u8A00\u308F\u308C\u305F\u300C\u578B\u300D\uFF08\u4E38\u3054\u3068\u306E\u8A00\u3044\u56DE\u3057\uFF09\u306F\uFF1F");
       front.push(softHint(frame));
-      back.push(frame);
+      back2.push(frame);
       if (quote)
-        back.push(quote);
+        back2.push(quote);
       break;
     }
     case "rhet_collocation": {
@@ -30313,9 +32048,9 @@ function buildReviewCard(p, gold) {
       if (p.payload.halo)
         front.push(`\u30CF\u30ED\u30FC: ${p.payload.halo}`);
       front.push(softHint(lemma));
-      back.push(lemma + (p.payload.halo ? `\uFF08${p.payload.halo}\uFF09` : ""));
+      back2.push(lemma + (p.payload.halo ? `\uFF08${p.payload.halo}\uFF09` : ""));
       if (quote)
-        back.push(quote);
+        back2.push(quote);
       break;
     }
     case "discourse": {
@@ -30328,31 +32063,31 @@ function buildReviewCard(p, gold) {
         front.push(quote ? cloze(quote, terms) : BLANK);
         front.push("\u3053\u306E\u8AC7\u8A71\u30E0\u30FC\u30D6\u3092\u518D\u73FE\u3059\u308B");
       }
-      back.push(answer);
+      back2.push(answer);
       if (gold == null ? void 0 : gold.act)
-        back.push(`\u30E0\u30FC\u30D6: ${gold.act}` + (gold.edge ? `\uFF08${gold.edge.kind} \u2192 \u2212${gold.edge.toOffset}\uFF09` : ""));
+        back2.push(`\u30E0\u30FC\u30D6: ${gold.act}` + (gold.edge ? `\uFF08${gold.edge.kind} \u2192 \u2212${gold.edge.toOffset}\uFF09` : ""));
       if ((_f2 = gold == null ? void 0 : gold.contextAfter) == null ? void 0 : _f2.length)
-        back.push(`\u7D9A\u304D: ${gold.contextAfter.join(" / ")}`);
+        back2.push(`\u7D9A\u304D: ${gold.contextAfter.join(" / ")}`);
       break;
     }
     default: {
       answer = p.key;
       front.push(quote ? cloze(quote, terms) : BLANK);
       front.push(softHint(answer));
-      back.push(answer);
+      back2.push(answer);
       if (quote)
-        back.push(quote);
+        back2.push(quote);
     }
   }
   if (p.payload.gloss)
-    back.push(`\u27F6 ${p.payload.gloss}`);
+    back2.push(`\u27F6 ${p.payload.gloss}`);
   return {
     patternId: p.id,
     cls: p.class,
     drill: DRILL[p.class],
     frontLines: front,
     answer,
-    backLines: back,
+    backLines: back2,
     att,
     wantsAudio
   };
@@ -30644,7 +32379,7 @@ function report(data) {
 
 // src/ui/ReviewView.ts
 var JP_REVIEW_VIEW_TYPE = "jp-srs-review-view";
-var ReviewView = class extends import_obsidian15.ItemView {
+var ReviewView = class extends import_obsidian16.ItemView {
   constructor(leaf, deps) {
     super(leaf);
     this.deps = deps;
@@ -30703,7 +32438,7 @@ var ReviewView = class extends import_obsidian15.ItemView {
     this.stopAudio();
     if (!queue.length) {
       this.session = null;
-      new import_obsidian15.Notice("\u3053\u306E\u56DE\u306B\u5FA9\u7FD2\u3067\u304D\u308B\u30AB\u30FC\u30C9\u304C\u3042\u308A\u307E\u305B\u3093\u3067\u3057\u305F", 5e3);
+      new import_obsidian16.Notice("\u3053\u306E\u56DE\u306B\u5FA9\u7FD2\u3067\u304D\u308B\u30AB\u30FC\u30C9\u304C\u3042\u308A\u307E\u305B\u3093\u3067\u3057\u305F", 5e3);
       this.render();
       return;
     }
@@ -30805,10 +32540,10 @@ var ReviewView = class extends import_obsidian15.ItemView {
       b.style.borderColor = d.color;
       b.onclick = () => void this.answer("no", c);
     }
-    const back = box.createDiv("jp-srs-probe-acts");
-    const drop2 = back.createEl("button", { text: "\u{1F5D1} \u3053\u308C\u306F\u8981\u3089\u306A\u3044", cls: "jp-srs-probe-btn jp-srs-probe--drop" });
+    const back2 = box.createDiv("jp-srs-probe-acts");
+    const drop2 = back2.createEl("button", { text: "\u{1F5D1} \u3053\u308C\u306F\u8981\u3089\u306A\u3044", cls: "jp-srs-probe-btn jp-srs-probe--drop" });
     drop2.onclick = () => void this.answer("no", DISPOSE);
-    const skip = back.createEl("button", { text: "\u3084\u3081\u308B", cls: "jp-srs-probe-btn jp-srs-probe--skip" });
+    const skip = back2.createEl("button", { text: "\u3084\u3081\u308B", cls: "jp-srs-probe-btn jp-srs-probe--skip" });
     skip.onclick = () => void this.answer("skip");
   }
   async answer(verdict, answer) {
@@ -30819,7 +32554,7 @@ var ReviewView = class extends import_obsidian15.ItemView {
       this.session.answered++;
       const msg = await this.deps.answerProbe(probe, verdict, answer);
       if (msg)
-        new import_obsidian15.Notice(msg, 4e3);
+        new import_obsidian16.Notice(msg, 4e3);
     }
     this.advance(true);
   }
@@ -30942,7 +32677,7 @@ var ReviewView = class extends import_obsidian15.ItemView {
       queue = this.deps.srs.buildQueue(ids, Date.now(), this.deps.newPerSession());
     }
     if (queue.length === 0) {
-      new import_obsidian15.Notice("\u5FA9\u7FD2\u3059\u308B\u30AB\u30FC\u30C9\u304C\u3042\u308A\u307E\u305B\u3093");
+      new import_obsidian16.Notice("\u5FA9\u7FD2\u3059\u308B\u30AB\u30FC\u30C9\u304C\u3042\u308A\u307E\u305B\u3093");
       return;
     }
     this.session = { queue, pos: 0, graded: 0, again: 0, startedFresh: 0, probes: 0, answered: 0 };
@@ -31007,19 +32742,19 @@ var ReviewView = class extends import_obsidian15.ItemView {
       this.installKeys(cardEl, card);
       return;
     }
-    const back = cardEl.createDiv("jp-srs-face jp-srs-back");
-    back.createDiv({ text: card.answer, cls: "jp-srs-answer" });
+    const back2 = cardEl.createDiv("jp-srs-face jp-srs-back");
+    back2.createDiv({ text: card.answer, cls: "jp-srs-answer" });
     for (let i = 0; i < card.backLines.length; i++) {
       const line = card.backLines[i];
       if (i === 0 && this.stripBold(line) === card.answer)
         continue;
-      back.createDiv({ text: line, cls: "jp-srs-back-line" });
+      back2.createDiv({ text: line, cls: "jp-srs-back-line" });
     }
     if (card.att) {
-      const srcRow = back.createDiv("jp-srs-source-row");
+      const srcRow = back2.createDiv("jp-srs-source-row");
       const label = this.attLabel(card.att);
       const jump = srcRow.createEl("a", { text: `\u21AA ${label}`, cls: "jp-srs-source-link" });
-      jump.onclick = () => void this.deps.openAttestation(card.att).catch((e) => new import_obsidian15.Notice(String(e)));
+      jump.onclick = () => void this.deps.openAttestation(card.att).catch((e) => new import_obsidian16.Notice(String(e)));
       if (card.att.source === "yt" && card.att.tStartSec != null) {
         const play = srcRow.createEl("button", { text: "\u{1F3A7}", cls: "jp-srs-audio-btn" });
         play.onclick = () => void this.playClip(card.att, play);
@@ -31104,7 +32839,7 @@ var ReviewView = class extends import_obsidian15.ItemView {
     this.render();
     if (sess && sess.graded > 0) {
       const also = sess.answered ? `\u30FB\u7167\u5408 ${sess.answered}\u4EF6` : "";
-      new import_obsidian15.Notice(completed ? `\u2705 \u30BB\u30C3\u30B7\u30E7\u30F3\u5B8C\u4E86 \u2014 ${sess.graded}\u679A\uFF08\u3082\u3046\u4E00\u5EA6 ${sess.again}\uFF09${also}` : `\u4E2D\u65AD \u2014 ${sess.graded}\u679A\u3092\u63A1\u70B9${also}`, 5e3);
+      new import_obsidian16.Notice(completed ? `\u2705 \u30BB\u30C3\u30B7\u30E7\u30F3\u5B8C\u4E86 \u2014 ${sess.graded}\u679A\uFF08\u3082\u3046\u4E00\u5EA6 ${sess.again}\uFF09${also}` : `\u4E2D\u65AD \u2014 ${sess.graded}\u679A\u3092\u63A1\u70B9${also}`, 5e3);
     }
   }
   // ── audio ──
@@ -31112,7 +32847,7 @@ var ReviewView = class extends import_obsidian15.ItemView {
     const clip = await this.deps.resolveClip(att);
     if (!clip) {
       if (!silentFail)
-        new import_obsidian15.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u304C\u672A\u53D6\u5F97\u3067\u3059\uFF08Download Audio Clips \u3092\u5B9F\u884C\uFF09", 5e3);
+        new import_obsidian16.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u304C\u672A\u53D6\u5F97\u3067\u3059\uFF08Download Audio Clips \u3092\u5B9F\u884C\uFF09", 5e3);
       return;
     }
     this.stopAudio();
@@ -31121,7 +32856,7 @@ var ReviewView = class extends import_obsidian15.ItemView {
     this.audio.onended = () => btn.setText("\u{1F3A7} \u518D\u751F");
     this.audio.play().catch(() => {
       if (!silentFail)
-        new import_obsidian15.Notice("\u518D\u751F\u306B\u5931\u6557\u3057\u307E\u3057\u305F");
+        new import_obsidian16.Notice("\u518D\u751F\u306B\u5931\u6557\u3057\u307E\u3057\u305F");
     });
   }
   stripBold(s) {
@@ -31168,7 +32903,7 @@ var RatifyStore = class {
 };
 
 // src/ui/DictionaryView.ts
-var import_obsidian16 = require("obsidian");
+var import_obsidian17 = require("obsidian");
 
 // src/dictionary/types.ts
 var DEFAULT_DICTIONARY_SETTINGS = {
@@ -31769,6 +33504,16 @@ function classHintForFrame(frame, opts = {}) {
 }
 
 // src/dictionary/sidecar.ts
+var dottedRoot = (root) => root.startsWith(".") ? root : `.${root}`;
+async function resolveBigDictRoot(exists, configured) {
+  const root = configured.trim() || "JP Dictionaries";
+  const dotted = dottedRoot(root);
+  if (await exists(dotted).catch(() => false))
+    return dotted;
+  if (await exists(root).catch(() => false))
+    return root;
+  return root;
+}
 var DEFAULT_SHARDS = 512;
 function hashKey(key) {
   let h = 2166136261;
@@ -31786,6 +33531,9 @@ var pad2 = (n) => String(n).padStart(3, "0");
 var metaPath = (dir) => `${dir}/meta.json`;
 var headPath = (dir, shard) => `${dir}/head-${pad2(shard)}.jsonl`;
 var framePath = (dir, shard) => `${dir}/frame-${pad2(shard)}.jsonl`;
+var intentPath = (dir, shard) => `${dir}/intent-${pad2(shard)}.jsonl`;
+var SHARD_FAMILIES = ["head", "frame", "intent"];
+var shardPathFor = (family, dir, shard) => family === "head" ? headPath(dir, shard) : family === "frame" ? framePath(dir, shard) : intentPath(dir, shard);
 var packCandidate = (c) => ({
   s: c.surface,
   i: c.intention,
@@ -31793,6 +33541,9 @@ var packCandidate = (c) => ({
   ...c.shape ? { p: c.shape } : {},
   ...c.situation ? { t: c.situation } : {}
 });
+function intentionKeyOf(intention) {
+  return normalizeFrame(intention);
+}
 var encodeLine = (o) => JSON.stringify(o) + "\n";
 function decodeLines(text) {
   if (!text)
@@ -31850,10 +33601,39 @@ function planFrameShards(entries, shards = DEFAULT_SHARDS) {
   }
   return plan;
 }
+function planIntentShards(entries, shards = DEFAULT_SHARDS) {
+  const byKey = /* @__PURE__ */ new Map();
+  for (const e of entries) {
+    for (const c of e.reachFor) {
+      const k = c.intentionKey || intentionKeyOf(c.intention);
+      const f = normalizeFrame(c.frameKey);
+      if (!k || !f)
+        continue;
+      const packed = { ...packCandidate(c), f };
+      const list = byKey.get(k);
+      if (list)
+        list.push(packed);
+      else
+        byKey.set(k, [packed]);
+    }
+  }
+  const plan = /* @__PURE__ */ new Map();
+  for (const [k, c] of byKey) {
+    const s = hashKey(normalizeLookupKey(k)) % shards;
+    const list = plan.get(s);
+    const line = { k, c };
+    if (list)
+      list.push(line);
+    else
+      plan.set(s, [line]);
+  }
+  return plan;
+}
 async function appendBatch(io, dir, entries, shards = DEFAULT_SHARDS) {
   const heads = planHeadShards(entries, shards);
   const frames = planFrameShards(entries, shards);
-  let h = 0, f = 0;
+  const intents = planIntentShards(entries, shards);
+  let h = 0, f = 0, i = 0;
   for (const [shard, lines] of heads) {
     await io.append(headPath(dir, shard), lines.map(encodeLine).join(""));
     h += lines.length;
@@ -31862,7 +33642,11 @@ async function appendBatch(io, dir, entries, shards = DEFAULT_SHARDS) {
     await io.append(framePath(dir, shard), lines.map(encodeLine).join(""));
     f += lines.length;
   }
-  return { heads: h, frames: f };
+  for (const [shard, lines] of intents) {
+    await io.append(intentPath(dir, shard), lines.map(encodeLine).join(""));
+    i += lines.length;
+  }
+  return { heads: h, frames: f, intents: i };
 }
 async function writeMeta(io, dir, meta) {
   await io.write(metaPath(dir), JSON.stringify(meta, null, 1));
@@ -31879,7 +33663,8 @@ async function readMeta(io, dir) {
 }
 function classifyShardFiles(files) {
   var _a2;
-  const head = [], frame = [];
+  const head = [], frame = [], intent = [];
+  const bucket = { head, frame, intent };
   let hasMeta = false;
   for (const f of files) {
     const name = (_a2 = f.split("/").pop()) != null ? _a2 : "";
@@ -31887,12 +33672,19 @@ function classifyShardFiles(files) {
       hasMeta = true;
       continue;
     }
-    const m = /^(head|frame)-(\d+)\.jsonl$/.exec(name);
+    const m = /^(head|frame|intent)-(\d+)\.jsonl$/.exec(name);
     if (!m)
       continue;
-    (m[1] === "head" ? head : frame).push(Number(m[2]));
+    bucket[m[1]].push(Number(m[2]));
   }
-  return { head, frame, hasMeta };
+  return { head, frame, intent, hasMeta };
+}
+function countJsonlLines(body2) {
+  let lines = 0;
+  for (let i = 0; i < body2.length; i++)
+    if (body2.charCodeAt(i) === 10)
+      lines++;
+  return lines;
 }
 function inferShardCount(indices, expected = DEFAULT_SHARDS) {
   if (!indices.length)
@@ -31913,68 +33705,279 @@ async function repairSidecarMeta(io, root, opts = {}) {
   if (!io.listFolders || !io.listFiles)
     return out;
   const names = await io.listFolders(root).catch(() => []);
-  let done = 0, bytes = 0;
+  let done = 0, bytes2 = 0;
   for (const name of names) {
     if ((_c2 = opts.shouldStop) == null ? void 0 : _c2.call(opts))
       break;
     done++;
     const dir = `${root}/${name}`;
     const files = await io.listFiles(dir).catch(() => []);
-    const { head, frame, hasMeta } = classifyShardFiles(files);
+    const { head, frame, intent, hasMeta } = classifyShardFiles(files);
     if (hasMeta && await readMeta(io, dir)) {
       out.alreadyOk.push(name);
       continue;
     }
-    if (!head.length && !frame.length) {
+    if (!head.length && !frame.length && !intent.length) {
       out.empty.push(name);
       continue;
     }
-    const shards = inferShardCount([...head, ...frame], expected);
-    let headwords = 0, frames = 0, folderBytes = 0;
-    for (const [list, isHead] of [[head, true], [frame, false]]) {
-      for (const s of list) {
-        const body2 = await io.read(isHead ? headPath(dir, s) : framePath(dir, s));
+    const shards = inferShardCount([...head, ...frame, ...intent], expected);
+    const present = { head, frame, intent };
+    const counted = { head: 0, frame: 0, intent: 0 };
+    let folderBytes = 0;
+    for (const family of SHARD_FAMILIES) {
+      for (const s of present[family]) {
+        const body2 = await io.read(shardPathFor(family, dir, s));
         if (!body2)
           continue;
         folderBytes += body2.length;
-        let lines = 0;
-        for (let i = 0; i < body2.length; i++)
-          if (body2.charCodeAt(i) === 10)
-            lines++;
-        if (isHead)
-          headwords += lines;
-        else
-          frames += lines;
+        counted[family] += countJsonlLines(body2);
       }
-      (_d2 = opts.onProgress) == null ? void 0 : _d2.call(opts, { title: name, done, total: names.length, bytes: bytes + folderBytes });
+      (_d2 = opts.onProgress) == null ? void 0 : _d2.call(opts, { title: name, done, total: names.length, bytes: bytes2 + folderBytes });
     }
-    bytes += folderBytes;
+    bytes2 += folderBytes;
     await writeMeta(io, dir, {
       title: name,
       revision: "repaired",
       shards,
-      headwords,
-      frames,
+      headwords: counted.head,
+      frames: counted.frame,
+      // Only claim an intention index when shards for one are actually there —
+      // an absent family is "never built", which is different from "empty".
+      ...intent.length ? { intents: counted.intent } : {},
       builtAt: now(),
       format: 1,
       partial: true
     });
-    out.repaired.push({ title: name, dir, headwords, frames, shards, bytes: folderBytes });
+    out.repaired.push({
+      title: name,
+      dir,
+      headwords: counted.head,
+      frames: counted.frame,
+      intents: counted.intent,
+      shards,
+      bytes: folderBytes
+    });
   }
   out.repaired.sort((a, b) => b.headwords - a.headwords);
   return out;
 }
+async function buildIntentIndex(io, dir, opts = {}) {
+  var _a2, _b2, _c2, _d2, _e2;
+  const shards = (_a2 = opts.shards) != null ? _a2 : DEFAULT_SHARDS;
+  const passes = Math.max(1, Math.min((_b2 = opts.passes) != null ? _b2 : 4, shards));
+  const now = (_c2 = opts.now) != null ? _c2 : () => Date.now();
+  const t0 = now();
+  const width = Math.ceil(shards / passes);
+  for (let s = 0; s < shards; s++) {
+    const p = intentPath(dir, s);
+    if (await io.exists(p))
+      await io.remove(p);
+  }
+  let keys = 0, candidates = 0, framesRead = 0, stopped = false;
+  for (let pass = 0; pass < passes && !stopped; pass++) {
+    const lo = pass * width, hi = Math.min(lo + width, shards);
+    if (lo >= hi)
+      break;
+    const byKey = /* @__PURE__ */ new Map();
+    for (let s = 0; s < shards; s++) {
+      if ((_d2 = opts.shouldStop) == null ? void 0 : _d2.call(opts)) {
+        stopped = true;
+        break;
+      }
+      const body2 = await io.read(framePath(dir, s));
+      if (!body2)
+        continue;
+      for (const l of decodeLines(body2)) {
+        if (pass === 0)
+          framesRead++;
+        for (const c of l.c) {
+          const k = intentionKeyOf(c.i);
+          if (!k)
+            continue;
+          const target = hashKey(normalizeLookupKey(k)) % shards;
+          if (target < lo || target >= hi)
+            continue;
+          const row = { ...c, f: l.k };
+          const list = byKey.get(k);
+          if (list)
+            list.push(row);
+          else
+            byKey.set(k, [row]);
+        }
+      }
+      (_e2 = opts.onProgress) == null ? void 0 : _e2.call(opts, { pass: pass + 1, passes, shard: s + 1, of: shards, candidates });
+    }
+    if (stopped)
+      break;
+    const plan = /* @__PURE__ */ new Map();
+    for (const [k, c] of byKey) {
+      const s = hashKey(normalizeLookupKey(k)) % shards;
+      const list = plan.get(s);
+      const line = { k, c };
+      if (list)
+        list.push(line);
+      else
+        plan.set(s, [line]);
+      keys++;
+      candidates += c.length;
+    }
+    for (const [s, lines] of plan) {
+      await io.append(intentPath(dir, s), lines.map(encodeLine).join(""));
+    }
+  }
+  return { dir, shards, keys, candidates, framesRead, passes, ms: now() - t0 };
+}
+var DENSITY_FLOOR = 20;
+function summarizeIndices(nums) {
+  const s = [...nums].sort((a, b) => a - b);
+  const out = [];
+  for (let i = 0; i < s.length; ) {
+    let j = i;
+    while (j + 1 < s.length && s[j + 1] === s[j] + 1)
+      j++;
+    out.push(i === j ? String(s[i]) : `${s[i]}\u2013${s[j]}`);
+    i = j + 1;
+  }
+  return out.join(", ");
+}
+var FAMILY_JA = {
+  head: "\u898B\u51FA\u3057",
+  frame: "\u8868\u73FE",
+  intent: "\u610F\u56F3"
+};
+function describeSidecarProblem(p) {
+  switch (p.kind) {
+    case "no-meta":
+      return "meta.json \u304C\u8AAD\u3081\u307E\u305B\u3093\uFF08\u300C\u5909\u63DB\u6E08\u307F\u8F9E\u66F8\u3092\u4FEE\u5FA9\u300D\u3067\u518D\u751F\u6210\u3067\u304D\u307E\u3059\uFF09";
+    case "missing-shards":
+      return `${FAMILY_JA[p.family]}\u30B7\u30E3\u30FC\u30C9\u304C ${p.present}/${p.of} \u3057\u304B\u3042\u308A\u307E\u305B\u3093\uFF08\u6B20\u843D: ${summarizeIndices(p.missing)}\uFF09\u2014 \u3053\u306E\u7BC4\u56F2\u306E\u691C\u7D22\u306F\u7121\u8A00\u3067\u7A7A\u3092\u8FD4\u3057\u307E\u3059`;
+    case "count-mismatch":
+      return `${FAMILY_JA[p.family]}\u4EF6\u6570\u304C meta \u3068\u4E0D\u4E00\u81F4: meta ${p.claimed.toLocaleString()} / \u5B9F\u969B ${p.found.toLocaleString()}`;
+    case "shard-overflow":
+      return `\u30B7\u30E3\u30FC\u30C9\u756A\u53F7 ${p.max} \u304C meta.shards=${p.shards} \u3092\u8D85\u3048\u3066\u3044\u307E\u3059\uFF08\u30CF\u30C3\u30B7\u30E5\u5E45\u306E\u4E0D\u4E00\u81F4\uFF09`;
+  }
+}
+async function verifySidecar(io, dir, opts = {}) {
+  var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k;
+  const meta = await readMeta(io, dir);
+  const files = io.listFiles ? await io.listFiles(dir).catch(() => []) : [];
+  const { head, frame, intent } = classifyShardFiles(files);
+  const shards = (_b2 = (_a2 = meta == null ? void 0 : meta.shards) != null ? _a2 : opts.shards) != null ? _b2 : DEFAULT_SHARDS;
+  const present = { head, frame, intent };
+  const v = {
+    title: (_e2 = (_d2 = (_c2 = opts.title) != null ? _c2 : meta == null ? void 0 : meta.title) != null ? _d2 : dir.split("/").pop()) != null ? _e2 : dir,
+    dir,
+    ok: true,
+    partial: !!(meta == null ? void 0 : meta.partial),
+    claimed: {
+      headwords: (_f2 = meta == null ? void 0 : meta.headwords) != null ? _f2 : 0,
+      frames: (_g2 = meta == null ? void 0 : meta.frames) != null ? _g2 : 0,
+      intents: (_h2 = meta == null ? void 0 : meta.intents) != null ? _h2 : null,
+      shards
+    },
+    found: {
+      headShards: head.length,
+      frameShards: frame.length,
+      intentShards: intent.length,
+      headwords: null,
+      frames: null,
+      intents: null,
+      bytes: 0
+    },
+    problems: [],
+    noIntentIndex: false
+  };
+  if (!meta) {
+    v.ok = false;
+    v.problems.push({ kind: "no-meta" });
+    return v;
+  }
+  v.noIntentIndex = meta.intents == null && intent.length === 0;
+  const claimedFor = {
+    head: (_i2 = meta.headwords) != null ? _i2 : 0,
+    frame: (_j2 = meta.frames) != null ? _j2 : 0,
+    intent: (_k = meta.intents) != null ? _k : 0
+  };
+  for (const family of SHARD_FAMILIES) {
+    if (family === "intent" && v.noIntentIndex)
+      continue;
+    const have = present[family];
+    const claimed = claimedFor[family];
+    if (have.length) {
+      const max = Math.max(...have);
+      if (max >= shards)
+        v.problems.push({ kind: "shard-overflow", family, max, shards });
+    }
+    if (claimed / shards >= DENSITY_FLOOR && have.length < shards) {
+      const has = new Set(have);
+      const missing = [];
+      for (let s = 0; s < shards; s++)
+        if (!has.has(s))
+          missing.push(s);
+      v.problems.push({ kind: "missing-shards", family, missing, present: have.length, of: shards });
+    }
+  }
+  if (opts.deep) {
+    const counted = { head: 0, frame: 0, intent: 0 };
+    for (const family of SHARD_FAMILIES) {
+      for (const s of present[family]) {
+        const body2 = await io.read(shardPathFor(family, dir, s));
+        if (!body2)
+          continue;
+        v.found.bytes += body2.length;
+        counted[family] += countJsonlLines(body2);
+      }
+    }
+    v.found.headwords = counted.head;
+    v.found.frames = counted.frame;
+    v.found.intents = v.noIntentIndex ? null : counted.intent;
+    for (const family of SHARD_FAMILIES) {
+      if (family === "intent" && v.noIntentIndex)
+        continue;
+      if (counted[family] !== claimedFor[family]) {
+        v.problems.push({ kind: "count-mismatch", family, claimed: claimedFor[family], found: counted[family] });
+      }
+    }
+  }
+  v.ok = v.problems.length === 0;
+  return v;
+}
+async function verifyAllSidecars(io, root, opts = {}) {
+  var _a2, _b2;
+  if (!io.listFolders || !io.listFiles)
+    return [];
+  const names = await io.listFolders(root).catch(() => []);
+  const out = [];
+  let done = 0, bytes2 = 0;
+  for (const name of names) {
+    if ((_a2 = opts.shouldStop) == null ? void 0 : _a2.call(opts))
+      break;
+    done++;
+    const v = await verifySidecar(io, `${root}/${name}`, {
+      deep: opts.deep,
+      title: name,
+      shards: opts.shards
+    });
+    if (!v.claimed.headwords && !v.found.headShards && !v.found.frameShards && !v.found.intentShards)
+      continue;
+    bytes2 += v.found.bytes;
+    out.push(v);
+    (_b2 = opts.onProgress) == null ? void 0 : _b2.call(opts, { title: name, done, total: names.length, bytes: bytes2 });
+  }
+  return out.sort((a, b) => Number(a.ok) - Number(b.ok) || b.problems.length - a.problems.length);
+}
 function bufferedSidecarIO(inner, opts = {}) {
   var _a2;
   const pending = /* @__PURE__ */ new Map();
-  let bytes = 0;
+  let bytes2 = 0;
   const cap = (_a2 = opts.maxBytes) != null ? _a2 : 32 * 1024 * 1024;
   const flush = async () => {
     if (!pending.size)
       return;
     const batch = [...pending.entries()];
     pending.clear();
-    bytes = 0;
+    bytes2 = 0;
     for (const [path, parts] of batch)
       await inner.append(path, parts.join(""));
   };
@@ -31996,8 +33999,8 @@ function bufferedSidecarIO(inner, opts = {}) {
         list.push(text);
       else
         pending.set(path, [text]);
-      bytes += text.length;
-      if (bytes >= cap)
+      bytes2 += text.length;
+      if (bytes2 >= cap)
         await flush();
     },
     async exists(path) {
@@ -32011,10 +34014,12 @@ function bufferedSidecarIO(inner, opts = {}) {
     listFolders: inner.listFolders ? (p) => inner.listFolders(p) : void 0,
     listFiles: inner.listFiles ? (p) => inner.listFiles(p) : void 0,
     flush,
-    pendingBytes: () => bytes
+    pendingBytes: () => bytes2
   };
 }
 async function dropSidecar(io, dir, shards = DEFAULT_SHARDS) {
+  if (await io.exists(metaPath(dir)))
+    await io.remove(metaPath(dir));
   if (io.listFiles) {
     const files = await io.listFiles(dir).catch(() => []);
     for (const f of files)
@@ -32022,7 +34027,7 @@ async function dropSidecar(io, dir, shards = DEFAULT_SHARDS) {
     return;
   }
   for (let s = 0; s < shards; s++) {
-    for (const p of [headPath(dir, s), framePath(dir, s)]) {
+    for (const p of [headPath(dir, s), framePath(dir, s), intentPath(dir, s)]) {
       if (await io.exists(p))
         await io.remove(p);
     }
@@ -32628,17 +34633,22 @@ var BigDictStore = class {
       await this.refresh();
   }
   installed() {
-    return this.metas.map(({ dir, meta }) => ({
-      title: meta.title,
-      headwords: meta.headwords,
-      frames: meta.frames,
-      dir,
-      // `partial` means a conversion is still filling this, or the meta was
-      // reconstructed by repair — either way the counts are a running total
-      // and the UI must not present it as a settled install.
-      partial: meta.partial === true,
-      revision: meta.revision
-    }));
+    return this.metas.map(({ dir, meta }) => {
+      var _a2;
+      return {
+        title: meta.title,
+        headwords: meta.headwords,
+        frames: meta.frames,
+        dir,
+        intents: (_a2 = meta.intents) != null ? _a2 : null,
+        shards: meta.shards,
+        // `partial` means a conversion is still filling this, or the meta was
+        // reconstructed by repair — either way the counts are a running total
+        // and the UI must not present it as a settled install.
+        partial: meta.partial === true,
+        revision: meta.revision
+      };
+    });
   }
   async isEmpty() {
     await this.ready();
@@ -32771,6 +34781,60 @@ var BigDictStore = class {
         perDict.push(found);
     }
     return interleave(perDict, limit);
+  }
+  /**
+   * THE INTENTION QUERY (§27.2) — the reach-for query run from the other end.
+   *
+   * `frame()` asks "what fills this Japanese shape?"; this asks "how is this
+   * said?" and takes the want in English, as felt: "at some point", "undergo".
+   * §27.0.1's claim is that a phrase is one meaning externalized twice, so the
+   * shelf has to be reachable from either externalization — and until the
+   * intent shards existed it was reachable from only one, which is why an
+   * English want could sit open forever without ever receiving an offer.
+   *
+   * Dictionaries with no intention index are skipped in silence, not counted as
+   * empty answers: the honest report of "not indexed" belongs to verification,
+   * not to every query (§28 S6).
+   */
+  async intention(intention, limit = 40) {
+    var _a2;
+    await this.ready();
+    const k = intentionKeyOf(intention);
+    if (!k)
+      return [];
+    const perDict = [];
+    for (const { dir, meta } of this.metas) {
+      if (meta.intents == null)
+        continue;
+      const body2 = await this.shard(intentPath(dir, hashKey(normalizeLookupKey(k)) % meta.shards));
+      const found = [];
+      for (const l of decodeLines(body2)) {
+        if (l.k !== k)
+          continue;
+        for (const c of l.c) {
+          found.push({
+            dictionary: meta.title,
+            candidate: {
+              surface: c.s,
+              intention: c.i,
+              classHint: c.h,
+              ...c.p ? { shape: c.p } : {},
+              ...c.t ? { situation: c.t } : {},
+              frameKey: c.f,
+              intentionKey: k,
+              slots: ((_a2 = c.f.match(/[～＿]/g)) != null ? _a2 : []).length
+            }
+          });
+        }
+      }
+      if (found.length)
+        perDict.push(found);
+    }
+    return interleave(perDict, limit);
+  }
+  /** Does any installed dictionary have a meaning-side index at all? */
+  hasIntentIndex() {
+    return this.metas.some((m) => m.meta.intents != null);
   }
   /** Uninstall detection / manual invalidation after a re-convert. */
   invalidate() {
@@ -33705,7 +35769,7 @@ var ContextEngine = class {
 
 // src/ui/DictionaryView.ts
 var JP_DICTIONARY_VIEW_TYPE = "jp-dictionary-view";
-var DictionaryView = class extends import_obsidian16.ItemView {
+var DictionaryView = class extends import_obsidian17.ItemView {
   constructor(leaf, dictStore, onImport, onSaveEntry, contextEngine, onClassify) {
     super(leaf);
     this.searchInput = null;
@@ -33830,7 +35894,7 @@ var DictionaryView = class extends import_obsidian16.ItemView {
       this.commitCapture(sel, offers[0]);
       return;
     }
-    const menu = new import_obsidian16.Menu();
+    const menu = new import_obsidian17.Menu();
     for (const rel of offers) {
       menu.addItem((i) => i.setTitle(`${rel} \u2014 ${RELATION_SPECS[rel].hint}`).onClick(() => this.commitCapture(sel, rel)));
     }
@@ -33845,7 +35909,7 @@ var DictionaryView = class extends import_obsidian16.ItemView {
       [cap.relation, cap.object ? `\u2194 ${cap.object}` : "", (_a2 = cap.evidence) != null ? _a2 : "", (_b2 = cap.cite) != null ? _b2 : ""].filter(Boolean).join(" \xB7 "),
       { dict: (_c2 = sel.dictionary) != null ? _c2 : "", headword: (_d2 = sel.headword) != null ? _d2 : cap.subject }
     );
-    new import_obsidian16.Notice(`${rel}\uFF1A${cap.subject}${cap.object ? ` \u2194 ${cap.object}` : ""}`);
+    new import_obsidian17.Notice(`${rel}\uFF1A${cap.subject}${cap.object ? ` \u2194 ${cap.object}` : ""}`);
   }
   onExampleKey(e) {
     var _a2, _b2;
@@ -34049,9 +36113,10 @@ var DictionaryView = class extends import_obsidian16.ItemView {
     container.empty();
     container.addClass("jp-dict-view");
     armDrops(container, this, "dict", { paste: true });
-    const dock = thumbDock(container);
+    armSelectionEcho(container, this, "dict");
+    const wide = wideDock(container);
     const header = container.createDiv("jp-dict-header");
-    mountSurfaceBar(dock != null ? dock : header, this, "dict");
+    mountSurfaceBar(container, this, "dict", header);
     const titleRow = header.createDiv("jp-dict-title-row");
     titleRow.createEl("h4", { text: "\u8F9E\u66F8", cls: "jp-dict-title" });
     this.headerActionsEl = titleRow.createDiv("jp-dict-header-actions");
@@ -34067,7 +36132,7 @@ var DictionaryView = class extends import_obsidian16.ItemView {
       attr: { "aria-label": "Manage dictionaries" }
     });
     manageBtn.addEventListener("click", () => this.showManageDialog());
-    const searchRow = (dock != null ? dock : header).createDiv("jp-dict-search-row");
+    const searchRow = (wide != null ? wide : header).createDiv("jp-dict-search-row");
     this.searchInput = searchRow.createEl("input", {
       type: "search",
       placeholder: "\u691C\u7D22\u2026 (\u6F22\u5B57\u30FB\u3072\u3089\u304C\u306A\u30FB\u30AB\u30BF\u30AB\u30CA)",
@@ -34103,7 +36168,7 @@ var DictionaryView = class extends import_obsidian16.ItemView {
     });
     this.breadcrumbEl = container.createDiv("jp-dict-breadcrumbs");
     this.breadcrumbEl.style.display = "none";
-    this.suggestionsEl = (dock != null ? dock : container).createDiv("jp-dict-suggestions");
+    this.suggestionsEl = (wide != null ? wide : container).createDiv("jp-dict-suggestions");
     this.suggestionsEl.style.display = "none";
     this.statsEl = container.createDiv("jp-dict-stats");
     this.resultsEl = container.createDiv("jp-dict-results");
@@ -34405,7 +36470,7 @@ ${sense}` : primary.term.expression,
     const copyBtn = actionsRow.createEl("button", { text: "Copy", cls: "jp-dict-action-btn" });
     copyBtn.addEventListener("click", () => {
       navigator.clipboard.writeText(primary.term.expression).then(() => {
-        new import_obsidian16.Notice(`Copied: ${primary.term.expression}`);
+        new import_obsidian17.Notice(`Copied: ${primary.term.expression}`);
       });
     });
     const insertBtn = actionsRow.createEl("button", { text: "Insert", cls: "jp-dict-action-btn" });
@@ -34414,7 +36479,7 @@ ${sense}` : primary.term.expression,
       const editor = (_a3 = this.app.workspace.activeEditor) == null ? void 0 : _a3.editor;
       if (editor) {
         editor.replaceSelection(primary.term.expression);
-        new import_obsidian16.Notice(`Inserted: ${primary.term.expression}`);
+        new import_obsidian17.Notice(`Inserted: ${primary.term.expression}`);
       }
     });
     const saveBtn = actionsRow.createEl("button", { text: "\u{1F4BE} Save", cls: "jp-dict-action-btn jp-dict-save-btn" });
@@ -34425,7 +36490,7 @@ ${sense}` : primary.term.expression,
         primary.term.reading || primary.term.expression,
         exampleText
       );
-      new import_obsidian16.Notice(`Saved: ${primary.term.expression}`);
+      new import_obsidian17.Notice(`Saved: ${primary.term.expression}`);
       saveBtn.textContent = "\u2713 Saved";
       saveBtn.disabled = true;
     });
@@ -34461,22 +36526,22 @@ ${sense}` : primary.term.expression,
   }
   // ── Context Panel ──────────────────────────────────────────
   renderContextPanel(card, expression) {
-    const toggle = card.createDiv("jp-dict-ctx-toggle");
-    toggle.createSpan({ text: "\u{1F517} Context", cls: "jp-dict-ctx-toggle-label" });
-    toggle.createSpan({ text: "\u25B8", cls: "jp-dict-ctx-toggle-arrow" });
+    const toggle2 = card.createDiv("jp-dict-ctx-toggle");
+    toggle2.createSpan({ text: "\u{1F517} Context", cls: "jp-dict-ctx-toggle-label" });
+    toggle2.createSpan({ text: "\u25B8", cls: "jp-dict-ctx-toggle-arrow" });
     let panelEl = null;
     let loaded = false;
-    toggle.addEventListener("click", async () => {
+    toggle2.addEventListener("click", async () => {
       if (panelEl) {
         const visible = panelEl.style.display !== "none";
         panelEl.style.display = visible ? "none" : "";
-        toggle.querySelector(".jp-dict-ctx-toggle-arrow").textContent = visible ? "\u25B8" : "\u25BE";
+        toggle2.querySelector(".jp-dict-ctx-toggle-arrow").textContent = visible ? "\u25B8" : "\u25BE";
         return;
       }
       if (loaded)
         return;
       loaded = true;
-      toggle.querySelector(".jp-dict-ctx-toggle-arrow").textContent = "\u25BE";
+      toggle2.querySelector(".jp-dict-ctx-toggle-arrow").textContent = "\u25BE";
       panelEl = card.createDiv("jp-dict-ctx-panel");
       panelEl.createDiv({ text: "Loading\u2026", cls: "jp-dict-ctx-loading" });
       try {
@@ -35036,14 +37101,14 @@ ${sense}` : primary.term.expression,
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         try {
-          new import_obsidian16.Notice(`Importing ${file.name}\u2026`, 0);
+          new import_obsidian17.Notice(`Importing ${file.name}\u2026`, 0);
           const buf = await file.arrayBuffer();
           const importer = new YomitanImporter();
           const data = await importer.import(buf, (msg) => {
-            new import_obsidian16.Notice(msg, 3e3);
+            new import_obsidian17.Notice(msg, 3e3);
           });
           if (data.terms.length > DictionaryStore.BLOB_TERM_LIMIT) {
-            new import_obsidian16.Notice(
+            new import_obsidian17.Notice(
               `\u300C${data.meta.title}\u300D\u306F ${data.terms.length.toLocaleString()} \u8A9E \u2014 \u5927\u304D\u3059\u304E\u308B\u305F\u3081\u30D7\u30E9\u30B0\u30A4\u30F3\u306E\u30C7\u30FC\u30BF\u306B\u4FDD\u5B58\u3067\u304D\u307E\u305B\u3093\uFF08${DictionaryStore.BLOB_TERM_LIMIT.toLocaleString()}\u8A9E\u307E\u3067\uFF09\u3002
 \u8A2D\u5B9A \u2192 \u5927\u578B\u8F9E\u66F8 \u3067\u300CYomitan\u66F8\u304D\u51FA\u3057\u30D5\u30A9\u30EB\u30C0\u300D\u3092\u6307\u5B9A\u3057\u3001\u91D1\u5EAB\u5185\u30B7\u30E3\u30FC\u30C9\u306B\u5909\u63DB\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
               15e3
@@ -35052,10 +37117,10 @@ ${sense}` : primary.term.expression,
           }
           this.dictStore.addDictionary(data);
           await this.onImport();
-          new import_obsidian16.Notice(`\u2713 Imported "${data.meta.title}" (${data.meta.termCount.toLocaleString()} terms)`, 5e3);
+          new import_obsidian17.Notice(`\u2713 Imported "${data.meta.title}" (${data.meta.termCount.toLocaleString()} terms)`, 5e3);
         } catch (err) {
           console.error("Dictionary import error:", err);
-          new import_obsidian16.Notice(`Failed to import ${file.name}: ${err.message}`, 8e3);
+          new import_obsidian17.Notice(`Failed to import ${file.name}: ${err.message}`, 8e3);
         }
       }
       this.renderHome();
@@ -35070,7 +37135,7 @@ ${sense}` : primary.term.expression,
     }).open();
   }
 };
-var DictManageModal = class extends import_obsidian16.Modal {
+var DictManageModal = class extends import_obsidian17.Modal {
   constructor(app, dictStore, onSave) {
     super(app);
     this.dictStore = dictStore;
@@ -35088,7 +37153,7 @@ var DictManageModal = class extends import_obsidian16.Modal {
     }
     for (const meta of dicts) {
       const isEnabled = this.dictStore.settings.enabledDictionaries.includes(meta.title);
-      new import_obsidian16.Setting(contentEl).setName(meta.title).setDesc(`${meta.termCount.toLocaleString()} terms \xB7 v${meta.revision}`).addToggle((t) => t.setValue(isEnabled).onChange(async (v) => {
+      new import_obsidian17.Setting(contentEl).setName(meta.title).setDesc(`${meta.termCount.toLocaleString()} terms \xB7 v${meta.revision}`).addToggle((t) => t.setValue(isEnabled).onChange(async (v) => {
         if (v) {
           if (!this.dictStore.settings.enabledDictionaries.includes(meta.title)) {
             this.dictStore.settings.enabledDictionaries.push(meta.title);
@@ -35104,15 +37169,15 @@ var DictManageModal = class extends import_obsidian16.Modal {
       }));
     }
     contentEl.createEl("h3", { text: "Display" });
-    new import_obsidian16.Setting(contentEl).setName("Show pitch accent").addToggle((t) => t.setValue(this.dictStore.settings.showPitch).onChange(async (v) => {
+    new import_obsidian17.Setting(contentEl).setName("Show pitch accent").addToggle((t) => t.setValue(this.dictStore.settings.showPitch).onChange(async (v) => {
       this.dictStore.settings.showPitch = v;
       await this.onSave();
     }));
-    new import_obsidian16.Setting(contentEl).setName("Show frequency").addToggle((t) => t.setValue(this.dictStore.settings.showFrequency).onChange(async (v) => {
+    new import_obsidian17.Setting(contentEl).setName("Show frequency").addToggle((t) => t.setValue(this.dictStore.settings.showFrequency).onChange(async (v) => {
       this.dictStore.settings.showFrequency = v;
       await this.onSave();
     }));
-    new import_obsidian16.Setting(contentEl).setName("Max results").addSlider((s) => s.setLimits(10, 200, 10).setValue(this.dictStore.settings.maxResults).setDynamicTooltip().onChange(async (v) => {
+    new import_obsidian17.Setting(contentEl).setName("Max results").addSlider((s) => s.setLimits(10, 200, 10).setValue(this.dictStore.settings.maxResults).setDynamicTooltip().onChange(async (v) => {
       this.dictStore.settings.maxResults = v;
       await this.onSave();
     }));
@@ -35448,7 +37513,7 @@ function bigrams3(s) {
 }
 
 // src/x/XClient.ts
-var import_obsidian17 = require("obsidian");
+var import_obsidian18 = require("obsidian");
 
 // src/x/XTransactionId.ts
 var ADDITIONAL_RANDOM_NUMBER = 3;
@@ -35556,16 +37621,16 @@ function animate(frames, targetTime) {
   return strArr.join("").replace(/[.-]/g, "");
 }
 var B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-function base64Encode(bytes) {
+function base64Encode(bytes2) {
   let out = "";
-  for (let i = 0; i < bytes.length; i += 3) {
-    const b0 = bytes[i] & 255;
-    const b1 = i + 1 < bytes.length ? bytes[i + 1] & 255 : 0;
-    const b2 = i + 2 < bytes.length ? bytes[i + 2] & 255 : 0;
+  for (let i = 0; i < bytes2.length; i += 3) {
+    const b0 = bytes2[i] & 255;
+    const b1 = i + 1 < bytes2.length ? bytes2[i + 1] & 255 : 0;
+    const b2 = i + 2 < bytes2.length ? bytes2[i + 2] & 255 : 0;
     out += B64[b0 >> 2];
     out += B64[(b0 & 3) << 4 | b1 >> 4];
-    out += i + 1 < bytes.length ? B64[(b1 & 15) << 2 | b2 >> 6] : "=";
-    out += i + 2 < bytes.length ? B64[b2 & 63] : "=";
+    out += i + 1 < bytes2.length ? B64[(b1 & 15) << 2 | b2 >> 6] : "=";
+    out += i + 2 < bytes2.length ? B64[b2 & 63] : "=";
   }
   return out;
 }
@@ -35737,7 +37802,7 @@ var XClient = class {
         },
         fetchText: async (url) => {
           var _a2;
-          const r2 = await (0, import_obsidian17.requestUrl)({
+          const r2 = await (0, import_obsidian18.requestUrl)({
             url,
             method: "GET",
             headers: url.includes("x.com") ? { ...browserHeaders, cookie } : browserHeaders,
@@ -35826,7 +37891,7 @@ var XClient = class {
     }
     let resp;
     try {
-      resp = await (0, import_obsidian17.requestUrl)({ url, method: "GET", headers, throw: false });
+      resp = await (0, import_obsidian18.requestUrl)({ url, method: "GET", headers, throw: false });
     } catch (e) {
       throw new XScrapeError(`Network error contacting X: ${e.message}`);
     }
@@ -35881,7 +37946,7 @@ var XClient = class {
     };
     let html = "";
     try {
-      const resp = await (0, import_obsidian17.requestUrl)({
+      const resp = await (0, import_obsidian18.requestUrl)({
         url: "https://x.com/",
         method: "GET",
         headers: { ...browserHeaders, cookie },
@@ -35908,7 +37973,7 @@ var XClient = class {
     ];
     for (const url of candidates) {
       try {
-        const r2 = await (0, import_obsidian17.requestUrl)({ url, method: "GET", headers: browserHeaders, throw: false });
+        const r2 = await (0, import_obsidian18.requestUrl)({ url, method: "GET", headers: browserHeaders, throw: false });
         const js = (_c2 = r2.text) != null ? _c2 : "";
         if (!/SearchTimeline"/.test(js))
           continue;
@@ -35936,7 +38001,7 @@ var XClient = class {
     const url = `https://cdn.syndication.twimg.com/tweet-result?id=${cleanId}&token=${token}&lang=en`;
     let resp;
     try {
-      resp = await (0, import_obsidian17.requestUrl)({ url, method: "GET", throw: false });
+      resp = await (0, import_obsidian18.requestUrl)({ url, method: "GET", throw: false });
     } catch (e) {
       throw new XScrapeError(`Network error fetching tweet: ${e.message}`);
     }
@@ -36096,7 +38161,7 @@ function unescapeEntities(s) {
 }
 
 // src/ui/XSearchView.ts
-var import_obsidian21 = require("obsidian");
+var import_obsidian22 = require("obsidian");
 
 // src/x/saved-queries.ts
 function extractTweetId(input) {
@@ -36138,7 +38203,7 @@ async function runAllSavedQueries(client, corpus, queries, defaults, onProgress)
 }
 
 // src/x/export-notes.ts
-var import_obsidian18 = require("obsidian");
+var import_obsidian19 = require("obsidian");
 function sanitize(s) {
   return s.replace(/[\\/:*?"<>|#^[\]]/g, "_").replace(/\s+/g, "_").slice(0, 60);
 }
@@ -36173,7 +38238,7 @@ function tweetToMarkdown(t) {
   return fm.join("\n") + "\n\n" + t.text + "\n";
 }
 async function exportTweetsToVault(app, tweets, folder) {
-  const base = (0, import_obsidian18.normalizePath)(folder.trim() || "X Tweets");
+  const base = (0, import_obsidian19.normalizePath)(folder.trim() || "X Tweets");
   if (!await app.vault.adapter.exists(base)) {
     try {
       await app.vault.createFolder(base);
@@ -36184,7 +38249,7 @@ async function exportTweetsToVault(app, tweets, folder) {
   let skipped = 0;
   for (const t of tweets) {
     const name = `${isoDate(t.createdAt)}_${sanitize(t.authorHandle || "unknown")}_${t.id}.md`;
-    const path = (0, import_obsidian18.normalizePath)(`${base}/${name}`);
+    const path = (0, import_obsidian19.normalizePath)(`${base}/${name}`);
     if (await app.vault.adapter.exists(path)) {
       skipped++;
       continue;
@@ -36243,20 +38308,20 @@ function shouldCollapse(text, charsPerLine = 22, maxLines = 6) {
 }
 
 // src/ui/XSaveModals.ts
-var import_obsidian20 = require("obsidian");
+var import_obsidian21 = require("obsidian");
 
 // src/x/collections.ts
-var import_obsidian19 = require("obsidian");
+var import_obsidian20 = require("obsidian");
 function listCollections(app, folder) {
-  const root = app.vault.getAbstractFileByPath((0, import_obsidian19.normalizePath)(folder));
-  if (!(root instanceof import_obsidian19.TFolder))
+  const root = app.vault.getAbstractFileByPath((0, import_obsidian20.normalizePath)(folder));
+  if (!(root instanceof import_obsidian20.TFolder))
     return [];
   const out = [];
   const walk = (f) => {
     for (const child of f.children) {
-      if (child instanceof import_obsidian19.TFile && child.extension === "md")
+      if (child instanceof import_obsidian20.TFile && child.extension === "md")
         out.push(child);
-      else if (child instanceof import_obsidian19.TFolder)
+      else if (child instanceof import_obsidian20.TFolder)
         walk(child);
     }
   };
@@ -36268,14 +38333,14 @@ function safeCollectionName(name) {
   return name.trim().replace(/[\\/:*?"<>|#^[\]]/g, "").slice(0, 80);
 }
 async function appendToCollection(app, filePath, block) {
-  const path = (0, import_obsidian19.normalizePath)(filePath);
+  const path = (0, import_obsidian20.normalizePath)(filePath);
   const dir = path.split("/").slice(0, -1).join("/");
   if (dir && !app.vault.getAbstractFileByPath(dir)) {
     await app.vault.createFolder(dir).catch(() => {
     });
   }
   const existing = app.vault.getAbstractFileByPath(path);
-  if (existing instanceof import_obsidian19.TFile) {
+  if (existing instanceof import_obsidian20.TFile) {
     await app.vault.process(
       existing,
       (txt) => (txt.trimEnd() ? txt.trimEnd() + "\n\n" : "") + block + "\n"
@@ -36286,7 +38351,7 @@ async function appendToCollection(app, filePath, block) {
 }
 
 // src/ui/XSaveModals.ts
-var XCollectionPickerModal = class extends import_obsidian20.Modal {
+var XCollectionPickerModal = class extends import_obsidian21.Modal {
   /** `block` is the markdown appended to whichever collection gets picked. */
   constructor(app, deps, block, onDone) {
     super(app);
@@ -36332,7 +38397,7 @@ var XCollectionPickerModal = class extends import_obsidian20.Modal {
       row.addEventListener("click", () => void this.pick(f.path));
     }
     let newName = "";
-    new import_obsidian20.Setting(contentEl).setName("\u65B0\u3057\u3044\u30B3\u30EC\u30AF\u30B7\u30E7\u30F3").setDesc("\u540D\u524D\u3060\u3051\u3067 OK\uFF08.md \u306F\u81EA\u52D5\uFF09").addText((t) => {
+    new import_obsidian21.Setting(contentEl).setName("\u65B0\u3057\u3044\u30B3\u30EC\u30AF\u30B7\u30E7\u30F3").setDesc("\u540D\u524D\u3060\u3051\u3067 OK\uFF08.md \u306F\u81EA\u52D5\uFF09").addText((t) => {
       t.setPlaceholder("\u4F8B: \u54F2\u5B66");
       t.onChange((v) => {
         newName = v;
@@ -36348,7 +38413,7 @@ var XCollectionPickerModal = class extends import_obsidian20.Modal {
   async createAndPick(name, folder) {
     const clean = safeCollectionName(name);
     if (!clean) {
-      new import_obsidian20.Notice("\u30B3\u30EC\u30AF\u30B7\u30E7\u30F3\u540D\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
+      new import_obsidian21.Notice("\u30B3\u30EC\u30AF\u30B7\u30E7\u30F3\u540D\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
       return;
     }
     await this.pick(`${folder}/${clean}.md`);
@@ -36360,21 +38425,21 @@ var XCollectionPickerModal = class extends import_obsidian20.Modal {
       const s = this.deps.getSettings();
       s.lastCollection = file.path;
       await this.deps.saveSettings();
-      const linkEl = new import_obsidian20.Notice(`\u2713 ${file.basename} \u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F\uFF08\u30BF\u30C3\u30D7\u3067\u958B\u304F\uFF09`, 5e3);
+      const linkEl = new import_obsidian21.Notice(`\u2713 ${file.basename} \u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F\uFF08\u30BF\u30C3\u30D7\u3067\u958B\u304F\uFF09`, 5e3);
       linkEl.noticeEl.addEventListener("click", () => {
         void this.app.workspace.openLinkText(file.path, "", false);
       });
       (_a2 = this.onDone) == null ? void 0 : _a2.call(this, file);
       this.close();
     } catch (e) {
-      new import_obsidian20.Notice(`\u30B3\u30EC\u30AF\u30B7\u30E7\u30F3\u3078\u306E\u8FFD\u52A0\u306B\u5931\u6557: ${e.message}`, 7e3);
+      new import_obsidian21.Notice(`\u30B3\u30EC\u30AF\u30B7\u30E7\u30F3\u3078\u306E\u8FFD\u52A0\u306B\u5931\u6557: ${e.message}`, 7e3);
     }
   }
   onClose() {
     this.contentEl.empty();
   }
 };
-var XSaveCollocationModal = class extends import_obsidian20.Modal {
+var XSaveCollocationModal = class extends import_obsidian21.Modal {
   constructor(app, deps, tweet, seedParts = []) {
     super(app);
     this.surfaceInput = null;
@@ -36403,7 +38468,7 @@ var XSaveCollocationModal = class extends import_obsidian20.Modal {
     addSelBtn.addEventListener("click", () => {
       const sel = selectionWithin(this.textEl);
       if (!sel) {
-        new import_obsidian20.Notice("\u672C\u6587\u306E\u4E00\u90E8\u3092\u9078\u629E\u3057\u3066\u304B\u3089\u62BC\u3057\u3066\u304F\u3060\u3055\u3044");
+        new import_obsidian21.Notice("\u672C\u6587\u306E\u4E00\u90E8\u3092\u9078\u629E\u3057\u3066\u304B\u3089\u62BC\u3057\u3066\u304F\u3060\u3055\u3044");
         return;
       }
       this.addPart(sel);
@@ -36448,7 +38513,7 @@ var XSaveCollocationModal = class extends import_obsidian20.Modal {
     if (!clean)
       return;
     if (this.parts.includes(clean)) {
-      new import_obsidian20.Notice("\u540C\u3058\u30D1\u30FC\u30C4\u304C\u65E2\u306B\u3042\u308A\u307E\u3059");
+      new import_obsidian21.Notice("\u540C\u3058\u30D1\u30FC\u30C4\u304C\u65E2\u306B\u3042\u308A\u307E\u3059");
       return;
     }
     this.parts.push(clean);
@@ -36477,11 +38542,11 @@ var XSaveCollocationModal = class extends import_obsidian20.Modal {
   saveToLexicon() {
     const surface = this.surface();
     if (!surface) {
-      new import_obsidian20.Notice("\u30D1\u30FC\u30C4\u3092\u8FFD\u52A0\u3059\u308B\u304B\u898B\u51FA\u3057\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
+      new import_obsidian21.Notice("\u30D1\u30FC\u30C4\u3092\u8FFD\u52A0\u3059\u308B\u304B\u898B\u51FA\u3057\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
       return;
     }
     this.deps.onSaveCollocation(surface, this.tweet.text, this.tweet.url, this.parts);
-    new import_obsidian20.Notice(`\u{1F4BE} \u4FDD\u5B58: ${surface}`);
+    new import_obsidian21.Notice(`\u{1F4BE} \u4FDD\u5B58: ${surface}`);
     this.close();
   }
   saveToCollection() {
@@ -36515,7 +38580,7 @@ function selectionWithin(el) {
 
 // src/ui/XSearchView.ts
 var JP_X_VIEW_TYPE = "jp-x-search-view";
-var XSearchView = class extends import_obsidian21.ItemView {
+var XSearchView = class extends import_obsidian22.ItemView {
   constructor(leaf, deps) {
     super(leaf);
     this.mainInput = null;
@@ -36573,9 +38638,9 @@ var XSearchView = class extends import_obsidian21.ItemView {
     container.empty();
     container.addClass("jp-x-view");
     armDrops(container, this.deps, "x", { paste: true });
-    const dock = thumbDock(container);
+    const wide = wideDock(container);
     const header = container.createDiv("jp-x-header");
-    mountSurfaceBar(dock != null ? dock : header, this.deps, "x");
+    mountSurfaceBar(container, this.deps, "x", header);
     const titleRow = header.createDiv("jp-x-title-row");
     titleRow.createEl("h4", { text: "\u{1D54F} \u691C\u7D22\u8F9E\u66F8", cls: "jp-x-title" });
     const actions = titleRow.createDiv("jp-x-header-actions");
@@ -36603,7 +38668,7 @@ var XSearchView = class extends import_obsidian21.ItemView {
       attr: { "aria-label": "Import / export corpus (JSONL)" }
     });
     importBtn.addEventListener("click", () => this.openCorpusModal());
-    const searchRow = (dock != null ? dock : header).createDiv("jp-x-search-row");
+    const searchRow = (wide != null ? wide : header).createDiv("jp-x-search-row");
     this.mainInput = searchRow.createEl("input", {
       type: "search",
       placeholder: "\u8A9E\u3092\u30B9\u30DA\u30FC\u30B9\u533A\u5207\u308A\u3067\uFF08AND\uFF09\u2026 \u4F8B: \u4EE5\u524D\u306E \u3067\u3055\u3048",
@@ -36632,7 +38697,7 @@ var XSearchView = class extends import_obsidian21.ItemView {
       this.renderLocal();
       void this.runLive(true);
     });
-    this.chipsEl = (dock != null ? dock : header).createDiv("jp-x-chips");
+    this.chipsEl = (wide != null ? wide : header).createDiv("jp-x-chips");
     const sortRow = header.createDiv("jp-x-sortrow");
     sortRow.createSpan({ text: "\u4E26\u3073\u66FF\u3048", cls: "jp-x-sort-label" });
     const sorts = [
@@ -36919,7 +38984,7 @@ var XSearchView = class extends import_obsidian21.ItemView {
       return;
     const issue = this.deps.client.configIssue();
     if (issue) {
-      new import_obsidian21.Notice(`X: ${issue}`, 5e3);
+      new import_obsidian22.Notice(`X: ${issue}`, 5e3);
       return;
     }
     if (reset)
@@ -36933,7 +38998,7 @@ var XSearchView = class extends import_obsidian21.ItemView {
       );
       const added = this.deps.corpus.addTweets(tweets);
       this.liveCursor = cursor;
-      new import_obsidian21.Notice(
+      new import_obsidian22.Notice(
         `X: ${tweets.length}\u4EF6\u53D6\u5F97\uFF08\u65B0\u898F ${added}\u4EF6\uFF09` + (cursor ? "\u30FB\u7D9A\u304D\u3042\u308A" : ""),
         4e3
       );
@@ -36945,7 +39010,7 @@ var XSearchView = class extends import_obsidian21.ItemView {
         this.setLoading(false);
         this.deps.client.resetTxnGen();
         const outcome = await this.recoverQueryId();
-        new import_obsidian21.Notice(
+        new import_obsidian22.Notice(
           outcome === "updated" ? "\u691C\u7D22ID \u3092\u66F4\u65B0\u3057\u3001\u7F72\u540D\u3092\u518D\u751F\u6210\u3057\u3066\u518D\u691C\u7D22\u3057\u307E\u3059\u2026" : "\u7F72\u540D (x-client-transaction-id) \u3092\u518D\u751F\u6210\u3057\u3066\u518D\u691C\u7D22\u3057\u307E\u3059\u2026",
           4e3
         );
@@ -36953,7 +39018,7 @@ var XSearchView = class extends import_obsidian21.ItemView {
         return;
       }
       const msg = e instanceof XScrapeError ? e.message : e.message;
-      new import_obsidian21.Notice(`X \u53D6\u5F97\u30A8\u30E9\u30FC: ${msg}`, 1e4);
+      new import_obsidian22.Notice(`X \u53D6\u5F97\u30A8\u30E9\u30FC: ${msg}`, 1e4);
     } finally {
       this.liveBusy = false;
       this.setLoading(false);
@@ -36966,22 +39031,22 @@ var XSearchView = class extends import_obsidian21.ItemView {
    *   'failed'          — couldn't discover an id.
    */
   async recoverQueryId() {
-    new import_obsidian21.Notice("\u691C\u7D22ID\u3092\u78BA\u8A8D\u4E2D\uFF08\u6700\u65B0ID\u3092\u81EA\u52D5\u53D6\u5F97\uFF09\u2026", 3e3);
+    new import_obsidian22.Notice("\u691C\u7D22ID\u3092\u78BA\u8A8D\u4E2D\uFF08\u6700\u65B0ID\u3092\u81EA\u52D5\u53D6\u5F97\uFF09\u2026", 3e3);
     try {
       const prev = (this.deps.getSettings().searchQueryId || "").trim();
       const id = await this.deps.client.discoverSearchQueryId();
       if (!id) {
-        new import_obsidian21.Notice("queryId \u3092\u81EA\u52D5\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u{1F511}\u2192\u8A73\u7D30\u3067\u624B\u52D5\u8A2D\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
+        new import_obsidian22.Notice("queryId \u3092\u81EA\u52D5\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u{1F511}\u2192\u8A73\u7D30\u3067\u624B\u52D5\u8A2D\u5B9A\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
         return "failed";
       }
       if (id === prev)
         return "already-current";
       this.deps.getSettings().searchQueryId = id;
       await this.deps.saveSettings();
-      new import_obsidian21.Notice(`\u2713 \u691C\u7D22ID\u3092\u66F4\u65B0\u3057\u307E\u3057\u305F\uFF08${id}\uFF09\u3002\u518D\u691C\u7D22\u3057\u307E\u3059\u3002`, 4e3);
+      new import_obsidian22.Notice(`\u2713 \u691C\u7D22ID\u3092\u66F4\u65B0\u3057\u307E\u3057\u305F\uFF08${id}\uFF09\u3002\u518D\u691C\u7D22\u3057\u307E\u3059\u3002`, 4e3);
       return "updated";
     } catch (e) {
-      new import_obsidian21.Notice("queryId \u306E\u81EA\u52D5\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002", 6e3);
+      new import_obsidian22.Notice("queryId \u306E\u81EA\u52D5\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002", 6e3);
       return "failed";
     }
   }
@@ -37017,7 +39082,7 @@ var XSearchView = class extends import_obsidian21.ItemView {
       this.coocActive = false;
       this.query.fromUser = t.authorHandle;
       this.renderLocal();
-      new import_obsidian21.Notice(`from:@${t.authorHandle} \u3067\u7D5E\u308A\u8FBC\u307F`);
+      new import_obsidian22.Notice(`from:@${t.authorHandle} \u3067\u7D5E\u308A\u8FBC\u307F`);
     });
     if (((_b2 = (_a2 = t.matchedQueries) == null ? void 0 : _a2.length) != null ? _b2 : 0) >= 2) {
       head.createSpan({
@@ -37114,21 +39179,21 @@ var XSearchView = class extends import_obsidian21.ItemView {
       new XCollectionPickerModal(this.app, this.deps, formatTweetCallout(t)).open();
     });
     this.actionBtn(actions, "\u29C9 \u30B3\u30D4\u30FC", "\u672C\u6587\u3092\u30B3\u30D4\u30FC", () => {
-      navigator.clipboard.writeText(t.text).then(() => new import_obsidian21.Notice("\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F"));
+      navigator.clipboard.writeText(t.text).then(() => new import_obsidian22.Notice("\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F"));
     });
     this.actionBtn(actions, "\u21A7 \u633F\u5165", "\u30A8\u30C7\u30A3\u30BF\u306B [!x-tweet] \u30B3\u30FC\u30EB\u30A2\u30A6\u30C8\u3068\u3057\u3066\u633F\u5165", () => {
       const editor = this.getTargetEditor();
       if (editor) {
         editor.replaceSelection(formatTweetCallout(t) + "\n");
-        new import_obsidian21.Notice("\u633F\u5165\u3057\u307E\u3057\u305F");
+        new import_obsidian22.Notice("\u633F\u5165\u3057\u307E\u3057\u305F");
       } else {
-        new import_obsidian21.Notice("\u633F\u5165\u5148\u306E\u30CE\u30FC\u30C8\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u304B\u3089\u8A66\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 5e3);
+        new import_obsidian22.Notice("\u633F\u5165\u5148\u306E\u30CE\u30FC\u30C8\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u304B\u3089\u8A66\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 5e3);
       }
     });
     this.actionBtn(actions, "\u2192\u30CE\u30FC\u30C8", "Vault \u306B\u30CE\u30FC\u30C8\u3068\u3057\u3066\u4FDD\u5B58", async () => {
       const folder = this.deps.getSettings().exportFolder;
       const r2 = await exportTweetsToVault(this.app, [t], folder);
-      new import_obsidian21.Notice(r2.written ? `\u30CE\u30FC\u30C8\u4F5C\u6210: ${r2.folder}` : "\u3059\u3067\u306B\u5B58\u5728\u3057\u307E\u3059");
+      new import_obsidian22.Notice(r2.written ? `\u30CE\u30FC\u30C8\u4F5C\u6210: ${r2.folder}` : "\u3059\u3067\u306B\u5B58\u5728\u3057\u307E\u3059");
     });
     this.actionBtn(actions, "\u2197 X", "X \u3067\u958B\u304F", () => window.open(t.url, "_blank"));
   }
@@ -37145,7 +39210,7 @@ var XSearchView = class extends import_obsidian21.ItemView {
       return active;
     const leaf = this.app.workspace.getMostRecentLeaf(this.app.workspace.rootSplit);
     const view = leaf == null ? void 0 : leaf.view;
-    if (view instanceof import_obsidian21.MarkdownView)
+    if (view instanceof import_obsidian22.MarkdownView)
       return view.editor;
     return null;
   }
@@ -37231,7 +39296,7 @@ function compact(n) {
     return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
   return String(n);
 }
-var XAuthModal = class extends import_obsidian21.Modal {
+var XAuthModal = class extends import_obsidian22.Modal {
   constructor(app, deps, onSaved) {
     super(app);
     this.deps = deps;
@@ -37247,17 +39312,17 @@ var XAuthModal = class extends import_obsidian21.Modal {
       cls: "jp-x-modal-desc"
     });
     const s = this.deps.getSettings();
-    new import_obsidian21.Setting(contentEl).setName("\u30E9\u30A4\u30D6\u53D6\u5F97\u3092\u6709\u52B9\u5316").setDesc("\u30AA\u30D5\u306B\u3059\u308B\u3068\u30AD\u30E3\u30C3\u30B7\u30E5\u306E\u307F\u3067\u691C\u7D22\u3057\u307E\u3059").addToggle((t) => t.setValue(s.enabled).onChange((v) => {
+    new import_obsidian22.Setting(contentEl).setName("\u30E9\u30A4\u30D6\u53D6\u5F97\u3092\u6709\u52B9\u5316").setDesc("\u30AA\u30D5\u306B\u3059\u308B\u3068\u30AD\u30E3\u30C3\u30B7\u30E5\u306E\u307F\u3067\u691C\u7D22\u3057\u307E\u3059").addToggle((t) => t.setValue(s.enabled).onChange((v) => {
       s.enabled = v;
     }));
-    new import_obsidian21.Setting(contentEl).setName("auth_token").addText((t) => {
+    new import_obsidian22.Setting(contentEl).setName("auth_token").addText((t) => {
       t.setValue(s.authToken).onChange((v) => {
         s.authToken = v.trim();
       });
       t.inputEl.type = "password";
       t.inputEl.style.width = "100%";
     });
-    new import_obsidian21.Setting(contentEl).setName("ct0 (csrf)").addText((t) => {
+    new import_obsidian22.Setting(contentEl).setName("ct0 (csrf)").addText((t) => {
       t.setValue(s.csrfToken).onChange((v) => {
         s.csrfToken = v.trim();
       });
@@ -37267,7 +39332,7 @@ var XAuthModal = class extends import_obsidian21.Modal {
     const adv = contentEl.createEl("details", { cls: "jp-x-modal-adv" });
     adv.createEl("summary", { text: "\u8A73\u7D30\uFF08\u901A\u5E38\u306F\u5909\u66F4\u4E0D\u8981\uFF09" });
     let queryIdText = null;
-    new import_obsidian21.Setting(adv).setName("SearchTimeline queryId").setDesc("\u691C\u7D22\u304C 404 \u306B\u306A\u3063\u305F\u3089\u66F4\u65B0").addText((t) => {
+    new import_obsidian22.Setting(adv).setName("SearchTimeline queryId").setDesc("\u691C\u7D22\u304C 404 \u306B\u306A\u3063\u305F\u3089\u66F4\u65B0").addText((t) => {
       queryIdText = t;
       t.setValue(s.searchQueryId).onChange((v) => {
         s.searchQueryId = v.trim();
@@ -37282,18 +39347,18 @@ var XAuthModal = class extends import_obsidian21.Modal {
           s.searchQueryId = id;
           queryIdText == null ? void 0 : queryIdText.setValue(id);
           await this.deps.saveSettings();
-          new import_obsidian21.Notice(`\u2713 queryId \u3092\u53D6\u5F97\u3057\u307E\u3057\u305F\uFF08${id}\uFF09`);
+          new import_obsidian22.Notice(`\u2713 queryId \u3092\u53D6\u5F97\u3057\u307E\u3057\u305F\uFF08${id}\uFF09`);
         } else {
-          new import_obsidian21.Notice("queryId \u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u30AF\u30C3\u30AD\u30FC\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 7e3);
+          new import_obsidian22.Notice("queryId \u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002\u30AF\u30C3\u30AD\u30FC\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 7e3);
         }
       } catch (e) {
-        new import_obsidian21.Notice(`\u53D6\u5F97\u5931\u6557: ${e.message}`, 7e3);
+        new import_obsidian22.Notice(`\u53D6\u5F97\u5931\u6557: ${e.message}`, 7e3);
       } finally {
         b.setDisabled(false);
         b.setButtonText("\u81EA\u52D5\u53D6\u5F97");
       }
     }));
-    new import_obsidian21.Setting(adv).setName("Bearer token").addText((t) => t.setValue(s.bearerToken).onChange((v) => {
+    new import_obsidian22.Setting(adv).setName("Bearer token").addText((t) => t.setValue(s.bearerToken).onChange((v) => {
       s.bearerToken = v.trim();
     }));
     const btnRow = contentEl.createDiv("jp-x-modal-btnrow");
@@ -37319,7 +39384,7 @@ var XAuthModal = class extends import_obsidian21.Modal {
               queryIdText == null ? void 0 : queryIdText.setValue(id);
               await this.deps.saveSettings();
               r2 = await probe();
-              new import_obsidian21.Notice(`\u2713 queryId \u3092\u66F4\u65B0\u3057\u3066\u63A5\u7D9A\u6210\u529F\uFF08${id}\uFF09`);
+              new import_obsidian22.Notice(`\u2713 queryId \u3092\u66F4\u65B0\u3057\u3066\u63A5\u7D9A\u6210\u529F\uFF08${id}\uFF09`);
             } else {
               throw e;
             }
@@ -37328,10 +39393,10 @@ var XAuthModal = class extends import_obsidian21.Modal {
           }
         }
         if (r2)
-          new import_obsidian21.Notice(`\u2713 \u63A5\u7D9A\u6210\u529F\uFF08${r2.tweets.length}\u4EF6\u53D6\u5F97\uFF09`);
+          new import_obsidian22.Notice(`\u2713 \u63A5\u7D9A\u6210\u529F\uFF08${r2.tweets.length}\u4EF6\u53D6\u5F97\uFF09`);
       } catch (e) {
         const msg = e instanceof XScrapeError ? e.message : e.message;
-        new import_obsidian21.Notice(`\u2717 ${msg}`, 8e3);
+        new import_obsidian22.Notice(`\u2717 ${msg}`, 8e3);
       } finally {
         testBtn.disabled = false;
         testBtn.textContent = "\u63A5\u7D9A\u30C6\u30B9\u30C8";
@@ -37339,7 +39404,7 @@ var XAuthModal = class extends import_obsidian21.Modal {
     });
     saveBtn.addEventListener("click", async () => {
       await this.deps.saveSettings();
-      new import_obsidian21.Notice("X \u8A2D\u5B9A\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F");
+      new import_obsidian22.Notice("X \u8A2D\u5B9A\u3092\u4FDD\u5B58\u3057\u307E\u3057\u305F");
       this.onSaved();
       this.close();
     });
@@ -37348,7 +39413,7 @@ var XAuthModal = class extends import_obsidian21.Modal {
     this.contentEl.empty();
   }
 };
-var XCorpusModal = class extends import_obsidian21.Modal {
+var XCorpusModal = class extends import_obsidian22.Modal {
   constructor(app, deps, onChanged) {
     super(app);
     this.deps = deps;
@@ -37364,7 +39429,7 @@ var XCorpusModal = class extends import_obsidian21.Modal {
       text: `\u4FDD\u5B58\u6E08\u307F ${stats.count}\u4EF6` + (stats.newest ? `\u30FB\u6700\u65B0 ${formatDate(stats.newest)}` : ""),
       cls: "jp-x-modal-desc"
     });
-    new import_obsidian21.Setting(contentEl).setName("JSONL \u3092\u53D6\u308A\u8FBC\u3080").setDesc("CLI \u306E tweets-YYYY-MM.jsonl \u306A\u3069\u3092\u7D71\u5408\uFF08\u91CD\u8907\u306F\u81EA\u52D5\u30DE\u30FC\u30B8\uFF09").addButton((b) => b.setButtonText("\u30D5\u30A1\u30A4\u30EB\u9078\u629E").onClick(() => {
+    new import_obsidian22.Setting(contentEl).setName("JSONL \u3092\u53D6\u308A\u8FBC\u3080").setDesc("CLI \u306E tweets-YYYY-MM.jsonl \u306A\u3069\u3092\u7D71\u5408\uFF08\u91CD\u8907\u306F\u81EA\u52D5\u30DE\u30FC\u30B8\uFF09").addButton((b) => b.setButtonText("\u30D5\u30A1\u30A4\u30EB\u9078\u629E").onClick(() => {
       const input = document.createElement("input");
       input.type = "file";
       input.accept = ".jsonl,.json,.txt";
@@ -37376,13 +39441,13 @@ var XCorpusModal = class extends import_obsidian21.Modal {
         const text = await file.text();
         const { added, parsed } = this.deps.corpus.importJsonl(text);
         await this.deps.corpus.save();
-        new import_obsidian21.Notice(`\u53D6\u308A\u8FBC\u307F: ${parsed}\u4EF6\u4E2D ${added}\u4EF6\u3092\u65B0\u898F\u8FFD\u52A0`);
+        new import_obsidian22.Notice(`\u53D6\u308A\u8FBC\u307F: ${parsed}\u4EF6\u4E2D ${added}\u4EF6\u3092\u65B0\u898F\u8FFD\u52A0`);
         this.onChanged();
         this.onOpen();
       };
       input.click();
     }));
-    new import_obsidian21.Setting(contentEl).setName("JSONL \u3092\u66F8\u304D\u51FA\u3059").setDesc("CLI \u4E92\u63DB\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8\u3067\u30B3\u30FC\u30D1\u30B9\u3092\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8").addButton((b) => b.setButtonText("\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8").onClick(() => {
+    new import_obsidian22.Setting(contentEl).setName("JSONL \u3092\u66F8\u304D\u51FA\u3059").setDesc("CLI \u4E92\u63DB\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8\u3067\u30B3\u30FC\u30D1\u30B9\u3092\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8").addButton((b) => b.setButtonText("\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8").onClick(() => {
       const data = this.deps.corpus.exportJsonl();
       const blob = new Blob([data], { type: "application/x-ndjson" });
       const url = URL.createObjectURL(blob);
@@ -37391,21 +39456,21 @@ var XCorpusModal = class extends import_obsidian21.Modal {
       a.download = "x-corpus.jsonl";
       a.click();
       URL.revokeObjectURL(url);
-      new import_obsidian21.Notice("\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u3057\u307E\u3057\u305F");
+      new import_obsidian22.Notice("\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u3057\u307E\u3057\u305F");
     }));
-    new import_obsidian21.Setting(contentEl).setName("Vault \u30CE\u30FC\u30C8\u306B\u66F8\u304D\u51FA\u3059").setDesc(`\u5168\u30C4\u30A4\u30FC\u30C8\u3092 ${this.deps.getSettings().exportFolder} \u306B\u30CE\u30FC\u30C8\u5316\uFF08\u30D7\u30E9\u30B0\u30A4\u30F3\u304C\u81EA\u52D5\u7D22\u5F15\uFF09`).addButton((b) => b.setButtonText("\u30CE\u30FC\u30C8\u5316").onClick(async () => {
+    new import_obsidian22.Setting(contentEl).setName("Vault \u30CE\u30FC\u30C8\u306B\u66F8\u304D\u51FA\u3059").setDesc(`\u5168\u30C4\u30A4\u30FC\u30C8\u3092 ${this.deps.getSettings().exportFolder} \u306B\u30CE\u30FC\u30C8\u5316\uFF08\u30D7\u30E9\u30B0\u30A4\u30F3\u304C\u81EA\u52D5\u7D22\u5F15\uFF09`).addButton((b) => b.setButtonText("\u30CE\u30FC\u30C8\u5316").onClick(async () => {
       const all = this.deps.corpus.getAll();
       if (all.length === 0) {
-        new import_obsidian21.Notice("\u30B3\u30FC\u30D1\u30B9\u304C\u7A7A\u3067\u3059");
+        new import_obsidian22.Notice("\u30B3\u30FC\u30D1\u30B9\u304C\u7A7A\u3067\u3059");
         return;
       }
       const r2 = await exportTweetsToVault(this.app, all, this.deps.getSettings().exportFolder);
-      new import_obsidian21.Notice(`\u30CE\u30FC\u30C8 ${r2.written}\u4EF6\u4F5C\u6210\uFF08${r2.skipped}\u4EF6\u306F\u65E2\u5B58\uFF09\u2192 ${r2.folder}`);
+      new import_obsidian22.Notice(`\u30CE\u30FC\u30C8 ${r2.written}\u4EF6\u4F5C\u6210\uFF08${r2.skipped}\u4EF6\u306F\u65E2\u5B58\uFF09\u2192 ${r2.folder}`);
     }));
-    new import_obsidian21.Setting(contentEl).setName("\u30B3\u30FC\u30D1\u30B9\u3092\u6D88\u53BB").setDesc("\u4FDD\u5B58\u6E08\u307F\u30C4\u30A4\u30FC\u30C8\u3092\u3059\u3079\u3066\u524A\u9664\u3057\u307E\u3059").addButton((b) => b.setButtonText("\u6D88\u53BB").setWarning().onClick(async () => {
+    new import_obsidian22.Setting(contentEl).setName("\u30B3\u30FC\u30D1\u30B9\u3092\u6D88\u53BB").setDesc("\u4FDD\u5B58\u6E08\u307F\u30C4\u30A4\u30FC\u30C8\u3092\u3059\u3079\u3066\u524A\u9664\u3057\u307E\u3059").addButton((b) => b.setButtonText("\u6D88\u53BB").setWarning().onClick(async () => {
       this.deps.corpus.clear();
       await this.deps.corpus.save();
-      new import_obsidian21.Notice("\u30B3\u30FC\u30D1\u30B9\u3092\u6D88\u53BB\u3057\u307E\u3057\u305F");
+      new import_obsidian22.Notice("\u30B3\u30FC\u30D1\u30B9\u3092\u6D88\u53BB\u3057\u307E\u3057\u305F");
       this.onChanged();
       this.onOpen();
     }));
@@ -37414,7 +39479,7 @@ var XCorpusModal = class extends import_obsidian21.Modal {
     this.contentEl.empty();
   }
 };
-var XSavedQueriesModal = class extends import_obsidian21.Modal {
+var XSavedQueriesModal = class extends import_obsidian22.Modal {
   constructor(app, deps, onDone) {
     super(app);
     this.running = false;
@@ -37433,7 +39498,7 @@ var XSavedQueriesModal = class extends import_obsidian21.Modal {
     const s = this.deps.getSettings();
     const list = contentEl.createDiv("jp-x-sq-list");
     for (const sq of s.savedQueries) {
-      const row = new import_obsidian21.Setting(list).setName(`${sq.label} (${sq.id})`).setDesc(`${sq.surfaceOr.join(" / ")} \xB7 \u30B3\u30FC\u30D1\u30B9\u5185 ${this.deps.corpus.countByQuery(sq.id)}\u4EF6`);
+      const row = new import_obsidian22.Setting(list).setName(`${sq.label} (${sq.id})`).setDesc(`${sq.surfaceOr.join(" / ")} \xB7 \u30B3\u30FC\u30D1\u30B9\u5185 ${this.deps.corpus.countByQuery(sq.id)}\u4EF6`);
       row.addButton((b) => b.setButtonText("\u5B9F\u884C").onClick(async () => {
         if (this.running)
           return;
@@ -37465,11 +39530,11 @@ var XSavedQueriesModal = class extends import_obsidian21.Modal {
   async runOne(sq) {
     const issue = this.deps.client.configIssue();
     if (issue) {
-      new import_obsidian21.Notice(`X: ${issue}`, 5e3);
+      new import_obsidian22.Notice(`X: ${issue}`, 5e3);
       return;
     }
     this.running = true;
-    new import_obsidian21.Notice(`\u300C${sq.label}\u300D\u3092\u53D6\u5F97\u4E2D\u2026`);
+    new import_obsidian22.Notice(`\u300C${sq.label}\u300D\u3092\u53D6\u5F97\u4E2D\u2026`);
     const s = this.deps.getSettings();
     const r2 = await runSavedQuery(this.deps.client, this.deps.corpus, sq, {
       lang: s.defaultLang,
@@ -37477,14 +39542,14 @@ var XSavedQueriesModal = class extends import_obsidian21.Modal {
     });
     await this.deps.corpus.save();
     this.running = false;
-    new import_obsidian21.Notice(`\u300C${sq.label}\u300D: ${r2.fetched}\u4EF6\u53D6\u5F97\uFF08\u65B0\u898F ${r2.added}\uFF09` + (r2.errors.length ? `\u30FB${r2.errors.length}\u4EF6\u30A8\u30E9\u30FC` : ""));
+    new import_obsidian22.Notice(`\u300C${sq.label}\u300D: ${r2.fetched}\u4EF6\u53D6\u5F97\uFF08\u65B0\u898F ${r2.added}\uFF09` + (r2.errors.length ? `\u30FB${r2.errors.length}\u4EF6\u30A8\u30E9\u30FC` : ""));
     this.onDone(false);
     this.onOpen();
   }
   async runAll() {
     const issue = this.deps.client.configIssue();
     if (issue) {
-      new import_obsidian21.Notice(`X: ${issue}`, 5e3);
+      new import_obsidian22.Notice(`X: ${issue}`, 5e3);
       return;
     }
     this.running = true;
@@ -37494,12 +39559,12 @@ var XSavedQueriesModal = class extends import_obsidian21.Modal {
       this.deps.corpus,
       s.savedQueries,
       { lang: s.defaultLang, product: s.defaultProduct },
-      (done, total, cur) => new import_obsidian21.Notice(`(${done + 1}/${total}) ${cur}\u2026`, 1500)
+      (done, total, cur) => new import_obsidian22.Notice(`(${done + 1}/${total}) ${cur}\u2026`, 1500)
     );
     await this.deps.corpus.save();
     this.running = false;
     const added = results.reduce((a, r2) => a + r2.added, 0);
-    new import_obsidian21.Notice(`\u5168\u5B9F\u884C\u5B8C\u4E86: \u65B0\u898F ${added}\u4EF6`);
+    new import_obsidian22.Notice(`\u5168\u5B9F\u884C\u5B8C\u4E86: \u65B0\u898F ${added}\u4EF6`);
     this.onDone(false);
     this.onOpen();
   }
@@ -37513,7 +39578,7 @@ var XSavedQueriesModal = class extends import_obsidian21.Modal {
     this.contentEl.empty();
   }
 };
-var XSavedQueryEditor = class extends import_obsidian21.Modal {
+var XSavedQueryEditor = class extends import_obsidian22.Modal {
   constructor(app, deps, existing, onSaved) {
     super(app);
     this.deps = deps;
@@ -37526,20 +39591,20 @@ var XSavedQueryEditor = class extends import_obsidian21.Modal {
     contentEl.addClass("jp-x-modal");
     contentEl.createEl("h2", { text: this.existing ? "\u4FDD\u5B58\u691C\u7D22\u3092\u7DE8\u96C6" : "\u4FDD\u5B58\u691C\u7D22\u3092\u8FFD\u52A0" });
     const draft = this.existing ? { ...this.existing, surfaceOr: [...this.existing.surfaceOr] } : { id: "", label: "", surfaceOr: [], minFaves: 0 };
-    new import_obsidian21.Setting(contentEl).setName("\u30E9\u30D9\u30EB").addText((t) => t.setValue(draft.label).onChange((v) => {
+    new import_obsidian22.Setting(contentEl).setName("\u30E9\u30D9\u30EB").addText((t) => t.setValue(draft.label).onChange((v) => {
       draft.label = v;
     }));
-    new import_obsidian21.Setting(contentEl).setName("ID").setDesc("\u82F1\u6570\u5B57\u306E\u30E6\u30CB\u30FC\u30AFID\uFF08\u5171\u8D77\u306E\u8B58\u5225\u306B\u4F7F\u7528\uFF09").addText((t) => t.setValue(draft.id).onChange((v) => {
+    new import_obsidian22.Setting(contentEl).setName("ID").setDesc("\u82F1\u6570\u5B57\u306E\u30E6\u30CB\u30FC\u30AFID\uFF08\u5171\u8D77\u306E\u8B58\u5225\u306B\u4F7F\u7528\uFF09").addText((t) => t.setValue(draft.id).onChange((v) => {
       draft.id = v.trim();
     }));
-    new import_obsidian21.Setting(contentEl).setName("\u8868\u8A18\u3086\u308C surface_or").setDesc("1\u884C\u306B1\u3064\u3002\u5404\u8868\u8A18\u3092\u500B\u5225\u306B\u691C\u7D22").addTextArea((t) => {
+    new import_obsidian22.Setting(contentEl).setName("\u8868\u8A18\u3086\u308C surface_or").setDesc("1\u884C\u306B1\u3064\u3002\u5404\u8868\u8A18\u3092\u500B\u5225\u306B\u691C\u7D22").addTextArea((t) => {
       t.setValue(draft.surfaceOr.join("\n")).onChange((v) => {
         draft.surfaceOr = v.split("\n").map((x) => x.trim()).filter(Boolean);
       });
       t.inputEl.rows = 4;
       t.inputEl.style.width = "100%";
     });
-    new import_obsidian21.Setting(contentEl).setName("\u6700\u5C0F\u3044\u3044\u306D").addText((t) => {
+    new import_obsidian22.Setting(contentEl).setName("\u6700\u5C0F\u3044\u3044\u306D").addText((t) => {
       var _a2;
       t.inputEl.type = "number";
       t.setValue(String((_a2 = draft.minFaves) != null ? _a2 : 0)).onChange((v) => {
@@ -37550,7 +39615,7 @@ var XSavedQueryEditor = class extends import_obsidian21.Modal {
     btnRow.createEl("button", { text: "\u30AD\u30E3\u30F3\u30BB\u30EB", cls: "jp-x-action-btn" }).addEventListener("click", () => this.close());
     btnRow.createEl("button", { text: "\u4FDD\u5B58", cls: "jp-x-go-btn" }).addEventListener("click", async () => {
       if (!draft.id || !draft.label || draft.surfaceOr.length === 0) {
-        new import_obsidian21.Notice("\u30E9\u30D9\u30EB\u30FBID\u30FB\u8868\u8A18\u3086\u308C\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
+        new import_obsidian22.Notice("\u30E9\u30D9\u30EB\u30FBID\u30FB\u8868\u8A18\u3086\u308C\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
         return;
       }
       const s = this.deps.getSettings();
@@ -37570,7 +39635,7 @@ var XSavedQueryEditor = class extends import_obsidian21.Modal {
     this.contentEl.empty();
   }
 };
-var XAddByUrlModal = class extends import_obsidian21.Modal {
+var XAddByUrlModal = class extends import_obsidian22.Modal {
   constructor(app, deps, onChanged) {
     super(app);
     this.deps = deps;
@@ -37586,7 +39651,7 @@ var XAddByUrlModal = class extends import_obsidian21.Modal {
       cls: "jp-x-modal-desc"
     });
     let value = "";
-    new import_obsidian21.Setting(contentEl).setName("URL / ID").addText((t) => {
+    new import_obsidian22.Setting(contentEl).setName("URL / ID").addText((t) => {
       t.inputEl.style.width = "100%";
       t.setPlaceholder("https://x.com/user/status/1234567890");
       t.onChange((v) => {
@@ -37599,7 +39664,7 @@ var XAddByUrlModal = class extends import_obsidian21.Modal {
     addBtn.addEventListener("click", async () => {
       const id = extractTweetId(value);
       if (!id) {
-        new import_obsidian21.Notice("\u6709\u52B9\u306A\u30C4\u30A4\u30FC\u30C8 URL/ID \u3067\u306F\u3042\u308A\u307E\u305B\u3093");
+        new import_obsidian22.Notice("\u6709\u52B9\u306A\u30C4\u30A4\u30FC\u30C8 URL/ID \u3067\u306F\u3042\u308A\u307E\u305B\u3093");
         return;
       }
       addBtn.disabled = true;
@@ -37607,16 +39672,16 @@ var XAddByUrlModal = class extends import_obsidian21.Modal {
       try {
         const tweet = await this.deps.client.fetchTweetById(id);
         if (!tweet) {
-          new import_obsidian21.Notice("\u30C4\u30A4\u30FC\u30C8\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+          new import_obsidian22.Notice("\u30C4\u30A4\u30FC\u30C8\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
           return;
         }
         const added = this.deps.corpus.addTweets([tweet]);
         await this.deps.corpus.save();
-        new import_obsidian21.Notice(added ? `\u8FFD\u52A0: @${tweet.authorHandle}` : "\u3059\u3067\u306B\u30B3\u30FC\u30D1\u30B9\u306B\u3042\u308A\u307E\u3059");
+        new import_obsidian22.Notice(added ? `\u8FFD\u52A0: @${tweet.authorHandle}` : "\u3059\u3067\u306B\u30B3\u30FC\u30D1\u30B9\u306B\u3042\u308A\u307E\u3059");
         this.onChanged();
         this.close();
       } catch (e) {
-        new import_obsidian21.Notice(`\u53D6\u5F97\u30A8\u30E9\u30FC: ${e.message}`, 6e3);
+        new import_obsidian22.Notice(`\u53D6\u5F97\u30A8\u30E9\u30FC: ${e.message}`, 6e3);
       } finally {
         addBtn.disabled = false;
         addBtn.textContent = "\u53D6\u5F97\u3057\u3066\u8FFD\u52A0";
@@ -37910,7 +39975,7 @@ function applyMark(el, mark) {
 }
 
 // src/ui/SelectionModes.ts
-var import_obsidian22 = require("obsidian");
+var import_obsidian23 = require("obsidian");
 var SELECTION_MODES = [
   { id: "sentence", icon: "\u{1F4DD}", label: "\u6587", labelEn: "Sentence" },
   { id: "clause", icon: "\u{1F517}", label: "\u7BC0", labelEn: "Clause" },
@@ -38046,7 +40111,7 @@ function renderSelectionToolbar(container, currentMode, onModeChange) {
 }
 
 // src/surfer-bridge.ts
-var import_obsidian23 = require("obsidian");
+var import_obsidian24 = require("obsidian");
 
 // src/discourse/discourse-index.ts
 var DiscourseIndex = class _DiscourseIndex {
@@ -38733,8 +40798,8 @@ function canonicalizeForHash(rawText) {
   return rawText.replace(/\r\n?/g, "\n").normalize("NFC");
 }
 async function computeTextHash(nfcText) {
-  const bytes = new TextEncoder().encode(nfcText);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const bytes2 = new TextEncoder().encode(nfcText);
+  const digest = await crypto.subtle.digest("SHA-256", bytes2);
   const view = new Uint8Array(digest);
   let out = "";
   for (let i = 0; i < view.length; i++) {
@@ -38792,7 +40857,21 @@ var SurferBridge = class {
     this.saveTimer = null;
     this.variationTrees = null;
     this.constellation = null;
-    this._utteranceCache = [];
+    /**
+     * filePath → that file's matches. Keyed BY FILE, and that is the whole point.
+     *
+     * This was an array that `indexFile` pushed onto. Re-indexing a file — which
+     * happens whenever it is edited, and used to happen on every leaf change —
+     * appended a second copy of its matches instead of replacing the first, so
+     * the constellation counted the same utterances two, five, forty times and
+     * called the result a co-occurrence frequency. The array also never shrank,
+     * on a path that could fire indefinitely.
+     *
+     * A map keyed by the thing that owns the data makes re-indexing idempotent
+     * by construction, and lets `removeFileFromIndex` actually remove it — which
+     * it could not do before, so a deleted file kept voting.
+     */
+    this.utterancesByFile = /* @__PURE__ */ new Map();
     // Sidecar-backed typed-relation index. Populated lazily when files are
     // indexed via indexFileWithSidecar(). When the active file has no sidecar,
     // consumers fall back to surface-window PMI (graceful degradation).
@@ -38835,7 +40914,7 @@ var SurferBridge = class {
   purgeIndexes() {
     this.discourseIndex = new DiscourseIndex();
     this.kwicIndex = new KWICIndex();
-    this._utteranceCache = [];
+    this.utterancesByFile.clear();
     this.constellation = null;
     this.variationTrees = null;
     this.rawTextByFile.clear();
@@ -38856,25 +40935,25 @@ var SurferBridge = class {
     if (!entry2.id || !entry2.surface)
       return;
     this.entries.set(entry2.id, { ...entry2 });
-    new import_obsidian23.Notice(`Surfer \u2192 \u300C${entry2.surface}\u300D saved`);
+    new import_obsidian24.Notice(`Surfer \u2192 \u300C${entry2.surface}\u300D saved`);
     await this.schedulePersist();
   }
   async addDiscourseContext(id, ctx) {
     const entry2 = this.entries.get(id);
     if (!entry2) {
-      new import_obsidian23.Notice(`Surfer bridge: entry ${id} not found`);
+      new import_obsidian24.Notice(`Surfer bridge: entry ${id} not found`);
       return;
     }
     if (!entry2._discourseContexts)
       entry2._discourseContexts = [];
     entry2._discourseContexts.push(ctx);
-    new import_obsidian23.Notice(`Discourse context added to \u300C${entry2.surface}\u300D`);
+    new import_obsidian24.Notice(`Discourse context added to \u300C${entry2.surface}\u300D`);
     await this.schedulePersist();
   }
   async saveExampleSentence(id, text, source) {
     const entry2 = this.entries.get(id);
     if (!entry2) {
-      new import_obsidian23.Notice(`Surfer bridge: entry ${id} not found`);
+      new import_obsidian24.Notice(`Surfer bridge: entry ${id} not found`);
       return;
     }
     if (!entry2.exampleSentences)
@@ -38882,7 +40961,7 @@ var SurferBridge = class {
     if (entry2.exampleSentences.some((s) => s.text === text))
       return;
     entry2.exampleSentences.push({ text, source });
-    new import_obsidian23.Notice(`Example saved \u2192 \u300C${entry2.surface}\u300D`);
+    new import_obsidian24.Notice(`Example saved \u2192 \u300C${entry2.surface}\u300D`);
     await this.schedulePersist();
   }
   // ══════════════════════════════════════════════════════════
@@ -38922,7 +41001,7 @@ var SurferBridge = class {
     const matches = detectPatterns(cleanContent);
     this.discourseIndex.indexFile(filePath, cleanContent, matches);
     this.kwicIndex.indexFile(filePath, cleanContent, matches);
-    this._utteranceCache.push(matches);
+    this.utterancesByFile.set(filePath, matches);
     this.constellation = null;
     for (const entry2 of this.entries.values()) {
       if (entry2.sourceFile === filePath) {
@@ -38943,6 +41022,8 @@ var SurferBridge = class {
     }
     this.rawTextByFile.delete(filePath);
     this.lastSidecarOutcome.delete(filePath);
+    if (this.utterancesByFile.delete(filePath))
+      this.constellation = null;
     this.schedulePersist();
   }
   /**
@@ -39134,9 +41215,9 @@ var SurferBridge = class {
     };
   }
   ensureConstellation() {
-    if (this.constellation || this._utteranceCache.length === 0)
+    if (this.constellation || this.utterancesByFile.size === 0)
       return;
-    this.constellation = buildConstellation(this._utteranceCache);
+    this.constellation = buildConstellation([...this.utterancesByFile.values()]);
   }
   // ── Index queries ────────────────────────────────────────
   searchIndexBySurface(surface) {
@@ -39405,9 +41486,9 @@ function makeDictionaryReadingResolver(store) {
 }
 
 // src/ui/LibraryView.ts
-var import_obsidian24 = require("obsidian");
+var import_obsidian25 = require("obsidian");
 var JP_RECON_LIBRARY_VIEW_TYPE = "jp-recon-library-view";
-var LibraryView = class extends import_obsidian24.ItemView {
+var LibraryView = class extends import_obsidian25.ItemView {
   constructor(leaf, deps) {
     super(leaf);
     this.deps = deps;
@@ -39476,7 +41557,7 @@ var LibraryView = class extends import_obsidian24.ItemView {
     }
     const clip = await ((_b2 = (_a2 = this.deps).resolveClip) == null ? void 0 : _b2.call(_a2, e));
     if (!clip) {
-      new import_obsidian24.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u304C\u672A\u53D6\u5F97\u3067\u3059 \u2014 \u300CDownload Audio Clips for Reconciled Notes\u300D\u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 6e3);
+      new import_obsidian25.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u304C\u672A\u53D6\u5F97\u3067\u3059 \u2014 \u300CDownload Audio Clips for Reconciled Notes\u300D\u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 6e3);
       return;
     }
     this.stopAudio();
@@ -39491,7 +41572,7 @@ var LibraryView = class extends import_obsidian24.ItemView {
       }
     };
     this.audio.play().catch((err) => {
-      new import_obsidian24.Notice(`\u518D\u751F\u306B\u5931\u6557: ${String(err)}`);
+      new import_obsidian25.Notice(`\u518D\u751F\u306B\u5931\u6557: ${String(err)}`);
       this.stopAudio();
     });
   }
@@ -39668,7 +41749,7 @@ var LibraryView = class extends import_obsidian24.ItemView {
         try {
           await this.deps.onSweep();
         } catch (err) {
-          new import_obsidian24.Notice(String(err));
+          new import_obsidian25.Notice(String(err));
         }
         this.render();
       };
@@ -39713,7 +41794,7 @@ var LibraryView = class extends import_obsidian24.ItemView {
           try {
             await this.deps.onXJoin(p);
           } catch (err) {
-            new import_obsidian24.Notice(String(err));
+            new import_obsidian25.Notice(String(err));
           }
           this.render();
         };
@@ -39768,7 +41849,7 @@ var LibraryView = class extends import_obsidian24.ItemView {
         jump.style.cssText = "white-space:nowrap;cursor:pointer;";
         jump.onclick = () => {
           var _a3, _b3;
-          return void ((_b3 = (_a3 = this.deps).openAttestation) == null ? void 0 : _b3.call(_a3, a).catch((err) => new import_obsidian24.Notice(String(err))));
+          return void ((_b3 = (_a3 = this.deps).openAttestation) == null ? void 0 : _b3.call(_a3, a).catch((err) => new import_obsidian25.Notice(String(err))));
         };
         const q = row.createSpan({ text: a.quote.slice(0, 34) });
         q.style.cssText = "color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
@@ -39806,7 +41887,7 @@ var LibraryView = class extends import_obsidian24.ItemView {
     play.onclick = () => void this.toggleClip(e, play);
     const open = top.createEl("button", { text: "\u21AA \u539F\u6587" });
     open.style.cssText = "font-size:10px;cursor:pointer;";
-    open.onclick = () => this.deps.openBlock(e).catch((err) => new import_obsidian24.Notice(String(err)));
+    open.onclick = () => this.deps.openBlock(e).catch((err) => new import_obsidian25.Notice(String(err)));
     const chips = classChips(card, {
       value: e.noteClass,
       compact: true,
@@ -39815,7 +41896,7 @@ var LibraryView = class extends import_obsidian24.ItemView {
           await this.deps.onRetype(e, cls);
           applyClassRail(card, cls);
         } catch (err) {
-          new import_obsidian24.Notice(`\u7A2E\u5225\u5909\u66F4\u306B\u5931\u6557: ${String(err)}`);
+          new import_obsidian25.Notice(`\u7A2E\u5225\u5909\u66F4\u306B\u5931\u6557: ${String(err)}`);
           chips.set(e.noteClass);
         }
       }
@@ -39869,7 +41950,7 @@ var LibraryView = class extends import_obsidian24.ItemView {
         try {
           await this.deps.onApprove(e);
         } catch (err) {
-          new import_obsidian24.Notice(String(err));
+          new import_obsidian25.Notice(String(err));
         }
         this.render();
       };
@@ -39887,7 +41968,7 @@ var LibraryView = class extends import_obsidian24.ItemView {
           try {
             await this.deps.onRetry(e, input.value);
           } catch (err) {
-            new import_obsidian24.Notice(String(err));
+            new import_obsidian25.Notice(String(err));
           }
           this.render();
         };
@@ -41187,10 +43268,10 @@ async function importEijiro(io, src, opts = {}) {
 }
 
 // src/dictionary/sidecar-io.ts
-var import_obsidian25 = require("obsidian");
+var import_obsidian26 = require("obsidian");
 function vaultSidecarIO(app) {
   const a = app.vault.adapter;
-  const p = (path) => (0, import_obsidian25.normalizePath)(path);
+  const p = (path) => (0, import_obsidian26.normalizePath)(path);
   return {
     async read(path) {
       const np = p(path);
@@ -41547,7 +43628,7 @@ async function importDexie(io, chunks, opts = {}) {
   const registered = /* @__PURE__ */ new Set();
   const seen = /* @__PURE__ */ new Map();
   const skipped = /* @__PURE__ */ new Set();
-  let rows = 0, bytes = 0, unparseable = 0, stopped = false, orphans = 0;
+  let rows = 0, bytes2 = 0, unparseable = 0, stopped = false, orphans = 0;
   const router = new DictionaryRouter(async (title, tuples) => {
     var _a3, _b3, _c3, _d3, _e2, _f2;
     if ((_a3 = opts.skip) == null ? void 0 : _a3.call(opts, title)) {
@@ -41579,14 +43660,14 @@ async function importDexie(io, chunks, opts = {}) {
       format: 1,
       partial: true
     });
-    (_f2 = opts.onProgress) == null ? void 0 : _f2.call(opts, { bytes, rows, dictionaries: seen.size, current: title });
+    (_f2 = opts.onProgress) == null ? void 0 : _f2.call(opts, { bytes: bytes2, rows, dictionaries: seen.size, current: title });
   }, (_c2 = opts.bufferRows) != null ? _c2 : 2e4);
   for await (const chunk of chunks) {
     if ((_d2 = opts.shouldStop) == null ? void 0 : _d2.call(opts)) {
       stopped = true;
       break;
     }
-    bytes += chunk.length;
+    bytes2 += chunk.length;
     for (const raw of dictStream.feed(chunk)) {
       const d = parseDictionaryRow(raw);
       if (d)
@@ -41629,7 +43710,7 @@ async function importDexie(io, chunks, opts = {}) {
   return {
     dictionaries,
     rows,
-    bytes,
+    bytes: bytes2,
     ms: now() - t0,
     unparseable,
     orphans,
@@ -42160,10 +44241,10 @@ function discoverCollocations(input) {
 }
 
 // src/ui/PipelineView.ts
-var import_obsidian26 = require("obsidian");
+var import_obsidian27 = require("obsidian");
 var JP_PIPELINE_VIEW_TYPE = "jp-pipeline-view";
 var CAPTURE_FOLDER = "\u30AD\u30E3\u30D7\u30C1\u30E3";
-var PipelineView = class extends import_obsidian26.ItemView {
+var PipelineView = class extends import_obsidian27.ItemView {
   constructor(leaf, deps) {
     super(leaf);
     /** Selection is a SET — see the header note on many-videos-one-memo. */
@@ -42194,7 +44275,7 @@ var PipelineView = class extends import_obsidian26.ItemView {
   }
   // ── model ──────────────────────────────────────────────────────────────────
   videoRows() {
-    const folder = (0, import_obsidian26.normalizePath)(this.deps.transcriptFolder() || "Transcripts");
+    const folder = (0, import_obsidian27.normalizePath)(this.deps.transcriptFolder() || "Transcripts");
     const transcripts = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(folder + "/") && !f.basename.startsWith("_")).sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, 20);
     return transcripts.map((t) => {
       const capture = this.findCaptureNote(t);
@@ -42252,14 +44333,14 @@ var PipelineView = class extends import_obsidian26.ItemView {
   }
   /** Where a ONE-video memo lives. Deterministic, so it is findable by name. */
   soloNotePath(t) {
-    return (0, import_obsidian26.normalizePath)(`${CAPTURE_FOLDER}/${t.basename} \u2014 \u30E1\u30E2.md`);
+    return (0, import_obsidian27.normalizePath)(`${CAPTURE_FOLDER}/${t.basename} \u2014 \u30E1\u30E2.md`);
   }
   /** Where a MANY-video memo lives: one per day, so an evening's watching
    *  accumulates into a single page instead of one file per video. */
   dayNotePath() {
     const d = /* @__PURE__ */ new Date();
     const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    return (0, import_obsidian26.normalizePath)(`${CAPTURE_FOLDER}/${day} \u2014 \u30E1\u30E2.md`);
+    return (0, import_obsidian27.normalizePath)(`${CAPTURE_FOLDER}/${day} \u2014 \u30E1\u30E2.md`);
   }
   /** The memo the CURRENT selection writes to: the video's own when exactly one
    *  is selected (unchanged behaviour), today's when several are. */
@@ -42271,8 +44352,8 @@ var PipelineView = class extends import_obsidian26.ItemView {
     return sel.length ? this.asFile(this.targetNotePath(sel)) : null;
   }
   asFile(path) {
-    const f = this.app.vault.getAbstractFileByPath((0, import_obsidian26.normalizePath)(path));
-    return f instanceof import_obsidian26.TFile ? f : null;
+    const f = this.app.vault.getAbstractFileByPath((0, import_obsidian27.normalizePath)(path));
+    return f instanceof import_obsidian27.TFile ? f : null;
   }
   // ── frontmatter ────────────────────────────────────────────────────────────
   /** The `sources:` block for a set of transcripts — quoted, plural, one per
@@ -42363,10 +44444,10 @@ ${this.sourcesBlock(sel)}
       if (embeds.length) {
         const md = await this.app.vault.read(note);
         await this.app.vault.modify(note, md.replace(/\s*$/, "\n\n") + embeds.join("\n") + "\n");
-        new import_obsidian26.Notice(`\u{1F4F7} ${embeds.length}\u679A\u3092 ${note.basename} \u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F`);
+        new import_obsidian27.Notice(`\u{1F4F7} ${embeds.length}\u679A\u3092 ${note.basename} \u306B\u8FFD\u52A0\u3057\u307E\u3057\u305F`);
       }
     } catch (e) {
-      new import_obsidian26.Notice(`\u5199\u771F\u306E\u8FFD\u52A0\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${String(e)}`, 8e3);
+      new import_obsidian27.Notice(`\u5199\u771F\u306E\u8FFD\u52A0\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${String(e)}`, 8e3);
     } finally {
       this.busy = false;
       this.render();
@@ -42381,9 +44462,9 @@ ${this.sourcesBlock(sel)}
       const note = await this.ensureCaptureNote(sel);
       const md = await this.app.vault.read(note);
       await this.app.vault.modify(note, md.replace(/\s*$/, "\n") + text + "\n");
-      new import_obsidian26.Notice(`\u270D \u8FFD\u52A0: ${text}`);
+      new import_obsidian27.Notice(`\u270D \u8FFD\u52A0: ${text}`);
     } catch (e) {
-      new import_obsidian26.Notice(`\u30D5\u30EC\u30FC\u30BA\u306E\u8FFD\u52A0\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${String(e)}`, 8e3);
+      new import_obsidian27.Notice(`\u30D5\u30EC\u30FC\u30BA\u306E\u8FFD\u52A0\u306B\u5931\u6557\u3057\u307E\u3057\u305F: ${String(e)}`, 8e3);
     } finally {
       this.busy = false;
       this.render();
@@ -42505,7 +44586,7 @@ ${this.sourcesBlock(sel)}
     this.bigBtn(photoRow, "camera", "\u5199\u771F\u3092\u8FFD\u52A0", () => fileIn.click());
     if (capture) {
       const open = photoRow.createEl("button", { cls: "jp-flow-mini", attr: { title: "\u30E1\u30E2\u3092\u958B\u304F" } });
-      (0, import_obsidian26.setIcon)(open, "pencil");
+      (0, import_obsidian27.setIcon)(open, "pencil");
       open.onclick = () => {
         void this.app.workspace.getLeaf(false).openFile(capture);
       };
@@ -42537,7 +44618,7 @@ ${this.sourcesBlock(sel)}
       ready ? `OCR \u2192 \u7167\u5408 \u2192 \u30AB\u30FC\u30C9\uFF08\u7D041\u5206\u30FB\u97F3\u58F0\u306F\u5F8C\u304B\u3089\u81EA\u52D5\uFF09${sel.length > 1 ? ` \u30FB ${sel.length}\u672C\u3068\u7167\u5408` : ""}` : "\u2461 \u3067\u5199\u771F\u304B\u30D5\u30EC\u30FC\u30BA\u3092\u8FFD\u52A0\u3059\u308B\u3068\u5B9F\u884C\u3067\u304D\u307E\u3059"
     );
     const runBtn = s3.createEl("button", { cls: "jp-flow-run" + (ready ? "" : " jp-flow-run--off") });
-    (0, import_obsidian26.setIcon)(runBtn.createSpan(), "zap");
+    (0, import_obsidian27.setIcon)(runBtn.createSpan(), "zap");
     runBtn.createSpan({ text: this.busy ? " \u5B9F\u884C\u4E2D\u2026" : " \u5B9F\u884C" });
     runBtn.disabled = !ready || this.busy;
     runBtn.setAttr("title", ready ? "OCR \u2192 \u7167\u5408 \u2192 \u30AB\u30FC\u30C9" : "\u5148\u306B \u2461 \u3067\u5199\u771F\u304B\u30D5\u30EC\u30FC\u30BA\u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044");
@@ -42580,7 +44661,7 @@ ${this.sourcesBlock(sel)}
   }
   bigBtn(parent, icon, label, onClick) {
     const b = parent.createEl("button", { cls: "jp-flow-big" });
-    (0, import_obsidian26.setIcon)(b.createSpan({ cls: "jp-flow-big-ic" }), icon);
+    (0, import_obsidian27.setIcon)(b.createSpan({ cls: "jp-flow-big-ic" }), icon);
     b.createSpan({ text: label });
     b.onclick = onClick;
     return b;
@@ -42588,7 +44669,7 @@ ${this.sourcesBlock(sel)}
 };
 
 // src/ui/DiscourseModeView.ts
-var import_obsidian27 = require("obsidian");
+var import_obsidian28 = require("obsidian");
 
 // src/discourse/components.ts
 var norm8 = (s) => normalizeJapanese(s).replace(/[\s、。！？!?…]/g, "");
@@ -42717,7 +44798,7 @@ var SPLIT_KINDS = /* @__PURE__ */ new Set(["aizuchi", "reaction", "return"]);
 function componentKeyOf(m, turnStartText) {
   return `${m.kind}|${m.unitText}|${turnStartText.slice(0, 12)}`;
 }
-var DiscourseModeView = class extends import_obsidian27.ItemView {
+var DiscourseModeView = class extends import_obsidian28.ItemView {
   constructor(leaf, deps) {
     super(leaf);
     this.file = null;
@@ -42759,7 +44840,7 @@ var DiscourseModeView = class extends import_obsidian27.ItemView {
     const md = await this.app.vault.cachedRead(f);
     const lines = this.deps.parseLines(md).filter((l) => l.tStartSec != null);
     if (lines.length < 5) {
-      new import_obsidian27.Notice("\u3053\u306E\u6587\u5B57\u8D77\u3053\u3057\u306B\u306F\u6642\u523B\u4ED8\u304D\u306E\u884C\u304C\u8DB3\u308A\u307E\u305B\u3093");
+      new import_obsidian28.Notice("\u3053\u306E\u6587\u5B57\u8D77\u3053\u3057\u306B\u306F\u6642\u523B\u4ED8\u304D\u306E\u884C\u304C\u8DB3\u308A\u307E\u305B\u3093");
       return;
     }
     this.file = f;
@@ -42843,7 +44924,7 @@ var DiscourseModeView = class extends import_obsidian27.ItemView {
     }
     const next = addRelation(this.relations, from, to, "\u2192", Date.now());
     if (!next) {
-      new import_obsidian27.Notice("\u540C\u3058\u30BF\u30FC\u30F3\u3078\u306F\u5F15\u3051\u307E\u305B\u3093");
+      new import_obsidian28.Notice("\u540C\u3058\u30BF\u30FC\u30F3\u3078\u306F\u5F15\u3051\u307E\u305B\u3093");
       this.render();
       return;
     }
@@ -42852,7 +44933,7 @@ var DiscourseModeView = class extends import_obsidian27.ItemView {
   }
   startRelation(fromTi) {
     this.pendingRelFrom = fromTi;
-    new import_obsidian27.Notice("\u77E2\u5370\u306E\u76F8\u624B\u30BF\u30FC\u30F3\u3092\u30BF\u30C3\u30D7\uFF08\u30AD\u30FC: j/k \u3067\u79FB\u52D5 \u2192 r/\u23CE \u3067\u78BA\u5B9A\u3001Esc \u53D6\u6D88\uFF09");
+    new import_obsidian28.Notice("\u77E2\u5370\u306E\u76F8\u624B\u30BF\u30FC\u30F3\u3092\u30BF\u30C3\u30D7\uFF08\u30AD\u30FC: j/k \u3067\u79FB\u52D5 \u2192 r/\u23CE \u3067\u78BA\u5B9A\u3001Esc \u53D6\u6D88\uFF09");
     this.render();
   }
   /** The grip's Pencil/touch/mouse hand: drag onto another card commits the
@@ -42918,7 +44999,7 @@ var DiscourseModeView = class extends import_obsidian27.ItemView {
     const mine = this.relations.filter((r2) => relationKey(r2).startsWith(turnKey(t) + ">"));
     const last = mine[mine.length - 1];
     if (!last) {
-      new import_obsidian27.Notice("\u3053\u306E\u30BF\u30FC\u30F3\u304B\u3089\u51FA\u308B\u77E2\u5370\u304C\u3042\u308A\u307E\u305B\u3093\uFF08r \u3067\u63CF\u753B\uFF09");
+      new import_obsidian28.Notice("\u3053\u306E\u30BF\u30FC\u30F3\u304B\u3089\u51FA\u308B\u77E2\u5370\u304C\u3042\u308A\u307E\u305B\u3093\uFF08r \u3067\u63CF\u753B\uFF09");
       return;
     }
     last.type = cycleRelationType(last.type);
@@ -43027,7 +45108,7 @@ var DiscourseModeView = class extends import_obsidian27.ItemView {
     }
     const next = applyComponentSplit(this.lines, this.turns, ti, s.unitStart, s.kind);
     if (!next) {
-      new import_obsidian27.Notice("\u3053\u306E\u63D0\u6848\u306F\u65E2\u306B\u53CD\u6620\u3055\u308C\u3066\u3044\u307E\u3059");
+      new import_obsidian28.Notice("\u3053\u306E\u63D0\u6848\u306F\u65E2\u306B\u53CD\u6620\u3055\u308C\u3066\u3044\u307E\u3059");
       this.render();
       return;
     }
@@ -43101,17 +45182,17 @@ var DiscourseModeView = class extends import_obsidian27.ItemView {
       return go(() => this.setSpeaker(this.focusTi, k.toUpperCase()));
     if (k === "s")
       return go(() => {
-        const split = this.suggestionsFor(this.focusTi).find((x) => SPLIT_KINDS.has(x.kind) && x.unitStart > 0);
-        if (split)
-          return this.acceptSuggestion(this.focusTi, split);
-        new import_obsidian27.Notice("\u5206\u5272\u3067\u304D\u308B\u6587\u306E\u63D0\u6848\u304C\u3042\u308A\u307E\u305B\u3093\uFF08\u884C\u30BF\u30C3\u30D7\u3067\u533A\u5207\u308A\u3092\u5207\u66FF\uFF09");
+        const split2 = this.suggestionsFor(this.focusTi).find((x) => SPLIT_KINDS.has(x.kind) && x.unitStart > 0);
+        if (split2)
+          return this.acceptSuggestion(this.focusTi, split2);
+        new import_obsidian28.Notice("\u5206\u5272\u3067\u304D\u308B\u6587\u306E\u63D0\u6848\u304C\u3042\u308A\u307E\u305B\u3093\uFF08\u884C\u30BF\u30C3\u30D7\u3067\u533A\u5207\u308A\u3092\u5207\u66FF\uFF09");
       });
     if (k === "enter")
       return go(() => {
         const first = this.suggestionsFor(this.focusTi)[0];
         if (first)
           return this.acceptSuggestion(this.focusTi, first);
-        new import_obsidian27.Notice("\u3053\u306E\u30BF\u30FC\u30F3\u306B\u63D0\u6848\u306F\u3042\u308A\u307E\u305B\u3093");
+        new import_obsidian28.Notice("\u3053\u306E\u30BF\u30FC\u30F3\u306B\u63D0\u6848\u306F\u3042\u308A\u307E\u305B\u3093");
       });
     if (k === "x")
       return go(() => {
@@ -43168,8 +45249,8 @@ var DiscourseModeView = class extends import_obsidian27.ItemView {
       return;
     }
     const head = root.createDiv("jp-dm-head");
-    const back = head.createEl("button", { text: "\u2190", cls: "jp-dm-back", attr: { title: "\u5225\u306E\u6587\u5B57\u8D77\u3053\u3057\u3092\u9078\u3076" } });
-    back.onclick = () => {
+    const back2 = head.createEl("button", { text: "\u2190", cls: "jp-dm-back", attr: { title: "\u5225\u306E\u6587\u5B57\u8D77\u3053\u3057\u3092\u9078\u3076" } });
+    back2.onclick = () => {
       this.file = null;
       this.render();
     };
@@ -43346,7 +45427,7 @@ var DiscourseModeView = class extends import_obsidian27.ItemView {
               return;
             const next = addReading(this.readings, tKey, this.readingLens, input.value, Date.now());
             if (!next) {
-              new import_obsidian27.Notice("\u7A7A\u304B\u3001\u540C\u3058\u30EC\u30F3\u30BA\u306E\u540C\u3058\u8AAD\u307F\u304C\u65E2\u306B\u3042\u308A\u307E\u3059");
+              new import_obsidian28.Notice("\u7A7A\u304B\u3001\u540C\u3058\u30EC\u30F3\u30BA\u306E\u540C\u3058\u8AAD\u307F\u304C\u65E2\u306B\u3042\u308A\u307E\u3059");
               return;
             }
             await this.setReadings(next);
@@ -43359,7 +45440,7 @@ var DiscourseModeView = class extends import_obsidian27.ItemView {
   }
   renderPicker(root) {
     root.createDiv({ cls: "jp-dm-hint", text: "\u8AC7\u8A71\u3068\u3057\u3066\u4F5C\u696D\u3059\u308B\u6587\u5B57\u8D77\u3053\u3057\u3092\u9078\u3093\u3067\u304F\u3060\u3055\u3044\u3002\u533A\u5207\u308A\u30FB\u8A71\u8005\u306E\u4FEE\u6B63\u306F\u305D\u306E\u307E\u307E\u4FDD\u5B58\u3055\u308C\u3001\u30D1\u30FC\u30B5\u306E\u5B66\u7FD2\u30C7\u30FC\u30BF\u306B\u306A\u308A\u307E\u3059\u3002" });
-    const folder = (0, import_obsidian27.normalizePath)(this.deps.transcriptFolder() || "Transcripts");
+    const folder = (0, import_obsidian28.normalizePath)(this.deps.transcriptFolder() || "Transcripts");
     const files = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(folder + "/") && !f.basename.startsWith("_")).sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, 25);
     if (!files.length) {
       root.createDiv({ cls: "jp-dm-hint", text: "\u6587\u5B57\u8D77\u3053\u3057\u304C\u307E\u3060\u3042\u308A\u307E\u305B\u3093\uFF08\u26A1 \u30AD\u30E3\u30D7\u30C1\u30E3\u30D5\u30ED\u30FC\u3067\u53D6\u5F97\uFF09\u3002" });
@@ -43902,7 +45983,7 @@ function buildReconCard(r2, blockId, opts = {}) {
     backLines.push(`${mark}: \u300C${c.noteText}\u300D\u2192\u300C${c.transcriptText}\u300D`);
   }
   backLines.push(...renderAnchor(anchor, clip, voiceSync));
-  const back = backLines.join("\n");
+  const back2 = backLines.join("\n");
   const tags = [tagPrefix, `${tagPrefix}/${def.callout}`];
   if (r2.status === "needs-review")
     tags.push(`${tagPrefix}/needs-review`);
@@ -43910,10 +45991,10 @@ function buildReconCard(r2, blockId, opts = {}) {
   const markdown = `${tagLine}
 ${front}
 ?
-${back}
+${back2}
 `;
   const heading = `${def.emoji} ${answer.slice(0, 28)}${answer.length > 28 ? "\u2026" : ""} \xB7 ${fmtClock2(r2.tStartSec)}`;
-  return { id: `card-${blockId}`, blockId, noteClass, front, back, tags, markdown, anchor, heading };
+  return { id: `card-${blockId}`, blockId, noteClass, front, back: back2, tags, markdown, anchor, heading };
 }
 function buildReconCards(results, anchoredFile, blockIdFor2, opts = {}) {
   const withFile = { ...opts, anchoredFile };
@@ -43945,8 +46026,8 @@ function renderCardsFile(cards, opts = {}) {
 }
 
 // src/ui/PlexBrowseModal.ts
-var import_obsidian28 = require("obsidian");
-var PlexBrowseModal = class extends import_obsidian28.Modal {
+var import_obsidian29 = require("obsidian");
+var PlexBrowseModal = class extends import_obsidian29.Modal {
   constructor(app, deps) {
     super(app);
     this.deps = deps;
@@ -44147,7 +46228,7 @@ var PlexBrowseModal = class extends import_obsidian28.Modal {
           else
             label.setText("");
         } catch (e) {
-          new import_obsidian28.Notice(String(e instanceof Error ? e.message : e), 1e4);
+          new import_obsidian29.Notice(String(e instanceof Error ? e.message : e), 1e4);
           label.setText("");
         } finally {
           row.removeClass("is-busy");
@@ -44162,8 +46243,8 @@ var PlexBrowseModal = class extends import_obsidian28.Modal {
 };
 
 // src/ui/JimakuPickModal.ts
-var import_obsidian29 = require("obsidian");
-var JimakuPickModal = class extends import_obsidian29.Modal {
+var import_obsidian30 = require("obsidian");
+var JimakuPickModal = class extends import_obsidian30.Modal {
   constructor(app, deps) {
     super(app);
     this.deps = deps;
@@ -44316,7 +46397,7 @@ var JimakuPickModal = class extends import_obsidian29.Modal {
     const ep = episodeNumberFrom(file.name).episode;
     const bits = [
       ...ep != null ? [`\u7B2C${ep}\u8A71`] : [],
-      extOf(file.name) || "?",
+      extOf2(file.name) || "?",
       ...file.size != null ? [fmtBytes(file.size)] : [],
       ...file.lastModified ? [file.lastModified.slice(0, 10)] : [],
       // The recommendation is labelled as a recommendation, never as truth.
@@ -44337,7 +46418,7 @@ var JimakuPickModal = class extends import_obsidian29.Modal {
         else
           label.setText("");
       } catch (e) {
-        new import_obsidian29.Notice(String(e instanceof Error ? e.message : e), 1e4);
+        new import_obsidian30.Notice(String(e instanceof Error ? e.message : e), 1e4);
         label.setText("");
       } finally {
         row.removeClass("is-busy");
@@ -44426,16 +46507,16 @@ function playabilityStatus(playerResponse) {
   var _a2, _b2;
   return (_b2 = (_a2 = playerResponse == null ? void 0 : playerResponse.playabilityStatus) == null ? void 0 : _a2.status) != null ? _b2 : null;
 }
-function pickTrack(tracks, cfg) {
+function pickTrack(tracks, cfg2) {
   var _a2;
   if (!tracks.length)
     return null;
   const isManual = (t) => t.kind !== "asr";
-  for (const lang of cfg.langPref) {
+  for (const lang of cfg2.langPref) {
     const inLang = tracks.filter((t) => t.languageCode === lang || t.languageCode.startsWith(lang + "-"));
     if (!inLang.length)
       continue;
-    if (cfg.preferManual) {
+    if (cfg2.preferManual) {
       const manual = inLang.find(isManual);
       if (manual)
         return manual;
@@ -44481,11 +46562,11 @@ async function fetchTrackLines(http, track) {
   }
   return parseTimedtextXml(xml.text);
 }
-function buildYtdlpSubsArgs(cfg, langPref, videoId, outTemplate, cookiesFile) {
+function buildYtdlpSubsArgs(cfg2, langPref, videoId, outTemplate, cookiesFile) {
   const langs = langPref.length ? langPref.join(",") : "ja";
   const args = [];
-  if (cfg.jsRuntime)
-    args.push("--js-runtimes", cfg.jsRuntime);
+  if (cfg2.jsRuntime)
+    args.push("--js-runtimes", cfg2.jsRuntime);
   if (cookiesFile)
     args.push("--cookies", cookiesFile);
   args.push(
@@ -44516,21 +46597,21 @@ function buildYtdlpSubsArgs(cfg, langPref, videoId, outTemplate, cookiesFile) {
   );
   return args;
 }
-async function fetchViaYtdlp(cfg, langPref, videoId) {
+async function fetchViaYtdlp(cfg2, langPref, videoId) {
   var _a2, _b2;
-  const bin = cfg.ytdlpPath || "yt-dlp";
+  const bin = cfg2.ytdlpPath || "yt-dlp";
   const fs = nodeReq("fs");
   const path = nodeReq("path");
   const prefix = `_ytsub_${videoId}`;
-  const outTemplate = path.join(cfg.tmpDirAbs, `${prefix}.%(ext)s`);
-  const jar = ensureCookieJar(cfg.cookieHeader, cfg.cookieJarAbs, `sub_${videoId}`);
+  const outTemplate = path.join(cfg2.tmpDirAbs, `${prefix}.%(ext)s`);
+  const jar = ensureCookieJar(cfg2.cookieHeader, cfg2.cookieJarAbs, `sub_${videoId}`);
   const cookiesFile = jar.path;
-  const args = buildYtdlpSubsArgs(cfg, langPref, videoId, outTemplate, cookiesFile);
+  const args = buildYtdlpSubsArgs(cfg2, langPref, videoId, outTemplate, cookiesFile);
   const clean = () => {
     try {
-      for (const f of fs.readdirSync(cfg.tmpDirAbs))
+      for (const f of fs.readdirSync(cfg2.tmpDirAbs))
         if (f.startsWith(prefix))
-          fs.unlinkSync(path.join(cfg.tmpDirAbs, f));
+          fs.unlinkSync(path.join(cfg2.tmpDirAbs, f));
     } catch (e) {
     }
   };
@@ -44548,10 +46629,10 @@ async function fetchViaYtdlp(cfg, langPref, videoId) {
     removeCookiesFile(cookiesFile);
   let subFile = "", subLang = (_b2 = langPref[0]) != null ? _b2 : "ja";
   try {
-    for (const f of fs.readdirSync(cfg.tmpDirAbs)) {
+    for (const f of fs.readdirSync(cfg2.tmpDirAbs)) {
       const m = f.startsWith(prefix) && f.match(/\.([\w-]+)\.json3$/);
       if (m) {
-        subFile = path.join(cfg.tmpDirAbs, f);
+        subFile = path.join(cfg2.tmpDirAbs, f);
         subLang = m[1];
         break;
       }
@@ -44590,9 +46671,9 @@ async function fetchTitle(http, videoId) {
   }
 }
 var YouTubeTranscriptAdapter = class {
-  constructor(http, cfg, ytdlp) {
+  constructor(http, cfg2, ytdlp) {
     this.http = http;
-    this.cfg = cfg;
+    this.cfg = cfg2;
     this.ytdlp = ytdlp;
   }
   /** True when at least one tier can run. */
@@ -44752,12 +46833,12 @@ function planTiles(width, height, opts = {}) {
   }
   return tiles;
 }
-async function ocrImage(http, cfg, images) {
+async function ocrImage(http, cfg2, images) {
   const imgs = Array.isArray(images) ? images : [images];
-  const primary = cfg.model || OCR_MODEL_DEFAULT;
-  const secondary = cfg.escalationModel || OCR_MODEL_ESCALATION;
+  const primary = cfg2.model || OCR_MODEL_DEFAULT;
+  const secondary = cfg2.escalationModel || OCR_MODEL_ESCALATION;
   const ask = (model) => callClaudeVision(http, {
-    apiKey: cfg.apiKey,
+    apiKey: cfg2.apiKey,
     model,
     images: imgs,
     prompt: OCR_PROMPT
@@ -44777,10 +46858,10 @@ async function ocrImage(http, cfg, images) {
   const err = !r1.ok ? r1.error : !r2.ok ? r2.error : "\u30E2\u30C7\u30EB\u51FA\u529B\u304C\u30B9\u30AD\u30FC\u30DE\u306B\u5408\u3044\u307E\u305B\u3093\uFF08\u30D5\u30EC\u30FC\u30BA 0 \u4EF6\uFF09\u3002";
   return { page: p1 != null ? p1 : p2, modelUsed: secondary, escalated: true, error: err };
 }
-function imageHash(bytes) {
+function imageHash(bytes2) {
   let h = 2166136261;
-  for (let i = 0; i < bytes.length; i++) {
-    h ^= bytes[i];
+  for (let i = 0; i < bytes2.length; i++) {
+    h ^= bytes2[i];
     h = Math.imul(h, 16777619);
   }
   return (h >>> 0).toString(36);
@@ -44805,7 +46886,7 @@ function mergeOcrPhrases(notesMd, page, imageName, hash) {
 }
 
 // src/ui/VoiceSyncRenderer.ts
-var import_obsidian30 = require("obsidian");
+var import_obsidian31 = require("obsidian");
 var PALETTE = ["#7b5cd6", "#17a2a2", "#c2698b", "#8a94a6", "#9b59b6", "#16a085"];
 var current = null;
 var stopCurrent = () => {
@@ -44833,7 +46914,7 @@ function registerVoiceSync(plugin, host) {
     }
     const sidecarPath = clipFile.parent ? `${clipFile.parent.path}/${voiceSyncSidecarName(clipName)}` : voiceSyncSidecarName(clipName);
     const sidecar = plugin.app.vault.getAbstractFileByPath(sidecarPath);
-    if (!(sidecar instanceof import_obsidian30.TFile)) {
+    if (!(sidecar instanceof import_obsidian31.TFile)) {
       renderMissing(el, "\u97F3\u58F0\u89E3\u6790\u30C7\u30FC\u30BF\u672A\u751F\u6210 \u2014 \u300CEnrich Clips with VoiceSync\u300D\u3092\u5B9F\u884C");
       return;
     }
@@ -44945,7 +47026,7 @@ function renderBlock(cx) {
     if (!audio)
       return;
     if (audio.paused) {
-      void audio.play().catch((e) => new import_obsidian30.Notice(`\u518D\u751F\u5931\u6557: ${e}`));
+      void audio.play().catch((e) => new import_obsidian31.Notice(`\u518D\u751F\u5931\u6557: ${e}`));
       (_a2 = btn.el) == null ? void 0 : _a2.setText("\u23F8");
     } else {
       audio.pause();
@@ -44953,7 +47034,7 @@ function renderBlock(cx) {
     }
   };
   const tag2 = head.createEl("button", { cls: "jp-vs-tag" });
-  (0, import_obsidian30.setIcon)(tag2, "tag");
+  (0, import_obsidian31.setIcon)(tag2, "tag");
   tag2.title = "\u8A71\u8005\u306B\u540D\u524D\u3092\u4ED8\u3051\u308B\uFF08\u58F0\u3092\u767B\u9332\u3059\u308B\u3068\u4EE5\u5F8C\u306E\u30AF\u30EA\u30C3\u30D7\u3067\u81EA\u52D5\u8B58\u5225\uFF09";
   tag2.onclick = () => new NameSpeakersModal(cx, spkOrder, colorOf, playRange).open();
   head.createSpan({ text: data.clip, cls: "jp-vs-name" });
@@ -44978,7 +47059,7 @@ function renderBlock(cx) {
       who.setText(spkLabel(data, seg.spk, spkOrder));
       who.style.color = colorOf(seg.spk);
       const fix = line.createSpan({ cls: "jp-vs-fix" });
-      (0, import_obsidian30.setIcon)(fix, "pencil");
+      (0, import_obsidian31.setIcon)(fix, "pencil");
       fix.onclick = (ev) => segmentMenu(cx, it.segIdx, spkOrder, ev);
       const text = line.createSpan({ cls: "jp-vs-text" });
       for (let i = seg.tokenIdx[0]; i <= seg.tokenIdx[1]; i++) {
@@ -45014,7 +47095,7 @@ function tokenSplitMenu(cx, segIdx, tokenIdx, spkOrder, ev) {
     await cx.host.saveSidecar(cx.sidecarFile, data);
     cx.redraw();
   };
-  const menu = new import_obsidian30.Menu();
+  const menu = new import_obsidian31.Menu();
   menu.addItem((i) => i.setTitle("\u3053\u3053\u304B\u3089\u8A71\u8005\u3092\u5909\u66F4").setIsLabel(true));
   for (const spk of spkOrder) {
     if (spk === seg.spk)
@@ -45031,7 +47112,7 @@ function tokenSplitMenu(cx, segIdx, tokenIdx, spkOrder, ev) {
 function segmentMenu(cx, segIdx, spkOrder, ev) {
   const { data } = cx;
   const seg = data.segments[segIdx];
-  const menu = new import_obsidian30.Menu();
+  const menu = new import_obsidian31.Menu();
   const names = [.../* @__PURE__ */ new Set([...cx.host.knownNames(), ...Object.values(data.speakers)])];
   menu.addItem((i) => i.setTitle(`\u300C${spkLabel(data, seg.spk, spkOrder)}\u300D\u306B\u540D\u524D\u3092\u4ED8\u3051\u308B`).setIsLabel(true));
   for (const n of names) {
@@ -45077,7 +47158,7 @@ function segmentMenu(cx, segIdx, spkOrder, ev) {
   }));
   menu.showAtMouseEvent(ev);
 }
-var NameSpeakersModal = class extends import_obsidian30.Modal {
+var NameSpeakersModal = class extends import_obsidian31.Modal {
   constructor(cx, spkOrder, colorOf, playRange) {
     super(cx.app);
     this.cx = cx;
@@ -45112,7 +47193,7 @@ var NameSpeakersModal = class extends import_obsidian30.Modal {
     }
     const saveBtn = this.contentEl.createEl("button", { text: "\u{1F4BE} \u4FDD\u5B58\u3057\u3066\u58F0\u3092\u767B\u9332", cls: "mod-cta" });
     saveBtn.onclick = async () => {
-      const busy = new import_obsidian30.Notice("\u58F0\u3092\u767B\u9332\u4E2D\u2026", 0);
+      const busy = new import_obsidian31.Notice("\u58F0\u3092\u767B\u9332\u4E2D\u2026", 0);
       try {
         for (const [spk, input] of inputs) {
           const name = input.value.trim();
@@ -45126,11 +47207,11 @@ var NameSpeakersModal = class extends import_obsidian30.Modal {
       }
       this.close();
       this.cx.redraw();
-      new import_obsidian30.Notice("\u4FDD\u5B58\u3057\u307E\u3057\u305F\u3002\u300CRe-identify Speakers in All Clips\u300D\u3067\u5168\u30AF\u30EA\u30C3\u30D7\u306B\u9069\u7528\u3067\u304D\u307E\u3059\u3002", 8e3);
+      new import_obsidian31.Notice("\u4FDD\u5B58\u3057\u307E\u3057\u305F\u3002\u300CRe-identify Speakers in All Clips\u300D\u3067\u5168\u30AF\u30EA\u30C3\u30D7\u306B\u9069\u7528\u3067\u304D\u307E\u3059\u3002", 8e3);
     };
   }
 };
-var AskNameModal = class extends import_obsidian30.Modal {
+var AskNameModal = class extends import_obsidian31.Modal {
   constructor(app, onDone) {
     super(app);
     this.onDone = onDone;
@@ -45430,8 +47511,8 @@ function podcastNote(show, ep, audioVaultPath) {
 }
 
 // src/ui/ImportModal.ts
-var import_obsidian31 = require("obsidian");
-var ImportModal = class extends import_obsidian31.Modal {
+var import_obsidian32 = require("obsidian");
+var ImportModal = class extends import_obsidian32.Modal {
   constructor(app, opts) {
     super(app);
     this.opts = opts;
@@ -45460,22 +47541,22 @@ var ImportModal = class extends import_obsidian31.Modal {
       for (const f of this.opts.fields) {
         const v = inputs.get(f.key).value.trim();
         if (f.required && !v) {
-          new import_obsidian31.Notice(`${f.label} \u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044`);
+          new import_obsidian32.Notice(`${f.label} \u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044`);
           return;
         }
         values[f.key] = v;
       }
       if (!ta.value.trim() && !this.opts.pasteOptional) {
-        new import_obsidian31.Notice("\u672C\u6587\u3092\u8CBC\u308A\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044");
+        new import_obsidian32.Notice("\u672C\u6587\u3092\u8CBC\u308A\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044");
         return;
       }
       submit.disabled = true;
       try {
         const msg = await this.opts.onSubmit(values, ta.value);
-        new import_obsidian31.Notice(msg);
+        new import_obsidian32.Notice(msg);
         this.close();
       } catch (e) {
-        new import_obsidian31.Notice(String(e));
+        new import_obsidian32.Notice(String(e));
         submit.disabled = false;
       }
     };
@@ -45499,7 +47580,7 @@ function fnv4(s) {
 function shapeDrop(raw, now, origin) {
   const t = raw.trim();
   const id = `inb-${fnv4(`${t}|${now}`)}`;
-  if (/^https?:\/\/\S+$/.test(t)) {
+  if (isRemoteUrl(t)) {
     let host = "";
     try {
       host = new URL(t).host;
@@ -45531,6 +47612,17 @@ function shapeDrop(raw, now, origin) {
 }
 function imageCard(vaultPath, now, origin) {
   return { id: `inb-${fnv4(`${vaultPath}|${now}`)}`, kind: "image", content: vaultPath, createdAt: now, origin };
+}
+function pairedCard(vaultPath, said, now, origin) {
+  const t = said.trim();
+  return {
+    id: `inb-${fnv4(`${vaultPath}|${t}|${now}`)}`,
+    kind: "image",
+    content: vaultPath,
+    said: t || void 0,
+    createdAt: now,
+    origin
+  };
 }
 function markCard(mark, now) {
   var _a2, _b2, _c2, _d2;
@@ -45623,6 +47715,35 @@ var InboxStore = class {
     await this.persist();
     return true;
   }
+  /** Marks that point at a transcript line nobody has resolved yet. */
+  marksNeedingLine() {
+    return [...this.cards.values()].filter(
+      (c) => {
+        var _a2;
+        return c.kind === "mark" && !!((_a2 = c.mark) == null ? void 0 : _a2.file) && c.mark.tSec != null && c.mark.lineText === void 0;
+      }
+    );
+  }
+  /**
+   * Record resolved lines — in ONE batch, one write.
+   *
+   * Deliberately plural. The backfill resolves ~100 marks in a run, and a
+   * per-card setter would persist the whole blob ~100 times; this vault has
+   * already been down that road once (30MB of IO for a single checkbox).
+   */
+  async setMarkLines(pairs) {
+    let n = 0;
+    for (const { id, line } of pairs) {
+      const c = this.cards.get(id);
+      if (!c || c.kind !== "mark" || !c.mark)
+        continue;
+      c.mark = { ...c.mark, lineText: line };
+      n++;
+    }
+    if (n)
+      await this.persist();
+    return n;
+  }
   /** Mark cards standing against one transcript note, oldest first. */
   marksForFile(path) {
     if (!path)
@@ -45714,8 +47835,17 @@ function framesTouch(a, b) {
     return false;
   return a.includes(b) || b.includes(a);
 }
+function intentionOfWant(r2) {
+  const out = [];
+  for (const raw of [r2.want, r2.gloss]) {
+    const k = normalizeFrame(String(raw != null ? raw : "")).toLowerCase().trim();
+    if (k && !out.includes(k))
+      out.push(k);
+  }
+  return out;
+}
 function collide(reaches, incoming, opts = {}) {
-  var _a2, _b2;
+  var _a2, _b2, _c2;
   const out = [];
   const juxLimit = (_a2 = opts.juxtaposeLimit) != null ? _a2 : 0;
   for (const r2 of reaches) {
@@ -45724,6 +47854,7 @@ function collide(reaches, incoming, opts = {}) {
     const seen = new Set(r2.offers.map((o) => o.surface));
     const tokens = wantTokens(r2.want + (r2.gloss ? " " + r2.gloss : ""));
     const wantFrame = frameOfWant(r2);
+    const wantIntents = intentionOfWant(r2);
     let jux = 0;
     for (const item of incoming) {
       const surface = String((_b2 = item.surface) != null ? _b2 : "").trim();
@@ -45732,7 +47863,10 @@ function collide(reaches, incoming, opts = {}) {
       const hit = tokens.find((t) => surface.toLowerCase().includes(t));
       let reason = null;
       let why = "";
-      if (hit) {
+      if (item.intentionKey && wantIntents.includes(item.intentionKey.toLowerCase())) {
+        reason = "intention";
+        why = `\u8F9E\u66F8\u304C\u300C${(_c2 = item.intention) != null ? _c2 : item.intentionKey}\u300D\u306E\u9805\u306B\u5165\u308C\u3066\u3044\u307E\u3059\uFF08\u8AB0\u304B\u306E\u5206\u985E\u3067\u3042\u3063\u3066\u3001\u610F\u5473\u306E\u540C\u4E00\u3067\u306F\u3042\u308A\u307E\u305B\u3093\uFF09`;
+      } else if (hit) {
         reason = "token";
         why = `\u300C${hit}\u300D\u3092\u542B\u307F\u307E\u3059\uFF08\u610F\u5473\u3067\u306F\u306A\u304F\u8868\u8A18\u306E\u4E00\u81F4\uFF09`;
       } else if (item.frameKey && wantFrame && framesTouch(wantFrame, item.frameKey)) {
@@ -45878,8 +48012,8 @@ function reachStats(reaches) {
 }
 
 // src/ui/ReachModal.ts
-var import_obsidian32 = require("obsidian");
-var ReachModal = class extends import_obsidian32.Modal {
+var import_obsidian33 = require("obsidian");
+var ReachModal = class extends import_obsidian33.Modal {
   constructor(app, onKeep) {
     super(app);
     this.onKeep = onKeep;
@@ -45894,13 +48028,13 @@ var ReachModal = class extends import_obsidian32.Modal {
       cls: "setting-item-description",
       text: "\u8A00\u3044\u305F\u3044\u306E\u306B\u8A00\u3048\u306A\u3044\u3082\u306E\u3002\u307E\u3060\u65E5\u672C\u8A9E\u306E\u5F62\u304C\u306A\u304F\u3066\u69CB\u3044\u307E\u305B\u3093 \u2014 \u305D\u308C\u304C\u8981\u70B9\u3067\u3059\u3002\u5C4A\u3044\u305F\u767A\u8A71\u304C\u3001\u5F8C\u3067\u6A2A\u306B\u4E26\u3079\u3089\u308C\u307E\u3059\u3002"
     });
-    new import_obsidian32.Setting(contentEl).setName("\u8A00\u3044\u305F\u3044\u3053\u3068").setDesc('\u4F8B: "at some point" \u2014 \u3044\u3064\u304B\u3001\u307B\u3069\u306F\u9060\u304F\u306A\u3044\u4F55\u304B').addText((t) => {
+    new import_obsidian33.Setting(contentEl).setName("\u8A00\u3044\u305F\u3044\u3053\u3068").setDesc('\u4F8B: "at some point" \u2014 \u3044\u3064\u304B\u3001\u307B\u3069\u306F\u9060\u304F\u306A\u3044\u4F55\u304B').addText((t) => {
       t.setPlaceholder("\u305D\u306E\u611F\u3058\u2026").onChange((v) => {
         this.want = v;
       });
       window.setTimeout(() => t.inputEl.focus(), 0);
     });
-    new import_obsidian32.Setting(contentEl).setName("\u624B\u304C\u304B\u308A\uFF08\u4EFB\u610F\uFF09").setDesc("\u8A00\u3044\u63DB\u3048\u30FB\u82F1\u8A9E\u30FB\u4ED5\u8349\u30FB\u300C\u301C\u306A\u6642\u306E\u611F\u3058\u300D\u306A\u3069").addText((t) => t.onChange((v) => {
+    new import_obsidian33.Setting(contentEl).setName("\u624B\u304C\u304B\u308A\uFF08\u4EFB\u610F\uFF09").setDesc("\u8A00\u3044\u63DB\u3048\u30FB\u82F1\u8A9E\u30FB\u4ED5\u8349\u30FB\u300C\u301C\u306A\u6642\u306E\u611F\u3058\u300D\u306A\u3069").addText((t) => t.onChange((v) => {
       this.gloss = v;
     }));
     const btns = contentEl.createDiv({ cls: "jp-reach-btns" });
@@ -45926,7 +48060,7 @@ var ReachModal = class extends import_obsidian32.Modal {
 };
 
 // src/ui/TrayView.ts
-var import_obsidian33 = require("obsidian");
+var import_obsidian34 = require("obsidian");
 var JP_TRAY_VIEW_TYPE = "jp-tray-view";
 function withMarkClip(ctx, clip) {
   if (!clip || !clip.still && !clip.audio)
@@ -45940,12 +48074,14 @@ function withMarkClip(ctx, clip) {
     }
   };
 }
-var TrayView = class extends import_obsidian33.ItemView {
+var TrayView = class extends import_obsidian34.ItemView {
   constructor(leaf, deps) {
     super(leaf);
     this.deps = deps;
     /** §23.5 keyboard hand: focused card id (j/k walk). */
     this.focusId = null;
+    /** One backfill pass at a time — `render()` fires this and it calls back. */
+    this.backfilling = false;
   }
   getViewType() {
     return JP_TRAY_VIEW_TYPE;
@@ -46039,18 +48175,7 @@ var TrayView = class extends import_obsidian33.ItemView {
     zone.createDiv({ text: "\u30DE\u30F3\u30AC\u306E\u30B3\u30DE\u30FB\u8F9E\u66F8\u306E\u7528\u4F8B\u30FB\u30C4\u30A4\u30FC\u30C8\u30FB\u8A18\u4E8B\u306E\u4E00\u7BC0\u30FBYouTube \u3084 X \u306E\u30EA\u30F3\u30AF\u30FB\u5B57\u5E55\u30D5\u30A1\u30A4\u30EB \u2014 \u4F55\u3067\u3082\u3002\u843D\u3068\u3057\u305F\u3082\u306E\u306F\u5931\u308F\u308C\u307E\u305B\u3093\u3002", cls: "jp-tray-zone-sub" });
     const zoneBtns = zone.createDiv("jp-tray-zone-btns");
     const pasteBtn = zoneBtns.createEl("button", { text: "\u{1F4CB} \u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u304B\u3089", cls: "jp-tray-paste" });
-    pasteBtn.onclick = async () => {
-      try {
-        const text = await navigator.clipboard.readText();
-        if (!text.trim()) {
-          new import_obsidian33.Notice("\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u304C\u7A7A\u3067\u3059");
-          return;
-        }
-        await this.addText(text);
-      } catch (e) {
-        new import_obsidian33.Notice("\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u3092\u8AAD\u3081\u307E\u305B\u3093\u3067\u3057\u305F");
-      }
-    };
+    pasteBtn.onclick = () => void this.receivePaste();
     const pickBtn = zoneBtns.createEl("button", { text: "\u{1F4F7} \u30B9\u30AF\u30B7\u30E7\u53D6\u308A\u8FBC\u307F", cls: "jp-tray-paste" });
     const picker = zone.createEl("input", { type: "file", attr: { accept: "image/*", multiple: "true" } });
     picker.style.display = "none";
@@ -46067,11 +48192,11 @@ var TrayView = class extends import_obsidian33.ItemView {
           if (await this.deps.store.add(imageCard(path, Date.now())))
             added++;
         } catch (err) {
-          new import_obsidian33.Notice(`\u53D6\u308A\u8FBC\u307F\u5931\u6557: ${f.name} \u2014 ${String(err)}`);
+          new import_obsidian34.Notice(`\u53D6\u308A\u8FBC\u307F\u5931\u6557: ${f.name} \u2014 ${String(err)}`);
         }
       }
       if (added)
-        new import_obsidian33.Notice(`\u{1F4F7} ${added}\u679A\u3092\u30C8\u30EC\u30A4\u3078`);
+        new import_obsidian34.Notice(`\u{1F4F7} ${added}\u679A\u3092\u30C8\u30EC\u30A4\u3078`);
       this.render();
     };
     pickBtn.onclick = () => picker.click();
@@ -46115,6 +48240,7 @@ var TrayView = class extends import_obsidian33.ItemView {
       }
       this.renderSession(list, g);
     }
+    void this.backfillMarkLines();
   }
   /**
    * §30 — the front door's two rows: 入れる (get it in) and 開く (go somewhere).
@@ -46140,7 +48266,7 @@ var TrayView = class extends import_obsidian33.ItemView {
         const b = grid.createEl("button", {
           cls: "jp-tray-door" + (d.disabled ? " jp-tray-door--off" : "")
         });
-        (0, import_obsidian33.setIcon)(b.createSpan({ cls: "jp-tray-door-ic" }), d.icon);
+        (0, import_obsidian34.setIcon)(b.createSpan({ cls: "jp-tray-door-ic" }), d.icon);
         b.createSpan({ text: d.label, cls: "jp-tray-door-label" });
         if (d.disabled) {
           b.disabled = true;
@@ -46180,7 +48306,7 @@ var TrayView = class extends import_obsidian33.ItemView {
             failed.push(`${c.content.split("/").pop()}: ${String(err)}`);
           }
         }
-        new import_obsidian33.Notice(failed.length ? `\u{1F50E} ${ok}\u679AOK / ${failed.length}\u679A\u5931\u6557
+        new import_obsidian34.Notice(failed.length ? `\u{1F50E} ${ok}\u679AOK / ${failed.length}\u679A\u5931\u6557
 ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u3092\u62BD\u51FA`);
         this.render();
       };
@@ -46203,21 +48329,119 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
     }
     if (!added) {
       const uri = (_b2 = dt.getData("text/uri-list").split("\n")[0]) == null ? void 0 : _b2.trim();
-      const text = uri || dt.getData("text/plain");
-      if (text == null ? void 0 : text.trim()) {
-        await this.addText(text);
-        return;
+      const held = uri && isDeviceUrl(uri) ? vaultPathOf(uri, (p) => this.inVault(p)) : null;
+      if (held && looksLikeImageUrl(held)) {
+        if (await this.deps.store.add(imageCard(held, Date.now())))
+          added++;
+        else {
+          new import_obsidian34.Notice("\u540C\u3058\u5185\u5BB9\u304C\u65E2\u306B\u3042\u308A\u307E\u3059");
+          this.render();
+          return;
+        }
+      } else {
+        const text = held || (uri && !isDeviceUrl(uri) ? uri : "") || dt.getData("text/plain");
+        if (text == null ? void 0 : text.trim()) {
+          await this.addText(text);
+          return;
+        }
       }
     }
     if (added) {
-      new import_obsidian33.Notice(`\u2935 ${added}\u4EF6\u3092\u30C8\u30EC\u30A4\u3078`);
+      new import_obsidian34.Notice(`\u2935 ${added}\u4EF6\u3092\u30C8\u30EC\u30A4\u3078`);
       this.render();
     }
+  }
+  /**
+   * What a card puts on the wire when it leaves — the `text`/`html`/`url`/`path`
+   * half of its drag payload.
+   *
+   * The shapes are chosen so a card that leaves and comes back is the SAME
+   * card. A picture carrying a sentence keeps both, and lands on the far side
+   * as one `image-pair` rather than as a picture and a stray line; a picture
+   * with no words sends its embed markup, which renders if it is dropped into
+   * an editor pane and is recognised as "not a caption" by `isJustEmbed` if it
+   * is dropped on a plugin surface.
+   */
+  carryOf(c) {
+    var _a2;
+    if (c.kind === "image") {
+      const name = (_a2 = c.content.split("/").pop()) != null ? _a2 : c.content;
+      let url;
+      try {
+        url = this.app.vault.adapter.getResourcePath((0, import_obsidian34.normalizePath)(c.content));
+      } catch (e) {
+      }
+      const img = url ? `<img src="${url}" alt="${name}">` : "";
+      return {
+        // The words when there are words — that is what makes the pair a pair
+        // on arrival. Otherwise the embed, which an editor pane draws.
+        text: c.said || `![[${c.content}]]`,
+        label: c.said ? void 0 : name,
+        html: c.said ? `${img}<blockquote>${c.said}</blockquote>` : img,
+        ...url ? { url } : {},
+        path: c.content
+      };
+    }
+    if (c.kind === "url")
+      return { text: c.content, url: c.content };
+    return { text: c.content };
+  }
+  /** A candidate path or link text → the path the vault really holds, or null.
+   *  Mirrors `main.ts:resolveVaultPath`; this view has its own `app`. */
+  inVault(candidate) {
+    var _a2, _b2;
+    const c = candidate.trim();
+    if (!c)
+      return null;
+    const direct = this.app.vault.getAbstractFileByPath((0, import_obsidian34.normalizePath)(c));
+    if (direct instanceof import_obsidian34.TFile)
+      return direct.path;
+    return (_b2 = (_a2 = this.app.metadataCache.getFirstLinkpathDest(c, "")) == null ? void 0 : _a2.path) != null ? _b2 : null;
+  }
+  /**
+   * §28 S5 — the tray's paste button takes the SAME road as the 📋 in the rail
+   * and as ⌘V over any surface.
+   *
+   * It used to read `readText()` and hand the string straight to `shapeDrop`,
+   * which is the road the plugin had BEFORE there was a classifier — so the
+   * biggest, most obvious paste button in the plugin knew the fewest verbs. A
+   * copied YouTube link became a URL card instead of a transcript; a copied
+   * .srt body became a wall of text instead of a transcript note; a copied
+   * picture was not visible to it at all, and it said the clipboard was empty.
+   *
+   * The fallback below is not dead code: a TrayView built without chrome has no
+   * executor to hand an intent to, and a button that silently does nothing is
+   * worse than the old road (§28 S6).
+   */
+  async receivePaste() {
+    const onDrop = this.deps.onDrop;
+    if (!onDrop) {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text.trim()) {
+          new import_obsidian34.Notice("\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u304C\u7A7A\u3067\u3059");
+          return;
+        }
+        await this.addText(text);
+      } catch (e) {
+        new import_obsidian34.Notice("\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u3092\u8AAD\u3081\u307E\u305B\u3093\u3067\u3057\u305F");
+      }
+      return;
+    }
+    await receiveClipboard({
+      surface: () => "tray",
+      can: () => {
+        var _a2, _b2, _c2;
+        return (_c2 = (_b2 = (_a2 = this.deps).dropCan) == null ? void 0 : _b2.call(_a2)) != null ? _c2 : {};
+      },
+      run: (intent, files) => onDrop(intent, files),
+      inVault: (c) => this.inVault(c)
+    });
   }
   async addText(text) {
     const card = shapeDrop(text, Date.now());
     const fresh = await this.deps.store.add(card);
-    new import_obsidian33.Notice(fresh ? `\u2935 \u30C8\u30EC\u30A4\u3078\uFF08${{ url: "URL", dialogue: "\u5BFE\u8A71", sentence: "\u6587", word: "\u8A9E", text: "\u30C6\u30AD\u30B9\u30C8", image: "\u753B\u50CF" }[card.kind]}\uFF09` : "\u540C\u3058\u5185\u5BB9\u304C\u65E2\u306B\u3042\u308A\u307E\u3059");
+    new import_obsidian34.Notice(fresh ? `\u2935 \u30C8\u30EC\u30A4\u3078\uFF08${{ url: "URL", dialogue: "\u5BFE\u8A71", sentence: "\u6587", word: "\u8A9E", text: "\u30C6\u30AD\u30B9\u30C8", image: "\u753B\u50CF" }[card.kind]}\uFF09` : "\u540C\u3058\u5185\u5BB9\u304C\u65E2\u306B\u3042\u308A\u307E\u3059");
     this.render();
   }
   /**
@@ -46300,19 +48524,143 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
   }
   /** The cut scene, shown rather than described — a still you can recognise is
    *  worth more than the words 「クリップあり」. */
+  /**
+   * The line the mark points at.
+   *
+   * Three states, and they are three different facts: not looked up yet,
+   * resolved to nothing, resolved. Collapsing the last two is how you get a
+   * card that silently retries forever — see `MarkRef.lineText`.
+   */
+  renderMarkLine(body2, c) {
+    const m = c.mark;
+    if (!(m == null ? void 0 : m.file) || m.tSec == null)
+      return;
+    if (m.lineText === void 0) {
+      body2.createDiv({ text: "\u22EF", cls: "jp-tray-mark-line jp-tray-mark-line--pending" });
+      return;
+    }
+    if (!m.lineText) {
+      body2.createDiv({
+        text: "\u3053\u306E\u6642\u523B\u306B\u53F0\u8A5E\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F",
+        cls: "jp-tray-mark-line jp-tray-mark-line--none"
+      });
+      return;
+    }
+    body2.createDiv({ text: m.lineText, cls: "jp-tray-mark-line" });
+  }
+  /**
+   * Six chips. One tap. The modal opens ALREADY ANSWERED.
+   *
+   * Not a headless save, deliberately: `CaptureModal` says a capture is "never
+   * auto-committed", and that is right for an evidence catalog — a class
+   * written without a human looking is a guess wearing a judgement's clothes.
+   * So the tap does not decide, it PRE-FILLS: `classHint` selects the chip
+   * (recorded as `classSuggested`, never as a verdict), the resolved line
+   * becomes the example, and the surrounding turns ride along. What is left is
+   * to press 保存.
+   *
+   * The unit: whatever you have SELECTED inside the line, or the whole line if
+   * nothing. That is the one decision a chip cannot make for you — 談話 and
+   * セリフ are utterance-sized, 連語 and 慣用構文 are spans — and now that the
+   * line is on the card, selecting inside it is the natural way to say which.
+   */
+  renderMarkClasses(act, c, card) {
+    var _a2;
+    if (!((_a2 = c.mark) == null ? void 0 : _a2.lineText))
+      return;
+    const row = act.createDiv("jp-tray-markclasses");
+    for (const id of Object.keys(NOTE_TYPES)) {
+      const t = NOTE_TYPES[id];
+      const b = row.createEl("button", {
+        cls: "jp-tray-markclass",
+        attr: { title: `${t.label} \u3067\u5206\u985E\uFF08\u9078\u629E\u3057\u305F\u7BC4\u56F2\u3001\u306A\u3051\u308C\u3070\u884C\u5168\u4F53\uFF09`, "aria-label": t.label }
+      });
+      b.createSpan({ text: t.emoji, cls: "jp-tray-markclass-dot" });
+      b.createSpan({ text: t.label, cls: "jp-tray-markclass-label" });
+      b.onclick = () => void this.openPreAnswered(c, id, card);
+    }
+  }
+  /** The span the user picked inside THIS card, or nothing. */
+  selectionInside(card) {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed)
+      return "";
+    const node = sel.anchorNode;
+    if (!node || !card.contains(node.nodeType === 1 ? node : node.parentNode))
+      return "";
+    return sel.toString().trim();
+  }
+  async openPreAnswered(c, cls, card) {
+    var _a2, _b2;
+    const m = c.mark;
+    if (!m)
+      return;
+    const span = this.selectionInside(card);
+    const ctx = this.deps.resolveMarkContext ? await this.deps.resolveMarkContext(m) : null;
+    const base = ctx != null ? ctx : {
+      text: "",
+      example: (_a2 = m.lineText) != null ? _a2 : "",
+      source: {
+        kind: "manual",
+        sourceName: c.origin,
+        medium: m.medium,
+        file: m.file,
+        tStartSec: (_b2 = m.tSec) != null ? _b2 : null
+      }
+    };
+    this.deps.openCapture(withMarkClip(
+      { ...base, classHint: cls, text: span || m.lineText || base.text },
+      c.clip
+    ));
+  }
+  /**
+   * Resolve every mark that has never had its line looked up — once, ever.
+   *
+   * Runs after a render rather than during it: 98 transcript reads inside a
+   * paint is a stall, and the answer is persisted, so this whole loop happens
+   * exactly one time in the life of the vault and then never again.
+   *
+   * `''` is written for a mark whose transcript has no line at that second.
+   * That is a resolved answer, and writing it is what keeps the retry from
+   * coming back every render for a mark that can never be resolved.
+   */
+  async backfillMarkLines() {
+    var _a2;
+    if (this.backfilling || !this.deps.resolveMarkContext)
+      return;
+    const todo = this.deps.store.marksNeedingLine();
+    if (!todo.length)
+      return;
+    this.backfilling = true;
+    try {
+      const out = [];
+      for (const c of todo) {
+        try {
+          const ctx = await this.deps.resolveMarkContext(c.mark);
+          out.push({ id: c.id, line: ((_a2 = ctx == null ? void 0 : ctx.example) != null ? _a2 : "").trim() });
+        } catch (e) {
+          out.push({ id: c.id, line: "" });
+        }
+      }
+      if (await this.deps.store.setMarkLines(out))
+        this.render();
+    } finally {
+      this.backfilling = false;
+    }
+  }
   renderMarkClip(body2, clip) {
     const wrap = body2.createDiv("jp-tray-clip");
     if (clip.still) {
       const still = clip.still;
       const img = wrap.createEl("img", { cls: "jp-tray-clip-still" });
-      img.src = this.app.vault.adapter.getResourcePath((0, import_obsidian33.normalizePath)(still));
+      img.src = this.app.vault.adapter.getResourcePath((0, import_obsidian34.normalizePath)(still));
       img.onclick = () => void this.app.workspace.openLinkText(still, "", false);
     }
     if (clip.audio) {
       const au = wrap.createEl("audio", { cls: "jp-tray-clip-audio" });
       au.controls = true;
       au.preload = "none";
-      au.src = this.app.vault.adapter.getResourcePath((0, import_obsidian33.normalizePath)(clip.audio));
+      au.src = this.app.vault.adapter.getResourcePath((0, import_obsidian34.normalizePath)(clip.audio));
     }
   }
   /** Fix the note on a mark card in place. */
@@ -46358,16 +48706,21 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
     card.addEventListener("pointerdown", () => {
       this.focusId = c.id;
     }, { capture: true });
-    if (c.kind !== "image") {
+    {
+      const grip = card.createSpan({
+        text: "\u283F",
+        cls: "jp-lex-exgrip",
+        attr: { title: "\u3053\u306E\u30AB\u30FC\u30C9\u3092\u6301\u3061\u51FA\u3059\uFF08\u30C9\u30E9\u30C3\u30B0\uFF09" }
+      });
       makeDraggable(card, () => {
         var _a3, _b3, _c3;
         return {
           kind: "card",
-          text: c.content,
+          ...this.carryOf(c),
           sub: c.origin,
           meta: { cardId: c.id, origin: c.origin, tSec: (_b3 = (_a3 = c.mark) == null ? void 0 : _a3.tSec) != null ? _b3 : void 0, file: (_c3 = c.mark) == null ? void 0 : _c3.file }
         };
-      });
+      }, { grip });
       card.addEventListener("dragstart", (e) => {
         var _a3, _b3;
         (_b3 = e.dataTransfer) == null ? void 0 : _b3.setData("application/x-jpc-tray", (_a3 = c.origin) != null ? _a3 : "");
@@ -46409,8 +48762,10 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
       case "image": {
         const wrap = body2.createDiv("jp-tray-imgwrap");
         const img = wrap.createEl("img", { cls: "jp-tray-img" });
-        img.src = this.app.vault.adapter.getResourcePath((0, import_obsidian33.normalizePath)(c.content));
+        img.src = this.app.vault.adapter.getResourcePath((0, import_obsidian34.normalizePath)(c.content));
         img.onclick = () => void this.app.workspace.openLinkText(c.content, "", false);
+        if (c.said)
+          body2.createDiv({ cls: "jp-tray-said", text: c.said });
         if ((_e2 = c.bubbles) == null ? void 0 : _e2.length) {
           for (const b of c.bubbles) {
             const box = wrap.createDiv("jp-tray-bbox");
@@ -46444,9 +48799,9 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
             try {
               const bubbles = await this.deps.ocrManga(c.content);
               await this.deps.store.setBubbles(c.id, bubbles);
-              new import_obsidian33.Notice(`\u{1F5E8} ${bubbles.length}\u500B\u306E\u5439\u304D\u51FA\u3057`);
+              new import_obsidian34.Notice(`\u{1F5E8} ${bubbles.length}\u500B\u306E\u5439\u304D\u51FA\u3057`);
             } catch (e) {
-              new import_obsidian33.Notice(String(e));
+              new import_obsidian34.Notice(String(e));
             }
             this.render();
           };
@@ -46458,7 +48813,7 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
               try {
                 await this.deps.recognizePlayer(c);
               } catch (e) {
-                new import_obsidian33.Notice(String(e));
+                new import_obsidian34.Notice(String(e));
               }
               this.render();
             };
@@ -46480,6 +48835,7 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
           body2.createDiv({ text: c.content, cls: "jp-tray-mark-note" });
         else
           row.createSpan({ text: c.content || "\uFF08\u30E1\u30E2\u306A\u3057\uFF09", cls: c.content ? "jp-tray-mark-seed" : "jp-tray-mark-seed jp-tray-mark-seed--none" });
+        this.renderMarkLine(body2, c);
         if (c.clip)
           this.renderMarkClip(body2, c.clip);
         break;
@@ -46516,6 +48872,7 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
     }
     if (c.kind === "mark") {
       const act = card.createDiv("jp-tray-card-actions");
+      this.renderMarkClasses(act, c, card);
       const tag2 = act.createEl("button", { text: "\u{1F3F7}\uFE0F \u5206\u985E" + (c.clip ? " \u{1F3AC}" : ""), cls: "jp-tray-classify" });
       tag2.onclick = async () => {
         var _a3;
@@ -46541,7 +48898,7 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
           try {
             await this.deps.clipForMark(c);
           } catch (e) {
-            new import_obsidian33.Notice(String(e));
+            new import_obsidian34.Notice(String(e));
           }
           this.render();
         };
@@ -46569,8 +48926,8 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
 };
 
 // src/ui/DiscoveryModal.ts
-var import_obsidian34 = require("obsidian");
-var DiscoveryModal = class extends import_obsidian34.Modal {
+var import_obsidian35 = require("obsidian");
+var DiscoveryModal = class extends import_obsidian35.Modal {
   constructor(app, deps) {
     super(app);
     this.deps = deps;
@@ -46602,7 +48959,7 @@ var DiscoveryModal = class extends import_obsidian34.Modal {
       };
       const no = actions.createEl("button", { text: "\u2715", attr: { title: "\u4ECA\u5F8C\u63D0\u6848\u3057\u306A\u3044" } });
       no.onclick = async () => {
-        await this.deps.onDismiss(d).catch((e) => new import_obsidian34.Notice(String(e)));
+        await this.deps.onDismiss(d).catch((e) => new import_obsidian35.Notice(String(e)));
         row.remove();
       };
     }
@@ -46722,7 +49079,7 @@ var SpeakStore = class {
 };
 
 // src/ui/FollowAlongView.ts
-var import_obsidian35 = require("obsidian");
+var import_obsidian36 = require("obsidian");
 
 // src/notes/follow.ts
 function syncClock(tSec, nowMs) {
@@ -47723,7 +50080,7 @@ var PLEX_POLL_PLAYING_MS = 2500;
 var PLEX_POLL_PAUSED_MS = 8e3;
 var PLEX_POLL_IDLE_MS = 15e3;
 var PLEX_RESYNC_SLOP_SEC = 2.5;
-var FollowAlongView = class extends import_obsidian35.ItemView {
+var FollowAlongView = class extends import_obsidian36.ItemView {
   constructor(leaf, deps) {
     super(leaf);
     this.deps = deps;
@@ -47778,6 +50135,10 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     this.pickingSession = false;
     /** The session currently followed — kept for the transport's player name. */
     this.plexSession = null;
+    /** §26.3 hover peek — the Pencil's own verb. Null where no dictionary was
+     *  supplied, which is the same as "this device cannot hover" downstream. */
+    this.peek = null;
+    this.detachPenWatch = null;
     /** Transport DOM, repainted in place by the tick rather than re-rendered. */
     this.transportEl = null;
     this.transportTimeEl = null;
@@ -47849,12 +50210,30 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     this.registerDomEvent(this.contentEl, "keydown", (e) => this.onKey(e));
     this.tickId = window.setInterval(() => this.tick(), 500);
     this.registerInterval(this.tickId);
+    if (this.deps.dictLookup) {
+      this.peek = new HoverPeek((x, y) => {
+        const hit = wordAtPoint(x, y, (probe) => this.deps.dictLookup(probe));
+        if (!hit)
+          return null;
+        return {
+          headword: hit.term.expression,
+          reading: hit.term.reading,
+          deinflection: hit.deinflection,
+          def: definitionsPreview(hit.term.definitions)
+        };
+      });
+      this.peek.attach(this.contentEl, ".jp-follow-text");
+      this.detachPenWatch = onPenFirstSeen(() => this.updatePenHint());
+    }
     this.render();
   }
   async onClose() {
+    var _a2, _b2;
     if (this.tickId != null)
       window.clearInterval(this.tickId);
     this.stopPlexPoll();
+    (_a2 = this.peek) == null ? void 0 : _a2.cancel();
+    (_b2 = this.detachPenWatch) == null ? void 0 : _b2.call(this);
   }
   async loadFile() {
     var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2;
@@ -47995,7 +50374,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
       this.drillFloors = { n: b.n, chance: b.chance, marginal: b.marginal, optionOnly: b.optionOnly, topPrim: b.topPrim };
     } catch (e) {
       console.error("[jp-collocations] board fold failed", e);
-      new import_obsidian35.Notice("\u8AC7\u8A71\u30DC\u30FC\u30C9\u306E\u69CB\u7BC9\u306B\u5931\u6557\u3057\u307E\u3057\u305F");
+      new import_obsidian36.Notice("\u8AC7\u8A71\u30DC\u30FC\u30C9\u306E\u69CB\u7BC9\u306B\u5931\u6557\u3057\u307E\u3057\u305F");
     }
   }
   /** Last snapshot at/before the playhead (linear scan cached by index). */
@@ -48031,7 +50410,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     const pos = (_c2 = clockPosition(this.clock, Date.now())) != null ? _c2 : this.focusIdx >= 0 ? (_b2 = (_a2 = this.lines[this.focusIdx]) == null ? void 0 : _a2.tStartSec) != null ? _b2 : 0 : 0;
     const next = caseAtOrAfter(this.drillCases, pos);
     if (!next) {
-      new import_obsidian35.Notice("\u3053\u306E\u5148\u306B\u30C9\u30EA\u30EB\u5BFE\u8C61\u306E\u624B\u304C\u3042\u308A\u307E\u305B\u3093");
+      new import_obsidian36.Notice("\u3053\u306E\u5148\u306B\u30C9\u30EA\u30EB\u5BFE\u8C61\u306E\u624B\u304C\u3042\u308A\u307E\u305B\u3093");
       return;
     }
     this.drill = { ...next };
@@ -48205,7 +50584,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
   togglePlexSync() {
     if (this.plexSyncOn) {
       this.stopPlexPoll();
-      new import_obsidian35.Notice("Plex\u540C\u671F\u3092\u505C\u6B62\u3057\u307E\u3057\u305F");
+      new import_obsidian36.Notice("Plex\u540C\u671F\u3092\u505C\u6B62\u3057\u307E\u3057\u305F");
       this.render();
       return;
     }
@@ -48338,7 +50717,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     this.aligning = false;
     const pos = clockPosition(this.clock, Date.now());
     if (line.tStartSec == null || pos == null) {
-      new import_obsidian35.Notice("\u3053\u306E\u884C\u306B\u306F\u6642\u523B\u304C\u3042\u308A\u307E\u305B\u3093", 3e3);
+      new import_obsidian36.Notice("\u3053\u306E\u884C\u306B\u306F\u6642\u523B\u304C\u3042\u308A\u307E\u305B\u3093", 3e3);
       this.render();
       return;
     }
@@ -48347,7 +50726,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     this.clock = syncClock(line.tStartSec, Date.now());
     if (this.filePath)
       await ((_b2 = (_a2 = this.deps).saveSubOffset) == null ? void 0 : _b2.call(_a2, this.filePath, this.subOffsetSec));
-    new import_obsidian35.Notice(
+    new import_obsidian36.Notice(
       `\u2316 \u30BA\u30EC\u3092 ${this.subOffsetSec > 0 ? "+" : ""}${this.subOffsetSec}s \u306B\u8A2D\u5B9A\u3057\u307E\u3057\u305F\uFF08\u30CE\u30FC\u30C8\u306E sub_offset_sec \u306B\u4FDD\u5B58\uFF09`,
       5e3
     );
@@ -48368,45 +50747,218 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
    * was no way to tell a sync that is 8 seconds out from one that is following a
    * completely different episode. A bar makes the second case obvious instantly.
    */
+  /**
+   * The rail — every verb that acts on "whatever is playing right now".
+   *
+   * ## The problem it actually solves
+   *
+   * §23.5 gave this view eleven keyboard shortcuts and a `<kbd>` hint bar
+   * advertising them. On a tablet there is no keyboard, so the bar was a list
+   * of things you cannot do, occupying space the transcript wanted — and two
+   * of those verbs had no touch route at ALL: `n` (write a note on the line in
+   * play) and `c` (cut its clip). The rest were reachable only by finding and
+   * hitting the right row.
+   *
+   * Which is the deeper issue. **The now-line moves.** Every touch verb in this
+   * view is aimed at a target that is scrolling and that will be a different
+   * line by the time the nib lands — while your eyes are on a screen across the
+   * room, not on the thing you are aiming at. That is the ergonomic failure
+   * underneath "it's fiddly on the iPad", and no amount of enlarging rows fixes
+   * it, because the problem is not the size of the target but that it is in
+   * motion.
+   *
+   * A rail fixed to the writing-hand edge does. It never moves, it needs no
+   * aim, and every button on it means "…the line playing now" — which is the
+   * line you are reacting to, because reacting is what watching is. Tapping a
+   * row stays exactly as it was for the other case, when you want a specific
+   * line you can see.
+   *
+   * `edgeDock` returns null on the desktop, where the keyboard is real and the
+   * hint bar is honest, so nothing changes there.
+   */
+  renderRail(root) {
+    const rail = edgeDock(root);
+    if (!rail)
+      return;
+    rail.addClass("jp-follow-rail");
+    const btn = (label, title, fn) => {
+      const b = rail.createEl("button", { text: label, cls: "jp-rail-btn", attr: { title, "aria-label": title } });
+      b.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        fn();
+      });
+      return b;
+    };
+    const nowLine = () => {
+      const l = this.lineForButtons();
+      if (!l)
+        new import_obsidian36.Notice(this.clock ? "\u518D\u751F\u4F4D\u7F6E\u304C\u4E0D\u660E\u3067\u3059" : "\u5148\u306B\u884C\u3092\u30BF\u30C3\u30D7\u3057\u3066\u540C\u671F", 1500);
+      return l;
+    };
+    btn("\u{1F4CD}", "\u3044\u307E\u306E\u884C\u3092\u30DE\u30FC\u30AF", () => {
+      const l = nowLine();
+      if (l)
+        void this.dropMark("note", l);
+    });
+    btn("\u270E", "\u3044\u307E\u306E\u884C\u306B\u6C17\u3065\u304D\u3092\u66F8\u304F\uFF08\u66F8\u3044\u3066\u3044\u308B\u9593\u306F\u81EA\u52D5\u3067\u4E00\u6642\u505C\u6B62\uFF09", () => {
+      const l = nowLine();
+      if (!l)
+        return;
+      const row = this.contentEl.querySelector(`.jp-follow-line[data-idx="${l.index}"]`);
+      if (row)
+        this.seedPrompt(row, l);
+    });
+    if (this.session) {
+      btn("\u{1F3A4}", "\u3044\u307E\u306E\u884C\u3067\u767A\u8A71\u30DE\u30FC\u30AF", () => {
+        const l = nowLine();
+        if (l)
+          void this.dropMark("speak", l);
+      });
+    }
+    if (this.deps.plexClip && this.plexPartKey) {
+      btn("\u{1F3AC}", "\u3044\u307E\u306E\u884C\u306E\u30AF\u30EA\u30C3\u30D7\u3092\u5207\u308A\u51FA\u3059", () => {
+        const l = nowLine();
+        if (l)
+          void this.clipAtLine(l);
+      });
+    }
+    rail.createDiv("jp-rail-sep");
+    btn("\u2304", "\u518D\u751F\u4E2D\u306E\u884C\u307E\u3067\u623B\u308B", () => this.jumpToNow());
+    btn("\u{1F4DD}", `\u30DE\u30FC\u30AF${this.marks.length ? ` (${this.marks.length})` : ""}`, () => {
+      this.marksOn = !this.marksOn;
+      this.render();
+    });
+  }
+  /**
+   * Cut the clip at a line. Lifted out of the `c` key handler so the rail
+   * button and the key are one implementation rather than two that agree today.
+   */
+  async clipAtLine(l) {
+    if (l.tStartSec == null) {
+      new import_obsidian36.Notice("\u3053\u306E\u884C\u306B\u306F\u6642\u523B\u304C\u3042\u308A\u307E\u305B\u3093");
+      return;
+    }
+    new import_obsidian36.Notice("\u{1F3AC} \u5207\u308A\u51FA\u3057\u4E2D\u2026", 1500);
+    const existing = this.marks.find((m2) => m2.lineIndex === l.index);
+    const m = existing != null ? existing : {
+      cardId: null,
+      tSec: l.tStartSec,
+      lineIndex: l.index,
+      lineText: l.text,
+      seed: null,
+      at: Date.now()
+    };
+    if (!existing)
+      this.marks.push(m);
+    await this.clipMark(m, false);
+    if (this.marksOn)
+      this.repaintMarks();
+    else
+      this.updateMarksChip();
+  }
+  /**
+   * How long the thing being watched runs, from whichever source knows.
+   *
+   * Plex says so outright. Nothing else does — but a stamped transcript already
+   * describes its own span, and its last stamp is within one line of the end.
+   * That is enough to scrub against, and "enough to scrub against" is the only
+   * thing the number is used for. Without this the scrub bar could exist only
+   * when Plex was driving, which is precisely backwards: the mode with no
+   * remote control is the one where a scrub bar is the only control there is.
+   */
+  effectiveDuration() {
+    if (this.plexDuration)
+      return this.plexDuration;
+    for (let i = this.lines.length - 1; i >= 0; i--) {
+      const t = this.lines[i].tStartSec;
+      if (t != null)
+        return t + 4;
+    }
+    return null;
+  }
+  /**
+   * ⏯ for whatever is actually playing.
+   *
+   * Where Plex owns the clock this has to stop the VIDEO — pausing only the
+   * transcript's idea of it makes the two disagree the moment you use it, which
+   * is the exact failure the transport exists to fix. Where nothing owns it
+   * (YouTube on a phone across the room) there is no video to command, so it
+   * pauses the local clock, which is the only thing there is to pause.
+   *
+   * Lifted out of `onKey` verbatim so the button and the `p` key cannot drift.
+   */
+  togglePlayPause() {
+    var _a2;
+    if (this.plexSyncOn && ((_a2 = this.plexSession) == null ? void 0 : _a2.playerId) && this.deps.plexCommand) {
+      void this.sendPlex(this.plexPaused ? "play" : "pause");
+      return;
+    }
+    if (!this.clock)
+      return;
+    this.clock = this.clock.pausedAtTSec != null ? resumeClock(this.clock, Date.now()) : pauseClock(this.clock, Date.now());
+    this.updateClockChip();
+    this.updateTransport();
+  }
+  /** True when the thing we are following is stopped, whoever owns it. */
+  isPaused() {
+    if (this.plexSyncOn)
+      return this.plexPaused;
+    return !!this.clock && this.clock.pausedAtTSec != null;
+  }
+  /**
+   * The transport — no longer Plex's.
+   *
+   * It used to render only under `plexSyncOn || plexDuration`, and the ズレ
+   * calibration only under `plexEnabled && plexSyncOn`. So the setup with a
+   * REMOTE CONTROL got a full control surface, and the setup with none — a
+   * video playing on a different device entirely, where every correction has to
+   * be made by hand — got no scrub bar, no ⏯, no ±10s and no drift control at
+   * all. The transcript just ran and you either kept up or you didn't.
+   *
+   * Everything here already worked without Plex: `seekTo` and `nudgePlayback`
+   * move the local clock and additionally command the player only when one is
+   * listening. Only the BUTTONS were gated. So the gate moves to what each
+   * control actually needs — a clock, or a duration — and the two rows that
+   * genuinely require a claimed remote client stay behind that requirement.
+   */
   renderTransport(root) {
-    var _a2, _b2, _c2, _d2, _e2;
+    var _a2, _b2, _c2, _d2, _e2, _f2, _g2;
     const wrap = root.createDiv("jp-follow-transport");
     const time = wrap.createDiv({ cls: "jp-follow-tp-time" });
+    const dur = this.effectiveDuration();
     const bar = wrap.createDiv("jp-follow-tp-bar");
     bar.createDiv("jp-follow-tp-fill");
-    bar.title = "\u30BF\u30C3\u30D7\u3067\u3053\u306E\u4F4D\u7F6E\u3078\uFF08\u540C\u671F\u4E2D\u306A\u3089\u30D7\u30EC\u30A4\u30E4\u30FC\u3082\u52D5\u304B\u3057\u307E\u3059\uFF09";
+    bar.title = dur ? "\u30BF\u30C3\u30D7\u3067\u3053\u306E\u4F4D\u7F6E\u3078\uFF08\u540C\u671F\u4E2D\u306A\u3089\u30D7\u30EC\u30A4\u30E4\u30FC\u3082\u52D5\u304B\u3057\u307E\u3059\uFF09" : "\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7\u304C\u306A\u3044\u305F\u3081\u4F4D\u7F6E\u3092\u6307\u5B9A\u3067\u304D\u307E\u305B\u3093";
     bar.onclick = (e) => {
-      if (!this.plexDuration)
+      if (!dur)
         return;
       const box = bar.getBoundingClientRect();
       if (box.width <= 0)
         return;
       const frac = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width));
-      void this.seekTo(frac * this.plexDuration);
+      void this.seekTo(frac * dur);
     };
-    const pid = (_a2 = this.plexSession) == null ? void 0 : _a2.playerId;
-    if (this.plexSyncOn && pid && this.deps.plexCommand) {
-      const acts = wrap.createDiv("jp-follow-tp-acts");
-      const btn = (label, title, fn) => {
-        const b = acts.createEl("button", { text: label, cls: "jp-follow-tp-btn", attr: { title } });
-        b.onclick = fn;
-        return b;
-      };
-      btn("\u23EA", "10\u79D2\u623B\u3059", () => void this.nudgePlayback(-10));
-      btn(
-        this.plexPaused ? "\u25B6" : "\u23F8",
-        this.plexPaused ? "\u518D\u751F" : "\u4E00\u6642\u505C\u6B62",
-        () => void this.sendPlex(this.plexPaused ? "play" : "pause")
-      );
-      btn("\u23E9", "10\u79D2\u9032\u3081\u308B", () => void this.nudgePlayback(10));
+    const acts = wrap.createDiv("jp-follow-tp-acts");
+    const btn = (label, title, fn) => {
+      const b = acts.createEl("button", { text: label, cls: "jp-follow-tp-btn", attr: { title } });
+      b.onclick = fn;
+      return b;
+    };
+    if (this.clock || this.plexSyncOn) {
+      const paused = this.isPaused();
+      const remote = this.plexSyncOn && !!((_a2 = this.plexSession) == null ? void 0 : _a2.playerId) && !!this.deps.plexCommand;
+      btn("\u23EA", remote ? "10\u79D2\u623B\u3059" : "\u5B57\u5E55\u309210\u79D2\u623B\u3059", () => void this.nudgePlayback(-10));
+      btn(paused ? "\u25B6" : "\u23F8", paused ? "\u518D\u751F" : "\u4E00\u6642\u505C\u6B62", () => this.togglePlayPause());
+      btn("\u23E9", remote ? "10\u79D2\u9032\u3081\u308B" : "\u5B57\u5E55\u309210\u79D2\u9032\u3081\u308B", () => void this.nudgePlayback(10));
       acts.createSpan({
-        text: (_e2 = (_d2 = (_b2 = this.plexSession) == null ? void 0 : _b2.playerName) != null ? _d2 : (_c2 = this.plexSession) == null ? void 0 : _c2.playerProduct) != null ? _e2 : "",
+        text: remote ? (_e2 = (_d2 = (_b2 = this.plexSession) == null ? void 0 : _b2.playerName) != null ? _d2 : (_c2 = this.plexSession) == null ? void 0 : _c2.playerProduct) != null ? _e2 : "" : "\u5B57\u5E55\u306E\u307F",
         cls: "jp-follow-tp-player"
       });
     }
     this.transportEl = wrap;
     this.transportTimeEl = time;
-    this.transportPlayerId = pid != null ? pid : null;
+    this.transportPlayerId = (_g2 = (_f2 = this.plexSession) == null ? void 0 : _f2.playerId) != null ? _g2 : null;
     this.transportPaused = this.plexPaused;
     this.updateTransport();
     return wrap;
@@ -48439,7 +50991,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     if (!wrap || !wrap.isConnected)
       return;
     const pos = clockPosition(this.clock, Date.now());
-    const dur = this.plexDuration;
+    const dur = this.effectiveDuration();
     const fill = wrap.querySelector(".jp-follow-tp-fill");
     if (fill) {
       const frac = pos != null && dur ? Math.max(0, Math.min(1, pos / dur)) : 0;
@@ -48448,7 +51000,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     (_a2 = this.transportTimeEl) == null ? void 0 : _a2.setText(
       pos == null ? "\u672A\u540C\u671F" : dur ? `${fmtDur(pos)} / ${fmtDur(dur)}` : fmtDur(pos)
     );
-    wrap.toggleClass("is-paused", !!this.clock && this.clock.pausedAtTSec != null);
+    wrap.toggleClass("is-paused", this.isPaused());
     wrap.toggleClass("is-live", this.plexSyncOn && !((_b2 = this.plexSession) == null ? void 0 : _b2.paused));
   }
   /** Move to a transcript position; take the player with us when we can. */
@@ -48486,7 +51038,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
       return { ok: false, error: String((_a3 = e == null ? void 0 : e.message) != null ? _a3 : e) };
     });
     if (!(r2 == null ? void 0 : r2.ok)) {
-      new import_obsidian35.Notice(
+      new import_obsidian36.Notice(
         `\u30D7\u30EC\u30A4\u30E4\u30FC\u3092\u64CD\u4F5C\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\uFF08${(_b2 = r2 == null ? void 0 : r2.error) != null ? _b2 : "\u4E0D\u660E"}\uFF09\u3002
 \u3053\u306E\u30AF\u30E9\u30A4\u30A2\u30F3\u30C8\u306F\u30EA\u30E2\u30FC\u30C8\u64CD\u4F5C\u306B\u5FDC\u3058\u306A\u3044\u8A2D\u5B9A\u304B\u3082\u3057\u308C\u307E\u305B\u3093 \u2014 \u5B57\u5E55\u5074\u306E\u4F4D\u7F6E\u3060\u3051\u52D5\u304B\u3057\u307E\u3057\u305F\u3002`,
         7e3
@@ -48592,7 +51144,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
           if (await this.clipMark(m, true))
             done++;
         }
-        new import_obsidian35.Notice(`\u{1F3AC} ${done}/${todo.length} \u4EF6\u3092\u5207\u308A\u51FA\u3057\u307E\u3057\u305F`, 6e3);
+        new import_obsidian36.Notice(`\u{1F3AC} ${done}/${todo.length} \u4EF6\u3092\u5207\u308A\u51FA\u3057\u307E\u3057\u305F`, 6e3);
         this.repaintMarks();
       };
     }
@@ -48619,6 +51171,36 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     const key = this.markRowKey(m);
     const clip = this.clipAt.get(key);
     const row = box.createDiv("jp-follow-mark");
+    const grip = row.createSpan({
+      text: "\u283F",
+      cls: "jp-lex-exgrip",
+      attr: { title: "\u3053\u306E\u8A18\u9332\u3092\u6301\u3061\u51FA\u3059\uFF08\u30C9\u30E9\u30C3\u30B0\uFF09" }
+    });
+    makeDraggable(row, () => {
+      var _a3, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2;
+      const text = ((_a3 = m.lineText) != null ? _a3 : "").trim() || ((_b2 = m.seed) != null ? _b2 : "").trim();
+      if (!text)
+        return null;
+      const stamp = m.tSec != null ? fmtStamp(m.tSec) : "";
+      const sub = [stamp, this.sourceName].filter(Boolean).join(" \xB7 ");
+      return {
+        kind: "quote",
+        text,
+        label: text,
+        ...sub ? { sub } : {},
+        // The seed rides along in the rich flavour only. A plain-text receiver
+        // asked for the Japanese, not for the Japanese plus your marginalia.
+        ...((_c2 = m.seed) == null ? void 0 : _c2.trim()) ? { html: `<blockquote>${(_d2 = m.lineText) != null ? _d2 : ""}<br><small>${m.seed} \u2014 ${sub}</small></blockquote>` } : {},
+        meta: {
+          file: (_e2 = this.filePath) != null ? _e2 : void 0,
+          tSec: (_f2 = m.tSec) != null ? _f2 : void 0,
+          lineIndex: (_g2 = m.lineIndex) != null ? _g2 : void 0,
+          cardId: (_h2 = m.cardId) != null ? _h2 : void 0,
+          seed: (_i2 = m.seed) != null ? _i2 : void 0,
+          source: (_j2 = this.sourceName) != null ? _j2 : void 0
+        }
+      };
+    }, { grip });
     const top = row.createDiv("jp-follow-mark-top");
     if (m.tSec != null) {
       const at = m.tSec;
@@ -48674,7 +51256,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     const r2 = await this.deps.plexClip(this.plexPartKey, m.tSec, label).catch(() => null);
     if (!((r2 == null ? void 0 : r2.audio) || (r2 == null ? void 0 : r2.still))) {
       if (!quiet)
-        new import_obsidian35.Notice("\u30AF\u30EA\u30C3\u30D7\u306E\u5207\u308A\u51FA\u3057\u306B\u5931\u6557\u3057\u307E\u3057\u305F\uFF08ffmpeg / \u30B5\u30FC\u30D0\u30FC\u63A5\u7D9A\u3092\u78BA\u8A8D\uFF09\u3002", 8e3);
+        new import_obsidian36.Notice("\u30AF\u30EA\u30C3\u30D7\u306E\u5207\u308A\u51FA\u3057\u306B\u5931\u6557\u3057\u307E\u3057\u305F\uFF08ffmpeg / \u30B5\u30FC\u30D0\u30FC\u63A5\u7D9A\u3092\u78BA\u8A8D\uFF09\u3002", 8e3);
       return false;
     }
     this.clipAt.set(this.markRowKey(m), r2);
@@ -48687,7 +51269,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
         this.clipAt.set(markKey(sm), r2);
     }
     if (!quiet)
-      new import_obsidian35.Notice(`\u{1F3AC} ${(_c2 = r2.audio) != null ? _c2 : r2.still}`, 4e3);
+      new import_obsidian36.Notice(`\u{1F3AC} ${(_c2 = r2.audio) != null ? _c2 : r2.still}`, 4e3);
     return true;
   }
   /** Inline note editor on a mark row — same textarea the line long-press uses. */
@@ -48736,7 +51318,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
         seed: seed != null ? seed : null,
         at: now
       });
-      new import_obsidian35.Notice(seed ? `\u{1F4CD} ${seed}` : "\u{1F4CD}", 900);
+      new import_obsidian36.Notice(seed ? `\u{1F4CD} ${seed}` : "\u{1F4CD}", 900);
       if (this.marksOn)
         this.repaintMarks();
       else
@@ -48779,7 +51361,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     if (k === "s" && focused)
       return go(() => {
         this.syncTo(focused);
-        new import_obsidian35.Notice("\u2316 \u540C\u671F", 800);
+        new import_obsidian36.Notice("\u2316 \u540C\u671F", 800);
       });
     if (k === "m") {
       const l = this.lineForButtons();
@@ -48791,18 +51373,8 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
       if (l)
         return go(() => this.dropMark("speak", l));
     }
-    if (k === "p" && this.clock) {
-      return go(() => {
-        var _a2;
-        if (this.plexSyncOn && ((_a2 = this.plexSession) == null ? void 0 : _a2.playerId) && this.deps.plexCommand) {
-          void this.sendPlex(this.plexPaused ? "play" : "pause");
-          return;
-        }
-        this.clock = this.clock.pausedAtTSec != null ? resumeClock(this.clock, Date.now()) : pauseClock(this.clock, Date.now());
-        this.updateClockChip();
-        this.updateTransport();
-      });
-    }
+    if (k === "p" && this.clock)
+      return go(() => this.togglePlayPause());
     if (k === "g")
       return go(() => this.jumpToNow());
     if (k === "n") {
@@ -48813,28 +51385,8 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     }
     if (k === "c" && this.deps.plexClip && this.plexPartKey) {
       const l = this.lineForButtons();
-      if (l && l.tStartSec != null) {
-        return go(async () => {
-          var _a2;
-          new import_obsidian35.Notice("\u{1F3AC} \u5207\u308A\u51FA\u3057\u4E2D\u2026", 1500);
-          const existing = this.marks.find((m2) => m2.lineIndex === l.index);
-          const m = existing != null ? existing : {
-            cardId: null,
-            tSec: (_a2 = l.tStartSec) != null ? _a2 : null,
-            lineIndex: l.index,
-            lineText: l.text,
-            seed: null,
-            at: Date.now()
-          };
-          if (!existing)
-            this.marks.push(m);
-          await this.clipMark(m, false);
-          if (this.marksOn)
-            this.repaintMarks();
-          else
-            this.updateMarksChip();
-        });
-      }
+      if (l && l.tStartSec != null)
+        return go(() => this.clipAtLine(l));
     }
     if (k === "[")
       return go(() => this.nudgeOffset(-0.5));
@@ -48864,6 +51416,23 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     (_a2 = this.contentEl.querySelector(".jp-follow-nowpill")) == null ? void 0 : _a2.removeClass("jp-follow-nowpill--show");
     (_b2 = this.contentEl.querySelector(`.jp-follow-line[data-idx="${this.nowIdx}"]`)) == null ? void 0 : _b2.scrollIntoView({ block: "center", behavior: "smooth" });
   }
+  /**
+   * Say that hovering works, but only once we know something can hover.
+   *
+   * Painted into the bar hint rather than as its own chip: an affordance that
+   * has to announce itself with furniture is usually not worth the furniture,
+   * and this one is discovered by accident within about two seconds of holding
+   * a Pencil over the text anyway. The line exists so that discovery is not
+   * required.
+   */
+  updatePenHint() {
+    const hint = this.contentEl.querySelector(".jp-follow-bar-hint");
+    if (!hint || !this.peek)
+      return;
+    if (hint.querySelector(".jp-pen-hint"))
+      return;
+    hint.createSpan({ cls: "jp-pen-hint", text: "\u3000\u270E \u5358\u8A9E\u306E\u4E0A\u306B\u30DA\u30F3\u3092\u304B\u3056\u3059\u3068\u8F9E\u66F8" });
+  }
   updateClockChip() {
     const chip = this.contentEl.querySelector(".jp-follow-clock");
     if (!chip)
@@ -48884,6 +51453,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     root.addClass("jp-follow");
     armDrops(root, this.deps, "follow");
     armSelectionEcho(root, this.deps, "follow");
+    armEdgeBack(root, this.deps);
     if (!this.filePath || !this.lines.length) {
       root.createDiv({ cls: "jp-follow-empty", text: "\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u30CE\u30FC\u30C8\u304B\u3089\u300C\u9451\u8CDE\u30E2\u30FC\u30C9\u300D\u30B3\u30DE\u30F3\u30C9\u3067\u958B\u3044\u3066\u304F\u3060\u3055\u3044\u3002" });
       root.createDiv({
@@ -48940,15 +51510,24 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
         off.onclick = () => {
           this.aligning = !this.aligning;
           if (this.aligning)
-            new import_obsidian35.Notice("\u3044\u307E\u805E\u3053\u3048\u3066\u3044\u308B\u30BB\u30EA\u30D5\u306E\u884C\u3092\u30BF\u30C3\u30D7\u3057\u3066\u304F\u3060\u3055\u3044", 4e3);
+            new import_obsidian36.Notice("\u3044\u307E\u805E\u3053\u3048\u3066\u3044\u308B\u30BB\u30EA\u30D5\u306E\u884C\u3092\u30BF\u30C3\u30D7\u3057\u3066\u304F\u3060\u3055\u3044", 4e3);
           this.render();
         };
-        const nudge = chips.createDiv("jp-follow-nudge");
-        for (const d of [-1, -0.5, 0.5, 1]) {
-          const b = nudge.createEl("button", { text: `${d > 0 ? "+" : ""}${d}`, cls: "jp-follow-nudgebtn" });
-          b.title = `\u5B57\u5E55\u306E\u30BA\u30EC\u3092 ${d > 0 ? "+" : ""}${d}\u79D2 \u305A\u3089\u3059`;
-          b.onclick = () => void this.nudgeOffset(d);
-        }
+      }
+    }
+    if (this.hasStamps()) {
+      const nudge = chips.createDiv("jp-follow-nudge");
+      nudge.title = "\u5B57\u5E55\u3068\u6620\u50CF\u306E\u30BA\u30EC\uFF08\u3053\u306E\u5024\u306F\u30CE\u30FC\u30C8\u306B\u4FDD\u5B58\u3055\u308C\u307E\u3059\uFF09";
+      for (const d of [-1, -0.5, 0.5, 1]) {
+        const b = nudge.createEl("button", { text: `${d > 0 ? "+" : ""}${d}`, cls: "jp-follow-nudgebtn" });
+        b.title = `\u5B57\u5E55\u306E\u30BA\u30EC\u3092 ${d > 0 ? "+" : ""}${d}\u79D2 \u305A\u3089\u3059`;
+        b.onclick = () => void this.nudgeOffset(d);
+      }
+      if (this.subOffsetSec) {
+        nudge.createSpan({
+          text: `${this.subOffsetSec > 0 ? "+" : ""}${this.subOffsetSec}s`,
+          cls: "jp-follow-nudge-val"
+        });
       }
     }
     const marksChip = chips.createEl("button", {
@@ -48978,32 +51557,35 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     if (!this.hasStamps()) {
       root.createDiv({ cls: "jp-follow-warn", text: "\u26A0 \u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093 \u2014 \u4ECA\u3053\u3053\u8FFD\u5F93\u306F\u7121\u52B9\u3067\u3059\uFF08\u30DE\u30FC\u30AF\u306F\u53EF\u80FD\uFF09\u3002" });
     }
-    if (this.plexSyncOn || this.plexDuration)
+    if (this.plexSyncOn || this.plexDuration || this.clock || this.hasStamps()) {
       this.renderTransport(root);
+    }
     if (this.pickingSession)
       this.renderSessionPicker(root);
-    const keys = root.createDiv("jp-dm-keys");
-    const hints = [
-      ["j/k", "\u79FB\u52D5"],
-      ["\u23CE", "\u{1F4CD}"],
-      ["n", "\u6C17\u3065\u304D"],
-      ["s", "\u540C\u671F"],
-      ["p", "\u23EF"],
-      ["g", "\u4ECA\u3078"],
-      ["\u21E7M", "\u{1F4DD}"]
-    ];
-    if (this.deps.plexClip && this.plexPartKey)
-      hints.push(["c", "\u{1F3AC}"]);
-    if (this.plexSyncOn) {
-      hints.push(["[ ]", "\u30BA\u30EC"]);
-      hints.push([", .", "\xB110s"]);
-    }
-    if (this.session)
-      hints.push(["y", "\u{1F3A4}"]);
-    for (const [key, label] of hints) {
-      const chip = keys.createSpan("jp-dm-key");
-      chip.createEl("kbd", { text: key });
-      chip.createSpan({ text: label });
+    if (!isTouchy()) {
+      const keys = root.createDiv("jp-dm-keys");
+      const hints = [
+        ["j/k", "\u79FB\u52D5"],
+        ["\u23CE", "\u{1F4CD}"],
+        ["n", "\u6C17\u3065\u304D"],
+        ["s", "\u540C\u671F"],
+        ["p", "\u23EF"],
+        ["g", "\u4ECA\u3078"],
+        ["\u21E7M", "\u{1F4DD}"]
+      ];
+      if (this.deps.plexClip && this.plexPartKey)
+        hints.push(["c", "\u{1F3AC}"]);
+      if (this.hasStamps())
+        hints.push(["[ ]", "\u30BA\u30EC"]);
+      if (this.clock)
+        hints.push([", .", "\xB110s"]);
+      if (this.session)
+        hints.push(["y", "\u{1F3A4}"]);
+      for (const [key, label] of hints) {
+        const chip = keys.createSpan("jp-dm-key");
+        chip.createEl("kbd", { text: key });
+        chip.createSpan({ text: label });
+      }
     }
     if (this.marksOn)
       this.renderMarksPanel(root);
@@ -49016,7 +51598,9 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     const list = root.createDiv("jp-follow-list");
     this.listEl = list;
     list.addEventListener("scroll", () => {
+      var _a3;
       this.scrollHoldUntil = Date.now() + SCROLL_HOLD_MS;
+      (_a3 = this.peek) == null ? void 0 : _a3.cancel();
     }, { passive: true });
     for (const line of this.lines)
       this.renderLine(list, line);
@@ -49039,7 +51623,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
         if (l)
           void this.dropMark("note", l);
         else
-          new import_obsidian35.Notice("\u5148\u306B\u884C\u3092\u30BF\u30C3\u30D7\u3057\u3066\u540C\u671F");
+          new import_obsidian36.Notice("\u5148\u306B\u884C\u3092\u30BF\u30C3\u30D7\u3057\u3066\u540C\u671F");
       };
       const speak = bar.createEl("button", { text: "\u{1F3A4}", cls: "jp-follow-big jp-follow-big--speak" });
       speak.onclick = () => {
@@ -49047,7 +51631,7 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
         if (l)
           void this.dropMark("speak", l);
         else
-          new import_obsidian35.Notice("\u5148\u306B\u884C\u3092\u30BF\u30C3\u30D7\u3057\u3066\u540C\u671F");
+          new import_obsidian36.Notice("\u5148\u306B\u884C\u3092\u30BF\u30C3\u30D7\u3057\u3066\u540C\u671F");
       };
       const end = bar.createEl("button", { text: "\u7D42\u4E86", cls: "jp-follow-btn" });
       end.onclick = async () => {
@@ -49068,8 +51652,40 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
     } else {
       bar.createDiv({ cls: "jp-follow-bar-hint", text: this.clock ? "\u884C\u3092\u30BF\u30C3\u30D7\uFF1D\u{1F4CD}\u30DE\u30FC\u30AF\uFF08\u9577\u62BC\u3057\u3067\u4E00\u8A9E\u30B7\u30FC\u30C9\uFF09" : "\u4ECA\u805E\u3053\u3048\u305F\u884C\u3092\u30BF\u30C3\u30D7\uFF1D\u540C\u671F" });
     }
+    this.renderRail(root);
     this.updateClockChip();
+    this.updatePenHint();
     this.tick();
+  }
+  /**
+   * What a transcript line IS when you carry it somewhere else.
+   *
+   * `drag-out.ts` has declared `'line'` as a DragKind since it was written and
+   * nothing has ever produced one — the watching surface was a drop TARGET and
+   * never a source, so the richest object in the plugin (the Japanese, the
+   * second it was said, who said it, and which show) was the one thing you
+   * could not take out. Retyping it off the screen was the only route, on the
+   * device that is hardest to type on, during the activity you least want to
+   * stop.
+   */
+  linePayload(line) {
+    var _a2, _b2, _c2;
+    const stamp = line.tStartSec != null ? fmtStamp(line.tStartSec) : "";
+    const sub = [stamp, line.speaker, this.sourceName].filter(Boolean).join(" \xB7 ");
+    return {
+      kind: "line",
+      text: line.text,
+      label: line.text,
+      ...sub ? { sub } : {},
+      // §28 S2 — provenance survives the boundary. A line dropped on an entry
+      // can become a 用例 that still knows which second of which show it is.
+      meta: {
+        file: (_a2 = this.filePath) != null ? _a2 : void 0,
+        tSec: (_b2 = line.tStartSec) != null ? _b2 : void 0,
+        lineIndex: line.index,
+        source: (_c2 = this.sourceName) != null ? _c2 : void 0
+      }
+    };
   }
   renderLine(list, line) {
     const row = list.createDiv("jp-follow-line");
@@ -49078,15 +51694,24 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
       row.addClass("jp-follow-line--now");
     if (line.index === this.focusIdx)
       row.addClass("jp-follow-line--focus");
-    if (line.tStartSec != null)
-      row.createSpan({ text: fmtStamp(line.tStartSec), cls: "jp-follow-stamp" });
+    const grip = line.tStartSec != null ? row.createSpan({ text: fmtStamp(line.tStartSec), cls: "jp-follow-stamp jp-follow-grip" }) : row.createSpan({ text: "\u283F", cls: "jp-follow-grip jp-follow-grip--bare" });
+    grip.setAttribute("aria-label", "\u3053\u306E\u884C\u3092\u6301\u3061\u51FA\u3059");
+    grip.title = "\u9577\u62BC\u3057\u3067\u6301\u3061\u51FA\u3057\uFF08\u4ED6\u306E\u30A2\u30D7\u30EA\u306B\u3082\u843D\u3068\u305B\u307E\u3059\uFF09";
+    makeDraggable(grip, () => this.linePayload(line));
     if (line.speaker)
       row.createSpan({ text: line.speaker, cls: "jp-follow-speaker" });
     row.createSpan({ text: line.text, cls: "jp-follow-text" });
     let pressTimer = null;
     let longFired = false;
-    row.addEventListener("pointerdown", () => {
+    let onGrip = false;
+    let pressAt = 0;
+    row.addEventListener("pointerdown", (e) => {
+      var _a2, _b2;
+      onGrip = !!((_b2 = (_a2 = e.target) == null ? void 0 : _a2.closest) == null ? void 0 : _b2.call(_a2, ".jp-follow-grip"));
+      pressAt = Date.now();
       longFired = false;
+      if (onGrip)
+        return;
       pressTimer = window.setTimeout(() => {
         longFired = true;
         this.seedPrompt(row, line);
@@ -49104,13 +51729,15 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
       cancel();
       if (longFired)
         return;
+      if (onGrip && Date.now() - pressAt > 300)
+        return;
       if (this.aligning) {
         void this.alignTo(line);
         return;
       }
       if (!this.clock && line.tStartSec != null) {
         this.syncTo(line);
-        new import_obsidian35.Notice("\u2316 \u540C\u671F\u3057\u307E\u3057\u305F \u2014 \u4EE5\u5F8C\u306E\u30BF\u30C3\u30D7\u306F\u{1F4CD}\u30DE\u30FC\u30AF", 1500);
+        new import_obsidian36.Notice("\u2316 \u540C\u671F\u3057\u307E\u3057\u305F \u2014 \u4EE5\u5F8C\u306E\u30BF\u30C3\u30D7\u306F\u{1F4CD}\u30DE\u30FC\u30AF", 1500);
         return;
       }
       if (!this.plexSyncOn)
@@ -49135,12 +51762,17 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
    * and blurring keeps what is there instead of discarding it.
    */
   noteEditor(host, initial, onSave) {
+    var _a2, _b2, _c2;
     const wrap = host.createDiv("jp-follow-seed");
     const ta = wrap.createEl("textarea", {
       cls: "jp-follow-seed-input",
       attr: { rows: "2", placeholder: "\u6C17\u3065\u304D\u2026\uFF08\u23CE \u4FDD\u5B58 / \u21E7\u23CE \u6539\u884C / Esc \u53D6\u6D88\uFF09" }
     });
     ta.value = initial != null ? initial : "";
+    const shouldHold = (_c2 = (_b2 = (_a2 = this.deps).autoPauseOnWrite) == null ? void 0 : _b2.call(_a2)) != null ? _c2 : false;
+    const held = shouldHold && !this.isPaused() && (this.clock != null || this.plexSyncOn);
+    if (held)
+      this.togglePlayPause();
     let settled = false;
     const finish = (save) => {
       if (settled)
@@ -49148,6 +51780,8 @@ var FollowAlongView = class extends import_obsidian35.ItemView {
       settled = true;
       const text = ta.value.trim();
       wrap.remove();
+      if (held && this.isPaused())
+        this.togglePlayPause();
       if (save)
         void onSave(text);
     };
@@ -49502,7 +52136,7 @@ function stripTags3(s) {
 init_yt_history_client();
 
 // src/ui/HistoryRangeModal.ts
-var import_obsidian36 = require("obsidian");
+var import_obsidian37 = require("obsidian");
 var DAY3 = 864e5;
 var startOfDay = (ms) => {
   const d = new Date(ms);
@@ -49515,7 +52149,7 @@ var endOfDay = (ms) => {
   return d.getTime();
 };
 var iso = (ms) => new Date(ms - new Date(ms).getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
-var HistoryRangeModal = class extends import_obsidian36.Modal {
+var HistoryRangeModal = class extends import_obsidian37.Modal {
   constructor(app, defaults, onSubmit) {
     super(app);
     this.alsoTranscripts = true;
@@ -49540,7 +52174,7 @@ var HistoryRangeModal = class extends import_obsidian36.Modal {
       ["\u904E\u53BB90\u65E5", startOfDay(now - 89 * DAY3), endOfDay(now)],
       ["\u4ECA\u6708", startOfDay(new Date((/* @__PURE__ */ new Date()).getFullYear(), (/* @__PURE__ */ new Date()).getMonth(), 1).getTime()), endOfDay(now)]
     ];
-    const presetRow = new import_obsidian36.Setting(contentEl).setName("\u30D7\u30EA\u30BB\u30C3\u30C8");
+    const presetRow = new import_obsidian37.Setting(contentEl).setName("\u30D7\u30EA\u30BB\u30C3\u30C8");
     for (const [label, s, u] of presets) {
       presetRow.addButton((b) => b.setButtonText(label).onClick(() => {
         this.since = s;
@@ -49549,23 +52183,23 @@ var HistoryRangeModal = class extends import_obsidian36.Modal {
         this.untilText.value = iso(u);
       }));
     }
-    new import_obsidian36.Setting(contentEl).setName("\u958B\u59CB\u65E5 (since)").setDesc("YYYY-MM-DD").addText((t) => {
+    new import_obsidian37.Setting(contentEl).setName("\u958B\u59CB\u65E5 (since)").setDesc("YYYY-MM-DD").addText((t) => {
       this.sinceText = t.inputEl;
       t.setValue(iso(this.since));
       t.inputEl.type = "date";
     });
-    new import_obsidian36.Setting(contentEl).setName("\u7D42\u4E86\u65E5 (until)").addText((t) => {
+    new import_obsidian37.Setting(contentEl).setName("\u7D42\u4E86\u65E5 (until)").addText((t) => {
       this.untilText = t.inputEl;
       t.setValue(iso(this.until));
       t.inputEl.type = "date";
     });
-    new import_obsidian36.Setting(contentEl).setName("\u4E0A\u9650\uFF08\u672C\uFF09").setDesc("\u53D6\u5F97\u3059\u308B\u6700\u5927\u52D5\u753B\u6570\uFF08\u5B89\u5168\u5F01\uFF09\u3002").addSlider((s) => s.setLimits(5, 300, 5).setValue(this.maxVideos).setDynamicTooltip().onChange((v) => {
+    new import_obsidian37.Setting(contentEl).setName("\u4E0A\u9650\uFF08\u672C\uFF09").setDesc("\u53D6\u5F97\u3059\u308B\u6700\u5927\u52D5\u753B\u6570\uFF08\u5B89\u5168\u5F01\uFF09\u3002").addSlider((s) => s.setLimits(5, 300, 5).setValue(this.maxVideos).setDynamicTooltip().onChange((v) => {
       this.maxVideos = v;
     }));
-    new import_obsidian36.Setting(contentEl).setName("\u6587\u5B57\u8D77\u3053\u3057\u3082\u53D6\u5F97").setDesc("\u5404\u52D5\u753B\u306E\u5B57\u5E55\u3092\u53D6\u5F97\u3057\u3066\u300C\u539F\u6587\u300D\u30CE\u30FC\u30C8\u3068\u3057\u3066\u51CD\u7D50\u3057\u307E\u3059\uFF08\u30AA\u30D5\u306A\u3089\u4E00\u89A7\u306E\u307F\uFF09\u3002").addToggle((t) => t.setValue(this.alsoTranscripts).onChange((v) => {
+    new import_obsidian37.Setting(contentEl).setName("\u6587\u5B57\u8D77\u3053\u3057\u3082\u53D6\u5F97").setDesc("\u5404\u52D5\u753B\u306E\u5B57\u5E55\u3092\u53D6\u5F97\u3057\u3066\u300C\u539F\u6587\u300D\u30CE\u30FC\u30C8\u3068\u3057\u3066\u51CD\u7D50\u3057\u307E\u3059\uFF08\u30AA\u30D5\u306A\u3089\u4E00\u89A7\u306E\u307F\uFF09\u3002").addToggle((t) => t.setValue(this.alsoTranscripts).onChange((v) => {
       this.alsoTranscripts = v;
     }));
-    new import_obsidian36.Setting(contentEl).addButton(
+    new import_obsidian37.Setting(contentEl).addButton(
       (b) => b.setButtonText("\u53D6\u5F97").setCta().onClick(() => {
         const s = Date.parse(this.sinceText.value);
         const u = Date.parse(this.untilText.value);
@@ -49590,7 +52224,24 @@ var HistoryRangeModal = class extends import_obsidian36.Modal {
 
 // src/main.ts
 var AUTO_SWEEP_CAP = 12;
-var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian37.Plugin {
+var SURFACE_BY_VIEW_TYPE = {
+  [JP_COLLOCATIONS_VIEW_TYPE]: "lexicon",
+  [JP_DICTIONARY_VIEW_TYPE]: "dict",
+  [JP_X_VIEW_TYPE]: "x",
+  [JP_TRAY_VIEW_TYPE]: "tray",
+  [JP_REVIEW_VIEW_TYPE]: "review",
+  [JP_PIPELINE_VIEW_TYPE]: "capture"
+};
+var SURFACE_ORDER = ["lexicon", "dict", "x", "tray", "review", "capture"];
+var SURFACE_COMMANDS = [
+  { id: "lexicon", name: "\u8A9E\u5F59" },
+  { id: "dict", name: "\u8F9E\u66F8" },
+  { id: "x", name: "\u{1D54F} \u691C\u7D22" },
+  { id: "tray", name: "\u30C8\u30EC\u30A4" },
+  { id: "review", name: "\u5FA9\u7FD2" },
+  { id: "capture", name: "\u26A1 \u53D6\u308A\u8FBC\u307F" }
+];
+var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian38.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULT_SETTINGS };
@@ -49618,6 +52269,30 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
     this.sweepTermsCache = /* @__PURE__ */ new Map();
     /** Status-bar item showing sidecar coverage for the current session. */
     this.sidecarStatusEl = null;
+    /**
+     * Where the sharded dictionaries actually live, resolved once at load.
+     *
+     * Measured 2026-08-06: the shelf is 51,016 shard files in a vault holding
+     * 636 notes. Obsidian registers and watches every file it can see, so the
+     * folder is best named with a leading dot — Obsidian skips those entirely,
+     * while `vault.adapter` (which is the ONLY way this plugin touches the
+     * shelf, `getResourcePath` for dictionary media included) reads them exactly
+     * as before.
+     *
+     * This is resolved rather than configured because the setting rides in the
+     * synced blob while the FOLDER may or may not have travelled with it. A
+     * device that has `JP Dictionaries` and a device that has `.JP Dictionaries`
+     * must both work off one synced setting, so whichever is actually on disk
+     * wins. See `resolveBigDictRoot`.
+     */
+    this.bigDictRoot = "JP Dictionaries";
+    /** Where you have been, newest last. See `src/ui/suite-nav.ts` — the rules
+     *  that keep this a stack rather than a log live there and are golden-tested. */
+    this.navStack = [];
+    /** Touchpad reducer state. See `ui/input-map.ts` for why it needs any. */
+    this.gesture = idleGesture();
+    /** Live text scale for the plugin's surfaces, 0–4. Persisted. */
+    this.density = DENSITY_DEFAULT;
     /**
      * AUTO-SWEEP — the one-entry sweep, run the moment a card is classified.
      *
@@ -49654,19 +52329,36 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
     this.mirrorTimer = null;
   }
   async onload() {
-    var _a2, _b2, _c2, _d2, _e2, _f2;
+    var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2;
     injectClassGrammar(document);
     const pluginDir = (_a2 = this.manifest.dir) != null ? _a2 : `${this.app.vault.configDir}/plugins/jp-collocations`;
     const blobIO = {
       read: async (p) => await this.app.vault.adapter.exists(p) ? this.app.vault.adapter.read(p) : null,
-      write: (p, text) => this.app.vault.adapter.write(p, text)
+      write: (p, text) => this.app.vault.adapter.write(p, text),
+      remove: async (p) => {
+        if (await this.app.vault.adapter.exists(p))
+          await this.app.vault.adapter.remove(p);
+      }
     };
-    this.dm = new DataManager(blobIO, (0, import_obsidian37.normalizePath)(`${pluginDir}/data.json`), (0, import_obsidian37.normalizePath)(`${pluginDir}/data.json.bak`));
+    this.dm = new DataManager(
+      blobIO,
+      (0, import_obsidian38.normalizePath)(`${pluginDir}/data.json`),
+      (0, import_obsidian38.normalizePath)(`${pluginDir}/data.json.bak`),
+      800,
+      { dir: (0, import_obsidian38.normalizePath)(pluginDir) }
+    );
     const loadRes = await this.dm.load();
     if (loadRes.restoredFromBackup)
-      new import_obsidian37.Notice("jp-collocations: data.json \u304C\u7834\u640D \u2014 \u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u304B\u3089\u5FA9\u5143\u3057\u307E\u3057\u305F");
+      new import_obsidian38.Notice("jp-collocations: data.json \u304C\u7834\u640D \u2014 \u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u304B\u3089\u5FA9\u5143\u3057\u307E\u3057\u305F");
     else if (loadRes.corrupt)
-      new import_obsidian37.Notice("jp-collocations: data.json \u304C\u7834\u640D\u3001\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u306A\u3057 \u2014 \u7A7A\u306E\u72B6\u614B\u3067\u958B\u59CB\u3057\u307E\u3059");
+      new import_obsidian38.Notice("jp-collocations: data.json \u304C\u7834\u640D\u3001\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u306A\u3057 \u2014 \u7A7A\u306E\u72B6\u614B\u3067\u958B\u59CB\u3057\u307E\u3059");
+    if (loadRes.missingPartitions.length) {
+      new import_obsidian38.Notice(
+        `jp-collocations: \u30C7\u30FC\u30BF\u5206\u5272\u30D5\u30A1\u30A4\u30EB\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093 \u2014 ${loadRes.missingPartitions.join(", ")}
+\u8A72\u5F53\u30B9\u30C8\u30A2\u306F\u66F8\u304D\u8FBC\u307F\u3092\u62D2\u5426\u3057\u307E\u3059\uFF08\u7A7A\u306E\u72B6\u614B\u3067\u4E0A\u66F8\u304D\u3057\u306A\u3044\u305F\u3081\uFF09\u3002`,
+        0
+      );
+    }
     let secretsExtracted = false;
     const migrated = this.dm.mutate((blob) => {
       const strippedIndexes = stripDerivedIndexes(blob);
@@ -49683,11 +52375,34 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       if (secretsExtracted)
         return this.dm.alignBackup();
     });
+    void this.dm.repartition();
     for (const legacy of ["_yt_cookies.txt", "_yt_cookies.txt.meta"]) {
-      void this.app.vault.adapter.remove((0, import_obsidian37.normalizePath)(`${pluginDir}/${legacy}`)).catch(() => {
+      void this.app.vault.adapter.remove((0, import_obsidian38.normalizePath)(`${pluginDir}/${legacy}`)).catch(() => {
       });
     }
     this.loadSettings();
+    configurePosture({
+      hand: this.settings.posture.hand,
+      override: this.settings.posture.override,
+      penNativeDrag: this.settings.posture.penNativeDrag,
+      ...this.settings.posture.touchNativeDrag ? { touchNativeDrag: this.settings.posture.touchNativeDrag } : {},
+      onDragVerdict: (pointer, v) => {
+        const key = pointer === "pen" ? "penNativeDrag" : "touchNativeDrag";
+        if (this.settings.posture[key] === v)
+          return;
+        this.settings.posture[key] = v;
+        void this.saveSettings();
+      },
+      ...this.settings.posture.rail ? { rail: this.settings.posture.rail } : {},
+      onRail: (r2) => {
+        this.settings.posture.rail = { ...r2 };
+        void this.saveSettings();
+      }
+    });
+    applyPostureClasses();
+    this.density = clampDensity((_c2 = (_b2 = this.settings.posture) == null ? void 0 : _b2.density) != null ? _c2 : DENSITY_DEFAULT);
+    this.applyDensity();
+    this.register(watchForPen());
     const stored = this.dm.snapshot();
     this.surferBridge = new SurferBridge((data) => this.dm.setKey("_surferBridge", data), this.app);
     if (stored._surferBridge) {
@@ -49699,16 +52414,22 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       this.app.workspace.onLayoutReady(() => this.backgroundIndexVault());
     }
     let indexTimer = null;
+    let indexedAt = null;
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
         if (indexTimer)
           clearTimeout(indexTimer);
         indexTimer = setTimeout(() => {
+          var _a3, _b3;
           if (!leaf)
             return;
           const file = this.app.workspace.getActiveFile();
           if (!file || file.extension !== "md")
             return;
+          const mtime = (_b3 = (_a3 = file.stat) == null ? void 0 : _a3.mtime) != null ? _b3 : 0;
+          if (indexedAt && indexedAt.path === file.path && indexedAt.mtime === mtime)
+            return;
+          indexedAt = { path: file.path, mtime };
           this.app.vault.cachedRead(file).then((content) => {
             void this.surferBridge.indexFileWithSidecar(file.path, content);
           });
@@ -49756,19 +52477,23 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
     this.srsStore.load(stored == null ? void 0 : stored._srsDeck);
     this.ratifyStore = new RatifyStore((data) => this.dm.setKey("_ratifications", data));
     this.ratifyStore.load(stored == null ? void 0 : stored._ratifications);
-    this.discourseSeg = (_b2 = stored == null ? void 0 : stored._discourseSeg) != null ? _b2 : {};
-    this.componentGold = (_c2 = stored == null ? void 0 : stored._componentGold) != null ? _c2 : {};
-    this.discourseRel = (_d2 = stored == null ? void 0 : stored._discourseRel) != null ? _d2 : {};
-    this.discourseReadings = (_e2 = stored == null ? void 0 : stored._readingsGold) != null ? _e2 : {};
+    this.discourseSeg = (_d2 = stored == null ? void 0 : stored._discourseSeg) != null ? _d2 : {};
+    this.componentGold = (_e2 = stored == null ? void 0 : stored._componentGold) != null ? _e2 : {};
+    this.discourseRel = (_f2 = stored == null ? void 0 : stored._discourseRel) != null ? _f2 : {};
+    this.discourseReadings = (_g2 = stored == null ? void 0 : stored._readingsGold) != null ? _g2 : {};
     this.inboxStore = new InboxStore((data) => this.dm.setKey("_inbox", data));
     this.inboxStore.load(stored == null ? void 0 : stored._inbox);
+    this.bigDictRoot = await resolveBigDictRoot(
+      (p) => this.app.vault.adapter.exists((0, import_obsidian38.normalizePath)(p)),
+      ((_h2 = this.settings.bigDict) == null ? void 0 : _h2.root) || "JP Dictionaries"
+    );
     this.bigDict = new BigDictStore(
       vaultSidecarIO(this.app),
-      ((_f2 = this.settings.bigDict) == null ? void 0 : _f2.root) || "JP Dictionaries",
+      this.bigDictRoot,
       // One query reads one shard per installed dictionary (31 here), so the
       // cache has to span a whole query or nothing is ever reused. Phones get
       // a third of the budget.
-      { cacheBytes: (import_obsidian37.Platform.isMobile ? 8 : 24) * 1024 * 1024 }
+      { cacheBytes: (import_obsidian38.Platform.isMobile ? 8 : 24) * 1024 * 1024 }
     );
     this.reachStore = new ReachStore((data) => this.dm.setKey("_reaches", data));
     this.reachStore.load(stored == null ? void 0 : stored._reaches);
@@ -49786,7 +52511,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       // §25.1 harvest: a mark re-manifests its transcript moment
       resolveMarkContext: (mark) => this.resolveMarkContext(mark),
       // §25.4: and can still have its scene cut, long after the watch ended
-      clipForMark: import_obsidian37.Platform.isDesktopApp ? (card) => this.cutClipForMarkCard(card) : void 0,
+      clipForMark: import_obsidian38.Platform.isDesktopApp ? (card) => this.cutClipForMarkCard(card) : void 0,
       setMarkNote: async (id, text) => {
         await this.inboxStore.setMarkNote(id, text);
       },
@@ -49802,7 +52527,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       onRecognize: async (id, i) => {
         const r2 = await this.reachStore.recognizeOffer(id, i, Date.now());
         if (r2 == null ? void 0 : r2.filled)
-          new import_obsidian37.Notice(`\u300C${r2.want}\u300D \u2192 \u300C${r2.filled.surface}\u300D`, 8e3);
+          new import_obsidian38.Notice(`\u300C${r2.want}\u300D \u2192 \u300C${r2.filled.surface}\u300D`, 8e3);
       },
       onRejectOffer: async (id, i) => {
         await this.reachStore.rejectOffer(id, i);
@@ -49813,12 +52538,24 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       onDrop: (intent, files) => void this.runDropIntent(intent, files),
       dropCan: () => this.dropCapabilities(),
       openSurface: (s) => void this.openSurface(s),
+      dismiss: () => void this.navBack(),
+      ...this.peekChrome(),
       surfaceBadge: (s) => this.surfaceBadge(s)
     }));
     this.speakStore = new SpeakStore((data) => this.dm.setKey("_speakSessions", data));
     this.speakStore.load(stored == null ? void 0 : stored._speakSessions);
     this.registerView(JP_FOLLOW_VIEW_TYPE, (leaf) => new FollowAlongView(leaf, {
       parse: parseTranscriptLines,
+      // 鑑賞モード has no identity bar — a navigator across the top of the thing
+      // you are watching is chrome over the content — so it had no way out at
+      // all. The edge drag is its only exit, and it has to be wired here.
+      dismiss: () => void this.navBack(),
+      backPeek: () => this.navPeek(),
+      // This view wires its chrome by hand, so it does not get `peekChrome()`'s
+      // bundle — and the drop road it DOES arm was therefore the only one in
+      // the plugin running without an oracle, falling back to the guess
+      // `resource-url.ts` exists to replace.
+      inVault: (c) => this.resolveVaultPath(c),
       // §6.5 — the 予測 answer the panel used to discard on close.
       recordDrill: (scope, caseId, claim, picked) => {
         void this.ratifyStore.record(drillRow(scope, caseId, claim, picked, Date.now()));
@@ -49826,7 +52563,14 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       // Returns the tray card id so 鑑賞モード can write a clip back onto the
       // very card the mark became, instead of holding it only in memory.
       addTrayMark: async (m) => {
-        const card = markCard(m, Date.now());
+        var _a3;
+        let lineText;
+        try {
+          const ctx = await this.resolveMarkContext(m);
+          lineText = ((_a3 = ctx == null ? void 0 : ctx.example) != null ? _a3 : "").trim();
+        } catch (e) {
+        }
+        const card = markCard(lineText === void 0 ? m : { ...m, lineText }, Date.now());
         await this.inboxStore.add(card);
         this.refreshTrayViews();
         return card.id;
@@ -49852,6 +52596,11 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       speak: this.speakStore,
       aspects: () => this.settings.speak.aspects,
       goalPoints: () => this.settings.speak.goalPoints,
+      // §26.3 — the Pencil's own verb: hold the nib over a word in a subtitle
+      // and the dictionary answers without a tap, a pause, or losing the line.
+      dictLookup: (q) => this.dictStore.lookup(q),
+      // §25.4 — writing a note stops the show; closing it starts it again.
+      autoPauseOnWrite: () => this.settings.posture.autoPauseOnWrite,
       openCapture: (ctx) => new CaptureModal(this.app, ctx, this.makeCaptureDeps()).open(),
       mediumOf: (file) => {
         var _a3, _b3, _c3, _d3, _e3;
@@ -49966,7 +52715,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
           if (!pat)
             return false;
           const word = (_c3 = p.payload.lemma) != null ? _c3 : p.key;
-          const progress = new import_obsidian37.Notice(`\u8A9E\u6CD5: ${pat.name} \u3092\u53D6\u5F97\u4E2D\u2026`, 0);
+          const progress = new import_obsidian38.Notice(`\u8A9E\u6CD5: ${pat.name} \u3092\u53D6\u5F97\u4E2D\u2026`, 0);
           try {
             const twc = new TsukubaWebCorpusScraper(this.app, this.store, {
               rateLimit: this.settings.twcRateLimit,
@@ -49974,7 +52723,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
             });
             const senses = await twc.resolve(word);
             if (!senses[0]) {
-              new import_obsidian37.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u306F TWC \u306E\u898B\u51FA\u3057\u8A9E\u306B\u3042\u308A\u307E\u305B\u3093`, 5e3);
+              new import_obsidian38.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u306F TWC \u306E\u898B\u51FA\u3057\u8A9E\u306B\u3042\u308A\u307E\u305B\u3093`, 5e3);
               return false;
             }
             await sleep(this.settings.twcRateLimit);
@@ -49986,15 +52735,15 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
               category: pat.category
             });
             if (!frame) {
-              new import_obsidian37.Notice(`\u8A9E\u6CD5: ${pat.name} \u306F\u5171\u8D77\u8A9E\u304C\u8FD4\u308A\u307E\u305B\u3093\u3067\u3057\u305F`, 5e3);
+              new import_obsidian38.Notice(`\u8A9E\u6CD5: ${pat.name} \u306F\u5171\u8D77\u8A9E\u304C\u8FD4\u308A\u307E\u305B\u3093\u3067\u3057\u305F`, 5e3);
               return false;
             }
             const ok = await this.patternStore.extendGoho(p.id, { frame });
             if (ok)
-              new import_obsidian37.Notice(`${pat.name}: ${frame.total.toLocaleString()}\u7A2E\u985E\u306E\u3046\u3061 ${frame.items.length}\u4EF6\u3092\u5C55\u958B`, 5e3);
+              new import_obsidian38.Notice(`${pat.name}: ${frame.total.toLocaleString()}\u7A2E\u985E\u306E\u3046\u3061 ${frame.items.length}\u4EF6\u3092\u5C55\u958B`, 5e3);
             return ok;
           } catch (e) {
-            new import_obsidian37.Notice(`\u8A9E\u6CD5\u306E\u53D6\u5F97\u306B\u5931\u6557: ${e instanceof Error ? e.message : String(e)}`, 8e3);
+            new import_obsidian38.Notice(`\u8A9E\u6CD5\u306E\u53D6\u5F97\u306B\u5931\u6557: ${e instanceof Error ? e.message : String(e)}`, 8e3);
             return false;
           } finally {
             progress.hide();
@@ -50003,7 +52752,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
         drillExamples: this.settings.twcEnabled ? async (p, frameLabel, colloc) => {
           var _a3;
           const word = (_a3 = p.payload.lemma) != null ? _a3 : p.key;
-          const progress = new import_obsidian37.Notice(`\u7528\u4F8B: \u300C${colloc.text}\u300D\u3092\u53D6\u5F97\u4E2D\u2026`, 0);
+          const progress = new import_obsidian38.Notice(`\u7528\u4F8B: \u300C${colloc.text}\u300D\u3092\u53D6\u5F97\u4E2D\u2026`, 0);
           try {
             const twc = new TsukubaWebCorpusScraper(this.app, this.store, {
               rateLimit: this.settings.twcRateLimit,
@@ -50026,10 +52775,10 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
                 collocate: e.collocate
               }))
             });
-            new import_obsidian37.Notice(ok ? `\u300C${colloc.text}\u300D\u306E\u7528\u4F8B ${rows.length}\u4EF6\u3092\u53D6\u308A\u8FBC\u307F\u307E\u3057\u305F\uFF08\u5168${colloc.freq.toLocaleString()}\u4EF6\u4E2D\uFF09` : `\u300C${colloc.text}\u300D\u306E\u7528\u4F8B\u306F\u53D6\u5F97\u6E08\u307F\u3067\u3059`, 5e3);
+            new import_obsidian38.Notice(ok ? `\u300C${colloc.text}\u300D\u306E\u7528\u4F8B ${rows.length}\u4EF6\u3092\u53D6\u308A\u8FBC\u307F\u307E\u3057\u305F\uFF08\u5168${colloc.freq.toLocaleString()}\u4EF6\u4E2D\uFF09` : `\u300C${colloc.text}\u300D\u306E\u7528\u4F8B\u306F\u53D6\u5F97\u6E08\u307F\u3067\u3059`, 5e3);
             return ok;
           } catch (e) {
-            new import_obsidian37.Notice(`\u7528\u4F8B\u306E\u53D6\u5F97\u306B\u5931\u6557: ${e instanceof Error ? e.message : String(e)}`, 8e3);
+            new import_obsidian38.Notice(`\u7528\u4F8B\u306E\u53D6\u5F97\u306B\u5931\u6557: ${e instanceof Error ? e.message : String(e)}`, 8e3);
             return false;
           } finally {
             progress.hide();
@@ -50200,6 +52949,80 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
         await this.saveSettings();
       }
     ));
+    for (const { id, name } of SURFACE_COMMANDS) {
+      this.addCommand({
+        id: `go-${id}`,
+        name: `${name} \u3078\uFF0F\u304B\u3089\u623B\u308B`,
+        callback: () => {
+          void this.openSurface(id);
+        }
+      });
+    }
+    this.addCommand({
+      id: "nav-back",
+      name: "\u623B\u308B\uFF08\u76F4\u524D\u306E\u5834\u6240\u3078\uFF09",
+      callback: () => {
+        void this.navBack();
+      }
+    });
+    this.addCommand({ id: "surface-next", name: "\u6B21\u306E\u9762\u3078", callback: () => this.stepSurface(1) });
+    this.addCommand({ id: "surface-prev", name: "\u524D\u306E\u9762\u3078", callback: () => this.stepSurface(-1) });
+    this.addCommand({ id: "density-up", name: "\u8868\u793A\u3092\u5927\u304D\u304F", callback: () => void this.stepDensity(1) });
+    this.addCommand({ id: "density-down", name: "\u8868\u793A\u3092\u5C0F\u3055\u304F", callback: () => void this.stepDensity(-1) });
+    this.addCommand({
+      id: "density-reset",
+      name: "\u8868\u793A\u306E\u5927\u304D\u3055\u3092\u6A19\u6E96\u306B\u623B\u3059",
+      callback: () => void this.stepDensity(0, true)
+    });
+    const wheelBound = /* @__PURE__ */ new WeakSet();
+    const onWheel = (e) => {
+      const r2 = feedWheel(this.gesture, {
+        deltaX: e.deltaX,
+        deltaY: e.deltaY,
+        ctrlKey: e.ctrlKey,
+        at: e.timeStamp
+      });
+      this.gesture = r2.state;
+      if (!r2.gesture)
+        return;
+      e.preventDefault();
+      if (r2.gesture.kind === "density-step")
+        void this.stepDensity(r2.gesture.by);
+      else
+        this.stepSurface(r2.gesture.by);
+    };
+    const bindWheel = () => {
+      if (posture() !== "desk")
+        return;
+      for (const pane of Array.from(document.querySelectorAll(
+        '.workspace-leaf-content[data-type^="jp-"]'
+      ))) {
+        if (wheelBound.has(pane))
+          continue;
+        wheelBound.add(pane);
+        pane.addEventListener("wheel", onWheel, { passive: false });
+      }
+    };
+    this.registerEvent(this.app.workspace.on("layout-change", bindWheel));
+    this.app.workspace.onLayoutReady(bindWheel);
+    this.register(watchViewport(() => {
+      var _a3, _b3;
+      this.applyDensity();
+      for (const leaf of this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE)) {
+        (_b3 = (_a3 = leaf.view) == null ? void 0 : _a3.onResize) == null ? void 0 : _b3.call(_a3);
+      }
+    }));
+    this.registerDomEvent(document, "mousedown", (e) => {
+      var _a3, _b3, _c3;
+      if (mouseIntent(e.button) !== "back")
+        return;
+      const type = (_c3 = (_b3 = (_a3 = this.app.workspace.getMostRecentLeaf()) == null ? void 0 : _a3.view) == null ? void 0 : _b3.getViewType) == null ? void 0 : _c3.call(_b3);
+      if (!type || !SURFACE_BY_VIEW_TYPE[type])
+        return;
+      e.preventDefault();
+      e.stopPropagation();
+      void this.navBack();
+    });
     this.addCommand({
       id: "open-lexicon",
       name: "Open Lexicon",
@@ -50223,7 +53046,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
         var _a3;
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian37.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304B\u3089\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044");
+          new import_obsidian38.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304B\u3089\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044");
           return;
         }
         const file = this.app.workspace.getActiveFile();
@@ -50262,7 +53085,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       editorCallback: (editor) => {
         const selected = editor.getSelection().trim();
         if (!selected) {
-          new import_obsidian37.Notice("\u691C\u7D22\u8A9E\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
+          new import_obsidian38.Notice("\u691C\u7D22\u8A9E\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
           return;
         }
         this.fetchFromTWC([selected]);
@@ -50279,7 +53102,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       editorCallback: (editor) => {
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian37.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
+          new import_obsidian38.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
           return;
         }
         const file = this.app.workspace.getActiveFile();
@@ -50298,7 +53121,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       editorCallback: async (editor) => {
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian37.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
+          new import_obsidian38.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
           return;
         }
         const file = this.app.workspace.getActiveFile();
@@ -50332,7 +53155,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       callback: async () => {
         const file = this.app.workspace.getActiveFile();
         if (!file) {
-          new import_obsidian37.Notice("\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
+          new import_obsidian38.Notice("\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
           return;
         }
         const content = await this.app.vault.cachedRead(file);
@@ -50434,11 +53257,11 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
           plans.set(src.tFile.path, await this.annotateTranscript(prep.file, src));
         const written = await this.writeReconCards(prep, plans);
         if (!written) {
-          new import_obsidian37.Notice("\u30A2\u30F3\u30AB\u30FC\u53EF\u80FD\u306A\u7167\u5408\u30B9\u30D1\u30F3\u304C\u3042\u308A\u307E\u305B\u3093\uFF08\u8981\u78BA\u8A8D\u306E\u307F\uFF1F\uFF09");
+          new import_obsidian38.Notice("\u30A2\u30F3\u30AB\u30FC\u53EF\u80FD\u306A\u7167\u5408\u30B9\u30D1\u30F3\u304C\u3042\u308A\u307E\u305B\u3093\uFF08\u8981\u78BA\u8A8D\u306E\u307F\uFF1F\uFF09");
           return;
         }
         const withVid = prep.sources.some((s) => s.videoId);
-        new import_obsidian37.Notice(`\u30AB\u30FC\u30C9\u751F\u6210: ${written.count}\u4EF6${withVid ? "\uFF08YouTube \u30EA\u30F3\u30AF\u4ED8\u304D\uFF09" : "\uFF08\u539F\u6587\u30EA\u30F3\u30AF\u306E\u307F\uFF09"}`);
+        new import_obsidian38.Notice(`\u30AB\u30FC\u30C9\u751F\u6210: ${written.count}\u4EF6${withVid ? "\uFF08YouTube \u30EA\u30F3\u30AF\u4ED8\u304D\uFF09" : "\uFF08\u539F\u6587\u30EA\u30F3\u30AF\u306E\u307F\uFF09"}`);
         await this.app.workspace.getLeaf(false).openFile(written.outFile);
       }
     });
@@ -50494,7 +53317,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
           pasteOptional: true,
           submitLabel: "\u30A8\u30D4\u30BD\u30FC\u30C9\u53D6\u5F97",
           onSubmit: async (v) => {
-            const resp = await (0, import_obsidian37.requestUrl)({ url: v.feed, method: "GET", throw: false });
+            const resp = await (0, import_obsidian38.requestUrl)({ url: v.feed, method: "GET", throw: false });
             if (resp.status !== 200)
               throw new Error(`\u30D5\u30A3\u30FC\u30C9\u53D6\u5F97\u5931\u6557: HTTP ${resp.status}`);
             const feed = parsePodcastFeed(resp.text);
@@ -50502,7 +53325,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
               throw new Error("\u30A8\u30D4\u30BD\u30FC\u30C9\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
             const idx = Math.max(1, Number(v.pick) || 1) - 1;
             const ep = feed.episodes[Math.min(idx, feed.episodes.length - 1)];
-            const audioResp = await (0, import_obsidian37.requestUrl)({ url: ep.audioUrl, method: "GET", throw: false });
+            const audioResp = await (0, import_obsidian38.requestUrl)({ url: ep.audioUrl, method: "GET", throw: false });
             if (audioResp.status !== 200)
               throw new Error(`\u97F3\u58F0\u53D6\u5F97\u5931\u6557: HTTP ${audioResp.status}`);
             const folder = "Podcasts";
@@ -50510,9 +53333,9 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
               await this.app.vault.createFolder(folder).catch(() => {
               });
             const safe = ep.title.replace(/[\\/:*?"<>|]/g, "").slice(0, 60);
-            const audioPath = (0, import_obsidian37.normalizePath)(`${folder}/${safe}.mp3`);
+            const audioPath = (0, import_obsidian38.normalizePath)(`${folder}/${safe}.mp3`);
             await this.app.vault.createBinary(audioPath, audioResp.arrayBuffer);
-            const notePath = (0, import_obsidian37.normalizePath)(`${folder}/${safe}.md`);
+            const notePath = (0, import_obsidian38.normalizePath)(`${folder}/${safe}.md`);
             await this.app.vault.create(notePath, podcastNote(feed.show, ep, audioPath));
             void this.app.workspace.openLinkText(notePath, "", false);
             const mb = (audioResp.arrayBuffer.byteLength / 1048576).toFixed(1);
@@ -50605,19 +53428,24 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       callback: async () => {
         const path = `${_JPCollocationsPlugin.MIRROR_FOLDER}/catalog.jsonl`;
         const f = this.app.vault.getAbstractFileByPath(path);
-        if (!(f instanceof import_obsidian37.TFile)) {
-          new import_obsidian37.Notice(`${path} \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
+        if (!(f instanceof import_obsidian38.TFile)) {
+          new import_obsidian38.Notice(`${path} \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
           return;
         }
         const entries = parseCatalogJsonl(await this.app.vault.cachedRead(f));
         if (!entries.length) {
-          new import_obsidian37.Notice("\u30DF\u30E9\u30FC\u306B\u6709\u52B9\u306A\u30A8\u30F3\u30C8\u30EA\u304C\u3042\u308A\u307E\u305B\u3093");
+          new import_obsidian38.Notice("\u30DF\u30E9\u30FC\u306B\u6709\u52B9\u306A\u30A8\u30F3\u30C8\u30EA\u304C\u3042\u308A\u307E\u305B\u3093");
           return;
         }
         const n = await this.patternStore.importReplace(entries);
         this.refreshReconLibrary();
-        new import_obsidian37.Notice(`\u53F0\u5E33\u3092\u5FA9\u5143\u3057\u307E\u3057\u305F: ${n}\u4EF6`);
+        new import_obsidian38.Notice(`\u53F0\u5E33\u3092\u5FA9\u5143\u3057\u307E\u3057\u305F: ${n}\u4EF6`);
       }
+    });
+    this.addCommand({
+      id: "pen-probe",
+      name: "\u270E \u8ABF\u67FB: \u30DA\u30F3\uFF0F\u30C9\u30E9\u30C3\u30B0\u306E\u5B9F\u6E2C\uFF08iPad\uFF09",
+      callback: () => new PenProbeModal(this.app).open()
     });
     this.addCommand({
       id: "debug-dump",
@@ -50630,7 +53458,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
         }).sort((a, b) => b[1] - a[1]).map(([k, n]) => `  ${k}: ${n >= 1024 ? `${(n / 1024).toFixed(0)}KB` : `${n}B`}`);
         const lines = [
           `jp-collocations debug dump \u2014 ${(/* @__PURE__ */ new Date()).toISOString()}`,
-          `platform: ${import_obsidian37.Platform.isDesktopApp ? "desktop" : "mobile"}`,
+          `platform: ${import_obsidian38.Platform.isDesktopApp ? "desktop" : "mobile"}`,
           `blob writes this session: ${this.dm.writes}`,
           `blob keys by size:`,
           ...keySizes,
@@ -50647,7 +53475,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
         const text = lines.join("\n");
         await navigator.clipboard.writeText(text);
         console.log(text);
-        new import_obsidian37.Notice("\u{1FA7A} \u8A3A\u65AD\u3092\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u306B\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F");
+        new import_obsidian38.Notice("\u{1FA7A} \u8A3A\u65AD\u3092\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u306B\u30B3\u30D4\u30FC\u3057\u307E\u3057\u305F");
       }
     });
     this.addCommand({
@@ -50694,9 +53522,16 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
     });
     this.addCommand({
       id: "repair-big-dictionaries",
-      name: "\u8F9E\u66F8: \u5909\u63DB\u6E08\u307F\u8F9E\u66F8\u3092\u4FEE\u5FA9\uFF08meta.json \u3092\u518D\u751F\u6210\u3057\u3066\u691C\u7D22\u53EF\u80FD\u306B\uFF09",
+      name: "\u8F9E\u66F8: \u5909\u63DB\u6E08\u307F\u8F9E\u66F8\u3092\u691C\u67FB\u30FB\u4FEE\u5FA9\uFF08meta.json \u518D\u751F\u6210\uFF0B\u30B7\u30E3\u30FC\u30C9\u7834\u640D\u306E\u691C\u51FA\uFF09",
       callback: async () => {
         await this.repairBigDictionaries();
+      }
+    });
+    this.addCommand({
+      id: "build-intent-index",
+      name: "\u8F9E\u66F8: \u610F\u56F3\u7D22\u5F15\u3092\u69CB\u7BC9\uFF08\u82F1\u8A9E\u306E\u9858\u3044\u304B\u3089\u5F15\u3051\u308B\u3088\u3046\u306B\u3059\u308B \xA727.2\uFF09",
+      callback: async () => {
+        await this.buildIntentIndexes();
       }
     });
     this.addCommand({
@@ -50717,15 +53552,15 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       id: "jimaku-subtitle-transcript",
       name: "\u{1F4FA} jimaku: \u65E5\u672C\u8A9E\u5B57\u5E55\u3092\u63A2\u3057\u3066\u53D6\u308A\u8FBC\u3080",
       callback: () => {
-        var _a3, _b3, _c3, _d3, _e3, _f3, _g2, _h2;
+        var _a3, _b3, _c3, _d3, _e3, _f3, _g3, _h3;
         const f = this.app.workspace.getActiveFile();
         const fm = f ? (_a3 = this.app.metadataCache.getFileCache(f)) == null ? void 0 : _a3.frontmatter : void 0;
         const show = (_d3 = (_c3 = (_b3 = fm == null ? void 0 : fm.show) != null ? _b3 : fm == null ? void 0 : fm.title) != null ? _c3 : f == null ? void 0 : f.basename) != null ? _d3 : "";
         const ep = episodeNumberFrom(String((_f3 = (_e3 = fm == null ? void 0 : fm.title) != null ? _e3 : f == null ? void 0 : f.basename) != null ? _f3 : ""));
         this.openJimakuPicker({
           query: jimakuQueryFor({ show: fm == null ? void 0 : fm.show, title: show }),
-          episode: (_g2 = fm == null ? void 0 : fm.episode) != null ? _g2 : ep.episode,
-          season: (_h2 = fm == null ? void 0 : fm.season) != null ? _h2 : ep.season
+          episode: (_g3 = fm == null ? void 0 : fm.episode) != null ? _g3 : ep.episode,
+          season: (_h3 = fm == null ? void 0 : fm.season) != null ? _h3 : ep.season
         }, {
           ...(fm == null ? void 0 : fm.plex_rating_key) ? { ratingKey: String(fm.plex_rating_key) } : {},
           ...(fm == null ? void 0 : fm.plex_part_key) ? { partKey: String(fm.plex_part_key) } : {}
@@ -50737,7 +53572,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       name: "\u9858\u3044: Hold a Reach (a meaning you can't yet say)",
       callback: () => new ReachModal(this.app, async (want, gloss) => {
         const r2 = await this.reachStore.add(want, Date.now(), gloss);
-        new import_obsidian37.Notice(`\u9858\u3044\u300C${r2.want}\u300D\u3092\u4FDD\u6301\u3057\u307E\u3057\u305F \u2014 \u5C4A\u3044\u305F\u3082\u306E\u304C\u4E26\u3079\u3089\u308C\u307E\u3059`, 6e3);
+        new import_obsidian38.Notice(`\u9858\u3044\u300C${r2.want}\u300D\u3092\u4FDD\u6301\u3057\u307E\u3057\u305F \u2014 \u5C4A\u3044\u305F\u3082\u306E\u304C\u4E26\u3079\u3089\u308C\u307E\u3059`, 6e3);
         this.refreshTrayViews();
       }).open()
     });
@@ -50757,7 +53592,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       editorCallback: (editor) => {
         const selected = editor.getSelection().trim();
         if (!selected) {
-          new import_obsidian37.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
+          new import_obsidian38.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
           return;
         }
         this.openDictionaryView(selected);
@@ -50768,7 +53603,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
     });
     this.registerDomEvent(ribbon, "contextmenu", (evt) => {
       evt.preventDefault();
-      const menu = new import_obsidian37.Menu();
+      const menu = new import_obsidian38.Menu();
       const add = (title, icon, cb) => menu.addItem((i) => i.setTitle(title).setIcon(icon).onClick(cb));
       add("\u53CE\u96C6\u30C8\u30EC\u30A4", "inbox", () => {
         void this.openTray();
@@ -50820,7 +53655,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       editorCallback: (editor) => {
         const sel = editor.getSelection().trim();
         if (!sel) {
-          new import_obsidian37.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
+          new import_obsidian38.Notice("\u30C6\u30AD\u30B9\u30C8\u3092\u9078\u629E\u3057\u3066\u304F\u3060\u3055\u3044");
           return;
         }
         this.openXView(sel);
@@ -50851,7 +53686,7 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       const text = ((_a3 = params.text) != null ? _a3 : "").trim();
       const example = ((_b3 = params.example) != null ? _b3 : "").trim();
       if (!text && !example) {
-        new import_obsidian37.Notice("jpc-capture: text \u304B example \u304C\u5FC5\u8981\u3067\u3059");
+        new import_obsidian38.Notice("jpc-capture: text \u304B example \u304C\u5FC5\u8981\u3067\u3059");
         return;
       }
       const kind = (_c3 = ["yt", "x", "web", "manual"].find((k) => k === params.source)) != null ? _c3 : "manual";
@@ -50893,7 +53728,7 @@ ${reasonLines}` : "");
         const s = this.surferBridge.getCoverageStats();
         const ratio = s.indexed > 0 ? `${s.applied}/${s.indexed}` : "0/0";
         const reasonLines = Object.entries(s.byReason).map(([k, v]) => `  ${k}: ${v}`).join("\n");
-        new import_obsidian37.Notice(
+        new import_obsidian38.Notice(
           `Sidecar coverage: ${ratio} applied` + (reasonLines ? `
 Unapplied:
 ${reasonLines}` : "\n(all applied)"),
@@ -50908,8 +53743,8 @@ ${reasonLines}` : "\n(all applied)"),
         const modes = ["sentence", "clause", "phrase", "pattern", "blank"];
         const idx = modes.indexOf(activeSelMode);
         activeSelMode = modes[(idx + 1) % modes.length];
-        const cfg = SELECTION_MODES.find((m) => m.id === activeSelMode);
-        new import_obsidian37.Notice(`${cfg.icon} ${cfg.label} (${cfg.labelEn})`);
+        const cfg2 = SELECTION_MODES.find((m) => m.id === activeSelMode);
+        new import_obsidian38.Notice(`${cfg2.icon} ${cfg2.label} (${cfg2.labelEn})`);
         updateToolbar();
       }
     });
@@ -50944,7 +53779,7 @@ ${reasonLines}` : "\n(all applied)"),
             ).open();
           }
         } else {
-          new import_obsidian37.Notice("\u9078\u629E\u5BFE\u8C61\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
+          new import_obsidian38.Notice("\u9078\u629E\u5BFE\u8C61\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
         }
       }
     });
@@ -50972,7 +53807,7 @@ ${reasonLines}` : "\n(all applied)"),
         this.settings.readingModeHighlight = !this.settings.readingModeHighlight;
         this.saveSettings();
         document.body.toggleClass("jp-reading-hl-off", !this.settings.readingModeHighlight);
-        new import_obsidian37.Notice(`\u8AAD\u66F8\u30E2\u30FC\u30C9\u30CF\u30A4\u30E9\u30A4\u30C8: ${this.settings.readingModeHighlight ? "ON" : "OFF"}`);
+        new import_obsidian38.Notice(`\u8AAD\u66F8\u30E2\u30FC\u30C9\u30CF\u30A4\u30E9\u30A4\u30C8: ${this.settings.readingModeHighlight ? "ON" : "OFF"}`);
       }
     });
     if (!this.settings.readingModeHighlight) {
@@ -50989,12 +53824,12 @@ ${reasonLines}` : "\n(all applied)"),
       editorCallback: (editor) => {
         const cmView = editor.cm;
         if (!cmView) {
-          new import_obsidian37.Notice("\u3053\u306E\u7DE8\u96C6\u30D3\u30E5\u30FC\u3067\u306F\u5207\u308A\u66FF\u3048\u3089\u308C\u307E\u305B\u3093");
+          new import_obsidian38.Notice("\u3053\u306E\u7DE8\u96C6\u30D3\u30E5\u30FC\u3067\u306F\u5207\u308A\u66FF\u3048\u3089\u308C\u307E\u305B\u3093");
           return;
         }
         toggleDiscourseVisualization(cmView);
         const active = cmView.state.field(visualizationActive, false) === true;
-        new import_obsidian37.Notice("\u8AC7\u8A71\u6587\u6CD5\u53EF\u8996\u5316\uFF1A" + (active ? "ON" : "OFF"));
+        new import_obsidian38.Notice("\u8AC7\u8A71\u6587\u6CD5\u53EF\u8996\u5316\uFF1A" + (active ? "ON" : "OFF"));
       }
     });
     this.addCommand({
@@ -51003,7 +53838,7 @@ ${reasonLines}` : "\n(all applied)"),
       callback: () => {
         this.surferBridge.purgeIndexes();
         const total = this.app.vault.getMarkdownFiles().length;
-        new import_obsidian37.Notice(`\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3092\u7834\u68C4\u3057\u307E\u3057\u305F\u3002${total} \u30D5\u30A1\u30A4\u30EB\u3092\u30D0\u30C3\u30AF\u30B0\u30E9\u30A6\u30F3\u30C9\u3067\u518D\u89E3\u6790\u3057\u307E\u3059`);
+        new import_obsidian38.Notice(`\u30A4\u30F3\u30C7\u30C3\u30AF\u30B9\u3092\u7834\u68C4\u3057\u307E\u3057\u305F\u3002${total} \u30D5\u30A1\u30A4\u30EB\u3092\u30D0\u30C3\u30AF\u30B0\u30E9\u30A6\u30F3\u30C9\u3067\u518D\u89E3\u6790\u3057\u307E\u3059`);
         this.backgroundIndexVault();
       }
     });
@@ -51017,7 +53852,7 @@ ${reasonLines}` : "\n(all applied)"),
         const resolved = this.relationsResolver(text, { filePath });
         const summary = summarizeRelations(resolved.relations);
         const sourceTag = resolved.source === "sidecar" ? "[sidecar]" : "[heuristic]";
-        new import_obsidian37.Notice(
+        new import_obsidian38.Notice(
           `${sourceTag} \u95A2\u4FC2\u691C\u51FA: ${resolved.relations.length}\u4EF6
 ${summary}
 \u30C1\u30E3\u30F3\u30AF: ${resolved.chunks.length}`,
@@ -51248,7 +54083,7 @@ ${summary}
       var _a2;
       const ok = (_a2 = this.app.commands) == null ? void 0 : _a2.executeCommandById(`jp-collocations:${id}`);
       if (!ok)
-        new import_obsidian37.Notice(`\u30B3\u30DE\u30F3\u30C9\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${id}`, 6e3);
+        new import_obsidian38.Notice(`\u30B3\u30DE\u30F3\u30C9\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${id}`, 6e3);
     };
     const plexOff = !(this.settings.plex.baseUrl.trim() && this.settings.plex.token.trim()) ? "\u8A2D\u5B9A \u2192 Plex \u306B baseUrl \u3068 X-Plex-Token \u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044" : void 0;
     return [
@@ -51413,7 +54248,7 @@ ${summary}
   async exportDiscourseGold() {
     const examples = this.goldStore.all();
     const stats = this.goldStore.stats();
-    const goldPath = (0, import_obsidian37.normalizePath)("discourse-gold.jsonl");
+    const goldPath = (0, import_obsidian38.normalizePath)("discourse-gold.jsonl");
     await this.app.vault.adapter.write(goldPath, toJsonl(examples) + (examples.length ? "\n" : ""));
     const choices = this.patternStore.all().filter((p) => p.classRatified).map((p) => {
       var _a2;
@@ -51425,7 +54260,7 @@ ${summary}
         chosen: p.class
       });
     });
-    await this.app.vault.adapter.write((0, import_obsidian37.normalizePath)("class-choices.jsonl"), choices.join("\n") + (choices.length ? "\n" : ""));
+    await this.app.vault.adapter.write((0, import_obsidian38.normalizePath)("class-choices.jsonl"), choices.join("\n") + (choices.length ? "\n" : ""));
     const comps = Object.entries(this.componentGold).map(([key, v]) => {
       var _a2, _b2, _c2;
       return JSON.stringify({
@@ -51444,13 +54279,13 @@ ${summary}
       });
     });
     await this.app.vault.adapter.write(
-      (0, import_obsidian37.normalizePath)("component-gold.jsonl"),
+      (0, import_obsidian38.normalizePath)("component-gold.jsonl"),
       comps.join("\n") + (comps.length ? "\n" : "")
     );
     const acc = comps.length ? Object.values(this.componentGold).filter((v) => v.verdict === "accept").length : 0;
     const a = stats.actAgreement;
     const rate = a.graded ? `${Math.round(a.agreed / a.graded * 100)}% (${a.agreed}/${a.graded})` : "\u2014";
-    new import_obsidian37.Notice(
+    new import_obsidian38.Notice(
       `\u8AC7\u8A71\u30B4\u30FC\u30EB\u30C9 ${stats.total}\u4EF6 \u2192 discourse-gold.jsonl
 \u30D1\u30FC\u30B5\u306E\u30E0\u30FC\u30D6\u4E00\u81F4\u7387: ${rate}
 \u5206\u985E\u9078\u629E ${choices.length}\u4EF6 \u2192 class-choices.jsonl
@@ -51531,6 +54366,8 @@ ${summary}
       onDrop: (intent, files) => void this.runDropIntent(intent, files),
       dropCan: () => this.dropCapabilities(),
       openSurface: (s) => void this.openSurface(s),
+      dismiss: () => void this.navBack(),
+      ...this.peekChrome(),
       surfaceBadge: (s) => this.surfaceBadge(s)
     };
   }
@@ -51544,7 +54381,7 @@ ${summary}
   async xCoocMobile(raw) {
     const terms = parseTerms(raw);
     if (terms.length < 2) {
-      new import_obsidian37.Notice("\u5171\u8D77\u30C1\u30A7\u30C3\u30AF\u306B\u306F2\u8A9E\u4EE5\u4E0A\u5FC5\u8981\u3067\u3059\uFF08\u4F8B: \u4ECA\u307E\u3067 \u52D8\u6848\u3057\u305F\u3089\uFF09\u3002\u8A9E\u3092\u9078\u629E\u3059\u308B\u304B\u30B3\u30D4\u30FC\u3057\u3066\u304B\u3089\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 7e3);
+      new import_obsidian38.Notice("\u5171\u8D77\u30C1\u30A7\u30C3\u30AF\u306B\u306F2\u8A9E\u4EE5\u4E0A\u5FC5\u8981\u3067\u3059\uFF08\u4F8B: \u4ECA\u307E\u3067 \u52D8\u6848\u3057\u305F\u3089\uFF09\u3002\u8A9E\u3092\u9078\u629E\u3059\u308B\u304B\u30B3\u30D4\u30FC\u3057\u3066\u304B\u3089\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 7e3);
       return;
     }
     const s = this.settings.x;
@@ -51554,11 +54391,11 @@ ${summary}
       query,
       vaultName: this.app.vault.getName()
     });
-    new import_obsidian37.Notice(`X \u5171\u8D77\u30C1\u30A7\u30C3\u30AF: ${rawQuery} \u2026\uFF08\u30D6\u30E9\u30A6\u30B6\u3067\u53D6\u5F97\u3057\u3066\u623B\u308A\u307E\u3059\uFF09`, 5e3);
+    new import_obsidian38.Notice(`X \u5171\u8D77\u30C1\u30A7\u30C3\u30AF: ${rawQuery} \u2026\uFF08\u30D6\u30E9\u30A6\u30B6\u3067\u53D6\u5F97\u3057\u3066\u623B\u308A\u307E\u3059\uFF09`, 5e3);
     try {
       window.open(url, "_blank");
     } catch (e) {
-      new import_obsidian37.Notice("\u30D6\u30E9\u30A6\u30B6\u3092\u958B\u3051\u307E\u305B\u3093\u3067\u3057\u305F\u3002", 6e3);
+      new import_obsidian38.Notice("\u30D6\u30E9\u30A6\u30B6\u3092\u958B\u3051\u307E\u305B\u3093\u3067\u3057\u305F\u3002", 6e3);
     }
   }
   /** Receive the Scriptable capture callback: ingest tweets, then show the answer. */
@@ -51574,28 +54411,24 @@ ${summary}
         added = res.added;
         await this.xCorpus.save();
       } catch (e) {
-        new import_obsidian37.Notice(`\u53D6\u308A\u8FBC\u307F\u30A8\u30E9\u30FC: ${e.message}`, 6e3);
+        new import_obsidian38.Notice(`\u53D6\u308A\u8FBC\u307F\u30A8\u30E9\u30FC: ${e.message}`, 6e3);
         return;
       }
     }
     if (n === 0) {
-      new import_obsidian37.Notice(`\u5171\u8D77\u306A\u3057\uFF08${total}\u4EF6\u4E2D\u3067\u4E21\u65B9\u3092\u542B\u3080\u30C4\u30A4\u30FC\u30C8\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\uFF09`, 7e3);
+      new import_obsidian38.Notice(`\u5171\u8D77\u306A\u3057\uFF08${total}\u4EF6\u4E2D\u3067\u4E21\u65B9\u3092\u542B\u3080\u30C4\u30A4\u30FC\u30C8\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\uFF09`, 7e3);
       return;
     }
-    new import_obsidian37.Notice(`\u5171\u8D77 ${n}\u4EF6\uFF08\u65B0\u898F ${added}\u4EF6 / \u8D70\u67FB ${total}\u4EF6\uFF09`, 5e3);
+    new import_obsidian38.Notice(`\u5171\u8D77 ${n}\u4EF6\uFF08\u65B0\u898F ${added}\u4EF6 / \u8D70\u67FB ${total}\u4EF6\uFF09`, 5e3);
     const q = (_c2 = params.q) != null ? _c2 : "";
     await this.openXView(q || void 0, false);
   }
   /** Open (or reveal) the X search view, optionally seeding a query. */
   async openXView(query, live2 = true) {
-    var _a2;
-    let leaf;
-    const existing = this.app.workspace.getLeavesOfType(JP_X_VIEW_TYPE);
-    if (existing.length > 0) {
-      leaf = existing[0];
-    } else {
-      leaf = (_a2 = this.app.workspace.getRightLeaf(false)) != null ? _a2 : void 0;
-      if (leaf)
+    var _a2, _b2;
+    const leaf = (_a2 = this.surfaceLeaf(JP_X_VIEW_TYPE)) != null ? _a2 : void 0;
+    {
+      if (leaf && ((_b2 = leaf.view) == null ? void 0 : _b2.getViewType()) !== JP_X_VIEW_TYPE)
         await leaf.setViewState({ type: JP_X_VIEW_TYPE, active: true });
     }
     if (leaf) {
@@ -51618,7 +54451,7 @@ ${summary}
     return this.getSurferPlugin() !== null;
   }
   loadSettings() {
-    var _a2, _b2, _c2, _d2, _e2, _f2;
+    var _a2, _b2, _c2, _d2, _e2, _f2, _g2;
     const stored = this.dm.settingsSlice();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, stored);
     this.settings.x = { ...DEFAULT_X_SETTINGS, ...(_a2 = stored == null ? void 0 : stored.x) != null ? _a2 : {} };
@@ -51627,6 +54460,7 @@ ${summary}
     this.settings.voiceSync = { ...DEFAULT_VOICE_SYNC, ...(_d2 = stored == null ? void 0 : stored.voiceSync) != null ? _d2 : {} };
     this.settings.plex = { ...DEFAULT_PLEX_SETTINGS, ...(_e2 = stored == null ? void 0 : stored.plex) != null ? _e2 : {} };
     this.settings.jimaku = { ...DEFAULT_JIMAKU_SETTINGS, ...(_f2 = stored == null ? void 0 : stored.jimaku) != null ? _f2 : {} };
+    this.settings.posture = { ...DEFAULT_POSTURE_SETTINGS, ...(_g2 = stored == null ? void 0 : stored.posture) != null ? _g2 : {} };
     const ls = (k) => {
       var _a3;
       return (_a3 = this.app.loadLocalStorage(k)) != null ? _a3 : "";
@@ -51656,16 +54490,14 @@ ${summary}
     await this.dm.setSettings(scrubbed);
   }
   async openTray() {
-    const existing = this.app.workspace.getLeavesOfType(JP_TRAY_VIEW_TYPE);
-    if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
+    var _a2;
+    const leaf = this.surfaceLeaf(JP_TRAY_VIEW_TYPE);
+    if (!leaf)
       return;
-    }
-    const leaf = this.app.workspace.getRightLeaf(false);
-    if (leaf) {
+    if (((_a2 = leaf.view) == null ? void 0 : _a2.getViewType()) !== JP_TRAY_VIEW_TYPE) {
       await leaf.setViewState({ type: JP_TRAY_VIEW_TYPE, active: true });
-      this.app.workspace.revealLeaf(leaf);
     }
+    this.app.workspace.revealLeaf(leaf);
   }
   // ── §29 the drop road: one executor for every dragged-in thing ────────────
   //
@@ -51681,7 +54513,7 @@ ${summary}
       await this.app.vault.createFolder(folder).catch(() => {
       });
     const ext = name.split(".").pop() || "png";
-    const path = (0, import_obsidian37.normalizePath)(`${folder}/inbox-${Date.now()}-${Math.floor(Math.random() * 1e4)}.${ext}`);
+    const path = (0, import_obsidian38.normalizePath)(`${folder}/inbox-${Date.now()}-${Math.floor(Math.random() * 1e4)}.${ext}`);
     await this.app.vault.createBinary(path, data);
     return path;
   }
@@ -51694,7 +54526,7 @@ ${summary}
     const buf = await this.app.vault.readBinary(f);
     const ext = (_a2 = vaultPath.split(".").pop()) == null ? void 0 : _a2.toLowerCase();
     const mediaType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "webp" ? "image/webp" : "image/png";
-    const resp = await (0, import_obsidian37.requestUrl)({
+    const resp = await (0, import_obsidian38.requestUrl)({
       url: API_URL,
       method: "POST",
       throw: false,
@@ -51702,7 +54534,7 @@ ${summary}
       body: buildVisionBody({
         apiKey: this.settings.notes.ocrApiKey,
         model: MANGA_MODEL,
-        images: [{ base64: (0, import_obsidian37.arrayBufferToBase64)(buf), mediaType }],
+        images: [{ base64: (0, import_obsidian38.arrayBufferToBase64)(buf), mediaType }],
         prompt: MANGA_PROMPT
       })
     });
@@ -51726,12 +54558,42 @@ ${summary}
     return { ocr: !!this.settings.notes.ocrApiKey, x: !this.xClient.configIssue() };
   }
   /**
+   * Every file in a carry came back empty. Salvage the drop rather than lose it.
+   *
+   * The same DataTransfer that promised a file it could not produce usually
+   * also carried `text/plain` — Apple Notes ships recognised handwriting text
+   * alongside the strokes, and a manga panel arrives with its OCR line. Taking
+   * that is a real capture, not a consolation prize, so it is worth saying
+   * plainly what landed and what did not.
+   *
+   * When there is genuinely nothing left, the message names the two gestures
+   * that DO work on this device instead of printing a DOM exception at someone
+   * holding a Pencil (§28 S6: say what failed, and where it would have worked).
+   */
+  async salvageDrop(p, n) {
+    var _a2, _b2;
+    const text = ((_b2 = (_a2 = p.url) != null ? _a2 : p.text) != null ? _b2 : "").trim();
+    if (text) {
+      const fresh = await this.inboxStore.add(shapeDrop(text, Date.now()));
+      this.refreshTrayViews();
+      new import_obsidian38.Notice(fresh ? "\u2935 \u753B\u50CF\u306F\u53D7\u3051\u53D6\u308C\u307E\u305B\u3093\u3067\u3057\u305F\u304C\u3001\u6587\u5B57\u306F\u30C8\u30EC\u30A4\u3078" : "\u540C\u3058\u5185\u5BB9\u304C\u65E2\u306B\u3042\u308A\u307E\u3059", 8e3);
+      void this.openTray();
+      return;
+    }
+    new import_obsidian38.Notice(
+      `\u2935 ${n}\u4EF6\u3092\u53D7\u3051\u53D6\u308C\u307E\u305B\u3093\u3067\u3057\u305F \u2014 \u9001\u308A\u5143\u304C\u30D5\u30A1\u30A4\u30EB\u3092\u6E21\u3057\u304D\u308B\u524D\u306B\u6307\u304C\u96E2\u308C\u3066\u3044\u307E\u3059\u3002
+\u30C8\u30EC\u30A4\u306E\u4E0A\u3067\u4E00\u62CD\u304A\u3044\u3066\u304B\u3089\u96E2\u3059\u304B\u3001\u30B3\u30D4\u30FC\u3057\u3066\u300C\u{1F4CB}\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u304B\u3089\u300D\u3067\u5165\u308C\u3066\u304F\u3060\u3055\u3044\u3002`,
+      12e3
+    );
+    void this.openTray();
+  }
+  /**
    * Execute one routed drop. `where.patternId` is the entry the user dropped
    * ONTO — the only piece of context a surface knows and this method cannot
    * derive.
    */
   async runDropIntent(intent, files, where) {
-    var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k, _l, _m;
+    var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2, _k, _l, _m, _n, _o, _p;
     const p = intent.payload;
     const pick2 = () => {
       var _a3;
@@ -51744,7 +54606,7 @@ ${summary}
             return;
           const existing = this.findTranscriptByVideoId(p.videoId);
           if (existing) {
-            new import_obsidian37.Notice(`\u3059\u3067\u306B\u53D6\u5F97\u6E08\u307F\u3067\u3059 \u2192 ${existing.basename}`, 6e3);
+            new import_obsidian38.Notice(`\u3059\u3067\u306B\u53D6\u5F97\u6E08\u307F\u3067\u3059 \u2192 ${existing.basename}`, 6e3);
             await this.app.workspace.getLeaf(false).openFile(existing);
             return;
           }
@@ -51765,7 +54627,7 @@ ${summary}
             wallClock: Date.now()
           }, Date.now()));
           this.refreshTrayViews();
-          new import_obsidian37.Notice(`\u{1F4CD} ${fmtStamp((_b2 = p.tSec) != null ? _b2 : 0)} \u3092\u30C8\u30EC\u30A4\u306B\u30DE\u30FC\u30AF\u3057\u307E\u3057\u305F${file ? `\uFF08${file.basename}\uFF09` : ""}`, 6e3);
+          new import_obsidian38.Notice(`\u{1F4CD} ${fmtStamp((_b2 = p.tSec) != null ? _b2 : 0)} \u3092\u30C8\u30EC\u30A4\u306B\u30DE\u30FC\u30AF\u3057\u307E\u3057\u305F${file ? `\uFF08${file.basename}\uFF09` : ""}`, 6e3);
           void this.openTray();
           return;
         }
@@ -51774,20 +54636,20 @@ ${summary}
             return;
           const issue = this.xClient.configIssue();
           if (issue) {
-            new import_obsidian37.Notice(`\u{1D54F}: ${issue}`, 8e3);
+            new import_obsidian38.Notice(`\u{1D54F}: ${issue}`, 8e3);
             return;
           }
-          const notice = new import_obsidian37.Notice("\u{1D54F} \u6295\u7A3F\u3092\u53D6\u5F97\u4E2D\u2026", 0);
+          const notice = new import_obsidian38.Notice("\u{1D54F} \u6295\u7A3F\u3092\u53D6\u5F97\u4E2D\u2026", 0);
           try {
             const tweet = await this.xClient.fetchTweetById(p.tweetId);
             notice.hide();
             if (!tweet) {
-              new import_obsidian37.Notice("\u6295\u7A3F\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\uFF08\u524A\u9664\u30FB\u9375\u30A2\u30AB\u30A6\u30F3\u30C8\u306E\u53EF\u80FD\u6027\uFF09", 8e3);
+              new import_obsidian38.Notice("\u6295\u7A3F\u3092\u53D6\u5F97\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\uFF08\u524A\u9664\u30FB\u9375\u30A2\u30AB\u30A6\u30F3\u30C8\u306E\u53EF\u80FD\u6027\uFF09", 8e3);
               return;
             }
             const added = this.xCorpus.addTweets([tweet]);
             await this.xCorpus.save();
-            new import_obsidian37.Notice(added ? `\u{1D54F} @${tweet.authorHandle} \u3092\u30B3\u30FC\u30D1\u30B9\u3078` : "\u3059\u3067\u306B\u30B3\u30FC\u30D1\u30B9\u306B\u3042\u308A\u307E\u3059", 6e3);
+            new import_obsidian38.Notice(added ? `\u{1D54F} @${tweet.authorHandle} \u3092\u30B3\u30FC\u30D1\u30B9\u3078` : "\u3059\u3067\u306B\u30B3\u30FC\u30D1\u30B9\u306B\u3042\u308A\u307E\u3059", 6e3);
             await this.openXView(void 0, false);
           } catch (e) {
             notice.hide();
@@ -51804,55 +54666,109 @@ ${summary}
             title = title || titleFromFilename(f.name);
           }
           if (!srt.trim()) {
-            new import_obsidian37.Notice("\u5B57\u5E55\u306E\u4E2D\u8EAB\u304C\u8AAD\u3081\u307E\u305B\u3093\u3067\u3057\u305F", 6e3);
+            new import_obsidian38.Notice("\u5B57\u5E55\u306E\u4E2D\u8EAB\u304C\u8AAD\u3081\u307E\u305B\u3093\u3067\u3057\u305F", 6e3);
             return;
           }
           if (!title)
             title = `\u5B57\u5E55 ${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}`;
           const { content, cueCount } = srtToNote({ srt, title });
           if (cueCount < 5) {
-            new import_obsidian37.Notice("\u5B57\u5E55\u3092\u89E3\u6790\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\uFF08cue \u304C5\u4EF6\u672A\u6E80\uFF09", 8e3);
+            new import_obsidian38.Notice("\u5B57\u5E55\u3092\u89E3\u6790\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\uFF08cue \u304C5\u4EF6\u672A\u6E80\uFF09", 8e3);
             return;
           }
           const folder = this.settings.notes.transcriptFolder || "Transcripts";
           if (!this.app.vault.getAbstractFileByPath(folder))
             await this.app.vault.createFolder(folder).catch(() => {
             });
-          const path = (0, import_obsidian37.normalizePath)(`${folder}/${title.replace(/[\\/:*?"<>|]/g, "")}.md`);
+          const path = (0, import_obsidian38.normalizePath)(`${folder}/${title.replace(/[\\/:*?"<>|]/g, "")}.md`);
           const out = (_e2 = this.app.vault.getFileByPath(path)) != null ? _e2 : await this.app.vault.create(path, content);
-          new import_obsidian37.Notice(`\u{1F4FA} ${cueCount}\u884C\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8 \u2192 ${out.basename}`, 8e3);
+          new import_obsidian38.Notice(`\u{1F4FA} ${cueCount}\u884C\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8 \u2192 ${out.basename}`, 8e3);
           await this.app.workspace.getLeaf(false).openFile(out);
           return;
         }
         case "history": {
           const { videos, source } = parseHistory((_f2 = p.text) != null ? _f2 : "");
           if (!videos.length) {
-            new import_obsidian37.Notice("\u8996\u8074\u5C65\u6B74\u3068\u3057\u3066\u8AAD\u3081\u307E\u305B\u3093\u3067\u3057\u305F", 8e3);
+            new import_obsidian38.Notice("\u8996\u8074\u5C65\u6B74\u3068\u3057\u3066\u8AAD\u3081\u307E\u305B\u3093\u3067\u3057\u305F", 8e3);
             return;
           }
           const cap = Math.max(1, this.settings.notes.maxHistoryVideos || 20);
           await this.fetchTranscriptsForVideos(videos.slice(0, cap), { source, detected: videos.length, openLog: true });
           return;
         }
+        case "image-pair": {
+          const chosen = pick2();
+          const said = ((_g2 = p.text) != null ? _g2 : "").trim();
+          let added = 0;
+          let unreadable = 0;
+          for (const path of (_h2 = p.imagePaths) != null ? _h2 : []) {
+            const real = this.resolveVaultPath(path);
+            if (!real) {
+              unreadable++;
+              continue;
+            }
+            if (await this.inboxStore.add(pairedCard(real, said, Date.now())))
+              added++;
+          }
+          for (const f of chosen) {
+            const data = await dropBytes(f);
+            if (!data) {
+              unreadable++;
+              continue;
+            }
+            const path = await this.saveInboxImage(f.name, data);
+            if (await this.inboxStore.add(pairedCard(path, said, Date.now())))
+              added++;
+          }
+          if (!added && unreadable) {
+            await this.salvageDrop(p, unreadable);
+            return;
+          }
+          this.refreshTrayViews();
+          new import_obsidian38.Notice(added ? `\u{1F5BC} ${added}\u4EF6\u3092\u6587\u3064\u304D\u3067\u30C8\u30EC\u30A4\u3078` : "\u540C\u3058\u5185\u5BB9\u304C\u65E2\u306B\u3042\u308A\u307E\u3059", 6e3);
+          void this.openTray();
+          return;
+        }
         case "image-ocr":
         case "image-tray": {
           const chosen = pick2();
           let added = 0;
+          let unreadable = 0;
           const paths = [];
+          for (const held of (_i2 = p.imagePaths) != null ? _i2 : []) {
+            const real = this.resolveVaultPath(held);
+            if (!real) {
+              unreadable++;
+              continue;
+            }
+            if (await this.inboxStore.add(imageCard(real, Date.now()))) {
+              added++;
+              paths.push(real);
+            }
+          }
           for (const f of chosen) {
-            const path = await this.saveInboxImage(f.name, await f.arrayBuffer());
+            const data = await dropBytes(f);
+            if (!data) {
+              unreadable++;
+              continue;
+            }
+            const path = await this.saveInboxImage(f.name, data);
             if (await this.inboxStore.add(imageCard(path, Date.now()))) {
               added++;
               paths.push(path);
             }
           }
+          if (!added && unreadable) {
+            await this.salvageDrop(p, unreadable);
+            return;
+          }
           this.refreshTrayViews();
-          new import_obsidian37.Notice(`\u{1F4F7} ${added}\u679A\u3092\u30C8\u30EC\u30A4\u3078`, 5e3);
+          new import_obsidian38.Notice(added ? `\u{1F4F7} ${added}\u679A\u3092\u30C8\u30EC\u30A4\u3078` : "\u540C\u3058\u5185\u5BB9\u304C\u65E2\u306B\u3042\u308A\u307E\u3059", 5e3);
           void this.openTray();
           if (intent.action === "image-ocr" && this.settings.notes.ocrApiKey) {
             let ok = 0;
             const failed = [];
-            const prog = new import_obsidian37.Notice(`\u{1F50E} OCR 0/${paths.length}\u2026`, 0);
+            const prog = new import_obsidian38.Notice(`\u{1F50E} OCR 0/${paths.length}\u2026`, 0);
             for (const [i, path] of paths.entries()) {
               prog.setMessage(`\u{1F50E} OCR ${i + 1}/${paths.length}\u2026`);
               try {
@@ -51867,14 +54783,14 @@ ${summary}
             }
             prog.hide();
             this.refreshTrayViews();
-            new import_obsidian37.Notice(failed.length ? `\u{1F50E} ${ok}\u679AOK / ${failed.length}\u679A\u5931\u6557
+            new import_obsidian38.Notice(failed.length ? `\u{1F50E} ${ok}\u679AOK / ${failed.length}\u679A\u5931\u6557
 ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u3092\u62BD\u51FA`, 8e3);
           }
           return;
         }
         case "attest": {
           const entry2 = (where == null ? void 0 : where.patternId) ? this.patternStore.byId(where.patternId) : void 0;
-          const text = ((_g2 = p.text) != null ? _g2 : "").trim();
+          const text = ((_j2 = p.text) != null ? _j2 : "").trim();
           if (!entry2 || !text)
             return;
           const n = await this.patternStore.addAttestations([{
@@ -51889,11 +54805,11 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
             }
           }]);
           this.refreshViews();
-          new import_obsidian37.Notice(n ? `\u{1F4CE} \u300C${entry2.key}\u300D\u306B\u7528\u4F8B\u3092\u8FFD\u52A0\u3057\u307E\u3057\u305F` : "\u540C\u3058\u7528\u4F8B\u304C\u3059\u3067\u306B\u3042\u308A\u307E\u3059", 6e3);
+          new import_obsidian38.Notice(n ? `\u{1F4CE} \u300C${entry2.key}\u300D\u306B\u7528\u4F8B\u3092\u8FFD\u52A0\u3057\u307E\u3057\u305F` : "\u540C\u3058\u7528\u4F8B\u304C\u3059\u3067\u306B\u3042\u308A\u307E\u3059", 6e3);
           return;
         }
         case "capture": {
-          const text = ((_h2 = p.text) != null ? _h2 : "").trim();
+          const text = ((_k = p.text) != null ? _k : "").trim();
           if (!text)
             return;
           const short = [...text].length <= 40 && !/[。！？\n]/.test(text);
@@ -51905,20 +54821,20 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
           return;
         }
         case "lookup": {
-          await this.openDictionaryView(((_i2 = p.text) != null ? _i2 : "").trim());
+          await this.openDictionaryView(((_l = p.text) != null ? _l : "").trim());
           return;
         }
         case "x-search": {
-          await this.openXView(`"${((_j2 = p.text) != null ? _j2 : "").trim()}"`);
+          await this.openXView(`"${((_m = p.text) != null ? _m : "").trim()}"`);
           return;
         }
         case "reach": {
-          const want = ((_k = p.text) != null ? _k : "").trim();
+          const want = ((_n = p.text) != null ? _n : "").trim();
           if (!want)
             return;
           await this.reachStore.add(want, Date.now());
           this.refreshTrayViews();
-          new import_obsidian37.Notice(`\u{1F56F} \u9858\u3044\u300C${want}\u300D\u3092\u4FDD\u6301\u3057\u307E\u3057\u305F \u2014 \u5C4A\u3044\u305F\u3082\u306E\u304C\u4E26\u3079\u3089\u308C\u307E\u3059`, 8e3);
+          new import_obsidian38.Notice(`\u{1F56F} \u9858\u3044\u300C${want}\u300D\u3092\u4FDD\u6301\u3057\u307E\u3057\u305F \u2014 \u5C4A\u3044\u305F\u3082\u306E\u304C\u4E26\u3079\u3089\u308C\u307E\u3059`, 8e3);
           void this.openTray();
           return;
         }
@@ -51927,29 +54843,39 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
           const chosen = pick2();
           if (chosen.length) {
             let added = 0;
+            let unreadable = 0;
             for (const f of chosen) {
-              const path = await this.saveInboxImage(f.name, await f.arrayBuffer());
+              const data = await dropBytes(f);
+              if (!data) {
+                unreadable++;
+                continue;
+              }
+              const path = await this.saveInboxImage(f.name, data);
               if (await this.inboxStore.add(imageCard(path, Date.now())))
                 added++;
             }
-            this.refreshTrayViews();
-            new import_obsidian37.Notice(`\u2935 ${added}\u4EF6\u3092\u30C8\u30EC\u30A4\u3078`, 5e3);
-            void this.openTray();
+            if (added || !unreadable) {
+              this.refreshTrayViews();
+              new import_obsidian38.Notice(added ? `\u2935 ${added}\u4EF6\u3092\u30C8\u30EC\u30A4\u3078` : "\u540C\u3058\u5185\u5BB9\u304C\u65E2\u306B\u3042\u308A\u307E\u3059", 5e3);
+              void this.openTray();
+              return;
+            }
+            await this.salvageDrop(p, unreadable);
             return;
           }
-          const text = ((_m = (_l = p.url) != null ? _l : p.text) != null ? _m : "").trim();
+          const text = ((_p = (_o = p.url) != null ? _o : p.text) != null ? _p : "").trim();
           if (!text)
             return;
           const fresh = await this.inboxStore.add(shapeDrop(text, Date.now()));
           this.refreshTrayViews();
-          new import_obsidian37.Notice(fresh ? "\u2935 \u30C8\u30EC\u30A4\u3078" : "\u540C\u3058\u5185\u5BB9\u304C\u65E2\u306B\u3042\u308A\u307E\u3059", 5e3);
+          new import_obsidian38.Notice(fresh ? "\u2935 \u30C8\u30EC\u30A4\u3078" : "\u540C\u3058\u5185\u5BB9\u304C\u65E2\u306B\u3042\u308A\u307E\u3059", 5e3);
           void this.openTray();
           return;
         }
       }
     } catch (e) {
       console.error("[jp-collocations] drop failed:", e);
-      new import_obsidian37.Notice(`${intent.icon} ${intent.label} \u306B\u5931\u6557\u3057\u307E\u3057\u305F
+      new import_obsidian38.Notice(`${intent.icon} ${intent.label} \u306B\u5931\u6557\u3057\u307E\u3057\u305F
 ${String(e)}`, 12e3);
     }
   }
@@ -51989,10 +54915,29 @@ ${String(e)}`, 12e3);
       }
     }]);
     this.refreshViews();
-    new import_obsidian37.Notice(n ? `\u{1F4CE} \u300C${p.key}\u300D\u306B \u{1D54F} \u306E\u7528\u4F8B\u3092\u8FFD\u52A0\u3057\u307E\u3057\u305F` : "\u540C\u3058\u7528\u4F8B\u304C\u3059\u3067\u306B\u3042\u308A\u307E\u3059", 5e3);
+    new import_obsidian38.Notice(n ? `\u{1F4CE} \u300C${p.key}\u300D\u306B \u{1D54F} \u306E\u7528\u4F8B\u3092\u8FFD\u52A0\u3057\u307E\u3057\u305F` : "\u540C\u3058\u7528\u4F8B\u304C\u3059\u3067\u306B\u3042\u308A\u307E\u3059", 5e3);
   }
   /** §26.3 step 5 — where the identity bar sends you. */
-  async openSurface(s) {
+  /**
+   * ONE leaf-picking rule for every surface.
+   *
+   * Five of the six used to call `getRightLeaf(false)` unconditionally. That is
+   * a resizable panel on a desktop and a FIXED NARROW DRAWER on mobile, so a
+   * 1366px iPad was rendering the 辞書 in a phone-width column — the "shrunk
+   * up" complaint, and not the views' fault at all. Off the desk, a surface now
+   * takes the main pane at full width; `suite-nav` makes that safe by making
+   * the way back one press.
+   *
+   * An already-open leaf always wins, so toggling never accumulates tabs.
+   */
+  surfaceLeaf(viewType) {
+    const existing = this.app.workspace.getLeavesOfType(viewType)[0];
+    if (existing)
+      return existing;
+    return presentation(posture(), window.innerWidth) === "side" ? this.app.workspace.getRightLeaf(false) : this.app.workspace.getLeaf("tab");
+  }
+  /** Raw navigation: put me on that surface. No history — see `openSurface`. */
+  async openSurfaceRaw(s) {
     if (s === "lexicon") {
       await this.openLexiconView();
       return;
@@ -52018,6 +54963,140 @@ ${String(e)}`, 12e3);
       return;
     }
   }
+  /**
+   * THE verb (§26.3 step 6). Press it away from a surface and you go there;
+   * press it while you are there and you land back where you summoned it from,
+   * cursor and scroll intact. One binding, both directions — which is what
+   * "go to and from" costs, and why the surface bar routes through here.
+   */
+  async openSurface(s) {
+    const r2 = toggle(this.navStack, s, this.capturePlace());
+    this.navStack = r2.stack;
+    if (r2.to)
+      await this.restorePlace(r2.to);
+    else
+      await this.openSurfaceRaw(s);
+  }
+  /**
+   * Move along the bar. Clamped, never wrapped — on a gesture (unlike a menu)
+   * a wrap reads as a misfire, while stopping tells you where the end is.
+   *
+   * Deliberately NOT the toggle: a swipe is a traversal, and if it toggled you
+   * could never swipe past the surface you are standing on.
+   */
+  stepSurface(by) {
+    const cur = this.capturePlace();
+    const at = (cur == null ? void 0 : cur.kind) === "surface" ? SURFACE_ORDER.indexOf(cur.surface) : -1;
+    const next = at < 0 ? by > 0 ? 0 : SURFACE_ORDER.length - 1 : stepIndex(SURFACE_ORDER.length, at, by);
+    if (next === at)
+      return;
+    this.navStack = goTo(this.navStack, { kind: "surface", surface: SURFACE_ORDER[next] }, void 0);
+    void this.openSurfaceRaw(SURFACE_ORDER[next]);
+  }
+  /** Text scale for the plugin's own surfaces. `reset` overrides `by`. */
+  async stepDensity(by, reset = false) {
+    var _a2;
+    const next = clampDensity(reset ? DENSITY_DEFAULT : this.density + by);
+    if (next === this.density && !reset)
+      return;
+    this.density = next;
+    this.applyDensity();
+    new import_obsidian38.Notice(`\u8868\u793A ${densityLabel(next)}`, 900);
+    this.settings.posture = { ...(_a2 = this.settings.posture) != null ? _a2 : {}, density: next };
+    await this.saveSettings();
+  }
+  /**
+   * One custom property, consumed by one stylesheet rule. Multiplicative on the
+   * theme's own text size rather than absolute px, so a vault already running
+   * large text stays proportional instead of being overridden.
+   */
+  applyDensity() {
+    var _a2;
+    (_a2 = document.body) == null ? void 0 : _a2.style.setProperty("--jp-scale", String(densityScale(this.density)));
+  }
+  /** Step back one place. Bound to a command and to mouse button 3. */
+  async navBack() {
+    const cur = this.capturePlace();
+    if (cur)
+      this.navStack = goTo(this.navStack, cur);
+    const r2 = back(this.navStack);
+    if (!r2.to) {
+      new import_obsidian38.Notice("\u623B\u308B\u5148\u304C\u3042\u308A\u307E\u305B\u3093");
+      return;
+    }
+    this.navStack = r2.stack;
+    await this.restorePlace(r2.to);
+  }
+  /**
+   * What `navBack` would land on, NAMED — so the edge drag can say where it
+   * goes before you commit to it, and can decline to arm at all when there is
+   * nowhere behind you.
+   *
+   * Mirrors `navBack`'s own first two steps rather than reading the raw stack.
+   * `navBack` refreshes the current place before stepping, and a peek that
+   * skipped that would name the wrong destination on a re-entry — a gesture
+   * that promises 辞書 and delivers the note is worse than no gesture.
+   */
+  navPeek() {
+    var _a2, _b2;
+    const cur = this.capturePlace();
+    const stack = cur ? goTo(this.navStack, cur) : this.navStack;
+    const r2 = back(stack);
+    if (!r2.to)
+      return null;
+    if (r2.to.kind === "editor") {
+      const base = (_a2 = r2.to.path.split("/").pop()) != null ? _a2 : "";
+      return base.replace(/\.md$/i, "") || "\u30CE\u30FC\u30C8";
+    }
+    return (_b2 = SURFACE_LABEL[r2.to.surface]) != null ? _b2 : null;
+  }
+  /** Where am I right now, with enough state to be PUT BACK rather than
+   *  merely re-opened? Null when it is something the suite does not own. */
+  capturePlace() {
+    var _a2, _b2, _c2, _d2, _e2, _f2;
+    const md = this.app.workspace.getActiveViewOfType(import_obsidian38.MarkdownView);
+    if (md == null ? void 0 : md.file) {
+      const cur = (_a2 = md.editor) == null ? void 0 : _a2.getCursor();
+      let scroll;
+      try {
+        scroll = (_c2 = (_b2 = md.editor) == null ? void 0 : _b2.getScrollInfo()) == null ? void 0 : _c2.top;
+      } catch (e) {
+      }
+      return { kind: "editor", path: md.file.path, line: cur == null ? void 0 : cur.line, ch: cur == null ? void 0 : cur.ch, scroll };
+    }
+    const type = (_f2 = (_e2 = (_d2 = this.app.workspace.getMostRecentLeaf()) == null ? void 0 : _d2.view) == null ? void 0 : _e2.getViewType) == null ? void 0 : _f2.call(_e2);
+    const s = type ? SURFACE_BY_VIEW_TYPE[type] : void 0;
+    return s ? { kind: "surface", surface: s } : null;
+  }
+  async restorePlace(p) {
+    if (p.kind === "surface") {
+      await this.openSurfaceRaw(p.surface);
+      return;
+    }
+    const f = this.app.vault.getAbstractFileByPath(p.path);
+    if (!(f instanceof import_obsidian38.TFile))
+      return;
+    const open = this.app.workspace.getLeavesOfType("markdown").find((l) => {
+      var _a2;
+      return ((_a2 = l.view.file) == null ? void 0 : _a2.path) === p.path;
+    });
+    const leaf = open != null ? open : this.app.workspace.getLeaf(false);
+    if (!open)
+      await leaf.openFile(f);
+    this.app.workspace.revealLeaf(leaf);
+    const view = leaf.view;
+    if (!(view instanceof import_obsidian38.MarkdownView) || p.line == null)
+      return;
+    window.setTimeout(() => {
+      var _a2, _b2;
+      try {
+        view.editor.setCursor({ line: (_a2 = p.line) != null ? _a2 : 0, ch: (_b2 = p.ch) != null ? _b2 : 0 });
+        if (p.scroll != null)
+          view.editor.scrollTo(0, p.scroll);
+      } catch (e) {
+      }
+    }, 0);
+  }
   /** Live counts for the identity bar. A zero renders as no badge at all. */
   surfaceBadge(s) {
     if (s === "tray")
@@ -52034,7 +55113,7 @@ ${String(e)}`, 12e3);
   async openFollowAlong(file) {
     const f = file != null ? file : this.app.workspace.getActiveFile();
     if (!f) {
-      new import_obsidian37.Notice("\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u304B\u3089\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044");
+      new import_obsidian38.Notice("\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306E\u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u304B\u3089\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044");
       return;
     }
     const existing = this.app.workspace.getLeavesOfType(JP_FOLLOW_VIEW_TYPE)[0];
@@ -52052,7 +55131,7 @@ ${String(e)}`, 12e3);
       return { ok: false, error: "Plex \u306E baseUrl / token \u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002" };
     let resp;
     try {
-      resp = await (0, import_obsidian37.requestUrl)({ url: plexSessionsUrl(baseUrl, token), method: "GET", headers: { Accept: "application/json" }, throw: false });
+      resp = await (0, import_obsidian38.requestUrl)({ url: plexSessionsUrl(baseUrl, token), method: "GET", headers: { Accept: "application/json" }, throw: false });
     } catch (e) {
       return { ok: false, error: explainPlexTransportError(baseUrl, e.message) };
     }
@@ -52078,19 +55157,19 @@ ${String(e)}`, 12e3);
     var _a2, _b2, _c2;
     const { baseUrl, token } = this.settings.plex;
     if (!baseUrl.trim() || !token.trim()) {
-      new import_obsidian37.Notice("\u8A2D\u5B9A \u2192 Plex \u306B baseUrl \u3068 X-Plex-Token \u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
+      new import_obsidian38.Notice("\u8A2D\u5B9A \u2192 Plex \u306B baseUrl \u3068 X-Plex-Token \u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
       return "plex not configured";
     }
-    const notice = new import_obsidian37.Notice("Plex: \u518D\u751F\u4E2D\u306E\u30A8\u30D4\u30BD\u30FC\u30C9\u3092\u63A2\u3057\u3066\u3044\u307E\u3059\u2026", 0);
+    const notice = new import_obsidian38.Notice("Plex: \u518D\u751F\u4E2D\u306E\u30A8\u30D4\u30BD\u30FC\u30C9\u3092\u63A2\u3057\u3066\u3044\u307E\u3059\u2026", 0);
     try {
       const res = await this.fetchPlexSessions();
       if (!res.ok) {
-        new import_obsidian37.Notice(res.error, 1e4);
+        new import_obsidian38.Notice(res.error, 1e4);
         return res.error;
       }
       if (!res.sessions.length) {
         const m = "Plex \u3067\u518D\u751F\u4E2D\u306E\u4F5C\u54C1\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u518D\u751F\u3057\u3066\u304B\u3089\u3082\u3046\u4E00\u5EA6\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002";
-        new import_obsidian37.Notice(m, 8e3);
+        new import_obsidian38.Notice(m, 8e3);
         return m;
       }
       const active = this.app.workspace.getActiveFile();
@@ -52101,7 +55180,7 @@ ${String(e)}`, 12e3);
       })) != null ? _c2 : res.sessions.length === 1 ? res.sessions[0] : null;
       if (!session) {
         const m = `Plex \u3067${res.sessions.length}\u4EF6\u518D\u751F\u4E2D\u3067\u3059\u3002\u3069\u308C\u304B\u5224\u5225\u3067\u304D\u306A\u3044\u306E\u3067\u3001\u5BFE\u8C61\u306E\u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u304B\u3089\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\uFF08${res.sessions.map((s) => s.title).join("\u3001")}\uFF09\u3002`;
-        new import_obsidian37.Notice(m, 12e3);
+        new import_obsidian38.Notice(m, 12e3);
         return m;
       }
       return await this.plexTranscriptFor({
@@ -52132,7 +55211,7 @@ ${String(e)}`, 12e3);
       if (existing) {
         void this.app.workspace.openLinkText(existing.path, "", false);
         const m = `\u{1F4FA} \u3053\u306E\u30A8\u30D4\u30BD\u30FC\u30C9\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306F\u65E2\u306B\u3042\u308A\u307E\u3059: ${existing.path}`;
-        new import_obsidian37.Notice(m + "\n\uFF08\u5225\u306E\u5B57\u5E55\u3067\u4F5C\u308A\u76F4\u3059\u306B\u306F jimaku \u306E\u9078\u629E\u753B\u9762\u304B\u3089\uFF09", 8e3);
+        new import_obsidian38.Notice(m + "\n\uFF08\u5225\u306E\u5B57\u5E55\u3067\u4F5C\u308A\u76F4\u3059\u306B\u306F jimaku \u306E\u9078\u629E\u753B\u9762\u304B\u3089\uFF09", 8e3);
         return m;
       }
     }
@@ -52194,7 +55273,7 @@ ${String(e)}`, 12e3);
       const tail3 = !jimakuOn && jm.mode !== "off" ? "\n\u8A2D\u5B9A \u2192 jimaku \u306B API \u30AD\u30FC\u3092\u5165\u308C\u308B\u3068\u3001Plex \u306B\u65E5\u672C\u8A9E\u5B57\u5E55\u304C\u306A\u3044\u4F5C\u54C1\u3082\u53D6\u308A\u8FBC\u3081\u307E\u3059\u3002" : "";
       const m = `${ep.title}: ${why.join("\n") || "\u5B57\u5E55\u3092\u9078\u3079\u307E\u305B\u3093\u3067\u3057\u305F\u3002"}` + (list.length ? `
 ${list.join("\n")}` : "") + tail3;
-      new import_obsidian37.Notice(m, 2e4);
+      new import_obsidian38.Notice(m, 2e4);
       return m;
     }
     return await this.writeTranscriptNote({
@@ -52232,7 +55311,7 @@ ${list.join("\n")}` : "") + tail3;
     }
     say(`Plex: \u5B57\u5E55\u3092\u53D6\u5F97\u4E2D\u2026 (${(_c2 = (_b2 = pick2.languageCode) != null ? _b2 : pick2.language) != null ? _c2 : "?"}/${(_d2 = pick2.codec) != null ? _d2 : "?"})`);
     try {
-      const r2 = await (0, import_obsidian37.requestUrl)({ url: plexStreamUrl(baseUrl, pick2.key, token), method: "GET", throw: false });
+      const r2 = await (0, import_obsidian38.requestUrl)({ url: plexStreamUrl(baseUrl, pick2.key, token), method: "GET", throw: false });
       if (r2.status !== 200)
         throw new Error(`HTTP ${r2.status}`);
       return {
@@ -52318,7 +55397,7 @@ ${list.join("\n")}` : "") + tail3;
     });
     if (cueCount < 5) {
       const m = `\u5B57\u5E55\u3092\u89E3\u6790\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\uFF08${cueCount}\u884C\uFF09\u3002` + (opts.codec ? `\u5F62\u5F0F: ${opts.codec}\u3002` : "") + "\u5225\u306E\u30C8\u30E9\u30C3\u30AF / \u5225\u306E\u30D5\u30A1\u30A4\u30EB\u3092\u9078\u3076\u304B\u3001.srt \u3092\u624B\u52D5\u3067\u53D6\u308A\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\u3002";
-      new import_obsidian37.Notice(m, 15e3);
+      new import_obsidian38.Notice(m, 15e3);
       return m;
     }
     const folder = this.settings.notes.transcriptFolder || "Transcripts";
@@ -52335,7 +55414,7 @@ ${list.join("\n")}` : "") + tail3;
     void this.app.workspace.openLinkText(path, "", false);
     const via = opts.subSource === "jimaku" ? `jimaku: ${(_b2 = (_a2 = opts.jimaku) == null ? void 0 : _a2.fileName) != null ? _b2 : ""}` : "Plex \u5185\u8535\u5B57\u5E55";
     const msg = `\u{1F4FA} ${cueCount}\u884C\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u3092\u4F5C\u6210: ${path}`;
-    new import_obsidian37.Notice(`${msg}
+    new import_obsidian38.Notice(`${msg}
 \uFF08${via}\uFF09`, 8e3);
     return msg;
   }
@@ -52343,13 +55422,13 @@ ${list.join("\n")}` : "") + tail3;
   openPlexBrowse() {
     const { baseUrl, token } = this.settings.plex;
     if (!baseUrl.trim() || !token.trim()) {
-      new import_obsidian37.Notice("\u8A2D\u5B9A \u2192 Plex \u306B baseUrl \u3068 X-Plex-Token \u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
+      new import_obsidian38.Notice("\u8A2D\u5B9A \u2192 Plex \u306B baseUrl \u3068 X-Plex-Token \u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
       return;
     }
     const get = async (url) => {
       var _a2;
       try {
-        const r2 = await (0, import_obsidian37.requestUrl)({
+        const r2 = await (0, import_obsidian38.requestUrl)({
           url,
           method: "GET",
           headers: { Accept: "application/json" },
@@ -52382,7 +55461,7 @@ ${list.join("\n")}` : "") + tail3;
     var _a2;
     const { baseUrl, token } = this.settings.plex;
     try {
-      const r2 = await (0, import_obsidian37.requestUrl)({
+      const r2 = await (0, import_obsidian38.requestUrl)({
         url: plexMetadataUrl(baseUrl, ratingKey, token),
         method: "GET",
         headers: { Accept: "application/json" },
@@ -52418,7 +55497,7 @@ ${list.join("\n")}` : "") + tail3;
     const one = async (anime2) => {
       var _a2;
       try {
-        const r2 = await (0, import_obsidian37.requestUrl)({
+        const r2 = await (0, import_obsidian38.requestUrl)({
           url: jimakuSearchUrl({ query, anime: anime2 }),
           method: "GET",
           headers: jimakuHeaders(key),
@@ -52451,7 +55530,7 @@ ${list.join("\n")}` : "") + tail3;
     if (!key.trim())
       return { ok: false, error: "API \u30AD\u30FC\u304C\u672A\u8A2D\u5B9A\u3067\u3059\u3002" };
     try {
-      const r2 = await (0, import_obsidian37.requestUrl)({
+      const r2 = await (0, import_obsidian38.requestUrl)({
         url: jimakuFilesUrl(entryId, episode),
         method: "GET",
         headers: jimakuHeaders(key),
@@ -52469,7 +55548,7 @@ ${list.join("\n")}` : "") + tail3;
   async fetchJimakuFile(file) {
     var _a2;
     try {
-      const r2 = await (0, import_obsidian37.requestUrl)({
+      const r2 = await (0, import_obsidian38.requestUrl)({
         url: file.url,
         method: "GET",
         headers: jimakuDownloadHeaders(file.url, this.settings.jimaku.apiKey),
@@ -52494,7 +55573,7 @@ ${list.join("\n")}` : "") + tail3;
    */
   openJimakuPicker(seed, attach = {}) {
     if (!this.settings.jimaku.apiKey.trim()) {
-      new import_obsidian37.Notice("\u8A2D\u5B9A \u2192 jimaku \u306B API \u30AD\u30FC\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08jimaku.cc \u2192 \u30D7\u30ED\u30D5\u30A3\u30FC\u30EB \u2192 API \u30AD\u30FC\uFF09\u3002", 1e4);
+      new import_obsidian38.Notice("\u8A2D\u5B9A \u2192 jimaku \u306B API \u30AD\u30FC\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08jimaku.cc \u2192 \u30D7\u30ED\u30D5\u30A3\u30FC\u30EB \u2192 API \u30AD\u30FC\uFF09\u3002", 1e4);
       return;
     }
     new JimakuPickModal(this.app, {
@@ -52505,7 +55584,7 @@ ${list.join("\n")}` : "") + tail3;
         var _a2, _b2, _c2, _d2, _e2;
         const got = await this.fetchJimakuFile(file);
         if (!got.ok) {
-          new import_obsidian37.Notice(`jimaku: ${got.error}`, 1e4);
+          new import_obsidian38.Notice(`jimaku: ${got.error}`, 1e4);
           return got.error;
         }
         const ep = (_a2 = episodeNumberFrom(file.name).episode) != null ? _a2 : seed.episode;
@@ -52529,18 +55608,18 @@ ${list.join("\n")}` : "") + tail3;
    *  failure — degrade-soft, never throws into the co-viewing surface. */
   async cutPlexClip(partKey, atSec, label) {
     var _a2;
-    if (!import_obsidian37.Platform.isDesktopApp) {
-      new import_obsidian37.Notice("\u30AF\u30EA\u30C3\u30D7\u5207\u308A\u51FA\u3057\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u306E\u307F\u5BFE\u5FDC\u3067\u3059\u3002");
+    if (!import_obsidian38.Platform.isDesktopApp) {
+      new import_obsidian38.Notice("\u30AF\u30EA\u30C3\u30D7\u5207\u308A\u51FA\u3057\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u306E\u307F\u5BFE\u5FDC\u3067\u3059\u3002");
       return null;
     }
     const { baseUrl, token, clipPreSec, clipPostSec } = this.settings.plex;
     if (!baseUrl.trim() || !token.trim() || !partKey)
       return null;
     const adapter = this.app.vault.adapter;
-    if (!(adapter instanceof import_obsidian37.FileSystemAdapter))
+    if (!(adapter instanceof import_obsidian38.FileSystemAdapter))
       return null;
     const vaultRoot = adapter.getBasePath();
-    const folderRel = (0, import_obsidian37.normalizePath)(`${this.settings.notes.transcriptFolder || "Transcripts"}/_clips`);
+    const folderRel = (0, import_obsidian38.normalizePath)(`${this.settings.notes.transcriptFolder || "Transcripts"}/_clips`);
     try {
       if (!await adapter.exists(folderRel))
         await adapter.mkdir(folderRel);
@@ -52564,10 +55643,10 @@ ${list.join("\n")}` : "") + tail3;
     if (sRes && sRes.code === 0)
       out.still = stillRel;
     if (!out.audio && !out.still) {
-      new import_obsidian37.Notice("\u30AF\u30EA\u30C3\u30D7\u306E\u5207\u308A\u51FA\u3057\u306B\u5931\u6557\u3057\u307E\u3057\u305F\uFF08ffmpeg / \u30B5\u30FC\u30D0\u30FC\u63A5\u7D9A\u3092\u78BA\u8A8D\uFF09\u3002");
+      new import_obsidian38.Notice("\u30AF\u30EA\u30C3\u30D7\u306E\u5207\u308A\u51FA\u3057\u306B\u5931\u6557\u3057\u307E\u3057\u305F\uFF08ffmpeg / \u30B5\u30FC\u30D0\u30FC\u63A5\u7D9A\u3092\u78BA\u8A8D\uFF09\u3002");
       return null;
     }
-    new import_obsidian37.Notice(`\u{1F4FA} \u30AF\u30EA\u30C3\u30D7\u3092\u4FDD\u5B58: ${(_a2 = out.audio) != null ? _a2 : out.still}`);
+    new import_obsidian38.Notice(`\u{1F4FA} \u30AF\u30EA\u30C3\u30D7\u3092\u4FDD\u5B58: ${(_a2 = out.audio) != null ? _a2 : out.still}`);
     return out;
   }
   /**
@@ -52587,7 +55666,7 @@ ${list.join("\n")}` : "") + tail3;
     if (!targetId)
       return { ok: false, error: "\u30AF\u30E9\u30A4\u30A2\u30F3\u30C8\u4E0D\u660E" };
     try {
-      const r2 = await (0, import_obsidian37.requestUrl)({
+      const r2 = await (0, import_obsidian38.requestUrl)({
         url: plexControlUrl(baseUrl, command, token, targetId, params),
         method: "GET",
         headers: plexControlHeaders(),
@@ -52611,18 +55690,18 @@ ${list.join("\n")}` : "") + tail3;
     var _a2, _b2;
     const m = card.mark;
     if (!(m == null ? void 0 : m.file) || m.tSec == null) {
-      new import_obsidian37.Notice("\u3053\u306E\u30DE\u30FC\u30AF\u306B\u306F\u5143\u30CE\u30FC\u30C8\u3068\u6642\u523B\u304C\u306A\u3044\u306E\u3067\u5207\u308A\u51FA\u305B\u307E\u305B\u3093\u3002", 6e3);
+      new import_obsidian38.Notice("\u3053\u306E\u30DE\u30FC\u30AF\u306B\u306F\u5143\u30CE\u30FC\u30C8\u3068\u6642\u523B\u304C\u306A\u3044\u306E\u3067\u5207\u308A\u51FA\u305B\u307E\u305B\u3093\u3002", 6e3);
       return null;
     }
     const f = this.app.vault.getFileByPath(m.file);
     if (!f) {
-      new import_obsidian37.Notice(`\u5143\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${m.file}`, 8e3);
+      new import_obsidian38.Notice(`\u5143\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${m.file}`, 8e3);
       return null;
     }
     const fm = (_b2 = (_a2 = this.app.metadataCache.getFileCache(f)) == null ? void 0 : _a2.frontmatter) != null ? _b2 : {};
     const partKey = fm.plex_part_key ? String(fm.plex_part_key) : "";
     if (!partKey) {
-      new import_obsidian37.Notice(
+      new import_obsidian38.Notice(
         `\u3053\u306E\u30CE\u30FC\u30C8\u306B\u306F plex_part_key \u304C\u306A\u3044\u306E\u3067 Plex \u304B\u3089\u5207\u308A\u51FA\u305B\u307E\u305B\u3093\uFF08${f.basename}\uFF09\u3002
 Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3089\u3001\u4F5C\u308A\u76F4\u3059\u3068\u4ED8\u304D\u307E\u3059\u3002`,
         1e4
@@ -52654,7 +55733,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     const all = this.patternStore.all();
     const hits = all.filter((p) => looksGenerated(p.key));
     if (!hits.length) {
-      new import_obsidian37.Notice("\u751F\u6210\u7269\u30A8\u30F3\u30C8\u30EA\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\uFF08\u53F0\u5E33\u306F\u304D\u308C\u3044\u3067\u3059\uFF09\u3002", 6e3);
+      new import_obsidian38.Notice("\u751F\u6210\u7269\u30A8\u30F3\u30C8\u30EA\u306F\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\uFF08\u53F0\u5E33\u306F\u304D\u308C\u3044\u3067\u3059\uFF09\u3002", 6e3);
       return;
     }
     const confirmed = hits.filter((p) => {
@@ -52665,7 +55744,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       var _a2;
       return !((_a2 = p.attestations) != null ? _a2 : []).some((a) => !a.status);
     });
-    const modal = new import_obsidian37.Modal(this.app);
+    const modal = new import_obsidian38.Modal(this.app);
     modal.titleEl.setText(`\u{1F9F9} \u751F\u6210\u7269\u30A8\u30F3\u30C8\u30EA ${hits.length}\u4EF6`);
     const c = modal.contentEl;
     c.createEl("p", {
@@ -52700,7 +55779,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
         await this.patternStore.remove(p.id);
       modal.close();
       this.refreshViews();
-      new import_obsidian37.Notice(`\u{1F9F9} ${removable.length}\u4EF6\u3092\u53D6\u308A\u9664\u304D\u307E\u3057\u305F` + (confirmed.length ? `\uFF08\u78BA\u5B9A\u7528\u4F8B\u3064\u304D ${confirmed.length}\u4EF6\u306F\u6B8B\u3057\u307E\u3057\u305F\uFF09` : ""), 8e3);
+      new import_obsidian38.Notice(`\u{1F9F9} ${removable.length}\u4EF6\u3092\u53D6\u308A\u9664\u304D\u307E\u3057\u305F` + (confirmed.length ? `\uFF08\u78BA\u5B9A\u7528\u4F8B\u3064\u304D ${confirmed.length}\u4EF6\u306F\u6B8B\u3057\u307E\u3057\u305F\uFF09` : ""), 8e3);
     };
     modal.open();
   }
@@ -52752,7 +55831,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     const buf = await this.app.vault.readBinary(f);
     const ext = (_a2 = card.content.split(".").pop()) == null ? void 0 : _a2.toLowerCase();
     const mediaType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : ext === "webp" ? "image/webp" : "image/png";
-    const resp = await (0, import_obsidian37.requestUrl)({
+    const resp = await (0, import_obsidian38.requestUrl)({
       url: API_URL,
       method: "POST",
       throw: false,
@@ -52760,7 +55839,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       body: buildVisionBody({
         apiKey: this.settings.notes.ocrApiKey,
         model: PLAYER_MODEL,
-        images: [{ base64: (0, import_obsidian37.arrayBufferToBase64)(buf), mediaType }],
+        images: [{ base64: (0, import_obsidian38.arrayBufferToBase64)(buf), mediaType }],
         prompt: PLAYER_PROMPT
       })
     });
@@ -52786,13 +55865,89 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       wallClock: card.createdAt
     }, Date.now()));
     await this.inboxStore.remove(card.id);
-    new import_obsidian37.Notice(matched ? `\u{1F3A7} ${r2.shot.episode}${r2.shot.elapsedSec != null ? ` @ ${fmtStamp(r2.shot.elapsedSec)}` : ""} \u2192 \u30DE\u30FC\u30AF` : `\u{1F3A7} \u30DE\u30FC\u30AF\u4F5C\u6210\uFF08\u4E00\u81F4\u3059\u308B\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3057 \u2014 \u300C\u{1F399} Podcast\u300D\u3067\u53D6\u308A\u8FBC\u3080\u3068\u7167\u5408\u3067\u304D\u307E\u3059\uFF09`);
+    new import_obsidian38.Notice(matched ? `\u{1F3A7} ${r2.shot.episode}${r2.shot.elapsedSec != null ? ` @ ${fmtStamp(r2.shot.elapsedSec)}` : ""} \u2192 \u30DE\u30FC\u30AF` : `\u{1F3A7} \u30DE\u30FC\u30AF\u4F5C\u6210\uFF08\u4E00\u81F4\u3059\u308B\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3057 \u2014 \u300C\u{1F399} Podcast\u300D\u3067\u53D6\u308A\u8FBC\u3080\u3068\u7167\u5408\u3067\u304D\u307E\u3059\uFF09`);
   }
   /** §28 S1/S4 — give a view the catalog-identity pair in one place. */
   /** §26.3 — hand a view the identity bar's wiring. */
+  /**
+   * The ANSWER half of a selection — one implementation, every surface.
+   *
+   * Wired into `ViewChrome` rather than into any one view on purpose: a phrase
+   * highlighted on 𝕏, in the 受け皿, in a 鑑賞 mark or in the 語彙 must say the
+   * same thing, because "what does this mean" is not a per-surface question.
+   * §28 S5's claim about data, made about lookup.
+   *
+   * Local store FIRST: it is in memory and answers in the same tick, so the
+   * common case never shows the waiting state at all. The sharded shelf — the
+   * one holding the 35 books — is the fallback, and it is the only one of the
+   * two worth an await.
+   */
+  async lookUpPhrase(text) {
+    var _a2;
+    const q = text.trim();
+    if (!q)
+      return null;
+    const local = this.dictStore.lookup(q);
+    if (local.length) {
+      const h = local[0];
+      return {
+        headword: h.term.expression,
+        reading: h.term.reading,
+        deinflection: h.deinflection,
+        def: definitionsPreview(h.term.definitions)
+      };
+    }
+    const hit = (await this.bigDict.lookup(q, 1))[0];
+    if (!hit)
+      return null;
+    return {
+      headword: hit.entry.expression,
+      ...hit.entry.reading ? { reading: hit.entry.reading } : {},
+      ...hit.deinflection ? { deinflection: hit.deinflection } : {},
+      def: definitionsPreview((_a2 = hit.entry.senses) != null ? _a2 : [])
+    };
+  }
+  /** The two peek deps every chrome-armed surface gets, spread in at each site. */
+  /**
+   * The chrome every surface shares. `backPeek` rides along here rather than
+   * beside each `dismiss` because this is spread at exactly the same three
+   * sites — and a surface that gets `dismiss` without `backPeek` silently has
+   * no edge gesture, which is the one failure mode the invariant cannot
+   * survive. Coupling them at one line makes that unforgettable.
+   */
+  peekChrome() {
+    return {
+      lookUp: (text) => this.lookUpPhrase(text),
+      openWord: (hw) => void this.openDictionaryView(hw),
+      backPeek: () => this.navPeek(),
+      inVault: (c) => this.resolveVaultPath(c)
+    };
+  }
+  /**
+   * A candidate path or link text → the path the vault really holds, or null.
+   *
+   * The only thing in the plugin that can answer "where does the vault root
+   * fall inside this absolute path", which is what a rendered image's resource
+   * URL forces you to ask. Two roads because the DOM offers two kinds of
+   * candidate: an exact tail sliced out of the URL, and the shortest-form link
+   * text of the embed (`![[パネル.png]]`), which only the metadata index can
+   * expand to a real file.
+   */
+  resolveVaultPath(candidate) {
+    var _a2, _b2;
+    const c = candidate.trim();
+    if (!c)
+      return null;
+    const direct = this.app.vault.getAbstractFileByPath((0, import_obsidian38.normalizePath)(c));
+    if (direct instanceof import_obsidian38.TFile)
+      return direct.path;
+    return (_b2 = (_a2 = this.app.metadataCache.getFirstLinkpathDest(c, "")) == null ? void 0 : _a2.path) != null ? _b2 : null;
+  }
   withChrome(v) {
     v.chrome = {
       openSurface: (s) => void this.openSurface(s),
+      dismiss: () => void this.navBack(),
+      ...this.peekChrome(),
       surfaceBadge: (s) => this.surfaceBadge(s)
     };
     return v;
@@ -52804,6 +55959,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     v.dropCan = () => this.dropCapabilities();
     v.openSurface = (s) => void this.openSurface(s);
     v.surfaceBadge = (s) => this.surfaceBadge(s);
+    Object.assign(v, this.peekChrome());
     v.bigDict = {
       lookup: (q, limit) => this.bigDict.lookup(q, limit),
       installed: () => this.listBigDictionaries()
@@ -52825,30 +55981,30 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
    * converted into junk folders and never silently dropped.
    */
   async convertDexieBackup() {
-    var _a2, _b2, _c2;
+    var _a2, _b2;
     if (this.conversionRunning)
       return this.refuseSecondConversion();
     const path = (_b2 = (_a2 = this.settings.bigDict) == null ? void 0 : _a2.backupFile) == null ? void 0 : _b2.trim();
     if (!path) {
-      new import_obsidian37.Notice("\u8A2D\u5B9A \u2192 \u5927\u578B\u8F9E\u66F8 \u306B\u3001Yomitan\u306E\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7(.json)\u306E\u30D1\u30B9\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
+      new import_obsidian38.Notice("\u8A2D\u5B9A \u2192 \u5927\u578B\u8F9E\u66F8 \u306B\u3001Yomitan\u306E\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7(.json)\u306E\u30D1\u30B9\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
       return "no backup file configured";
     }
     let src;
     try {
       src = nodeChunkSource(path);
     } catch (err) {
-      new import_obsidian37.Notice(String(err instanceof Error ? err.message : err), 1e4);
+      new import_obsidian38.Notice(String(err instanceof Error ? err.message : err), 1e4);
       return String(err);
     }
     await this.bigDict.refresh();
     const done = this.bigDict.installed().filter((d) => !d.partial && d.revision !== "dexie" && d.revision !== "repaired").map((d) => d.title);
     this.conversionRunning = "\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7";
-    const notice = new import_obsidian37.Notice("\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u3092\u8AAD\u307F\u8FBC\u307F\u4E2D\u2026", 0);
+    const notice = new import_obsidian38.Notice("\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u3092\u8AAD\u307F\u8FBC\u307F\u4E2D\u2026", 0);
     const io = bufferedSidecarIO(vaultSidecarIO(this.app));
     const gb = (n) => (n / 1073741824).toFixed(2);
     try {
       const res = await importDexie(io, src.chunks, {
-        root: ((_c2 = this.settings.bigDict) == null ? void 0 : _c2.root) || "JP Dictionaries",
+        root: this.bigDictRoot,
         skip: done.length ? skipTitles(done) : void 0,
         onProgress: (p) => {
           notice.setMessage(
@@ -52859,14 +56015,14 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       await io.flush();
       this.bigDict.invalidate();
       const msg = `\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u5909\u63DB\u5B8C\u4E86: ${res.dictionaries.length}\u8F9E\u66F8 / ${res.rows.toLocaleString()}\u898B\u51FA\u3057\uFF08${(res.ms / 1e3).toFixed(0)}\u79D2\uFF09` + (res.skipped.length ? ` \u2014 \u5909\u63DB\u6E08\u307F\u306E\u305F\u3081\u30B9\u30AD\u30C3\u30D7: ${res.skipped.join("\u3001")}` : "") + (res.orphans ? ` \u2014 \u767B\u9332\u5916\u306E\u8F9E\u66F8 ${res.orphans.toLocaleString()}\u8A9E\u306F\u30B9\u30AD\u30C3\u30D7` : "") + (res.unparseable ? ` / \u89E3\u6790\u4E0D\u80FD ${res.unparseable}\u8A9E` : "");
-      new import_obsidian37.Notice(msg, 15e3);
+      new import_obsidian38.Notice(msg, 15e3);
       return msg;
     } catch (err) {
       await io.flush().catch(() => {
       });
       this.bigDict.invalidate();
       const msg = `\u30D0\u30C3\u30AF\u30A2\u30C3\u30D7\u5909\u63DB\u306B\u5931\u6557: ${String(err instanceof Error ? err.message : err)}\uFF08\u3053\u3053\u307E\u3067\u306B\u5909\u63DB\u3057\u305F\u8F9E\u66F8\u306F\u4F7F\u3048\u307E\u3059\uFF09`;
-      new import_obsidian37.Notice(msg, 12e3);
+      new import_obsidian38.Notice(msg, 12e3);
       return msg;
     } finally {
       this.conversionRunning = null;
@@ -52876,7 +56032,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
   /** One conversion at a time — both write the same folders. */
   refuseSecondConversion() {
     const msg = `${this.conversionRunning}\u306E\u5909\u63DB\u304C\u5B9F\u884C\u4E2D\u3067\u3059\u3002\u7D42\u308F\u3063\u3066\u304B\u3089\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\uFF08\u540C\u3058\u30D5\u30A9\u30EB\u30C0\u306B\u66F8\u304D\u8FBC\u3080\u305F\u3081\uFF09\u3002`;
-    new import_obsidian37.Notice(msg, 8e3);
+    new import_obsidian38.Notice(msg, 8e3);
     return msg;
   }
   /**
@@ -52888,29 +56044,93 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
    * plugin could not see: on this vault, 30 dictionaries and 1.8GB hidden by 30
    * missing 150-byte files. `importDexie` now writes meta as it goes, so this is
    * the rescue path for anything converted before that, and after a crash.
+   *
+   * It also VERIFIES, because repair alone cannot: a folder with readable meta
+   * is skipped, so a dictionary that lost shards while keeping its meta was
+   * reported here as 正常 — which is how 英辞郎 came to serve 36% of its
+   * reach-for index with no error anywhere. See `verifySidecar`.
    */
   async repairBigDictionaries() {
-    var _a2;
     if (this.conversionRunning)
       return this.refuseSecondConversion();
     this.conversionRunning = "\u4FEE\u5FA9";
-    const notice = new import_obsidian37.Notice("\u8F9E\u66F8\u30D5\u30A9\u30EB\u30C0\u3092\u691C\u67FB\u4E2D\u2026", 0);
+    const notice = new import_obsidian38.Notice("\u8F9E\u66F8\u30D5\u30A9\u30EB\u30C0\u3092\u691C\u67FB\u4E2D\u2026", 0);
     const io = vaultSidecarIO(this.app);
     try {
-      const res = await repairSidecarMeta(io, ((_a2 = this.settings.bigDict) == null ? void 0 : _a2.root) || "JP Dictionaries", {
+      const res = await repairSidecarMeta(io, this.bigDictRoot, {
         onProgress: (p) => {
           notice.setMessage(
             `\u8F9E\u66F8\u3092\u4FEE\u5FA9\u4E2D ${p.done}/${p.total} \u2014 ${p.title}\uFF08${(p.bytes / 1048576).toFixed(0)}MB \u8AAD\u8FBC\uFF09`
           );
         }
       });
+      notice.setMessage("\u8F9E\u66F8\u3092\u691C\u67FB\u4E2D\u2026");
+      const verdicts2 = await verifyAllSidecars(io, this.bigDictRoot);
+      const broken = verdicts2.filter((v) => !v.ok);
       this.bigDict.invalidate();
-      const msg = res.repaired.length ? `${res.repaired.length}\u8F9E\u66F8\u3092\u5FA9\u65E7: ` + res.repaired.slice(0, 4).map((r2) => `${r2.title} ${r2.headwords.toLocaleString()}\u8A9E`).join("\u3001") + (res.repaired.length > 4 ? ` \u307B\u304B${res.repaired.length - 4}\u8F9E\u66F8` : "") + "\uFF08\u672A\u5B8C\u4E86\u306E\u53EF\u80FD\u6027\u304C\u3042\u308B\u305F\u3081\u300C\u66AB\u5B9A\u300D\u8868\u793A\u3067\u3059\uFF09" : `\u5FA9\u65E7\u304C\u5FC5\u8981\u306A\u8F9E\u66F8\u306F\u3042\u308A\u307E\u305B\u3093\uFF08${res.alreadyOk.length}\u8F9E\u66F8\u306F\u6B63\u5E38\uFF09\u3002`;
-      new import_obsidian37.Notice(msg, 15e3);
+      const repairedMsg = res.repaired.length ? `${res.repaired.length}\u8F9E\u66F8\u3092\u5FA9\u65E7: ` + res.repaired.slice(0, 4).map((r2) => `${r2.title} ${r2.headwords.toLocaleString()}\u8A9E`).join("\u3001") + (res.repaired.length > 4 ? ` \u307B\u304B${res.repaired.length - 4}\u8F9E\u66F8` : "") + "\uFF08\u672A\u5B8C\u4E86\u306E\u53EF\u80FD\u6027\u304C\u3042\u308B\u305F\u3081\u300C\u66AB\u5B9A\u300D\u8868\u793A\u3067\u3059\uFF09" : "";
+      const brokenMsg = broken.length ? `\u26A0\uFE0F ${broken.length}\u8F9E\u66F8\u306B\u7834\u640D: ` + broken.slice(0, 3).map((v) => `\u3010${v.title}\u3011${describeSidecarProblem(v.problems[0])}`).join(" \uFF0F ") + (broken.length > 3 ? ` \u307B\u304B${broken.length - 3}\u8F9E\u66F8` : "") + " \u2014 \u518D\u5909\u63DB\u304C\u5FC5\u8981\u3067\u3059" : "";
+      const msg = [repairedMsg, brokenMsg].filter(Boolean).join("\n") || `\u5FA9\u65E7\u304C\u5FC5\u8981\u306A\u8F9E\u66F8\u306F\u3042\u308A\u307E\u305B\u3093\uFF08${verdicts2.length}\u8F9E\u66F8\u3092\u691C\u67FB\u3001\u3059\u3079\u3066\u6B63\u5E38\uFF09\u3002`;
+      new import_obsidian38.Notice(msg, broken.length ? 3e4 : 15e3);
       return msg;
     } catch (err) {
       const msg = `\u8F9E\u66F8\u306E\u4FEE\u5FA9\u306B\u5931\u6557: ${String(err instanceof Error ? err.message : err)}`;
-      new import_obsidian37.Notice(msg, 12e3);
+      new import_obsidian38.Notice(msg, 12e3);
+      return msg;
+    } finally {
+      this.conversionRunning = null;
+      notice.hide();
+    }
+  }
+  /**
+   * §27.2 — build the meaning-side index for every converted dictionary.
+   *
+   * No re-import and no source archive: the English is already stored on every
+   * frame row, so this re-keys data the vault holds. That is the whole reason
+   * the missing entry points were never a data problem — the intention key was
+   * computed at import, dropped at write, and blanked again at read.
+   */
+  async buildIntentIndexes() {
+    if (this.conversionRunning)
+      return this.refuseSecondConversion();
+    this.conversionRunning = "\u610F\u56F3\u7D22\u5F15";
+    const notice = new import_obsidian38.Notice("\u610F\u56F3\u7D22\u5F15\u3092\u69CB\u7BC9\u4E2D\u2026", 0);
+    const io = bufferedSidecarIO(vaultSidecarIO(this.app));
+    try {
+      await this.bigDict.refresh();
+      const installed = this.bigDict.installed();
+      const built = [];
+      let keys = 0, candidates = 0;
+      for (const d of installed) {
+        const res = await buildIntentIndex(io, d.dir, {
+          shards: d.shards,
+          onProgress: (p) => {
+            notice.setMessage(
+              `\u610F\u56F3\u7D22\u5F15 ${d.title} \u2014 ${p.pass}/${p.passes}\u5468\u76EE ${p.shard}/${p.of}\u30B7\u30E3\u30FC\u30C9`
+            );
+          }
+        });
+        await io.flush();
+        if (!res.keys)
+          continue;
+        const meta = await readMeta(io, d.dir);
+        if (meta)
+          await writeMeta(io, d.dir, { ...meta, intents: res.keys });
+        built.push(`${d.title} ${res.keys.toLocaleString()}\u4EF6`);
+        keys += res.keys;
+        candidates += res.candidates;
+      }
+      await io.flush();
+      this.bigDict.invalidate();
+      const msg = built.length ? `\u610F\u56F3\u7D22\u5F15\u3092\u69CB\u7BC9: ${keys.toLocaleString()}\u9805\u76EE / ${candidates.toLocaleString()}\u5019\u88DC \u2014 ` + built.slice(0, 3).join("\u3001") + (built.length > 3 ? ` \u307B\u304B${built.length - 3}\u8F9E\u66F8` : "") : "\u610F\u56F3\u7D22\u5F15\u3092\u4F5C\u308C\u308B\u8F9E\u66F8\u304C\u3042\u308A\u307E\u305B\u3093\uFF08reachFor \u3092\u6301\u3064\u8F9E\u66F8\u304C\u5FC5\u8981\u3067\u3059\uFF09\u3002";
+      new import_obsidian38.Notice(msg, 15e3);
+      return msg;
+    } catch (err) {
+      await io.flush().catch(() => {
+      });
+      this.bigDict.invalidate();
+      const msg = `\u610F\u56F3\u7D22\u5F15\u306E\u69CB\u7BC9\u306B\u5931\u6557: ${String(err instanceof Error ? err.message : err)}`;
+      new import_obsidian38.Notice(msg, 12e3);
       return msg;
     } finally {
       this.conversionRunning = null;
@@ -52964,16 +56184,14 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     (_a2 = view == null ? void 0 : view.openPattern) == null ? void 0 : _a2.call(view, id);
   }
   async openLexiconView() {
-    const existing = this.app.workspace.getLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
-    if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
+    var _a2;
+    const leaf = this.surfaceLeaf(JP_COLLOCATIONS_VIEW_TYPE);
+    if (!leaf)
       return;
-    }
-    const leaf = this.app.workspace.getRightLeaf(false);
-    if (leaf) {
+    if (((_a2 = leaf.view) == null ? void 0 : _a2.getViewType()) !== JP_COLLOCATIONS_VIEW_TYPE) {
       await leaf.setViewState({ type: JP_COLLOCATIONS_VIEW_TYPE, active: true });
-      this.app.workspace.revealLeaf(leaf);
     }
+    this.app.workspace.revealLeaf(leaf);
   }
   /**
    * Background vault indexing — resilient, non-blocking, phone-friendly.
@@ -53090,13 +56308,54 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     out.push({ surface: p.key, source: { medium: "manual" }, ...frameKey ? { frameKey } : {}, at: now });
     return out;
   }
+  /**
+   * The SHELF as arrivals (§27.2).
+   *
+   * Every other arrival is something the user met — an attestation, a pattern.
+   * A want written in English can never collide with any of them: it cannot
+   * token-match a Japanese surface and it carries no slot, so before the
+   * meaning-side index existed there was literally no path from "undergo" to a
+   * Japanese phrase, and the reach on this vault sat open with zero offers.
+   *
+   * So the dictionary is asked directly, once per open want. The candidates
+   * arrive as ordinary `Incoming` and go through the same `collide` as
+   * everything else — they are OFFERS, judged by the same hand, and the
+   * dictionary that filed each one is carried as its provenance (§28 S2).
+   */
+  async intentionArrivals() {
+    const open = this.reachStore.open();
+    if (!open.length || !this.bigDict.hasIntentIndex())
+      return [];
+    const now = Date.now();
+    const out = [];
+    for (const r2 of open) {
+      for (const want of [r2.want, r2.gloss]) {
+        if (!(want == null ? void 0 : want.trim()))
+          continue;
+        for (const hit of await this.bigDict.intention(want, 12)) {
+          out.push({
+            surface: hit.candidate.surface,
+            source: { medium: hit.dictionary },
+            intentionKey: hit.candidate.intentionKey,
+            intention: hit.candidate.intention,
+            ...hit.candidate.frameKey ? { frameKey: hit.candidate.frameKey } : {},
+            at: now
+          });
+        }
+      }
+    }
+    return out;
+  }
   async watchReaches(incoming) {
-    if (!this.reachStore.open().length || !incoming.length)
+    if (!this.reachStore.open().length)
+      return;
+    incoming = [...incoming, ...await this.intentionArrivals()];
+    if (!incoming.length)
       return;
     const made = await this.reachStore.watch(incoming, { juxtaposeLimit: 2 });
     if (made) {
       const s = reachStats(this.reachStore.all());
-      new import_obsidian37.Notice(`\u9858\u3044: ${made}\u4EF6\u306E\u5019\u88DC\u304C\u5C4A\u304D\u307E\u3057\u305F\uFF08${s.waiting}\u4EF6\u304C\u898B\u5B9A\u3081\u5F85\u3061\uFF09`, 6e3);
+      new import_obsidian38.Notice(`\u9858\u3044: ${made}\u4EF6\u306E\u5019\u88DC\u304C\u5C4A\u304D\u307E\u3057\u305F\uFF08${s.waiting}\u4EF6\u304C\u898B\u5B9A\u3081\u5F85\u3061\uFF09`, 6e3);
       this.refreshTrayViews();
     }
   }
@@ -53123,7 +56382,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     const target = (_a2 = entry2.anchorId) != null ? _a2 : entry2.blockId;
     const isLead = !entry2.anchorId || entry2.anchorId === entry2.blockId;
     const f = this.app.vault.getAbstractFileByPath(entry2.file);
-    if (f instanceof import_obsidian37.TFile && isLead) {
+    if (f instanceof import_obsidian38.TFile && isLead) {
       const md = await this.app.vault.read(f);
       const next = retypeInMarkdown(md, target, cls);
       if (next !== md)
@@ -53156,7 +56415,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       }
     }
     const perSrc = prep.sources.length > 1 ? "\n" + prep.sources.map((s) => `  ${s.tFile.basename}: ${s.results.length}\u4EF6`).join("\n") : "";
-    new import_obsidian37.Notice(
+    new import_obsidian38.Notice(
       `\u7167\u5408\u5B8C\u4E86: ${total}\u4EF6\uFF08auto ${auto} / \u8981\u78BA\u8A8D ${total - auto}\uFF09
 \u6587\u5B57\u8D77\u3053\u3057\u306B ${anchored} \u7B87\u6240\u3092\u30A2\u30F3\u30AB\u30FC\u3057\u307E\u3057\u305F \u2014 \u7167\u5408\u30E9\u30A4\u30D6\u30E9\u30EA\u3067\u7A2E\u5225\u3092\u8A2D\u5B9A\u3067\u304D\u307E\u3059${perSrc}`
     );
@@ -53170,19 +56429,19 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
    * already extracted; the user corrects misreads by editing the lines.
    */
   async ocrThenReconcile() {
-    const cfg = this.settings.notes;
-    if (!cfg.ocrApiKey) {
-      new import_obsidian37.Notice("Anthropic API \u30AD\u30FC\u304C\u672A\u8A2D\u5B9A\u3067\u3059\uFF08\u8A2D\u5B9A \u2192 \u624B\u66F8\u304DOCR\uFF09\u3002console.anthropic.com \u3067\u767A\u884C\u3067\u304D\u307E\u3059\u3002", 1e4);
+    const cfg2 = this.settings.notes;
+    if (!cfg2.ocrApiKey) {
+      new import_obsidian38.Notice("Anthropic API \u30AD\u30FC\u304C\u672A\u8A2D\u5B9A\u3067\u3059\uFF08\u8A2D\u5B9A \u2192 \u624B\u66F8\u304DOCR\uFF09\u3002console.anthropic.com \u3067\u767A\u884C\u3067\u304D\u307E\u3059\u3002", 1e4);
       return;
     }
     const file = this.app.workspace.getActiveFile();
     if (!file) {
-      new import_obsidian37.Notice("\u30CE\u30FC\u30C8\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
+      new import_obsidian38.Notice("\u30CE\u30FC\u30C8\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
       return;
     }
     const content = await this.app.vault.read(file);
     if (!frontmatterSources(content).length) {
-      new import_obsidian37.Notice(
+      new import_obsidian38.Notice(
         "\u3053\u308C\u306F\u30AD\u30E3\u30D7\u30C1\u30E3\u30CE\u30FC\u30C8\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002frontmatter \u306B `sources: [[\u6587\u5B57\u8D77\u3053\u3057]]`\uFF08\u8907\u6570\u53EF: \u30AB\u30F3\u30DE/\u30EA\u30B9\u30C8\uFF09\u304C\u5FC5\u8981\u3067\u3059\u3002\n\u6587\u5B57\u8D77\u3053\u3057\u3092\u958B\u3044\u3066\u300C\u{1F4DD} \u3053\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u304B\u3089\u30AD\u30E3\u30D7\u30C1\u30E3\u30CE\u30FC\u30C8\u3092\u4F5C\u6210\u300D\u3092\u5B9F\u884C\u3059\u308B\u3068\u4E00\u767A\u3067\u4F5C\u308C\u307E\u3059\u3002",
         12e3
       );
@@ -53190,7 +56449,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     }
     const images = this.findEmbeddedImages(content, file);
     if (!images.length) {
-      new import_obsidian37.Notice("\u57CB\u3081\u8FBC\u307F\u753B\u50CF\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u624B\u66F8\u304D\u30DA\u30FC\u30B8\u306E\u753B\u50CF\uFF08\u5199\u771F/\u30B9\u30AF\u30EA\u30FC\u30F3\u30B7\u30E7\u30C3\u30C8\uFF09\u3092\u3053\u306E\u30CE\u30FC\u30C8\u306B\u57CB\u3081\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\u3002", 1e4);
+      new import_obsidian38.Notice("\u57CB\u3081\u8FBC\u307F\u753B\u50CF\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u624B\u66F8\u304D\u30DA\u30FC\u30B8\u306E\u753B\u50CF\uFF08\u5199\u771F/\u30B9\u30AF\u30EA\u30FC\u30F3\u30B7\u30E7\u30C3\u30C8\uFF09\u3092\u3053\u306E\u30CE\u30FC\u30C8\u306B\u57CB\u3081\u8FBC\u3093\u3067\u304F\u3060\u3055\u3044\u3002", 1e4);
       return;
     }
     const r2 = await this.ocrMaterialize(file, content, images);
@@ -53203,10 +56462,10 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
    *  reconcile; callers chain whatever comes next. */
   async ocrMaterialize(file, contentIn, images) {
     var _a2;
-    const cfg = this.settings.notes;
+    const cfg2 = this.settings.notes;
     const http = {
       post: async (url, body2, headers) => {
-        const r2 = await (0, import_obsidian37.requestUrl)({ url, method: "POST", body: body2, headers, throw: false });
+        const r2 = await (0, import_obsidian38.requestUrl)({ url, method: "POST", body: body2, headers, throw: false });
         return { status: r2.status, text: r2.text };
       }
     };
@@ -53219,26 +56478,26 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
         alreadyDone++;
         continue;
       }
-      const busy = new import_obsidian37.Notice(`OCR\u4E2D\u2026 ${img.name}`, 0);
+      const busy = new import_obsidian38.Notice(`OCR\u4E2D\u2026 ${img.name}`, 0);
       let res;
       try {
         const tiles = await this.prepareImageTiles(buf, img.extension.toLowerCase());
         if (tiles.length > 1)
           busy.setMessage(`OCR\u4E2D\u2026 ${img.name}\uFF08\u7E26\u9577\u30DA\u30FC\u30B8 \u2192 ${tiles.length} \u30BF\u30A4\u30EB\uFF09`);
-        res = await ocrImage(http, { apiKey: cfg.ocrApiKey, model: cfg.ocrModel, escalationModel: cfg.ocrEscalationModel }, tiles);
+        res = await ocrImage(http, { apiKey: cfg2.ocrApiKey, model: cfg2.ocrModel, escalationModel: cfg2.ocrEscalationModel }, tiles);
       } finally {
         busy.hide();
       }
       if (!res.page || !res.page.phrases.length) {
         failed++;
-        new import_obsidian37.Notice(`OCR\u5931\u6557\uFF08${img.name}\uFF09: ${(_a2 = res.error) != null ? _a2 : "\u30D5\u30EC\u30FC\u30BA\u304C\u8AAD\u307F\u53D6\u308C\u307E\u305B\u3093\u3067\u3057\u305F"}`, 12e3);
+        new import_obsidian38.Notice(`OCR\u5931\u6557\uFF08${img.name}\uFF09: ${(_a2 = res.error) != null ? _a2 : "\u30D5\u30EC\u30FC\u30BA\u304C\u8AAD\u307F\u53D6\u308C\u307E\u305B\u3093\u3067\u3057\u305F"}`, 12e3);
         continue;
       }
       const merged = mergeOcrPhrases(content, res.page, img.name, hash);
       content = merged.md;
       added += merged.added;
       const low = res.page.phrases.filter((p) => p.confidence < 0.6).length;
-      new import_obsidian37.Notice(
+      new import_obsidian38.Notice(
         `${img.name}: ${merged.added} \u30D5\u30EC\u30FC\u30BA\u62BD\u51FA\uFF08${res.modelUsed}${res.escalated ? "\u30FB\u30A8\u30B9\u30AB\u30EC\u30FC\u30B7\u30E7\u30F3" : ""}\uFF09` + (low ? `
 \u26A0\uFE0F \u4F4E\u78BA\u4FE1 ${low} \u4EF6 \u2014 \u30CE\u30FC\u30C8\u5185\u306E\u884C\u3092\u76F4\u63A5\u4FEE\u6B63\u3067\u304D\u307E\u3059` : "")
       );
@@ -53260,12 +56519,12 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     var _a2;
     const file = this.app.workspace.getActiveFile();
     if (!file) {
-      new import_obsidian37.Notice("\u30CE\u30FC\u30C8\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
+      new import_obsidian38.Notice("\u30CE\u30FC\u30C8\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
       return;
     }
     const content = await this.app.vault.read(file);
     if (!frontmatterSources(content).length) {
-      new import_obsidian37.Notice(
+      new import_obsidian38.Notice(
         "\u3053\u308C\u306F\u30AD\u30E3\u30D7\u30C1\u30E3\u30CE\u30FC\u30C8\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002frontmatter \u306B `sources: [[\u6587\u5B57\u8D77\u3053\u3057]]`\uFF08\u8907\u6570\u53EF: \u30AB\u30F3\u30DE/\u30EA\u30B9\u30C8\uFF09\u304C\u5FC5\u8981\u3067\u3059\u3002\n\u6587\u5B57\u8D77\u3053\u3057\u3092\u958B\u3044\u3066\u300C\u{1F4DD} \u3053\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u304B\u3089\u30AD\u30E3\u30D7\u30C1\u30E3\u30CE\u30FC\u30C8\u3092\u4F5C\u6210\u300D\u3092\u5B9F\u884C\u3059\u308B\u3068\u4E00\u767A\u3067\u4F5C\u308C\u307E\u3059\u3002",
         12e3
       );
@@ -53290,7 +56549,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
         runIds.add(patternIdFor(derivePattern(r2.note)));
     const total = prep.sources.reduce((n, s) => n + s.results.length, 0);
     const anchored = prep.sources.reduce((n, s) => n + s.plan.items.length, 0);
-    const audioReady = import_obsidian37.Platform.isDesktopApp && this.settings.audioExtraction.enabled && this.app.vault.adapter instanceof import_obsidian37.FileSystemAdapter && nodeRuntimeAvailable() && prep.sources.some((s) => s.videoId);
+    const audioReady = import_obsidian38.Platform.isDesktopApp && this.settings.audioExtraction.enabled && this.app.vault.adapter instanceof import_obsidian38.FileSystemAdapter && nodeRuntimeAvailable() && prep.sources.some((s) => s.videoId);
     this.pipelineHandoff((_a2 = written == null ? void 0 : written.count) != null ? _a2 : 0, total, anchored, runIds, audioReady);
     if (audioReady) {
       void (async () => {
@@ -53305,16 +56564,16 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
           }
           const up = res.present.size || this.settings.voiceSync.enabled ? await this.writeReconCards(prep, plans, res.present) : null;
           if (res.done > 0 || res.failed > 0) {
-            new import_obsidian37.Notice(
+            new import_obsidian38.Notice(
               `\u{1F3A7} \u97F3\u58F0\u30AF\u30EA\u30C3\u30D7: \u2713${res.done}${res.failed ? ` / \u5931\u6557${res.failed}` : ""}` + (up ? `
 \u30AB\u30FC\u30C9\u306B\u57CB\u3081\u8FBC\u307F\u307E\u3057\u305F\uFF08${up.count}\u679A\uFF09` : "") + (res.failed ? `
-\u30ED\u30B0: ${(0, import_obsidian37.normalizePath)((this.settings.audioExtraction.outputFolder || "JP Audio Clips") + "/_download-log.md")}` : ""),
+\u30ED\u30B0: ${(0, import_obsidian38.normalizePath)((this.settings.audioExtraction.outputFolder || "JP Audio Clips") + "/_download-log.md")}` : ""),
               res.failed ? 12e3 : 7e3
             );
           }
         } catch (e) {
           console.error("[jp-collocations] background audio failed:", e);
-          new import_obsidian37.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u306E\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F\uFF08\u30AB\u30FC\u30C9\u306F\u5229\u7528\u53EF\u80FD\u3067\u3059\uFF09\u3002", 8e3);
+          new import_obsidian38.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u306E\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F\uFF08\u30AB\u30FC\u30C9\u306F\u5229\u7528\u53EF\u80FD\u3067\u3059\uFF09\u3002", 8e3);
         }
       })();
     }
@@ -53330,7 +56589,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
 \u{1F3A7} \u97F3\u58F0\u306F\u30D0\u30C3\u30AF\u30B0\u30E9\u30A6\u30F3\u30C9\u53D6\u5F97\u4E2D\uFF08\u30AB\u30FC\u30C9\u306F\u4ECA\u3059\u3050\u4F7F\u3048\u307E\u3059\uFF09` : "") + (!audioPending && !this.settings.audioExtraction.enabled ? `
 \uFF08\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u306F\u8A2D\u5B9A\u3067\u30AA\u30D5\uFF09` : "") + (reviewable.length ? `
 \u25B6 \u30BF\u30C3\u30D7\u3067 ${reviewable.length}\u679A\u3092\u4ECA\u3059\u3050\u5FA9\u7FD2` : "");
-    const n = new import_obsidian37.Notice(msg, 12e3);
+    const n = new import_obsidian38.Notice(msg, 12e3);
     if (reviewable.length) {
       n.noticeEl.style.cursor = "pointer";
       n.noticeEl.addEventListener("click", () => {
@@ -53344,7 +56603,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
   async newCaptureNote() {
     const hist = this.app.vault.getMarkdownFiles().filter((f) => f.basename.startsWith("_watch-history")).sort((a, b) => b.stat.mtime - a.stat.mtime)[0];
     if (!hist) {
-      new import_obsidian37.Notice("\u8996\u8074\u5C65\u6B74\u30CE\u30FC\u30C8\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u5148\u306B\u300CFetch Watch History by Date Range\u300D\u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 1e4);
+      new import_obsidian38.Notice("\u8996\u8074\u5C65\u6B74\u30CE\u30FC\u30C8\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u5148\u306B\u300CFetch Watch History by Date Range\u300D\u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 1e4);
       return;
     }
     const md = await this.app.vault.cachedRead(hist);
@@ -53360,7 +56619,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
         missing.push(id);
     }
     if (!links.length) {
-      new import_obsidian37.Notice(`\u3053\u306E\u5C65\u6B74\uFF08${hist.basename}\uFF09\u306E\u6587\u5B57\u8D77\u3053\u3057\u304C\u307E\u3060\u3042\u308A\u307E\u305B\u3093\u3002\u5C65\u6B74\u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u300CFetch Transcripts from Watch History / URL List\u300D\u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002`, 12e3);
+      new import_obsidian38.Notice(`\u3053\u306E\u5C65\u6B74\uFF08${hist.basename}\uFF09\u306E\u6587\u5B57\u8D77\u3053\u3057\u304C\u307E\u3060\u3042\u308A\u307E\u305B\u3093\u3002\u5C65\u6B74\u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u300CFetch Transcripts from Watch History / URL List\u300D\u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002`, 12e3);
       return;
     }
     const day = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
@@ -53379,7 +56638,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     ].filter((l) => l !== "").join("\n") + "\n";
     const file = await this.app.vault.create(path, body2);
     await this.app.workspace.getLeaf(false).openFile(file);
-    new import_obsidian37.Notice(`\u30AD\u30E3\u30D7\u30C1\u30E3\u30CE\u30FC\u30C8\u4F5C\u6210: ${links.length} \u672C\u306E\u52D5\u753B\u3068\u30EA\u30F3\u30AF\u6E08\u307F${missing.length ? `\uFF08\u672A\u53D6\u5F97 ${missing.length} \u672C\uFF09` : ""}\u3002\u753B\u50CF\u3092\u8CBC\u3063\u3066 \u26A1`, 1e4);
+    new import_obsidian38.Notice(`\u30AD\u30E3\u30D7\u30C1\u30E3\u30CE\u30FC\u30C8\u4F5C\u6210: ${links.length} \u672C\u306E\u52D5\u753B\u3068\u30EA\u30F3\u30AF\u6E08\u307F${missing.length ? `\uFF08\u672A\u53D6\u5F97 ${missing.length} \u672C\uFF09` : ""}\u3002\u753B\u50CF\u3092\u8CBC\u3063\u3066 \u26A1`, 1e4);
   }
   /**
    * Capture note for the transcript that is open right now — the missing rung
@@ -53400,17 +56659,17 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
   async captureNoteFromTranscript() {
     const file = this.app.workspace.getActiveFile();
     if (!file) {
-      new import_obsidian37.Notice("\u6587\u5B57\u8D77\u3053\u3057\u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u304B\u3089\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
+      new import_obsidian38.Notice("\u6587\u5B57\u8D77\u3053\u3057\u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u304B\u3089\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
       return;
     }
     const md = await this.app.vault.cachedRead(file);
     if (isCaptureNote(md)) {
-      new import_obsidian37.Notice("\u3053\u306E\u30CE\u30FC\u30C8\u306F\u65E2\u306B\u30AD\u30E3\u30D7\u30C1\u30E3\u30CE\u30FC\u30C8\u3067\u3059\uFF08sources: \u304C\u3042\u308A\u307E\u3059\uFF09\u3002\u753B\u50CF\u3092\u8CBC\u3063\u3066 \u26A1 \u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 1e4);
+      new import_obsidian38.Notice("\u3053\u306E\u30CE\u30FC\u30C8\u306F\u65E2\u306B\u30AD\u30E3\u30D7\u30C1\u30E3\u30CE\u30FC\u30C8\u3067\u3059\uFF08sources: \u304C\u3042\u308A\u307E\u3059\uFF09\u3002\u753B\u50CF\u3092\u8CBC\u3063\u3066 \u26A1 \u3092\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 1e4);
       return;
     }
     const stamped = parseTranscriptLines(md).filter((l) => l.tStartSec != null).length;
     if (stamped < 5) {
-      new import_obsidian37.Notice(
+      new import_obsidian38.Notice(
         `\u3053\u306E\u30CE\u30FC\u30C8\u304B\u3089\u30BF\u30A4\u30E0\u30B9\u30BF\u30F3\u30D7\u4ED8\u304D\u306E\u884C\u304C\u8AAD\u307F\u53D6\u308C\u307E\u305B\u3093\uFF08${stamped}\u884C\uFF09\u3002\u5B57\u5E55\u304B\u3089\u4F5C\u3063\u305F\u6587\u5B57\u8D77\u3053\u3057\u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u5B9F\u884C\u3057\u3066\u304F\u3060\u3055\u3044\u3002`,
         12e3
       );
@@ -53432,7 +56691,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     ].join("\n") + "\n";
     const created = await this.app.vault.create(path, body2);
     await this.app.workspace.getLeaf(false).openFile(created);
-    new import_obsidian37.Notice(`\u30AD\u30E3\u30D7\u30C1\u30E3\u30CE\u30FC\u30C8\u4F5C\u6210: ${created.basename}
+    new import_obsidian38.Notice(`\u30AD\u30E3\u30D7\u30C1\u30E3\u30CE\u30FC\u30C8\u4F5C\u6210: ${created.basename}
 \uFF08${stamped}\u884C\u306E\u6587\u5B57\u8D77\u3053\u3057\u3068\u30EA\u30F3\u30AF\u6E08\u307F\uFF09\u753B\u50CF\u3092\u8CBC\u3063\u3066 \u26A1`, 9e3);
   }
   /** Enrich every clip in the audio folder that lacks a `.voicesync.json`
@@ -53441,7 +56700,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
   /** Voice profiles as absolute paths for the enrollment concat. */
   voiceProfilesAbs() {
     const adapter = this.app.vault.adapter;
-    if (!(adapter instanceof import_obsidian37.FileSystemAdapter))
+    if (!(adapter instanceof import_obsidian38.FileSystemAdapter))
       return [];
     const base = adapter.getBasePath();
     return this.settings.voiceSync.profiles.map((p) => ({ name: p.name, absWav: `${base}/${p.refWav}`, durSec: p.durSec }));
@@ -53452,15 +56711,15 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
   async enrollVoice(clipFile, data, spk, name) {
     data.speakers[spk] = name;
     const adapter = this.app.vault.adapter;
-    if (!(adapter instanceof import_obsidian37.FileSystemAdapter))
+    if (!(adapter instanceof import_obsidian38.FileSystemAdapter))
       return;
     const segs = data.segments.filter((s) => s.spk === spk).sort((a, b) => b.t1 - b.t0 - (a.t1 - a.t0));
     const longest = segs[0];
     if (!longest || longest.t1 - longest.t0 < 1.5) {
-      new import_obsidian37.Notice(`\u300C${name}\u300D: \u533A\u9593\u304C\u77ED\u3059\u304E\u3066\u58F0\u3092\u767B\u9332\u3067\u304D\u307E\u305B\u3093\uFF08\u540D\u524D\u306E\u307F\u4FDD\u5B58\uFF09`, 6e3);
+      new import_obsidian38.Notice(`\u300C${name}\u300D: \u533A\u9593\u304C\u77ED\u3059\u304E\u3066\u58F0\u3092\u767B\u9332\u3067\u304D\u307E\u305B\u3093\uFF08\u540D\u524D\u306E\u307F\u4FDD\u5B58\uFF09`, 6e3);
       return;
     }
-    const folder = (0, import_obsidian37.normalizePath)(`${this.settings.audioExtraction.outputFolder || "JP Audio Clips"}/_voices`);
+    const folder = (0, import_obsidian38.normalizePath)(`${this.settings.audioExtraction.outputFolder || "JP Audio Clips"}/_voices`);
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       try {
         await this.app.vault.createFolder(folder);
@@ -53479,7 +56738,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       `${base}/${rel}`
     );
     if (!ok) {
-      new import_obsidian37.Notice(`\u300C${name}\u300D: \u58F0\u306E\u62BD\u51FA\u306B\u5931\u6557\uFF08\u540D\u524D\u306E\u307F\u4FDD\u5B58\uFF09`, 6e3);
+      new import_obsidian38.Notice(`\u300C${name}\u300D: \u58F0\u306E\u62BD\u51FA\u306B\u5931\u6557\uFF08\u540D\u524D\u306E\u307F\u4FDD\u5B58\uFF09`, 6e3);
       return;
     }
     this.settings.voiceSync.profiles = [
@@ -53487,38 +56746,38 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       { name, refWav: rel, durSec: dur }
     ];
     await this.saveSettings();
-    new import_obsidian37.Notice(`\u{1F5E3} \u300C${name}\u300D\u306E\u58F0\u3092\u767B\u9332\u3057\u307E\u3057\u305F`);
+    new import_obsidian38.Notice(`\u{1F5E3} \u300C${name}\u300D\u306E\u58F0\u3092\u767B\u9332\u3057\u307E\u3057\u305F`);
   }
   async enrichClipsVoiceSync(force = false) {
     var _a2;
-    if (!import_obsidian37.Platform.isDesktopApp) {
-      new import_obsidian37.Notice("VoiceSync \u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u306E\u307F\u5BFE\u5FDC\u3067\u3059\u3002");
+    if (!import_obsidian38.Platform.isDesktopApp) {
+      new import_obsidian38.Notice("VoiceSync \u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u306E\u307F\u5BFE\u5FDC\u3067\u3059\u3002");
       return;
     }
     if (!this.settings.voiceSync.enabled) {
-      new import_obsidian37.Notice("\u8A2D\u5B9A \u2192\u300CVoiceSync\uFF08\u8A71\u8005\u540C\u671F\uFF09\u300D\u3092\u6709\u52B9\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+      new import_obsidian38.Notice("\u8A2D\u5B9A \u2192\u300CVoiceSync\uFF08\u8A71\u8005\u540C\u671F\uFF09\u300D\u3092\u6709\u52B9\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
       return;
     }
     const adapter = this.app.vault.adapter;
-    if (!(adapter instanceof import_obsidian37.FileSystemAdapter)) {
-      new import_obsidian37.Notice("\u30ED\u30FC\u30AB\u30EB\u30D5\u30A1\u30A4\u30EB\u30B7\u30B9\u30C6\u30E0\u304C\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002");
+    if (!(adapter instanceof import_obsidian38.FileSystemAdapter)) {
+      new import_obsidian38.Notice("\u30ED\u30FC\u30AB\u30EB\u30D5\u30A1\u30A4\u30EB\u30B7\u30B9\u30C6\u30E0\u304C\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002");
       return;
     }
     const tools = detectSpeechTools(this.settings.voiceSync.toolsDir);
     if (!tools.ready) {
-      new import_obsidian37.Notice("\u97F3\u58F0\u89E3\u6790\u30C4\u30FC\u30EB\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u8A2D\u5B9A \u2192\u300CVoiceSync\u300D\u306E\u624B\u9806\u3067 whisper.cpp \u3068 sherpa-onnx \u3092\u914D\u7F6E\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 12e3);
+      new import_obsidian38.Notice("\u97F3\u58F0\u89E3\u6790\u30C4\u30FC\u30EB\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002\u8A2D\u5B9A \u2192\u300CVoiceSync\u300D\u306E\u624B\u9806\u3067 whisper.cpp \u3068 sherpa-onnx \u3092\u914D\u7F6E\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 12e3);
       return;
     }
-    const folder = (0, import_obsidian37.normalizePath)(this.settings.audioExtraction.outputFolder || "JP Audio Clips");
+    const folder = (0, import_obsidian38.normalizePath)(this.settings.audioExtraction.outputFolder || "JP Audio Clips");
     const dir = this.app.vault.getAbstractFileByPath(folder);
     const clips = this.app.vault.getFiles().filter((f) => f.path.startsWith(folder + "/") && f.extension === "mp3" && !f.name.startsWith("_srcaudio"));
     if (!dir || !clips.length) {
-      new import_obsidian37.Notice(`\u30AF\u30EA\u30C3\u30D7\u304C\u3042\u308A\u307E\u305B\u3093\uFF08${folder}\uFF09\u3002\u5148\u306B\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u3057\u3066\u304F\u3060\u3055\u3044\u3002`);
+      new import_obsidian38.Notice(`\u30AF\u30EA\u30C3\u30D7\u304C\u3042\u308A\u307E\u305B\u3093\uFF08${folder}\uFF09\u3002\u5148\u306B\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u3092\u53D6\u5F97\u3057\u3066\u304F\u3060\u3055\u3044\u3002`);
       return;
     }
     const todo = force ? clips : clips.filter((c) => !this.app.vault.getAbstractFileByPath(`${folder}/${voiceSyncSidecarName(c.name)}`));
     if (!todo.length) {
-      new import_obsidian37.Notice("\u3059\u3079\u3066\u306E\u30AF\u30EA\u30C3\u30D7\u306F\u89E3\u6790\u6E08\u307F\u3067\u3059\u3002");
+      new import_obsidian38.Notice("\u3059\u3079\u3066\u306E\u30AF\u30EA\u30C3\u30D7\u306F\u89E3\u6790\u6E08\u307F\u3067\u3059\u3002");
       return;
     }
     const det = detectTools();
@@ -53526,7 +56785,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     const tmp = (_a2 = this.desktopTmpDir()) != null ? _a2 : base;
     const profiles = this.voiceProfilesAbs();
     let done = 0, failed = 0;
-    const progress = new import_obsidian37.Notice(`VoiceSync \u89E3\u6790\u4E2D\u2026 0/${todo.length}${profiles.length ? `\uFF08\u767B\u9332\u6E08\u307F\u306E\u58F0 ${profiles.length} \u540D\u3067\u8B58\u5225\uFF09` : ""}`, 0);
+    const progress = new import_obsidian38.Notice(`VoiceSync \u89E3\u6790\u4E2D\u2026 0/${todo.length}${profiles.length ? `\uFF08\u767B\u9332\u6E08\u307F\u306E\u58F0 ${profiles.length} \u540D\u3067\u8B58\u5225\uFF09` : ""}`, 0);
     try {
       for (const clip of todo) {
         const r2 = await enrichClip(
@@ -53550,7 +56809,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     } finally {
       progress.hide();
     }
-    new import_obsidian37.Notice(`VoiceSync: \u2713${done} / \u5931\u6557${failed}${failed ? "\uFF08\u8A73\u7D30\u306F\u30B3\u30F3\u30BD\u30FC\u30EB\uFF09" : ""}
+    new import_obsidian38.Notice(`VoiceSync: \u2713${done} / \u5931\u6557${failed}${failed ? "\uFF08\u8A73\u7D30\u306F\u30B3\u30F3\u30BD\u30FC\u30EB\uFF09" : ""}
 \u30AB\u30FC\u30C9\u3092\u518D\u751F\u6210\u3059\u308B\u3068\u8A71\u8005\u540C\u671F\u30D7\u30EC\u30FC\u30E4\u30FC\u304C\u57CB\u3081\u8FBC\u307E\u308C\u307E\u3059\u3002`, 1e4);
   }
   /** The library's persistent player: entry → its downloaded clip's app:// URL. */
@@ -53558,7 +56817,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     if (entry2.tStartSec == null)
       return null;
     const tAbstract = this.app.vault.getAbstractFileByPath(entry2.file);
-    if (!(tAbstract instanceof import_obsidian37.TFile))
+    if (!(tAbstract instanceof import_obsidian38.TFile))
       return null;
     const tContent = await this.app.vault.cachedRead(tAbstract);
     const videoId = this.resolveVideoId(tAbstract, tAbstract, tContent);
@@ -53576,7 +56835,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     if (att.source !== "yt" || att.tStartSec == null || !att.file)
       return null;
     const tAbstract = this.app.vault.getAbstractFileByPath(att.file);
-    if (!(tAbstract instanceof import_obsidian37.TFile))
+    if (!(tAbstract instanceof import_obsidian38.TFile))
       return null;
     const tContent = await this.app.vault.cachedRead(tAbstract);
     const videoId = (_a2 = att.videoId) != null ? _a2 : this.resolveVideoId(tAbstract, tAbstract, tContent);
@@ -53709,14 +56968,11 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
   /** Open (or reveal) the SRS review view. With `focusIds`, jump straight into
    *  a session over exactly those patterns (the ⚡ run's fresh cards). */
   async openReviewView(focusIds) {
+    var _a2;
     await this.srsStore.prune(new Set(this.patternStore.all().map((p) => p.id)));
-    let leaf = this.app.workspace.getLeavesOfType(JP_REVIEW_VIEW_TYPE)[0];
-    if (!leaf) {
-      const right = this.app.workspace.getRightLeaf(false);
-      if (right) {
-        await right.setViewState({ type: JP_REVIEW_VIEW_TYPE, active: true });
-        leaf = right;
-      }
+    const leaf = this.surfaceLeaf(JP_REVIEW_VIEW_TYPE);
+    if (leaf && ((_a2 = leaf.view) == null ? void 0 : _a2.getViewType()) !== JP_REVIEW_VIEW_TYPE) {
+      await leaf.setViewState({ type: JP_REVIEW_VIEW_TYPE, active: true });
     }
     if (leaf) {
       this.app.workspace.revealLeaf(leaf);
@@ -53773,7 +57029,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       const tiles = planTiles(w, h, { maxDim: Math.floor(MAX_DIM / up) });
       if (tiles.length === 1 && scale === 1 && up === 1 && buf.byteLength <= 35e5) {
         bmp.close();
-        return [{ base64: (0, import_obsidian37.arrayBufferToBase64)(buf), mediaType }];
+        return [{ base64: (0, import_obsidian38.arrayBufferToBase64)(buf), mediaType }];
       }
       const out = [];
       for (const t of tiles) {
@@ -53794,18 +57050,18 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
         return out;
     } catch (e) {
     }
-    return [{ base64: (0, import_obsidian37.arrayBufferToBase64)(buf), mediaType }];
+    return [{ base64: (0, import_obsidian38.arrayBufferToBase64)(buf), mediaType }];
   }
   async prepareReconcile() {
     const file = this.app.workspace.getActiveFile();
     if (!file) {
-      new import_obsidian37.Notice("\u30CE\u30FC\u30C8\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
+      new import_obsidian38.Notice("\u30CE\u30FC\u30C8\u30D5\u30A1\u30A4\u30EB\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
       return null;
     }
     const content = await this.app.vault.cachedRead(file);
     const srcRefs = frontmatterSources(content);
     if (!srcRefs.length) {
-      new import_obsidian37.Notice(
+      new import_obsidian38.Notice(
         "\u3053\u308C\u306F\u30AD\u30E3\u30D7\u30C1\u30E3\u30CE\u30FC\u30C8\u3067\u306F\u3042\u308A\u307E\u305B\u3093\u3002frontmatter \u306B `sources: [[\u6587\u5B57\u8D77\u3053\u3057]]`\uFF08\u8907\u6570\u53EF: \u30AB\u30F3\u30DE/\u30EA\u30B9\u30C8\uFF09\u304C\u5FC5\u8981\u3067\u3059\u3002\n\u6587\u5B57\u8D77\u3053\u3057\u3092\u958B\u3044\u3066\u300C\u{1F4DD} \u3053\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u304B\u3089\u30AD\u30E3\u30D7\u30C1\u30E3\u30CE\u30FC\u30C8\u3092\u4F5C\u6210\u300D\u3092\u5B9F\u884C\u3059\u308B\u3068\u4E00\u767A\u3067\u4F5C\u308C\u307E\u3059\u3002",
         12e3
       );
@@ -53815,24 +57071,24 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     for (const src of srcRefs) {
       const tFile = this.app.metadataCache.getFirstLinkpathDest(src, file.path);
       if (!tFile) {
-        new import_obsidian37.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${src}`);
+        new import_obsidian38.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${src}`);
         return null;
       }
       const tContent = await this.app.vault.cachedRead(tFile);
       const pristine = stripAnchors(tContent);
       const lines = parseTranscriptLines(pristine);
       if (!lines.length) {
-        new import_obsidian37.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u306B\u884C\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${tFile.basename}`);
+        new import_obsidian38.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u306B\u884C\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${tFile.basename}`);
         return null;
       }
       heads.push({ tFile, pristine, lines, videoId: this.resolveVideoId(file, tFile, tContent, content) });
     }
     const notes = extractNotePhrases(content);
     if (!notes.length) {
-      new import_obsidian37.Notice("\u7167\u5408\u3059\u308B\u30E1\u30E2\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
+      new import_obsidian38.Notice("\u7167\u5408\u3059\u308B\u30E1\u30E2\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093");
       return null;
     }
-    const progress = new import_obsidian37.Notice(`\u7167\u5408\u4E2D\u2026 0/${notes.length}${heads.length > 1 ? `\uFF08${heads.length} \u52D5\u753B\uFF09` : ""}`, 0);
+    const progress = new import_obsidian38.Notice(`\u7167\u5408\u4E2D\u2026 0/${notes.length}${heads.length > 1 ? `\uFF08${heads.length} \u52D5\u753B\uFF09` : ""}`, 0);
     let grouped;
     try {
       grouped = await reconcileMultiAsync(
@@ -53867,8 +57123,8 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
   async reanchorSingle(entry2, r2) {
     var _a2;
     const tFile = this.app.vault.getAbstractFileByPath(entry2.file);
-    if (!(tFile instanceof import_obsidian37.TFile)) {
-      new import_obsidian37.Notice(`\u30D5\u30A1\u30A4\u30EB\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${entry2.file}`);
+    if (!(tFile instanceof import_obsidian38.TFile)) {
+      new import_obsidian38.Notice(`\u30D5\u30A1\u30A4\u30EB\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${entry2.file}`);
       return false;
     }
     const md = await this.app.vault.read(tFile);
@@ -53880,7 +57136,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     const foreign = this.reconLibrary.forFile(entry2.file).filter((e) => e.blockId !== entry2.blockId && e.blockId !== newBlockId && e.anchorId).map((e) => entryToResult(e)).filter((x) => x !== null);
     const combined = planAnchors([r2, ...foreign], lines);
     if (!combined.anchorIdOf.get(newBlockId)) {
-      new import_obsidian37.Notice("\u30A2\u30F3\u30AB\u30FC\u8A08\u753B\u306B\u5931\u6557\u3057\u307E\u3057\u305F\uFF08\u30B9\u30D1\u30F3\u4E0D\u660E\uFF09");
+      new import_obsidian38.Notice("\u30A2\u30F3\u30AB\u30FC\u8A08\u753B\u306B\u5931\u6557\u3057\u307E\u3057\u305F\uFF08\u30B9\u30D1\u30F3\u4E0D\u660E\uFF09");
       return false;
     }
     await this.app.vault.modify(tFile, applyAnchors(pristine, combined, (id) => {
@@ -53915,13 +57171,13 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     var _a2, _b2;
     const r2 = entryToResult(entry2);
     if (!r2) {
-      new import_obsidian37.Notice("\u5019\u88DC\u30B9\u30D1\u30F3\u304C\u3042\u308A\u307E\u305B\u3093 \u2014 \u270F\uFE0F \u3067\u66F8\u304D\u76F4\u3057\u3066\u518D\u7167\u5408\u3057\u3066\u304F\u3060\u3055\u3044");
+      new import_obsidian38.Notice("\u5019\u88DC\u30B9\u30D1\u30F3\u304C\u3042\u308A\u307E\u305B\u3093 \u2014 \u270F\uFE0F \u3067\u66F8\u304D\u76F4\u3057\u3066\u518D\u7167\u5408\u3057\u3066\u304F\u3060\u3055\u3044");
       return false;
     }
     r2.status = "auto";
     const ok = await this.reanchorSingle(entry2, r2);
     if (ok)
-      new import_obsidian37.Notice(`\u2705 \u63A1\u7528: \u300C${r2.reconciled}\u300D ~${Math.floor(((_a2 = r2.tStartSec) != null ? _a2 : 0) / 60)}:${String(((_b2 = r2.tStartSec) != null ? _b2 : 0) % 60).padStart(2, "0")}`);
+      new import_obsidian38.Notice(`\u2705 \u63A1\u7528: \u300C${r2.reconciled}\u300D ~${Math.floor(((_a2 = r2.tStartSec) != null ? _a2 : 0) / 60)}:${String(((_b2 = r2.tStartSec) != null ? _b2 : 0) % 60).padStart(2, "0")}`);
     return ok;
   }
   /** Triage ✏️: re-match a corrected reading of the note against the transcript. */
@@ -53930,20 +57186,20 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     if (!note)
       return "not-found";
     const tFile = this.app.vault.getAbstractFileByPath(entry2.file);
-    if (!(tFile instanceof import_obsidian37.TFile)) {
-      new import_obsidian37.Notice(`\u30D5\u30A1\u30A4\u30EB\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${entry2.file}`);
+    if (!(tFile instanceof import_obsidian38.TFile)) {
+      new import_obsidian38.Notice(`\u30D5\u30A1\u30A4\u30EB\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093: ${entry2.file}`);
       return "not-found";
     }
     const pristine = stripAnchors(await this.app.vault.read(tFile));
     const r2 = reconcileOne(note, parseTranscriptLines(pristine));
     if (!r2.best) {
-      new import_obsidian37.Notice(`\u300C${note}\u300D\u2014 \u5BFE\u5FDC\u7B87\u6240\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
+      new import_obsidian38.Notice(`\u300C${note}\u300D\u2014 \u5BFE\u5FDC\u7B87\u6240\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093`);
       return "not-found";
     }
     if (r2.status === "auto" && note.length >= 4) {
       const ok = await this.reanchorSingle(entry2, r2);
       if (ok) {
-        new import_obsidian37.Notice(`\u2705 \u7167\u5408\u6210\u529F: \u300C${r2.reconciled}\u300D(${(r2.confidence * 100).toFixed(0)}%)`);
+        new import_obsidian38.Notice(`\u2705 \u7167\u5408\u6210\u529F: \u300C${r2.reconciled}\u300D(${(r2.confidence * 100).toFixed(0)}%)`);
         return "anchored";
       }
       return "needs-review";
@@ -53963,7 +57219,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       spanEndLine: r2.best.endLine
     }]);
     this.refreshReconLibrary();
-    new import_obsidian37.Notice(`\u{1F536} \u307E\u3060\u66D6\u6627\u3067\u3059 (${(r2.confidence * 100).toFixed(0)}%) \u2014 \u6700\u6709\u529B: \u300C${r2.reconciled}\u300D\u3002\u2705\u3067\u63A1\u7528\u3067\u304D\u307E\u3059`);
+    new import_obsidian38.Notice(`\u{1F536} \u307E\u3060\u66D6\u6627\u3067\u3059 (${(r2.confidence * 100).toFixed(0)}%) \u2014 \u6700\u6709\u529B: \u300C${r2.reconciled}\u300D\u3002\u2705\u3067\u63A1\u7528\u3067\u304D\u307E\u3059`);
     return "needs-review";
   }
   // ── Corpus joins (P3): the catalog reaches OUT into the corpora ──────────
@@ -53975,7 +57231,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     var _a2, _b2, _c2, _d2;
     const terms = sweepTerms(p);
     if (!terms.length) {
-      new import_obsidian37.Notice("\u691C\u7D22\u3067\u304D\u308B\u8A9E\u304C\u3042\u308A\u307E\u305B\u3093\uFF082\u6587\u5B57\u4EE5\u4E0A\u306E\u6210\u5206\u304C\u5FC5\u8981\uFF09");
+      new import_obsidian38.Notice("\u691C\u7D22\u3067\u304D\u308B\u8A9E\u304C\u3042\u308A\u307E\u305B\u3093\uFF082\u6587\u5B57\u4EE5\u4E0A\u306E\u6210\u5206\u304C\u5FC5\u8981\uFF09");
       return 0;
     }
     const q = emptyQuery(this.settings.x.defaultLang || "ja");
@@ -54004,7 +57260,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       };
     }), now);
     const added = ((_d2 = (_c2 = this.patternStore.byId(p.id)) == null ? void 0 : _c2.attestations.length) != null ? _d2 : 0) - before;
-    new import_obsidian37.Notice(tweets.length ? `\u{1D54F} ${terms.join("+")} \u2014 \u30B3\u30FC\u30D1\u30B9\u5185 ${tweets.length}\u4EF6\uFF08\u65B0\u898F ${added}\u4EF6\uFF09` : `\u{1D54F} \u30B3\u30FC\u30D1\u30B9\u306B\u300C${terms.join("\u300D+\u300C")}\u300D\u306E\u5171\u8D77\u306A\u3057\uFF08\u30B3\u30FC\u30D1\u30B9 ${this.xCorpus.size()}\u4EF6\u4E2D\uFF09`);
+    new import_obsidian38.Notice(tweets.length ? `\u{1D54F} ${terms.join("+")} \u2014 \u30B3\u30FC\u30D1\u30B9\u5185 ${tweets.length}\u4EF6\uFF08\u65B0\u898F ${added}\u4EF6\uFF09` : `\u{1D54F} \u30B3\u30FC\u30D1\u30B9\u306B\u300C${terms.join("\u300D+\u300C")}\u300D\u306E\u5171\u8D77\u306A\u3057\uFF08\u30B3\u30FC\u30D1\u30B9 ${this.xCorpus.size()}\u4EF6\u4E2D\uFF09`);
     return added;
   }
   /**
@@ -54150,7 +57406,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       sceneTag: fmMedium ? { medium: fmMedium, ...fmShow ? { scene: { sourceName: fmShow } } : {} } : {},
       attSource: "yt"
     };
-    const cap = import_obsidian37.Platform.isMobile ? 60 : 400;
+    const cap = import_obsidian38.Platform.isMobile ? 60 : 400;
     if (this.sweepCache.size >= cap)
       this.sweepCache.delete(this.sweepCache.keys().next().value);
     this.sweepCache.set(f.path, { mtime: f.stat.mtime, rec: rec2 });
@@ -54258,7 +57514,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       if (r2.skipped || !r2.sightings)
         return;
       const more = r2.found > r2.sightings ? `\uFF08\u5168${r2.found}\u4EF6\u4E2D\u306E\u4E0A\u4F4D${r2.sightings}\u4EF6\uFF09` : "";
-      const n = new import_obsidian37.Notice(
+      const n = new import_obsidian38.Notice(
         `\u{1F50D} \u300C${p.key}\u300D\u3092 ${r2.files}\u672C\u306E\u6587\u5B57\u8D77\u3053\u3057\u3067 ${r2.sightings}\u4EF6\u767A\u898B${more}
 \u30BF\u30C3\u30D7\u3067\u8A9E\u5F59\u30BF\u30D6\u3092\u958B\u3044\u3066 \u2713/\u2715`,
         9e3
@@ -54281,7 +57537,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     if (!this.patternStore.size())
       return "\u53F0\u5E33\u304C\u7A7A\u3067\u3059";
     const files = this.app.vault.getMarkdownFiles().filter((f) => !f.path.endsWith("-cards.md"));
-    const notice = new import_obsidian37.Notice("\u53F0\u5E33\u8D70\u67FB\u4E2D\u2026", 0);
+    const notice = new import_obsidian38.Notice("\u53F0\u5E33\u8D70\u67FB\u4E2D\u2026", 0);
     let transcripts = 0, confirmed = 0, suggested = 0;
     try {
       for (const f of files) {
@@ -54298,7 +57554,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       notice.hide();
     }
     const msg = `\u8D70\u67FB\u5B8C\u4E86: transcripts ${transcripts}\u4EF6 \u2192 \u78BA\u5B9A +${confirmed} / \u5019\u88DC +${suggested}${suggested ? "\uFF08\u5019\u88DC\u306F\u8A9E\u5F59\u30BF\u30D6\u3067 \u2713/\u2715\uFF09" : ""}`;
-    new import_obsidian37.Notice(msg, 6e3);
+    new import_obsidian38.Notice(msg, 6e3);
     this.refreshReconLibrary();
     await this.watchReaches(this.patternStore.all().flatMap((p) => p.attestations.slice(-2).map((a) => {
       var _a2, _b2;
@@ -54319,28 +57575,28 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
    * deleting the folder.
    */
   async convertBigDictionary() {
-    var _a2, _b2, _c2;
+    var _a2, _b2;
     if (this.conversionRunning)
       return this.refuseSecondConversion();
     const folder = (_b2 = (_a2 = this.settings.bigDict) == null ? void 0 : _a2.exportFolder) == null ? void 0 : _b2.trim();
     if (!folder) {
-      new import_obsidian37.Notice("\u8A2D\u5B9A \u2192 \u5927\u578B\u8F9E\u66F8 \u306B\u3001\u5C55\u958B\u3057\u305FYomitan\u8F9E\u66F8\u30D5\u30A9\u30EB\u30C0\u306E\u30D1\u30B9\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
+      new import_obsidian38.Notice("\u8A2D\u5B9A \u2192 \u5927\u578B\u8F9E\u66F8 \u306B\u3001\u5C55\u958B\u3057\u305FYomitan\u8F9E\u66F8\u30D5\u30A9\u30EB\u30C0\u306E\u30D1\u30B9\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
       return "no export folder configured";
     }
     let src;
     try {
       src = nodeBankSource(folder);
     } catch (err) {
-      new import_obsidian37.Notice(String(err instanceof Error ? err.message : err), 1e4);
+      new import_obsidian38.Notice(String(err instanceof Error ? err.message : err), 1e4);
       return String(err);
     }
     this.conversionRunning = "\u8F9E\u66F8";
-    const notice = new import_obsidian37.Notice("\u8F9E\u66F8\u5909\u63DB\u306E\u6E96\u5099\u4E2D\u2026", 0);
+    const notice = new import_obsidian38.Notice("\u8F9E\u66F8\u5909\u63DB\u306E\u6E96\u5099\u4E2D\u2026", 0);
     let cancelled = false;
     const io = bufferedSidecarIO(vaultSidecarIO(this.app));
     try {
       const res = await importEijiro(io, src, {
-        root: ((_c2 = this.settings.bigDict) == null ? void 0 : _c2.root) || "JP Dictionaries",
+        root: this.bigDictRoot,
         shouldStop: () => cancelled,
         onProgress: (p) => {
           notice.setMessage(
@@ -54351,11 +57607,11 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       await io.flush();
       this.bigDict.invalidate();
       const msg = res.failed.length ? `${res.title}: ${res.headwords.toLocaleString()}\u898B\u51FA\u3057\u5909\u63DB\uFF08${res.failed.length}\u30D0\u30F3\u30AF\u5931\u6557: ${res.failed.slice(0, 3).join(", ")}\uFF09\u2014 \u4E0D\u5B8C\u5168\u3067\u3059` : `${res.title}: ${res.headwords.toLocaleString()}\u898B\u51FA\u3057 / ${res.frames.toLocaleString()}\u30D5\u30EC\u30FC\u30E0 \u2192 ${res.dir}\uFF08${(res.ms / 1e3).toFixed(1)}\u79D2\uFF09`;
-      new import_obsidian37.Notice(msg, 12e3);
+      new import_obsidian38.Notice(msg, 12e3);
       return msg;
     } catch (err) {
       const msg = `\u8F9E\u66F8\u5909\u63DB\u306B\u5931\u6557: ${String(err instanceof Error ? err.message : err)}`;
-      new import_obsidian37.Notice(msg, 12e3);
+      new import_obsidian38.Notice(msg, 12e3);
       return msg;
     } finally {
       this.conversionRunning = null;
@@ -54380,7 +57636,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
   async buildConcordance() {
     var _a2, _b2, _c2;
     const files = this.app.vault.getMarkdownFiles().filter((f) => !f.path.endsWith("-cards.md"));
-    const notice = new import_obsidian37.Notice("\u8AC7\u8A71\u30B3\u30F3\u30B3\u30FC\u30C0\u30F3\u30B9\u4F5C\u6210\u4E2D\u2026", 0);
+    const notice = new import_obsidian38.Notice("\u8AC7\u8A71\u30B3\u30F3\u30B3\u30FC\u30C0\u30F3\u30B9\u4F5C\u6210\u4E2D\u2026", 0);
     const now = Date.now();
     let transcripts = 0, instances = 0;
     const merged = /* @__PURE__ */ new Map();
@@ -54434,7 +57690,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       notice.hide();
     }
     const msg = merged.size ? `\u30B3\u30F3\u30B3\u30FC\u30C0\u30F3\u30B9: transcripts ${transcripts}\u672C \u2192 ${merged.size}\u30DE\u30FC\u30AB\u30FC / ${instances}\u4F8B\uFF08\u8A9E\u5F59\u30BF\u30D6\u306E\u{1F534}\u3067 \u2713/\u2715\uFF09` : `\u30B3\u30F3\u30B3\u30FC\u30C0\u30F3\u30B9: \u5B57\u5E55\u4ED8\u304D transcript \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\uFF08[MM:SS] \u884C\u304C\u5FC5\u8981\uFF09`;
-    new import_obsidian37.Notice(msg, 8e3);
+    new import_obsidian38.Notice(msg, 8e3);
     this.refreshReconLibrary();
     return msg;
   }
@@ -54515,7 +57771,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       return ((_a3 = freshClips == null ? void 0 : freshClips.has(name)) != null ? _a3 : false) || !!this.app.metadataCache.getFirstLinkpathDest(name, "");
     };
     const fmt = this.settings.audioExtraction.audioFormat || "mp3";
-    const audioFolder = (0, import_obsidian37.normalizePath)(this.settings.audioExtraction.outputFolder || "JP Audio Clips");
+    const audioFolder = (0, import_obsidian38.normalizePath)(this.settings.audioExtraction.outputFolder || "JP Audio Clips");
     const voiceSyncFor = (clipName) => !!this.app.vault.getAbstractFileByPath(`${audioFolder}/${voiceSyncSidecarName(clipName)}`);
     const all = [];
     for (const src of prep.sources) {
@@ -54538,7 +57794,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     const out = renderCardsFile(all, { transcriptRef: ref, sourceLabel: label });
     const outPath = prep.file.path.replace(/\.md$/, "") + "-cards.md";
     const existing = this.app.vault.getAbstractFileByPath(outPath);
-    const outFile = existing instanceof import_obsidian37.TFile ? (await this.app.vault.modify(existing, out), existing) : await this.app.vault.create(outPath, out);
+    const outFile = existing instanceof import_obsidian38.TFile ? (await this.app.vault.modify(existing, out), existing) : await this.app.vault.create(outPath, out);
     return { outFile, count: all.length };
   }
   /** 📱 One-screen capability report for THIS device — the mobile field-check.
@@ -54548,11 +57804,11 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     var _a2, _b2, _c2;
     const s = this.settings;
     const yes = (b) => b ? "\u2705" : "\u2014";
-    const kind = import_obsidian37.Platform.isDesktopApp ? "\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7" : import_obsidian37.Platform.isPhone ? "\u30B9\u30DE\u30DB" : import_obsidian37.Platform.isTablet ? "\u30BF\u30D6\u30EC\u30C3\u30C8" : "\u30E2\u30D0\u30A4\u30EB";
+    const kind = import_obsidian38.Platform.isDesktopApp ? "\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7" : import_obsidian38.Platform.isPhone ? "\u30B9\u30DE\u30DB" : import_obsidian38.Platform.isTablet ? "\u30BF\u30D6\u30EC\u30C3\u30C8" : "\u30E2\u30D0\u30A4\u30EB";
     const L = [
       "# \u{1F4F1} \u30C7\u30D0\u30A4\u30B9\u8A3A\u65AD",
       "",
-      `- \u7AEF\u672B: **${kind}**${import_obsidian37.Platform.isIosApp ? " (iOS)" : import_obsidian37.Platform.isAndroidApp ? " (Android)" : ""}`,
+      `- \u7AEF\u672B: **${kind}**${import_obsidian38.Platform.isIosApp ? " (iOS)" : import_obsidian38.Platform.isAndroidApp ? " (Android)" : ""}`,
       "",
       "## \u26A1 \u30D5\u30ED\u30FC\u306E\u5404\u6BB5\u968E",
       `- \u2460 \u8996\u8074\u5C65\u6B74\u306E\u53D6\u5F97 (cookie): ${yes((_a2 = s.ytHistory) == null ? void 0 : _a2.cookie)}${((_b2 = s.ytHistory) == null ? void 0 : _b2.cookie) ? "" : " \u2014 \u8A2D\u5B9A\u306B youtube.com \u306E Cookie \u3092\u8CBC\u308A\u4ED8\u3051"}`,
@@ -54562,32 +57818,77 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       "- \u2463 \u8A9E\u5F59\u30FBSRS\u5FA9\u7FD2\u30FB\u53F0\u5E33: \u2705\uFF08\u5168\u7AEF\u672B\u5BFE\u5FDC\uFF09",
       "",
       "## \u{1F3A7} \u97F3\u58F0",
-      import_obsidian37.Platform.isDesktopApp && nodeRuntimeAvailable() ? "- \u30ED\u30FC\u30AB\u30EB mp3 \u30AF\u30EA\u30C3\u30D7: \u2705\uFF08yt-dlp \u2014 \u8A73\u7D30\u306F\u97F3\u58F0\u30C4\u30FC\u30EB\u8A3A\u65AD\uFF09" : "- \u30ED\u30FC\u30AB\u30EB mp3 \u30AF\u30EA\u30C3\u30D7: \u2014 \u3053\u306E\u7AEF\u672B\u3067\u306F **deep-link \u97F3\u58F0**\uFF08\u30BF\u30C3\u30D7\u3067 YouTube \u30A2\u30D7\u30EA\u306E\u8A72\u5F53\u79D2\u3078\uFF09\u3002\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u3067 \u{1F3AC} \u30AF\u30EA\u30C3\u30D7\u53D6\u5F97\u3092\u5B9F\u884C\u3059\u308B\u3068\u3001\u540C\u671F\u5F8C\u3053\u306E\u7AEF\u672B\u3067\u3082 mp3 \u304C\u9CF4\u308A\u307E\u3059\u3002",
+      import_obsidian38.Platform.isDesktopApp && nodeRuntimeAvailable() ? "- \u30ED\u30FC\u30AB\u30EB mp3 \u30AF\u30EA\u30C3\u30D7: \u2705\uFF08yt-dlp \u2014 \u8A73\u7D30\u306F\u97F3\u58F0\u30C4\u30FC\u30EB\u8A3A\u65AD\uFF09" : "- \u30ED\u30FC\u30AB\u30EB mp3 \u30AF\u30EA\u30C3\u30D7: \u2014 \u3053\u306E\u7AEF\u672B\u3067\u306F **deep-link \u97F3\u58F0**\uFF08\u30BF\u30C3\u30D7\u3067 YouTube \u30A2\u30D7\u30EA\u306E\u8A72\u5F53\u79D2\u3078\uFF09\u3002\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u3067 \u{1F3AC} \u30AF\u30EA\u30C3\u30D7\u53D6\u5F97\u3092\u5B9F\u884C\u3059\u308B\u3068\u3001\u540C\u671F\u5F8C\u3053\u306E\u7AEF\u672B\u3067\u3082 mp3 \u304C\u9CF4\u308A\u307E\u3059\u3002",
       "",
       "## \u{1F4DA} \u30C7\u30FC\u30BF\uFF08\u540C\u671F\u78BA\u8A8D\uFF09",
       `- \u53F0\u5E33\u30D1\u30BF\u30FC\u30F3: ${this.patternStore.size()}\u4EF6`,
       `- \u{1D54F} \u30B3\u30FC\u30D1\u30B9: ${this.xCorpus.size()}\u4EF6\uFF08\u30AA\u30D5\u30E9\u30A4\u30F3\u691C\u7D22\u306F\u5168\u7AEF\u672B\u5BFE\u5FDC\uFF09`,
-      `- SRS \u30C7\u30C3\u30AD\u8A2D\u5B9A: \u65B0\u898F ${(_c2 = s.srsNewPerSession) != null ? _c2 : 20}\u679A/\u56DE`
+      `- SRS \u30C7\u30C3\u30AD\u8A2D\u5B9A: \u65B0\u898F ${(_c2 = s.srsNewPerSession) != null ? _c2 : 20}\u679A/\u56DE`,
+      "",
+      // The mobile slowdown is a WRITE-SIZE problem, and write size is the one
+      // thing this report could not previously show. Measured 2026-08-06: a
+      // single 15.17MB data.json meant ~30MB of IO for every debounced save.
+      // These lines are how you check, ON THE DEVICE, that the split landed.
+      "## \u{1F4BE} \u4FDD\u5B58\u306E\u91CD\u3055\uFF08\u30E2\u30D0\u30A4\u30EB\u306E\u5F15\u3063\u304B\u304B\u308A\u306F\u3053\u3053\uFF09",
+      ...await this.storageWeightLines()
     ];
     const path = "_\u8A3A\u65AD.md";
     const body2 = L.join("\n");
     const ex = this.app.vault.getAbstractFileByPath(path);
-    const outFile = ex instanceof import_obsidian37.TFile ? (await this.app.vault.modify(ex, body2), ex) : await this.app.vault.create(path, body2);
+    const outFile = ex instanceof import_obsidian38.TFile ? (await this.app.vault.modify(ex, body2), ex) : await this.app.vault.create(path, body2);
     await this.app.workspace.getLeaf(false).openFile(outFile);
+  }
+  /**
+   * What a save actually costs on THIS device, in files and bytes.
+   *
+   * The typical save is the one that matters: a mark, an SRS answer, a
+   * settings toggle. Those write the main file only, so its size IS the cost
+   * of studying. A partitioned store is listed separately because it is paid
+   * only when that store changes — the corpus no longer rides along on every
+   * keystroke.
+   */
+  async storageWeightLines() {
+    var _a2;
+    const pluginDir = (_a2 = this.manifest.dir) != null ? _a2 : `${this.app.vault.configDir}/plugins/jp-collocations`;
+    const kb = async (p) => {
+      try {
+        const st = await this.app.vault.adapter.stat((0, import_obsidian38.normalizePath)(p));
+        return st ? Math.round(st.size / 1024) : 0;
+      } catch (e) {
+        return 0;
+      }
+    };
+    const main = await kb(`${pluginDir}/data.json`);
+    const parts = this.dm.partitionedKeys();
+    const L = [`- \u901A\u5E38\u306E\u4FDD\u5B58 1\u56DE = **${main} KB** \xD72\uFF08\u672C\u4F53 + .bak\uFF09\u2014 data.json`];
+    if (!parts.length) {
+      L.push("- \u5206\u5272\u30D5\u30A1\u30A4\u30EB: \u306A\u3057\uFF08\u5168\u30B9\u30C8\u30A2\u304C data.json \u5185\uFF09");
+    } else {
+      L.push("- \u5206\u5272\u6E08\u307F\u30B9\u30C8\u30A2\uFF08\u305D\u306E\u30B9\u30C8\u30A2\u3092\u89E6\u3063\u305F\u3068\u304D\u3060\u3051\u66F8\u304F\uFF09:");
+      for (const key of parts) {
+        const size = await kb(this.dm.partPath(key));
+        L.push(`    - \`${key}\` \u2014 ${size >= 1024 ? `${(size / 1024).toFixed(1)} MB` : `${size} KB`}`);
+      }
+    }
+    const bad = this.dm.quarantinedKeys();
+    if (bad.length)
+      L.push(`- \u26A0\uFE0F \u8AAD\u3081\u306A\u3044\u5206\u5272\u30D5\u30A1\u30A4\u30EB: ${bad.join(", ")} \u2014 \u66F8\u304D\u8FBC\u307F\u3092\u62D2\u5426\u4E2D`);
+    L.push(`- \u4FDD\u5B58\u56DE\u6570\uFF08\u4ECA\u30BB\u30C3\u30B7\u30E7\u30F3\uFF09: \u672C\u4F53 ${this.dm.writes} / \u5206\u5272 ${this.dm.partWrites}`);
+    return L;
   }
   /** Write an environment + tools report to the vault. Independent of the
    *  reconcile pipeline, so it always produces a pasteable artifact telling us
    *  exactly why the download command bails (runtime, enable, paths, or yt-dlp). */
   async diagnoseAudioTools() {
-    const cfg = this.settings.audioExtraction;
+    const cfg2 = this.settings.audioExtraction;
     const L = ["# \u97F3\u58F0\u30C4\u30FC\u30EB\u8A3A\u65AD (audio tools diagnostic)", ""];
-    L.push(`- Platform.isDesktopApp: **${import_obsidian37.Platform.isDesktopApp}**`);
+    L.push(`- Platform.isDesktopApp: **${import_obsidian38.Platform.isDesktopApp}**`);
     L.push(`- nodeRuntimeAvailable: **${nodeRuntimeAvailable()}** (require strategy: \`${requireStrategy()}\`)`);
     const adapter = this.app.vault.adapter;
-    L.push(`- FileSystemAdapter: **${adapter instanceof import_obsidian37.FileSystemAdapter}**`);
-    L.push(`- setting enabled: **${cfg.enabled}**`);
-    L.push(`- output folder: \`${cfg.outputFolder}\``);
-    L.push(`- configured paths: ytdlp=\`${cfg.ytdlpPath || "(blank)"}\` ffmpeg=\`${cfg.ffmpegPath || "(blank)"}\` js=\`${cfg.jsRuntime || "(blank)"}\``);
+    L.push(`- FileSystemAdapter: **${adapter instanceof import_obsidian38.FileSystemAdapter}**`);
+    L.push(`- setting enabled: **${cfg2.enabled}**`);
+    L.push(`- output folder: \`${cfg2.outputFolder}\``);
+    L.push(`- configured paths: ytdlp=\`${cfg2.ytdlpPath || "(blank)"}\` ffmpeg=\`${cfg2.ffmpegPath || "(blank)"}\` js=\`${cfg2.jsRuntime || "(blank)"}\``);
     let det = null;
     try {
       det = detectTools();
@@ -54596,13 +57897,13 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     } catch (e) {
       L.push(`- detectTools THREW: \`${String(e)}\``);
     }
-    const ytBin = cfg.ytdlpPath || (det == null ? void 0 : det.ytdlp) || "yt-dlp";
+    const ytBin = cfg2.ytdlpPath || (det == null ? void 0 : det.ytdlp) || "yt-dlp";
     const yv = await probeBinary(ytBin, ["--version"]);
     L.push("", `## yt-dlp probe (\`${ytBin} --version\`)`, `- ok: **${yv.ok}** code: ${yv.code}`, `- stdout: \`${yv.stdout}\``, `- stderr/err: \`${yv.stderr || yv.error || ""}\``);
-    const ffBin2 = cfg.ffmpegPath ? cfg.ffmpegPath.replace(/[\\/]$/, "") + "/ffmpeg" : (det == null ? void 0 : det.ffmpeg) ? det.ffmpeg + "/ffmpeg" : "ffmpeg";
+    const ffBin2 = cfg2.ffmpegPath ? cfg2.ffmpegPath.replace(/[\\/]$/, "") + "/ffmpeg" : (det == null ? void 0 : det.ffmpeg) ? det.ffmpeg + "/ffmpeg" : "ffmpeg";
     const fv = await probeBinary(ffBin2, ["-version"]);
     L.push("", `## ffmpeg probe (\`${ffBin2} -version\`)`, `- ok: **${fv.ok}** code: ${fv.code}`, `- stdout: \`${fv.stdout.split("\n")[0] || ""}\``, `- stderr/err: \`${fv.stderr || fv.error || ""}\``);
-    const folder = (0, import_obsidian37.normalizePath)(cfg.outputFolder || "JP Audio Clips");
+    const folder = (0, import_obsidian38.normalizePath)(cfg2.outputFolder || "JP Audio Clips");
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       try {
         await this.app.vault.createFolder(folder);
@@ -54614,14 +57915,14 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     const ex = this.app.vault.getAbstractFileByPath(path);
     let outFile;
     try {
-      outFile = ex instanceof import_obsidian37.TFile ? (await this.app.vault.modify(ex, body2), ex) : await this.app.vault.create(path, body2);
+      outFile = ex instanceof import_obsidian38.TFile ? (await this.app.vault.modify(ex, body2), ex) : await this.app.vault.create(path, body2);
       await this.app.workspace.getLeaf(false).openFile(outFile);
     } catch (e) {
-      new import_obsidian37.Notice(`\u8A3A\u65AD\u30D5\u30A1\u30A4\u30EB\u306E\u66F8\u304D\u8FBC\u307F\u306B\u5931\u6557: ${String(e)}
+      new import_obsidian38.Notice(`\u8A3A\u65AD\u30D5\u30A1\u30A4\u30EB\u306E\u66F8\u304D\u8FBC\u307F\u306B\u5931\u6557: ${String(e)}
 ${body2.slice(0, 300)}`, 15e3);
       return;
     }
-    new import_obsidian37.Notice(`\u8A3A\u65AD\u30EC\u30DD\u30FC\u30C8\u3092\u66F8\u304D\u51FA\u3057\u307E\u3057\u305F: ${path}`, 6e3);
+    new import_obsidian38.Notice(`\u8A3A\u65AD\u30EC\u30DD\u30FC\u30C8\u3092\u66F8\u304D\u51FA\u3057\u307E\u3057\u305F: ${path}`, 6e3);
   }
   /**
    * DESKTOP-ONLY: download an MP3 clip for each reconciled span via yt-dlp
@@ -54641,23 +57942,23 @@ ${body2.slice(0, 300)}`, 15e3);
     var _a2, _b2, _c2;
     const present = /* @__PURE__ */ new Set();
     const adapter = this.app.vault.adapter;
-    if (!(adapter instanceof import_obsidian37.FileSystemAdapter))
+    if (!(adapter instanceof import_obsidian38.FileSystemAdapter))
       return { present, done: 0, failed: 0, skipped: 0, anyTargets: false };
-    const cfg = this.settings.audioExtraction;
+    const cfg2 = this.settings.audioExtraction;
     const withVideo = prep.sources.filter((s) => s.videoId);
     if (!withVideo.length)
       return { present, done: 0, failed: 0, skipped: 0, anyTargets: false };
     const det = detectTools();
     const active = {
-      ...cfg,
-      ytdlpPath: cfg.ytdlpPath || det.ytdlp,
-      ffmpegPath: cfg.ffmpegPath || det.ffmpeg,
-      jsRuntime: cfg.jsRuntime || det.jsRuntime,
+      ...cfg2,
+      ytdlpPath: cfg2.ytdlpPath || det.ytdlp,
+      ffmpegPath: cfg2.ffmpegPath || det.ffmpeg,
+      jsRuntime: cfg2.jsRuntime || det.jsRuntime,
       // YouTube bot-walls anonymous audio downloads; the stored history cookie passes.
       cookieHeader: ((_a2 = this.settings.ytHistory) == null ? void 0 : _a2.cookie) || void 0,
       cookieJarAbs: this.cookieJarAbs()
     };
-    const folder = (0, import_obsidian37.normalizePath)(cfg.outputFolder || "JP Audio Clips");
+    const folder = (0, import_obsidian38.normalizePath)(cfg2.outputFolder || "JP Audio Clips");
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       try {
         await this.app.vault.createFolder(folder);
@@ -54695,7 +57996,7 @@ ${body2.slice(0, 300)}`, 15e3);
       if (!todo.length)
         continue;
       log.push(`## ${src.tFile.basename} (\`${videoId}\`) \u2014 targets: ${timed.length}`, ``);
-      const dl = new import_obsidian37.Notice(`\u97F3\u58F0\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E2D\u2026\uFF08${videoId}\uFF09`, 0);
+      const dl = new import_obsidian38.Notice(`\u97F3\u58F0\u3092\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u4E2D\u2026\uFF08${videoId}\uFF09`, 0);
       const full = await downloadFullAudio(active, videoId, `${base}/${folder}`);
       dl.hide();
       if (!full.ok) {
@@ -54704,7 +58005,7 @@ ${body2.slice(0, 300)}`, 15e3);
         continue;
       }
       const srcVaultPath = `${folder}/${full.srcPath.split(/[\\/]/).pop()}`;
-      const progress = new import_obsidian37.Notice(`\u30AF\u30EA\u30C3\u30D7\u3092\u5207\u308A\u51FA\u3057\u4E2D\u2026 0/${todo.length}\uFF08${src.tFile.basename}\uFF09`, 0);
+      const progress = new import_obsidian38.Notice(`\u30AF\u30EA\u30C3\u30D7\u3092\u5207\u308A\u51FA\u3057\u4E2D\u2026 0/${todo.length}\uFF08${src.tFile.basename}\uFF09`, 0);
       for (let i = 0; i < todo.length; i++) {
         const r2 = todo[i];
         const it = planItem.get(blockIdFor(r2));
@@ -54736,14 +58037,14 @@ ${body2.slice(0, 300)}`, 15e3);
     if (failed > 0) {
       try {
         const body2 = log.join("\n");
-        if (existingLog instanceof import_obsidian37.TFile)
+        if (existingLog instanceof import_obsidian38.TFile)
           await this.app.vault.modify(existingLog, body2);
         else
           await this.app.vault.create(logPath, body2);
       } catch (e) {
         console.error("[jp-collocations] log write failed:", e);
       }
-    } else if (existingLog instanceof import_obsidian37.TFile) {
+    } else if (existingLog instanceof import_obsidian38.TFile) {
       try {
         await this.app.vault.delete(existingLog);
       } catch (e) {
@@ -54754,27 +58055,27 @@ ${body2.slice(0, 300)}`, 15e3);
   /** Standalone command: reconcile, download clips, then regenerate cards with
    *  the fresh local clips embedded. (⚡ uses the cards-first path instead.) */
   async downloadReconClips() {
-    if (!import_obsidian37.Platform.isDesktopApp) {
-      new import_obsidian37.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u306E\u53D6\u5F97\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u306E\u307F\u5BFE\u5FDC\u3067\u3059\u3002");
+    if (!import_obsidian38.Platform.isDesktopApp) {
+      new import_obsidian38.Notice("\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7\u306E\u53D6\u5F97\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u306E\u307F\u5BFE\u5FDC\u3067\u3059\u3002");
       return;
     }
     if (!this.settings.audioExtraction.enabled) {
-      new import_obsidian37.Notice("\u8A2D\u5B9A \u2192\u300C\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7 (yt-dlp)\u300D\u3092\u6709\u52B9\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08yt-dlp/ffmpeg \u5FC5\u9808\u30FBYouTube ToS \u6CE8\u610F\uFF09\u3002");
+      new import_obsidian38.Notice("\u8A2D\u5B9A \u2192\u300C\u97F3\u58F0\u30AF\u30EA\u30C3\u30D7 (yt-dlp)\u300D\u3092\u6709\u52B9\u306B\u3057\u3066\u304F\u3060\u3055\u3044\uFF08yt-dlp/ffmpeg \u5FC5\u9808\u30FBYouTube ToS \u6CE8\u610F\uFF09\u3002");
       return;
     }
-    if (!(this.app.vault.adapter instanceof import_obsidian37.FileSystemAdapter)) {
-      new import_obsidian37.Notice("\u30ED\u30FC\u30AB\u30EB\u30D5\u30A1\u30A4\u30EB\u30B7\u30B9\u30C6\u30E0\u304C\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002");
+    if (!(this.app.vault.adapter instanceof import_obsidian38.FileSystemAdapter)) {
+      new import_obsidian38.Notice("\u30ED\u30FC\u30AB\u30EB\u30D5\u30A1\u30A4\u30EB\u30B7\u30B9\u30C6\u30E0\u304C\u5229\u7528\u3067\u304D\u307E\u305B\u3093\u3002");
       return;
     }
     if (!nodeRuntimeAvailable()) {
-      new import_obsidian37.Notice("Node \u30E9\u30F3\u30BF\u30A4\u30E0\u306B\u63A5\u7D9A\u3067\u304D\u307E\u305B\u3093\uFF08\u3053\u306E\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u3067\u306F child_process \u3092\u5229\u7528\u3067\u304D\u307E\u305B\u3093\uFF09\u3002");
+      new import_obsidian38.Notice("Node \u30E9\u30F3\u30BF\u30A4\u30E0\u306B\u63A5\u7D9A\u3067\u304D\u307E\u305B\u3093\uFF08\u3053\u306E\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u7248\u3067\u306F child_process \u3092\u5229\u7528\u3067\u304D\u307E\u305B\u3093\uFF09\u3002");
       return;
     }
     const prep = await this.prepareReconcile();
     if (!prep)
       return;
     if (!prep.sources.some((s) => s.videoId)) {
-      new import_obsidian37.Notice("YouTube \u52D5\u753B ID \u304C\u5FC5\u8981\u3067\u3059\u3002\u6587\u5B57\u8D77\u3053\u3057\u306E frontmatter \u306B `video: <URL>` \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+      new import_obsidian38.Notice("YouTube \u52D5\u753B ID \u304C\u5FC5\u8981\u3067\u3059\u3002\u6587\u5B57\u8D77\u3053\u3057\u306E frontmatter \u306B `video: <URL>` \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
       return;
     }
     const plans = /* @__PURE__ */ new Map();
@@ -54782,7 +58083,7 @@ ${body2.slice(0, 300)}`, 15e3);
       plans.set(src.tFile.path, await this.annotateTranscript(prep.file, src));
     const res = await this.downloadClipsFor(prep, plans);
     if (!res.anyTargets) {
-      new import_obsidian37.Notice("\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5BFE\u8C61\uFF08auto \u304B\u3064\u6642\u523B\u4ED8\u304D\uFF09\u306E\u7167\u5408\u30B9\u30D1\u30F3\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
+      new import_obsidian38.Notice("\u30C0\u30A6\u30F3\u30ED\u30FC\u30C9\u5BFE\u8C61\uFF08auto \u304B\u3064\u6642\u523B\u4ED8\u304D\uFF09\u306E\u7167\u5408\u30B9\u30D1\u30F3\u304C\u3042\u308A\u307E\u305B\u3093\u3002");
       return;
     }
     if (this.settings.voiceSync.enabled) {
@@ -54800,10 +58101,10 @@ ${body2.slice(0, 300)}`, 15e3);
     } catch (e) {
       console.error("[jp-collocations] card regen failed:", e);
     }
-    new import_obsidian37.Notice(
+    new import_obsidian38.Notice(
       `\u30AF\u30EA\u30C3\u30D7\u53D6\u5F97: \u2713${res.done} / \u30B9\u30AD\u30C3\u30D7${res.skipped} / \u5931\u6557${res.failed}` + (written ? `
 \u30AB\u30FC\u30C9\u66F4\u65B0: ${written.count}\u4EF6` : "") + (res.failed ? `
-\u30ED\u30B0: ${(0, import_obsidian37.normalizePath)((this.settings.audioExtraction.outputFolder || "JP Audio Clips") + "/_download-log.md")}` : ""),
+\u30ED\u30B0: ${(0, import_obsidian38.normalizePath)((this.settings.audioExtraction.outputFolder || "JP Audio Clips") + "/_download-log.md")}` : ""),
       res.failed ? 15e3 : 8e3
     );
   }
@@ -54813,7 +58114,7 @@ ${body2.slice(0, 300)}`, 15e3);
   makeHttpClient() {
     const call = async (url, method, headers, body2) => {
       var _a2;
-      const r2 = await (0, import_obsidian37.requestUrl)({ url, method, headers, body: body2, throw: false });
+      const r2 = await (0, import_obsidian38.requestUrl)({ url, method, headers, body: body2, throw: false });
       return { status: r2.status, text: (_a2 = r2.text) != null ? _a2 : "" };
     };
     return {
@@ -54829,26 +58130,26 @@ ${body2.slice(0, 300)}`, 15e3);
     var _a2;
     const f = this.app.workspace.getActiveFile();
     if (!f) {
-      new import_obsidian37.Notice("Podcast \u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
+      new import_obsidian38.Notice("Podcast \u30CE\u30FC\u30C8\u3092\u958B\u3044\u3066\u304F\u3060\u3055\u3044");
       return;
     }
     const md = await this.app.vault.cachedRead(f);
     if (!/^source:\s*podcast\s*$/m.test(md)) {
-      new import_obsidian37.Notice("source: podcast \u306E\u30CE\u30FC\u30C8\u3067\u306F\u3042\u308A\u307E\u305B\u3093");
+      new import_obsidian38.Notice("source: podcast \u306E\u30CE\u30FC\u30C8\u3067\u306F\u3042\u308A\u307E\u305B\u3093");
       return;
     }
     const audio = (_a2 = md.match(/^audio:\s*"?([^"\n]+?)"?\s*$/m)) == null ? void 0 : _a2[1];
     if (!audio) {
-      new import_obsidian37.Notice("frontmatter \u306B audio: \u304C\u3042\u308A\u307E\u305B\u3093");
+      new import_obsidian38.Notice("frontmatter \u306B audio: \u304C\u3042\u308A\u307E\u305B\u3093");
       return;
     }
-    if (!import_obsidian37.Platform.isDesktopApp || !nodeRuntimeAvailable() || !(this.app.vault.adapter instanceof import_obsidian37.FileSystemAdapter)) {
-      new import_obsidian37.Notice("\u66F8\u304D\u8D77\u3053\u3057\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u5C02\u7528\u3067\u3059\uFF08\u{1F4F1}\u3067\u306F\u53D6\u308A\u8FBC\u307F\u6E08\u307F\u30CE\u30FC\u30C8\u3092\u8AAD\u3080\u3060\u3051\uFF09");
+    if (!import_obsidian38.Platform.isDesktopApp || !nodeRuntimeAvailable() || !(this.app.vault.adapter instanceof import_obsidian38.FileSystemAdapter)) {
+      new import_obsidian38.Notice("\u66F8\u304D\u8D77\u3053\u3057\u306F\u30C7\u30B9\u30AF\u30C8\u30C3\u30D7\u5C02\u7528\u3067\u3059\uFF08\u{1F4F1}\u3067\u306F\u53D6\u308A\u8FBC\u307F\u6E08\u307F\u30CE\u30FC\u30C8\u3092\u8AAD\u3080\u3060\u3051\uFF09");
       return;
     }
     const tools = detectSpeechTools(this.settings.voiceSync.toolsDir);
     if (!tools.whisperCli || !tools.whisperModel) {
-      new import_obsidian37.Notice("whisper \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\uFF08\u{1FA7A} \u30C7\u30D0\u30A4\u30B9\u8A3A\u65AD\u3067\u78BA\u8A8D\uFF09");
+      new import_obsidian38.Notice("whisper \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\uFF08\u{1FA7A} \u30C7\u30D0\u30A4\u30B9\u8A3A\u65AD\u3067\u78BA\u8A8D\uFF09");
       return;
     }
     const det = detectTools();
@@ -54868,13 +58169,13 @@ ${body2.slice(0, 300)}`, 15e3);
     const stamp = Date.now();
     const wav = path.join(os.tmpdir(), `jpc-pod-${stamp}.wav`);
     const prefix = path.join(os.tmpdir(), `jpc-pod-${stamp}`);
-    const busy = new import_obsidian37.Notice("\u2699 \u66F8\u304D\u8D77\u3053\u3057\u4E2D\u2026\uFF08\u30A8\u30D4\u30BD\u30FC\u30C9\u9577\u306B\u3088\u308A\u6570\u5206\u301C\u5341\u6570\u5206\uFF09", 0);
+    const busy = new import_obsidian38.Notice("\u2699 \u66F8\u304D\u8D77\u3053\u3057\u4E2D\u2026\uFF08\u30A8\u30D4\u30BD\u30FC\u30C9\u9577\u306B\u3088\u308A\u6570\u5206\u301C\u5341\u6570\u5206\uFF09", 0);
     try {
       await run2(ffmpegBin, ["-y", "-loglevel", "error", "-i", absAudio, "-ar", "16000", "-ac", "1", wav], 10 * 6e4);
       await run2(tools.whisperCli, ["-m", tools.whisperModel, "-l", "ja", "-oj", "-of", prefix, wav], 45 * 6e4);
       const segs = parseWhisperSegments(fsm.readFileSync(`${prefix}.json`, "utf8"));
       if (segs.length < 3) {
-        new import_obsidian37.Notice("\u66F8\u304D\u8D77\u3053\u3057\u7D50\u679C\u304C\u7A7A\u306B\u8FD1\u3044\u3067\u3059 \u2014 \u97F3\u58F0\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044");
+        new import_obsidian38.Notice("\u66F8\u304D\u8D77\u3053\u3057\u7D50\u679C\u304C\u7A7A\u306B\u8FD1\u3044\u3067\u3059 \u2014 \u97F3\u58F0\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044");
         return;
       }
       let lines = segs.map((s) => `${fmtStamp(s.t0)} ${s.text}`);
@@ -54909,9 +58210,9 @@ ${lines.join("\n")}
 `
       );
       await this.app.vault.modify(f, body2);
-      new import_obsidian37.Notice(`\u2699 ${segs.length}\u30BB\u30B0\u30E1\u30F3\u30C8\u3092\u66F8\u304D\u8D77\u3053\u3057\u307E\u3057\u305F` + (voices ? `\uFF08\u8A71\u8005${voices}\u4EBA\u3092\u691C\u51FA \u2014 \u8AC7\u8A71\u30E2\u30FC\u30C9\u304C\u305D\u306E\u307E\u307E\u8AAD\u307F\u307E\u3059\uFF09` : " \u2014 \u7167\u5408\u30FB\u8D70\u67FB\u30FB\u26A1\u304C\u305D\u306E\u307E\u307E\u4F7F\u3048\u307E\u3059"));
+      new import_obsidian38.Notice(`\u2699 ${segs.length}\u30BB\u30B0\u30E1\u30F3\u30C8\u3092\u66F8\u304D\u8D77\u3053\u3057\u307E\u3057\u305F` + (voices ? `\uFF08\u8A71\u8005${voices}\u4EBA\u3092\u691C\u51FA \u2014 \u8AC7\u8A71\u30E2\u30FC\u30C9\u304C\u305D\u306E\u307E\u307E\u8AAD\u307F\u307E\u3059\uFF09` : " \u2014 \u7167\u5408\u30FB\u8D70\u67FB\u30FB\u26A1\u304C\u305D\u306E\u307E\u307E\u4F7F\u3048\u307E\u3059"));
     } catch (e) {
-      new import_obsidian37.Notice(`\u66F8\u304D\u8D77\u3053\u3057\u5931\u6557: ${String(e).slice(0, 200)}`, 8e3);
+      new import_obsidian38.Notice(`\u66F8\u304D\u8D77\u3053\u3057\u5931\u6557: ${String(e).slice(0, 200)}`, 8e3);
     } finally {
       busy.hide();
       try {
@@ -54924,7 +58225,7 @@ ${lines.join("\n")}
   // ── §21 💡 discovery: exposure the catalog never captured ──
   async runDiscovery() {
     var _a2;
-    const notice = new import_obsidian37.Notice("\u{1F4A1} \u767A\u898B\u3092\u96C6\u8A08\u4E2D\u2026", 0);
+    const notice = new import_obsidian38.Notice("\u{1F4A1} \u767A\u898B\u3092\u96C6\u8A08\u4E2D\u2026", 0);
     try {
       const sources = [];
       for (const f of this.app.vault.getMarkdownFiles().filter((x) => !x.path.endsWith("-cards.md"))) {
@@ -55021,7 +58322,7 @@ ${lines.join("\n")}
       return 0;
     const http = {
       post: async (url, body2, headers) => {
-        const r2 = await (0, import_obsidian37.requestUrl)({ url, method: "POST", body: body2, headers, throw: false });
+        const r2 = await (0, import_obsidian38.requestUrl)({ url, method: "POST", body: body2, headers, throw: false });
         return { status: r2.status, text: r2.text };
       }
     };
@@ -55052,7 +58353,7 @@ ${lines.join("\n")}
       }
       const writeIfChanged = async (path, text) => {
         const f = this.app.vault.getAbstractFileByPath(path);
-        if (f instanceof import_obsidian37.TFile) {
+        if (f instanceof import_obsidian38.TFile) {
           if (await this.app.vault.cachedRead(f) === text)
             return;
           await this.app.vault.modify(f, text);
@@ -55070,7 +58371,7 @@ ${lines.join("\n")}
   }
   /** OS temp dir for yt-dlp subtitle scratch files (desktop only; null otherwise). */
   desktopTmpDir() {
-    if (!import_obsidian37.Platform.isDesktopApp || !nodeRuntimeAvailable())
+    if (!import_obsidian38.Platform.isDesktopApp || !nodeRuntimeAvailable())
       return null;
     try {
       return nodeReq("os").tmpdir();
@@ -55084,7 +58385,7 @@ ${lines.join("\n")}
    *  Device-local, OUTSIDE the vault — session cookies must never ride along
    *  with vault sync (AUDIT §2). */
   cookieJarAbs() {
-    if (!import_obsidian37.Platform.isDesktopApp || !nodeRuntimeAvailable())
+    if (!import_obsidian38.Platform.isDesktopApp || !nodeRuntimeAvailable())
       return void 0;
     try {
       const os = nodeReq("os");
@@ -55100,7 +58401,7 @@ ${lines.join("\n")}
   makeTranscriptAdapter() {
     var _a2;
     const n = this.settings.notes;
-    const cfg = {
+    const cfg2 = {
       langPref: (n.langPref || "ja").split(",").map((s) => s.trim()).filter(Boolean),
       preferManual: n.preferManual
     };
@@ -55119,7 +58420,7 @@ ${lines.join("\n")}
         cookieJarAbs: this.cookieJarAbs()
       };
     }
-    return new YouTubeTranscriptAdapter(this.makeHttpClient(), cfg, ytdlp);
+    return new YouTubeTranscriptAdapter(this.makeHttpClient(), cfg2, ytdlp);
   }
   /** Resolve a video id to fetch: editor selection → active-file frontmatter →
    *  clipboard. Returns null with a Notice already shown if nothing resolves. */
@@ -55144,23 +58445,23 @@ ${lines.join("\n")}
         return fromClip;
     } catch (e) {
     }
-    new import_obsidian37.Notice("YouTube \u306E URL/ID \u3092\u9078\u629E\u3059\u308B\u304B\u3001\u30E1\u30E2\u306E frontmatter \u306B `video:` \u3092\u5165\u308C\u308B\u304B\u3001\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u306B\u30B3\u30D4\u30FC\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
+    new import_obsidian38.Notice("YouTube \u306E URL/ID \u3092\u9078\u629E\u3059\u308B\u304B\u3001\u30E1\u30E2\u306E frontmatter \u306B `video:` \u3092\u5165\u308C\u308B\u304B\u3001\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u306B\u30B3\u30D4\u30FC\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 8e3);
     return null;
   }
   /** Write a fetched transcript as a frozen note; returns the file (never re-fetches
    *  an existing one — invariant #4). `overwrite` forces a rewrite. */
   async writeTranscriptFile(t, overwrite = false) {
-    const folder = (0, import_obsidian37.normalizePath)(this.settings.notes.transcriptFolder || "Transcripts");
+    const folder = (0, import_obsidian38.normalizePath)(this.settings.notes.transcriptFolder || "Transcripts");
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       try {
         await this.app.vault.createFolder(folder);
       } catch (e) {
       }
     }
-    const path = (0, import_obsidian37.normalizePath)(`${folder}/${transcriptFileBaseName(t)}.md`);
+    const path = (0, import_obsidian38.normalizePath)(`${folder}/${transcriptFileBaseName(t)}.md`);
     const body2 = renderTranscriptFile(t);
     const existing = this.app.vault.getAbstractFileByPath(path);
-    if (existing instanceof import_obsidian37.TFile) {
+    if (existing instanceof import_obsidian38.TFile) {
       if (overwrite)
         await this.app.vault.modify(existing, body2);
       return existing;
@@ -55203,20 +58504,20 @@ ${entry2}
   async fetchTranscriptByUrl(url) {
     const videoId = parseYouTubeId(url.trim());
     if (!videoId) {
-      new import_obsidian37.Notice("YouTube \u306E URL/ID \u3092\u8A8D\u8B58\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
+      new import_obsidian38.Notice("YouTube \u306E URL/ID \u3092\u8A8D\u8B58\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F");
       return null;
     }
-    const folder = (0, import_obsidian37.normalizePath)(this.settings.notes.transcriptFolder || "Transcripts");
+    const folder = (0, import_obsidian38.normalizePath)(this.settings.notes.transcriptFolder || "Transcripts");
     const existing = this.app.vault.getMarkdownFiles().find(
       (f) => f.path.startsWith(folder + "/") && (f.path.includes(`(${videoId})`) || f.basename === videoId)
     );
     if (existing)
       return existing;
-    const notice = new import_obsidian37.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u3092\u53D6\u5F97\u4E2D\u2026 (${videoId})`, 0);
+    const notice = new import_obsidian38.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u3092\u53D6\u5F97\u4E2D\u2026 (${videoId})`, 0);
     try {
       const t = await this.makeTranscriptAdapter().fetch(videoId);
       if (!t) {
-        new import_obsidian37.Notice(`\u3053\u306E\u52D5\u753B\u306B\u306F\u5B57\u5E55\u304C\u3042\u308A\u307E\u305B\u3093 (${videoId})`, 8e3);
+        new import_obsidian38.Notice(`\u3053\u306E\u52D5\u753B\u306B\u306F\u5B57\u5E55\u304C\u3042\u308A\u307E\u305B\u3093 (${videoId})`, 8e3);
         return null;
       }
       const outFile = await this.writeTranscriptFile(t, false);
@@ -55229,11 +58530,11 @@ ${entry2}
           console.error("[jp-collocations] auto-sweep:", e);
         }
       }
-      new import_obsidian37.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u53D6\u5F97: ${t.lines.length}\u884C \u2192 ${outFile.basename}`, 6e3);
+      new import_obsidian38.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u53D6\u5F97: ${t.lines.length}\u884C \u2192 ${outFile.basename}`, 6e3);
       return outFile;
     } catch (e) {
       const msg = e instanceof TranscriptError ? e.message : String(e);
-      new import_obsidian37.Notice(`\u53D6\u5F97\u5931\u6557: ${msg}`, 1e4);
+      new import_obsidian38.Notice(`\u53D6\u5F97\u5931\u6557: ${msg}`, 1e4);
       return null;
     } finally {
       notice.hide();
@@ -55246,16 +58547,18 @@ ${entry2}
   }
   async openPipelineView() {
     var _a2;
-    const existing = this.app.workspace.getLeavesOfType(JP_PIPELINE_VIEW_TYPE);
-    const leaf = (_a2 = existing[0]) != null ? _a2 : this.app.workspace.getLeaf(true);
-    if (!existing.length)
+    const leaf = this.surfaceLeaf(JP_PIPELINE_VIEW_TYPE);
+    if (!leaf)
+      return;
+    if (((_a2 = leaf.view) == null ? void 0 : _a2.getViewType()) !== JP_PIPELINE_VIEW_TYPE) {
       await leaf.setViewState({ type: JP_PIPELINE_VIEW_TYPE, active: true });
+    }
     await this.app.workspace.revealLeaf(leaf);
   }
   /** Open 談話モード; if the active file is a transcript, load it directly. */
   async openDiscourseMode(file) {
     var _a2;
-    const folder = (0, import_obsidian37.normalizePath)(this.settings.notes.transcriptFolder || "Transcripts");
+    const folder = (0, import_obsidian38.normalizePath)(this.settings.notes.transcriptFolder || "Transcripts");
     const active = this.app.workspace.getActiveFile();
     const target = file != null ? file : active && active.path.startsWith(folder + "/") ? active : null;
     const existing = this.app.workspace.getLeavesOfType(JP_DISCOURSE_MODE_VIEW_TYPE);
@@ -55281,14 +58584,14 @@ ${entry2}
   async fetchTranscriptFor(videoId) {
     const notesFile = this.app.workspace.getActiveFile();
     const adapter = this.makeTranscriptAdapter();
-    const notice = new import_obsidian37.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u3092\u53D6\u5F97\u4E2D\u2026 (${videoId})`, 0);
+    const notice = new import_obsidian38.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u3092\u53D6\u5F97\u4E2D\u2026 (${videoId})`, 0);
     let t;
     try {
       t = await adapter.fetch(videoId);
     } catch (e) {
       notice.hide();
       const msg = e instanceof TranscriptError ? e.message : String(e);
-      new import_obsidian37.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u306E\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002
+      new import_obsidian38.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u306E\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002
 ${msg}
 
 \u624B\u52D5\u306E\u5834\u5408: \u5B57\u5E55\u30C6\u30AD\u30B9\u30C8\u3092 ${this.settings.notes.transcriptFolder} \u306B\u8CBC\u308A\u4ED8\u3051\u3001frontmatter \u306B \`video: ${videoId}\` \u3092\u8FFD\u52A0\u3057\u3066\u304F\u3060\u3055\u3044\u3002`, 2e4);
@@ -55296,7 +58599,7 @@ ${msg}
     }
     notice.hide();
     if (!t) {
-      new import_obsidian37.Notice(`\u3053\u306E\u52D5\u753B\u306B\u306F\u5B57\u5E55\u304C\u3042\u308A\u307E\u305B\u3093 (${videoId})\u3002\u30B9\u30AD\u30C3\u30D7\u3057\u307E\u3057\u305F\u3002`, 1e4);
+      new import_obsidian38.Notice(`\u3053\u306E\u52D5\u753B\u306B\u306F\u5B57\u5E55\u304C\u3042\u308A\u307E\u305B\u3093 (${videoId})\u3002\u30B9\u30AD\u30C3\u30D7\u3057\u307E\u3057\u305F\u3002`, 1e4);
       return null;
     }
     const outFile = await this.writeTranscriptFile(t, true);
@@ -55307,7 +58610,7 @@ ${msg}
       } catch (e) {
       }
     }
-    new import_obsidian37.Notice(
+    new import_obsidian38.Notice(
       `\u6587\u5B57\u8D77\u3053\u3057\u53D6\u5F97: ${t.lines.length}\u884C\uFF08${t.source} / ${t.lang}\uFF09\u2192 ${outFile.basename}` + (linked ? `
 \u30E1\u30E2\u306B source: [[${outFile.basename}]] \u3092\u8A2D\u5B9A\u3057\u307E\u3057\u305F\u3002` : `
 \u30E1\u30E2\u306E frontmatter \u306B \`source: [[${outFile.basename}]]\` \u3092\u8FFD\u52A0\u3057\u3066\u7167\u5408\u3057\u3066\u304F\u3060\u3055\u3044\u3002`),
@@ -55333,7 +58636,7 @@ ${msg}
     }
     const { videos, source } = parseHistory(text);
     if (!videos.length) {
-      new import_obsidian37.Notice("\u8996\u8074\u5C65\u6B74\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002Google Takeout \u306E watch-history.json/html \u3092\u958B\u304F\u304B\u3001YouTube \u306E URL \u4E00\u89A7\u3092\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u306B\u30B3\u30D4\u30FC\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 12e3);
+      new import_obsidian38.Notice("\u8996\u8074\u5C65\u6B74\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3002Google Takeout \u306E watch-history.json/html \u3092\u958B\u304F\u304B\u3001YouTube \u306E URL \u4E00\u89A7\u3092\u30AF\u30EA\u30C3\u30D7\u30DC\u30FC\u30C9\u306B\u30B3\u30D4\u30FC\u3057\u3066\u304F\u3060\u3055\u3044\u3002", 12e3);
       return;
     }
     const cap = Math.max(1, this.settings.notes.maxHistoryVideos || 20);
@@ -55347,7 +58650,7 @@ ${msg}
   async fetchTranscriptsForVideos(list, opts) {
     const overflow = opts.detected - list.length;
     const adapter = this.makeTranscriptAdapter();
-    const folder = (0, import_obsidian37.normalizePath)(this.settings.notes.transcriptFolder || "Transcripts");
+    const folder = (0, import_obsidian38.normalizePath)(this.settings.notes.transcriptFolder || "Transcripts");
     const log = [
       `# \u8996\u8074\u5C65\u6B74\u2192\u6587\u5B57\u8D77\u3053\u3057 \u53D6\u5F97\u30ED\u30B0`,
       ``,
@@ -55356,7 +58659,7 @@ ${msg}
     ];
     let fetched = 0, noCaps = 0, failed = 0, existed = 0;
     const newFiles = [];
-    const progress = new import_obsidian37.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u3092\u53D6\u5F97\u4E2D\u2026 0/${list.length}`, 0);
+    const progress = new import_obsidian38.Notice(`\u6587\u5B57\u8D77\u3053\u3057\u3092\u53D6\u5F97\u4E2D\u2026 0/${list.length}`, 0);
     const sleep2 = (ms) => new Promise((r2) => setTimeout(r2, ms));
     const THROTTLE_MS = 3500;
     const MAX_RETRIES = 3;
@@ -55434,17 +58737,17 @@ ${msg}
       } catch (e) {
       }
     }
-    const logPath = (0, import_obsidian37.normalizePath)(`${folder}/_history-fetch-log.md`);
+    const logPath = (0, import_obsidian38.normalizePath)(`${folder}/_history-fetch-log.md`);
     try {
       const ex = this.app.vault.getAbstractFileByPath(logPath);
       const outLog = log.join("\n");
-      const logFile = ex instanceof import_obsidian37.TFile ? (await this.app.vault.modify(ex, outLog), ex) : await this.app.vault.create(logPath, outLog);
+      const logFile = ex instanceof import_obsidian38.TFile ? (await this.app.vault.modify(ex, outLog), ex) : await this.app.vault.create(logPath, outLog);
       if (opts.openLog)
         await this.app.workspace.getLeaf(false).openFile(logFile);
     } catch (e) {
       console.error("[jp-collocations] history log write failed:", e);
     }
-    new import_obsidian37.Notice(`\u6587\u5B57\u8D77\u3053\u3057: \u2713${fetched} / \u65E2\u5B58${existed} / \u5B57\u5E55\u306A\u3057${noCaps} / \u5931\u6557${failed}${sweepLine}
+    new import_obsidian38.Notice(`\u6587\u5B57\u8D77\u3053\u3057: \u2713${fetched} / \u65E2\u5B58${existed} / \u5B57\u5E55\u306A\u3057${noCaps} / \u5931\u6557${failed}${sweepLine}
 \u30ED\u30B0: ${logPath}`, 15e3);
     return { fetched, noCaps, failed, existed, logPath };
   }
@@ -55456,12 +58759,12 @@ ${msg}
     const client = this.makeHistoryClient();
     const issue = client.configIssue();
     if (issue) {
-      new import_obsidian37.Notice(`${issue}
+      new import_obsidian38.Notice(`${issue}
 \u8A2D\u5B9A \u2192\u300C\u8996\u8074\u5C65\u6B74\uFF08Cookie\uFF09\u300D\u306B youtube.com \u306E Cookie \u3092\u8CBC\u308A\u4ED8\u3051\u3066\u304F\u3060\u3055\u3044\u3002`, 14e3);
       return;
     }
     new HistoryRangeModal(this.app, { maxVideos: this.settings.notes.maxHistoryVideos || 50 }, async (range) => {
-      const progress = new import_obsidian37.Notice("\u8996\u8074\u5C65\u6B74\u3092\u53D6\u5F97\u4E2D\u2026 0\u4EF6", 0);
+      const progress = new import_obsidian38.Notice("\u8996\u8074\u5C65\u6B74\u3092\u53D6\u5F97\u4E2D\u2026 0\u4EF6", 0);
       let res;
       try {
         res = await client.listWatched(range, {
@@ -55471,7 +58774,7 @@ ${msg}
       } catch (e) {
         progress.hide();
         const msg = e instanceof YtHistoryError ? e.message : String(e);
-        new import_obsidian37.Notice(`\u8996\u8074\u5C65\u6B74\u306E\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002
+        new import_obsidian38.Notice(`\u8996\u8074\u5C65\u6B74\u306E\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002
 ${msg}
 
 \u4EE3\u66FF: Google Takeout \u306E watch-history.json \u3092\u300C\u5C65\u6B74\u2192\u6587\u5B57\u8D77\u3053\u3057\u300D\u3067\u8AAD\u307F\u8FBC\u3081\u307E\u3059\u3002`, 2e4);
@@ -55483,17 +58786,17 @@ ${msg}
 \u26A0 YouTube \u306E\u5C65\u6B74\u30D5\u30A3\u30FC\u30C9\u81EA\u4F53\u306E\u6700\u65B0\u304C ${fmtDay(res.feedNewestMs)} \u3067\u3059 \u2014 \u305D\u308C\u4EE5\u964D\u306E\u8996\u8074\u304C\u8A18\u9332\u3055\u308C\u3066\u3044\u307E\u305B\u3093\u3002
 youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\u304B\u3001\u518D\u751F\u5C65\u6B74\u304C\u4E00\u6642\u505C\u6B62\u3055\u308C\u3066\u3044\u306A\u3044\u304B\uFF08myactivity.google.com\uFF09\u3092\u78BA\u8A8D\u3057\u3066\u304F\u3060\u3055\u3044\u3002` : "";
       if (!res.videos.length) {
-        new import_obsidian37.Notice(`\u3053\u306E\u671F\u9593\u306B\u8996\u8074\u3057\u305F\u52D5\u753B\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\uFF08${res.pages}\u30DA\u30FC\u30B8\u78BA\u8A8D\uFF09\u3002${staleHint}`, staleHint ? 25e3 : 12e3);
+        new import_obsidian38.Notice(`\u3053\u306E\u671F\u9593\u306B\u8996\u8074\u3057\u305F\u52D5\u753B\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\uFF08${res.pages}\u30DA\u30FC\u30B8\u78BA\u8A8D\uFF09\u3002${staleHint}`, staleHint ? 25e3 : 12e3);
         return;
       }
       if (staleHint)
-        new import_obsidian37.Notice(staleHint.trim(), 25e3);
+        new import_obsidian38.Notice(staleHint.trim(), 25e3);
       const noteFile = await this.writeHistoryNote(res.videos, range, res);
       await this.app.workspace.getLeaf(false).openFile(noteFile);
       if (range.alsoTranscripts) {
         await this.fetchTranscriptsForVideos(res.videos, { source: "watch-history", detected: res.videos.length, openLog: false });
       } else {
-        new import_obsidian37.Notice(
+        new import_obsidian38.Notice(
           `\u8996\u8074\u5C65\u6B74: ${res.videos.length}\u4EF6\uFF08${res.pages}\u30DA\u30FC\u30B8 / ${res.stopped}\uFF09\u2192 ${noteFile.basename}
 \u6B21: \u3053\u306E\u30CE\u30FC\u30C8\u3067\u300CFetch Transcripts\u2026\u300D\u3092\u5B9F\u884C\u3059\u308B\u3068\u6587\u5B57\u8D77\u3053\u3057\u3092\u53D6\u5F97\u3057\u307E\u3059\u3002`,
           16e3
@@ -55504,7 +58807,7 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
   /** Write a watch-history range as a paste-parseable note (URLs → the transcript
    *  fetch command re-ingests it). Idempotent per-range filename. */
   async writeHistoryNote(videos, range, meta) {
-    const folder = (0, import_obsidian37.normalizePath)(this.settings.notes.transcriptFolder || "Transcripts");
+    const folder = (0, import_obsidian38.normalizePath)(this.settings.notes.transcriptFolder || "Transcripts");
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       try {
         await this.app.vault.createFolder(folder);
@@ -55529,10 +58832,10 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
       out.push(`- [ ] ${when} \u2014 [${v.title.replace(/[[\]]/g, "")}](${v.url})`);
     }
     out.push("");
-    const path = (0, import_obsidian37.normalizePath)(`${folder}/_watch-history_${d(range.since)}_${d(range.until)}.md`);
+    const path = (0, import_obsidian38.normalizePath)(`${folder}/_watch-history_${d(range.since)}_${d(range.until)}.md`);
     const body2 = out.join("\n");
     const ex = this.app.vault.getAbstractFileByPath(path);
-    return ex instanceof import_obsidian37.TFile ? (await this.app.vault.modify(ex, body2), ex) : await this.app.vault.create(path, body2);
+    return ex instanceof import_obsidian38.TFile ? (await this.app.vault.modify(ex, body2), ex) : await this.app.vault.create(path, body2);
   }
   /** Ping each ingestion adapter and write a health report (invariant #7). */
   async reconHealthCheck() {
@@ -55558,13 +58861,13 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
     }
     L.push(this.reconLibrary.count() > 0 ? `- \u7167\u5408\u30E9\u30A4\u30D6\u30E9\u30EA: \u2705 ${this.reconLibrary.count()} \u4EF6` : `- \u7167\u5408\u30E9\u30A4\u30D6\u30E9\u30EA: \u26A0 **0 \u4EF6\uFF08\u672A\u5B9F\u884C\uFF09** \u2014 \u30CE\u30FC\u30C8\u306B \`source:\` \u3092\u4ED8\u3051\u3066\u300CReconcile Notes Against Source Transcript\u300D\u3092\u5B9F\u884C`);
     {
-      const folder0 = (0, import_obsidian37.normalizePath)(n.transcriptFolder || "Transcripts");
+      const folder0 = (0, import_obsidian38.normalizePath)(n.transcriptFolder || "Transcripts");
       const tfiles = this.app.vault.getMarkdownFiles().filter((f) => f.path.startsWith(folder0 + "/") && !f.basename.startsWith("_")).length;
       L.push(`- \u6587\u5B57\u8D77\u3053\u3057: ${tfiles} \u672C\uFF08\`${folder0}/\`\uFF09`);
     }
     L.push("");
     L.push("## \u74B0\u5883");
-    L.push(`- Platform.isDesktopApp: **${import_obsidian37.Platform.isDesktopApp}**`);
+    L.push(`- Platform.isDesktopApp: **${import_obsidian38.Platform.isDesktopApp}**`);
     L.push(`- nodeRuntimeAvailable: **${nodeRuntimeAvailable()}** (\`${requireStrategy()}\`)`);
     L.push(`- transcriptFolder: \`${n.transcriptFolder}\` \xB7 langPref: \`${n.langPref}\` \xB7 preferManual: ${n.preferManual}`);
     L.push(`- useYtdlpTranscripts: **${n.useYtdlpTranscripts}** \xB7 maxHistoryVideos: ${n.maxHistoryVideos}`);
@@ -55606,10 +58909,10 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
             L.push(`  - ${v.watchedAt ? new Date(v.watchedAt).toISOString().slice(0, 10) : "??"} \xB7 ${v.id} \xB7 ${v.title.slice(0, 40)}`);
         }
         try {
-          const dumpPath = (0, import_obsidian37.normalizePath)(`${(0, import_obsidian37.normalizePath)(n.transcriptFolder || "Transcripts")}/_history-raw.json`);
+          const dumpPath = (0, import_obsidian38.normalizePath)(`${(0, import_obsidian38.normalizePath)(n.transcriptFolder || "Transcripts")}/_history-raw.json`);
           const dump = JSON.stringify(raw).slice(0, 2e5);
           const exd = this.app.vault.getAbstractFileByPath(dumpPath);
-          if (exd instanceof import_obsidian37.TFile)
+          if (exd instanceof import_obsidian38.TFile)
             await this.app.vault.modify(exd, dump);
           else
             await this.app.vault.create(dumpPath, dump);
@@ -55621,36 +58924,30 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
       }
     }
     L.push("", "## Tier C \u2014 \u624B\u52D5\u8CBC\u308A\u4ED8\u3051", "- \u5E38\u306B\u5229\u7528\u53EF\u80FD\uFF08\u5B57\u5E55\u30C6\u30AD\u30B9\u30C8\u3092\u8CBC\u308A\u3001frontmatter \u306B `video:` \u3092\u4ED8\u3051\u308B\uFF09\u3002");
-    const folder = (0, import_obsidian37.normalizePath)(n.transcriptFolder || "Transcripts");
+    const folder = (0, import_obsidian38.normalizePath)(n.transcriptFolder || "Transcripts");
     if (!this.app.vault.getAbstractFileByPath(folder)) {
       try {
         await this.app.vault.createFolder(folder);
       } catch (e) {
       }
     }
-    const path = (0, import_obsidian37.normalizePath)(`${folder}/_health-check.md`);
+    const path = (0, import_obsidian38.normalizePath)(`${folder}/_health-check.md`);
     const body2 = L.join("\n");
     try {
       const ex = this.app.vault.getAbstractFileByPath(path);
-      const outFile = ex instanceof import_obsidian37.TFile ? (await this.app.vault.modify(ex, body2), ex) : await this.app.vault.create(path, body2);
+      const outFile = ex instanceof import_obsidian38.TFile ? (await this.app.vault.modify(ex, body2), ex) : await this.app.vault.create(path, body2);
       await this.app.workspace.getLeaf(false).openFile(outFile);
     } catch (e) {
-      new import_obsidian37.Notice(`\u30D8\u30EB\u30B9\u30C1\u30A7\u30C3\u30AF\u306E\u66F8\u304D\u8FBC\u307F\u306B\u5931\u6557: ${String(e)}`, 12e3);
+      new import_obsidian38.Notice(`\u30D8\u30EB\u30B9\u30C1\u30A7\u30C3\u30AF\u306E\u66F8\u304D\u8FBC\u307F\u306B\u5931\u6557: ${String(e)}`, 12e3);
       return;
     }
-    new import_obsidian37.Notice(`\u30D8\u30EB\u30B9\u30C1\u30A7\u30C3\u30AF\u3092\u66F8\u304D\u51FA\u3057\u307E\u3057\u305F: ${path}`, 6e3);
+    new import_obsidian38.Notice(`\u30D8\u30EB\u30B9\u30C1\u30A7\u30C3\u30AF\u3092\u66F8\u304D\u51FA\u3057\u307E\u3057\u305F: ${path}`, 6e3);
   }
   async openDictionaryView(query) {
-    var _a2;
-    let leaf;
-    const existing = this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE);
-    if (existing.length > 0) {
-      leaf = existing[0];
-    } else {
-      leaf = (_a2 = this.app.workspace.getRightLeaf(false)) != null ? _a2 : void 0;
-      if (leaf) {
-        await leaf.setViewState({ type: JP_DICTIONARY_VIEW_TYPE, active: true });
-      }
+    var _a2, _b2;
+    const leaf = (_a2 = this.surfaceLeaf(JP_DICTIONARY_VIEW_TYPE)) != null ? _a2 : void 0;
+    if (leaf && ((_b2 = leaf.view) == null ? void 0 : _b2.getViewType()) !== JP_DICTIONARY_VIEW_TYPE) {
+      await leaf.setViewState({ type: JP_DICTIONARY_VIEW_TYPE, active: true });
     }
     if (leaf) {
       this.app.workspace.revealLeaf(leaf);
@@ -55675,10 +58972,10 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
       try {
         const parsed = JSON.parse(text);
         const count = this.store.bulkImport(parsed);
-        new import_obsidian37.Notice(`Imported ${count} entries.`);
+        new import_obsidian38.Notice(`Imported ${count} entries.`);
         this.refreshViews();
       } catch (e) {
-        new import_obsidian37.Notice("Failed to parse JSON file.");
+        new import_obsidian38.Notice("Failed to parse JSON file.");
       }
     };
     input.click();
@@ -55707,7 +59004,7 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
     a.download = "jp-collocations-legacy-collocations.json";
     a.click();
     URL.revokeObjectURL(url);
-    new import_obsidian37.Notice(
+    new import_obsidian38.Notice(
       `\u65E7\u30FB\u9023\u8A9E\u30B9\u30C8\u30A2\u306E\u307F ${entries.length}\u4EF6\u3092\u66F8\u304D\u51FA\u3057\u307E\u3057\u305F\u3002
 \u53F0\u5E33\uFF08${this.patternStore.size()}\u4EF6\uFF09\u30FB\u5FA9\u7FD2\u30FB\u{1D54F}\u30B3\u30FC\u30D1\u30B9\u7B49\u306F\u542B\u307E\u308C\u307E\u305B\u3093 \u2014 \u305D\u3061\u3089\u306F ${_JPCollocationsPlugin.MIRROR_FOLDER}/catalog.jsonl \u306B\u81EA\u52D5\u4FDD\u5B58\u3055\u308C\u3066\u3044\u307E\u3059\u3002`,
       12e3
@@ -55715,16 +59012,16 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
   }
   async fetchFromHyogen() {
     if (!this.settings.hyogenEnabled) {
-      new import_obsidian37.Notice("Hyogen scraping is disabled. Enable it in settings first.");
+      new import_obsidian38.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
     }
     if (this.settings.hyogenWordList.length === 0) {
-      new import_obsidian37.Notice("No words configured. Add words to the scrape list in settings.");
+      new import_obsidian38.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
     const { found, missing } = this.entriesForWords(this.settings.hyogenWordList);
     if (!found.length) {
-      new import_obsidian37.Notice("\u8A9E\u6CD5: \u8A2D\u5B9A\u306E\u8A9E\u306B\u5BFE\u5FDC\u3059\u308B\u53F0\u5E33\u30A8\u30F3\u30C8\u30EA\u304C\u3042\u308A\u307E\u305B\u3093\u3002", 8e3);
+      new import_obsidian38.Notice("\u8A9E\u6CD5: \u8A2D\u5B9A\u306E\u8A9E\u306B\u5BFE\u5FDC\u3059\u308B\u53F0\u5E33\u30A8\u30F3\u30C8\u30EA\u304C\u3042\u308A\u307E\u305B\u3093\u3002", 8e3);
       return;
     }
     let ok = 0, already = 0;
@@ -55741,7 +59038,7 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
       parts.push(`${already}\u8A9E\u306F\u53D6\u5F97\u6E08\u307F\uFF08\u56FA\u5B9A\uFF09`);
     if (missing.length)
       parts.push(`\u53F0\u5E33\u306B\u306A\u3057: ${missing.slice(0, 5).join("\u30FB")}${missing.length > 5 ? "\u2026" : ""}`);
-    new import_obsidian37.Notice(parts.join(" / "), 8e3);
+    new import_obsidian38.Notice(parts.join(" / "), 8e3);
     this.refreshViews();
   }
   /**
@@ -55763,7 +59060,7 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
     const word = (_a2 = p.payload.lemma) != null ? _a2 : p.key;
     try {
       if (this.settings.twcEnabled) {
-        const progress = new import_obsidian37.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u3092\u7167\u4F1A\u4E2D\u2026`, 0);
+        const progress = new import_obsidian38.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u3092\u7167\u4F1A\u4E2D\u2026`, 0);
         const twc = new TsukubaWebCorpusScraper(this.app, this.store, {
           rateLimit: this.settings.twcRateLimit,
           onProgress: (msg) => progress.setMessage(`\u8A9E\u6CD5: ${msg}`)
@@ -55823,7 +59120,7 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
           if (ok2) {
             const ex = ((_b2 = profile2.sourced) == null ? void 0 : _b2.length) ? ` \xB7 \u7528\u4F8B${profile2.sourced.length}\u4EF6\uFF08\u51FA\u5178\u3064\u304D\uFF09` : "";
             const alt = prof.alternates.length ? ` \uFF0F \u5225\u8A9E\u7FA9${prof.alternates.length}\u4EF6\u306F\u7D5E\u8FBC\u307F\u304B\u3089` : "";
-            new import_obsidian37.Notice(
+            new import_obsidian38.Notice(
               `\u8A9E\u6CD5\u30D7\u30ED\u30D5\u30A3\u30FC\u30EB\u3008${prof.headword.yomi}\u30FB${prof.headword.pos}\u3009: ${prof.patterns.length}\u901A\u308A\u306E\u4ED8\u304D\u65B9\u3092\u8A18\u9332\uFF08${shown}\u4EF6\u3092\u5C55\u958B\u6E08\u307F \u2014 \u6B8B\u308A\u306F\u9805\u76EE\u3092\u30BF\u30C3\u30D7\u3067\u53D6\u5F97\uFF09\xB7 ${prof.headword.freq.toLocaleString()}\u4F8B${ex}${alt}`,
               7e3
             );
@@ -55831,7 +59128,7 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
           return ok2;
         }
         if (!this.settings.hyogenEnabled) {
-          new import_obsidian37.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u306F TWC \u306E\u898B\u51FA\u3057\u8A9E\u306B\u3042\u308A\u307E\u305B\u3093`, 6e3);
+          new import_obsidian38.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u306F TWC \u306E\u898B\u51FA\u3057\u8A9E\u306B\u3042\u308A\u307E\u305B\u3093`, 6e3);
           return false;
         }
       }
@@ -55839,7 +59136,7 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
         return false;
       const hy = await new HyogenScraper(this.app, this.store, { rateLimit: 0 }).profile(word);
       if (!hy.total) {
-        new import_obsidian37.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u306F Hyogen \u306B\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F`, 6e3);
+        new import_obsidian38.Notice(`\u8A9E\u6CD5: \u300C${word}\u300D\u306F Hyogen \u306B\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F`, 6e3);
         return false;
       }
       const hyEx = hyogenExamples(hy, HyogenScraper.pageFor(word));
@@ -55852,7 +59149,7 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
       const ok = await this.patternStore.setGoho(p.id, profile);
       if (ok) {
         const ex = hyEx.length ? ` \xB7 \u7528\u4F8B${hyEx.length}\u4EF6\uFF08\u9752\u7A7A\u6587\u5EAB\uFF09` : "";
-        new import_obsidian37.Notice(
+        new import_obsidian38.Notice(
           `\u8A9E\u6CD5\u30D7\u30ED\u30D5\u30A3\u30FC\u30EB: ${hy.sections.length}\u901A\u308A\u306E\u4ED8\u304D\u65B9 / ${hy.total.toLocaleString()}\u4F8B\uFF08\u8868\u793A\u306F\u5404${FRAME_ITEMS}\u4EF6\uFF09${ex}`,
           7e3
         );
@@ -55860,7 +59157,7 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
       return ok;
     } catch (e) {
       console.error("[jp-collocations] goho fetch failed:", e);
-      new import_obsidian37.Notice(`\u8A9E\u6CD5\u306E\u53D6\u5F97\u306B\u5931\u6557: ${e instanceof Error ? e.message : String(e)}`, 8e3);
+      new import_obsidian38.Notice(`\u8A9E\u6CD5\u306E\u53D6\u5F97\u306B\u5931\u6557: ${e instanceof Error ? e.message : String(e)}`, 8e3);
       return false;
     }
   }
@@ -55913,12 +59210,12 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
    */
   async fetchFromTWC(words) {
     if (!this.settings.twcEnabled) {
-      new import_obsidian37.Notice("TWC\u691C\u7D22\u306F\u7121\u52B9\u3067\u3059\u3002\u8A2D\u5B9A\u3067\u6709\u52B9\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
+      new import_obsidian38.Notice("TWC\u691C\u7D22\u306F\u7121\u52B9\u3067\u3059\u3002\u8A2D\u5B9A\u3067\u6709\u52B9\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002");
       return;
     }
     const { found, missing } = this.entriesForWords(words);
     if (!found.length) {
-      new import_obsidian37.Notice(
+      new import_obsidian38.Notice(
         `\u8A9E\u6CD5: \u300C${words.join("\u30FB")}\u300D\u306B\u5BFE\u5FDC\u3059\u308B\u53F0\u5E33\u30A8\u30F3\u30C8\u30EA\u304C\u3042\u308A\u307E\u305B\u3093\u3002\u5148\u306B\u5206\u985E\u3057\u3066\u53F0\u5E33\u306B\u5165\u308C\u3066\u304F\u3060\u3055\u3044\uFF08\u30B3\u30FC\u30D1\u30B9\u306F\u53F0\u5E33\u3092\u4F5C\u308A\u307E\u305B\u3093\uFF09`,
         8e3
       );
@@ -55938,7 +59235,7 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
       parts.push(`${already}\u8A9E\u306F\u53D6\u5F97\u6E08\u307F\uFF08\u56FA\u5B9A\uFF09`);
     if (missing.length)
       parts.push(`\u53F0\u5E33\u306B\u306A\u3057: ${missing.slice(0, 5).join("\u30FB")}${missing.length > 5 ? "\u2026" : ""}`);
-    new import_obsidian37.Notice(parts.join(" / "), 8e3);
+    new import_obsidian38.Notice(parts.join(" / "), 8e3);
     this.refreshViews();
   }
   async fetchFromTWCWordlist() {
@@ -55947,7 +59244,7 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
       return (_a2 = e.payload.lemma) != null ? _a2 : e.key;
     });
     if (keys.length === 0) {
-      new import_obsidian37.Notice("\u8A9E\u6CD5\u3092\u672A\u53D6\u5F97\u306E\u53F0\u5E33\u30A8\u30F3\u30C8\u30EA\u304C\u3042\u308A\u307E\u305B\u3093\u3002", 6e3);
+      new import_obsidian38.Notice("\u8A9E\u6CD5\u3092\u672A\u53D6\u5F97\u306E\u53F0\u5E33\u30A8\u30F3\u30C8\u30EA\u304C\u3042\u308A\u307E\u305B\u3093\u3002", 6e3);
       return;
     }
     await this.fetchFromTWC(keys);

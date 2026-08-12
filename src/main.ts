@@ -1,6 +1,20 @@
-import { Plugin, WorkspaceLeaf, Notice, TFile, Platform, FileSystemAdapter, Menu, Modal, normalizePath, requestUrl, arrayBufferToBase64 } from "obsidian";
+import { Plugin, WorkspaceLeaf, Notice, TFile, Platform, FileSystemAdapter, Menu, Modal, MarkdownView, normalizePath, requestUrl, arrayBufferToBase64 } from "obsidian";
+// §26.3 step 6 — going TO and FROM. The stack logic is pure; this file supplies
+// the workspace.
+import {
+  toggle as navToggle, goTo as navGoTo, back as navBackStep, presentation,
+  mouseIntent, type Place,
+} from "./ui/suite-nav";
+import { posture, watchViewport } from "./ui/posture";
+import {
+  feedWheel, idleGesture, stepIndex, clampDensity, densityScale, densityLabel,
+  DENSITY_DEFAULT, type GestureState,
+} from "./ui/input-map";
 import type { PluginSettings, CollocationEntry } from "./types";
-import { DEFAULT_SETTINGS, DEFAULT_NOTES_CONFIG, DEFAULT_PLEX_SETTINGS, DEFAULT_JIMAKU_SETTINGS, PartOfSpeech, CollocationSource } from "./types";
+import { DEFAULT_SETTINGS, DEFAULT_NOTES_CONFIG, DEFAULT_PLEX_SETTINGS, DEFAULT_JIMAKU_SETTINGS, DEFAULT_POSTURE_SETTINGS, PartOfSpeech, CollocationSource } from "./types";
+// §26.3 — how the device is held, and the Pencil affordances that follow.
+import { configurePosture, watchForPen, applyPostureClasses } from "./ui/posture";
+import { PenProbeModal } from "./ui/PenProbeModal";
 import { CollocationStore } from "./data/CollocationStore";
 import { DataManager, type BlobFileIO } from "./data/data-manager";
 import { stripDerivedIndexes, extractSecrets, scrubSettingsForPersist, SECRET_LS_KEYS } from "./data/blob-migrations";
@@ -9,6 +23,8 @@ import { HyogenScraper } from "./scraper/HyogenScraper";
 import { hyogenExamples } from "./scraper/hyogen-parse";
 import { normalizeJapanese } from "./utils/japanese";
 import { abortPointerDrag } from "./ui/pointer-drag";
+import { definitionsPreview, type PeekData } from "./ui/hover-peek";
+import type { ViewChrome } from "./ui/view-chrome";
 import { TsukubaWebCorpusScraper } from "./scraper/TsukubaWebCorpusScraper";
 import { CollocationView, JP_COLLOCATIONS_VIEW_TYPE, setCollocationViewResolver } from "./ui/CollocationView";
 import { SearchModal } from "./ui/SearchModal";
@@ -66,7 +82,10 @@ import { PatternStore, sweepTerms, patternIdFor, derivePattern, attestationKey, 
 // §27.5 big-dictionary sidecars (the blob never sees 2.36M entries).
 import { importEijiro, type BankSource } from "./dictionary/import-eijiro";
 import { vaultSidecarIO, nodeBankSource, nodeChunkSource } from "./dictionary/sidecar-io";
-import { bufferedSidecarIO, repairSidecarMeta } from "./dictionary/sidecar";
+import {
+  bufferedSidecarIO, repairSidecarMeta, verifyAllSidecars, describeSidecarProblem, resolveBigDictRoot,
+  buildIntentIndex, readMeta, writeMeta,
+} from "./dictionary/sidecar";
 import { importDexie, skipTitles } from "./dictionary/import-dexie";
 import { BigDictStore } from "./dictionary/big-dict";
 import { toFrame } from "./dictionary/frames";
@@ -110,12 +129,13 @@ import { buildVisionBody } from "./notes/claude-client";
 import { parsePodcastFeed, podcastNote } from "./notes/podcast-rss";
 import { componentKeyOf, type ComponentVerdict } from "./ui/DiscourseModeView";
 import { ImportModal } from "./ui/ImportModal";
-import { InboxStore, markCard, imageCard, shapeDrop, type MarkRef, type InboxCard } from "./notes/inbox";
+import { InboxStore, markCard, imageCard, pairedCard, shapeDrop, type MarkRef, type InboxCard } from "./notes/inbox";
 // §29 — the drag road. `drop-intent` decides what arrived; `runDropIntent`
 // below hands it to the same code the equivalent command already calls.
 import { dropIntents, titleFromFilename, type DropIntent } from "./notes/drop-intent";
-import { type Surface } from "./ui/surface-bar";
-import { ReachStore, reachStats, type ReachData, type Reach } from "./notes/reach";
+import { dropBytes } from "./ui/drop-router";
+import { SURFACE_LABEL, type Surface } from "./ui/surface-bar";
+import { ReachStore, reachStats, type ReachData, type Reach, type Incoming } from "./notes/reach";
 import { ReachModal } from "./ui/ReachModal";
 import { TrayView, JP_TRAY_VIEW_TYPE, type TrayDoor } from "./ui/TrayView";
 import { discoverCollocations, type DiscoverySource, type Discovery } from "./notes/discovery";
@@ -180,6 +200,36 @@ import type {
   VaultProfileResult,
   TranscriptAnalysisResult,
 } from "./surfer-types";
+
+/**
+ * The inverse of `openSurfaceRaw` — which surface is this leaf?
+ *
+ * Needed so that leaving a surface can RECORD it, which is what makes
+ * 辞書 → 𝕏 → back land on 辞書 instead of on the note. Only the six the
+ * surface bar knows about; anything else is not a place the suite navigates.
+ */
+const SURFACE_BY_VIEW_TYPE: Record<string, Surface> = {
+  [JP_COLLOCATIONS_VIEW_TYPE]: "lexicon",
+  [JP_DICTIONARY_VIEW_TYPE]: "dict",
+  [JP_X_VIEW_TYPE]: "x",
+  [JP_TRAY_VIEW_TYPE]: "tray",
+  [JP_REVIEW_VIEW_TYPE]: "review",
+  [JP_PIPELINE_VIEW_TYPE]: "capture",
+};
+
+/** Label for each surface's own command, so a hotkey (and therefore a
+ *  driver-mapped Elecom/Logi button) can reach it. */
+/** Bar order — what a two-finger swipe steps along. */
+const SURFACE_ORDER: Surface[] = ["lexicon", "dict", "x", "tray", "review", "capture"];
+
+const SURFACE_COMMANDS: { id: Surface; name: string }[] = [
+  { id: "lexicon", name: "語彙" },
+  { id: "dict", name: "辞書" },
+  { id: "x", name: "𝕏 検索" },
+  { id: "tray", name: "トレイ" },
+  { id: "review", name: "復習" },
+  { id: "capture", name: "⚡ 取り込み" },
+];
 
 export default class JPCollocationsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
@@ -248,6 +298,33 @@ export default class JPCollocationsPlugin extends Plugin {
   /** Status-bar item showing sidecar coverage for the current session. */
   private sidecarStatusEl: HTMLElement | null = null;
 
+  /**
+   * Where the sharded dictionaries actually live, resolved once at load.
+   *
+   * Measured 2026-08-06: the shelf is 51,016 shard files in a vault holding
+   * 636 notes. Obsidian registers and watches every file it can see, so the
+   * folder is best named with a leading dot — Obsidian skips those entirely,
+   * while `vault.adapter` (which is the ONLY way this plugin touches the
+   * shelf, `getResourcePath` for dictionary media included) reads them exactly
+   * as before.
+   *
+   * This is resolved rather than configured because the setting rides in the
+   * synced blob while the FOLDER may or may not have travelled with it. A
+   * device that has `JP Dictionaries` and a device that has `.JP Dictionaries`
+   * must both work off one synced setting, so whichever is actually on disk
+   * wins. See `resolveBigDictRoot`.
+   */
+  private bigDictRoot = "JP Dictionaries";
+
+  /** Where you have been, newest last. See `src/ui/suite-nav.ts` — the rules
+   *  that keep this a stack rather than a log live there and are golden-tested. */
+  private navStack: Place[] = [];
+
+  /** Touchpad reducer state. See `ui/input-map.ts` for why it needs any. */
+  private gesture: GestureState = idleGesture();
+  /** Live text scale for the plugin's surfaces, 0–4. Persisted. */
+  private density = DENSITY_DEFAULT;
+
   async onload(): Promise<void> {
     // Publish the 6-class taxonomy into CSS (--jp-cls-*) before any view renders,
     // so a stylesheet rule and a JS-built element cannot disagree about what a
@@ -259,11 +336,33 @@ export default class JPCollocationsPlugin extends Plugin {
     const blobIO: BlobFileIO = {
       read: async (p) => (await this.app.vault.adapter.exists(p)) ? this.app.vault.adapter.read(p) : null,
       write: (p, text) => this.app.vault.adapter.write(p, text),
+      remove: async (p) => { if (await this.app.vault.adapter.exists(p)) await this.app.vault.adapter.remove(p); },
     };
-    this.dm = new DataManager(blobIO, normalizePath(`${pluginDir}/data.json`), normalizePath(`${pluginDir}/data.json.bak`));
+    // Heavy store keys get their own file. Measured 2026-08-06 on the live
+    // vault: data.json was 15.17MB and EVERY debounced save rewrote all of it
+    // twice (bak + main). Marking one card cost ~30MB of IO — invisible on a
+    // desktop NVMe, seconds of main-thread stall in Obsidian for iPadOS.
+    this.dm = new DataManager(
+      blobIO,
+      normalizePath(`${pluginDir}/data.json`),
+      normalizePath(`${pluginDir}/data.json.bak`),
+      800,
+      { dir: normalizePath(pluginDir) },
+    );
     const loadRes = await this.dm.load();
     if (loadRes.restoredFromBackup) new Notice("jp-collocations: data.json が破損 — バックアップから復元しました");
     else if (loadRes.corrupt) new Notice("jp-collocations: data.json が破損、バックアップなし — 空の状態で開始します");
+    // A partition the manifest promised and no file could supply. The store
+    // will start from its default; that default must NEVER be written back
+    // over the missing file, so DataManager refuses those writes and we say so
+    // rather than letting the session look healthy (§28 S6).
+    if (loadRes.missingPartitions.length) {
+      new Notice(
+        `jp-collocations: データ分割ファイルが見つかりません — ${loadRes.missingPartitions.join(", ")}\n`
+        + `該当ストアは書き込みを拒否します（空の状態で上書きしないため）。`,
+        0,
+      );
+    }
 
     // one-time migrations, in ONE write: derived indexes out of the blob
     // (99.5% of the historical 62MB); secrets out of the synced file into
@@ -282,6 +381,11 @@ export default class JPCollocationsPlugin extends Plugin {
       return strippedIndexes || changed;
     });
     void migrated.then(() => { if (secretsExtracted) return this.dm.alignBackup(); });
+    // Split the heavy keys out NOW, at load, rather than under the user's
+    // first tap. No-op once the layout is already right. The main file's
+    // rolling .bak catches the whole pre-split blob on this first write, so
+    // the previous single-file shape survives one generation.
+    void this.dm.repartition();
     // the yt-dlp cookie jar used to live inside the vault (synced) — remove it;
     // it regenerates at its new device-local home on next use
     for (const legacy of ["_yt_cookies.txt", "_yt_cookies.txt.meta"]) {
@@ -289,6 +393,43 @@ export default class JPCollocationsPlugin extends Plugin {
     }
 
     this.loadSettings();
+
+    /**
+     * §26.3 — establish the posture before anything renders.
+     *
+     * The body classes decide fingertip sizing for the whole stylesheet, so
+     * they have to be on before the first view paints or the first frame is
+     * laid out at desktop dimensions and reflows. `watchForPen` latches the
+     * first stylus event anywhere in the app; `penNativeDrag` is a measurement
+     * the drag layer makes during real use and hands back here so it survives
+     * a reload instead of being relearned every launch.
+     */
+    configurePosture({
+      hand: this.settings.posture.hand,
+      override: this.settings.posture.override,
+      penNativeDrag: this.settings.posture.penNativeDrag,
+      ...(this.settings.posture.touchNativeDrag
+        ? { touchNativeDrag: this.settings.posture.touchNativeDrag }
+        : {}),
+      onDragVerdict: (pointer, v) => {
+        const key = pointer === 'pen' ? 'penNativeDrag' : 'touchNativeDrag';
+        if (this.settings.posture[key] === v) return;
+        this.settings.posture[key] = v;
+        void this.saveSettings();
+      },
+      ...(this.settings.posture.rail ? { rail: this.settings.posture.rail } : {}),
+      onRail: (r) => {
+        this.settings.posture.rail = { ...r };
+        void this.saveSettings();
+      },
+    });
+    applyPostureClasses();
+    // Restore the text scale before the first surface paints, or it lays out at
+    // 1× and then jumps.
+    this.density = clampDensity(this.settings.posture?.density ?? DENSITY_DEFAULT);
+    this.applyDensity();
+    this.register(watchForPen());
+
     const stored = this.dm.snapshot() as Record<string, any>;
 
     // ── Surfer Bridge Init ───────────────────────────────────
@@ -306,7 +447,23 @@ export default class JPCollocationsPlugin extends Plugin {
     }
 
     // ── Auto-index on file open (200ms debounce) ─────────────
+    //
+    // THE TAB LAG.
+    //
+    // `active-leaf-change` fires for every leaf, including one plugin surface
+    // to another — and `getActiveFile()` keeps returning the last markdown file
+    // while a plugin view is focused. So moving 辞書 → 語彙 → 𝕏 re-read, re-
+    // cleaned and re-`detectPatterns`'d the same note each time, rebuilt both
+    // pattern indexes, re-read the sidecar off disk, and scheduled a write —
+    // all on the main thread, all to produce byte-for-byte what was already in
+    // memory. On an iPad that is the entire felt cost of switching tabs.
+    //
+    // Nothing about a file changes because you looked at a different pane. The
+    // guard is therefore identity, not throttling: same path, same mtime, same
+    // content — so there is nothing to recompute and we do not. Editing the
+    // note bumps `mtime` and the next leaf change indexes it normally.
     let indexTimer: ReturnType<typeof setTimeout> | null = null;
+    let indexedAt: { path: string; mtime: number } | null = null;
     this.registerEvent(
       this.app.workspace.on('active-leaf-change', (leaf: WorkspaceLeaf | null) => {
         if (indexTimer) clearTimeout(indexTimer);
@@ -314,6 +471,9 @@ export default class JPCollocationsPlugin extends Plugin {
           if (!leaf) return;
           const file = this.app.workspace.getActiveFile();
           if (!file || file.extension !== 'md') return;
+          const mtime = file.stat?.mtime ?? 0;
+          if (indexedAt && indexedAt.path === file.path && indexedAt.mtime === mtime) return;
+          indexedAt = { path: file.path, mtime };
           this.app.vault.cachedRead(file).then(content => {
             void this.surferBridge.indexFileWithSidecar(file.path, content);
           });
@@ -401,9 +561,13 @@ export default class JPCollocationsPlugin extends Plugin {
     // dictionaries it genuinely belongs in the blob.
     // §27.5 READ side: the converted sidecars, discovered from the vault
     // folders. Construction is free — nothing is read until first query.
+    this.bigDictRoot = await resolveBigDictRoot(
+      (p) => this.app.vault.adapter.exists(normalizePath(p)),
+      this.settings.bigDict?.root || "JP Dictionaries",
+    );
     this.bigDict = new BigDictStore(
       vaultSidecarIO(this.app),
-      this.settings.bigDict?.root || "JP Dictionaries",
+      this.bigDictRoot,
       // One query reads one shard per installed dictionary (31 here), so the
       // cache has to span a whole query or nothing is ever reused. Phones get
       // a third of the budget.
@@ -448,6 +612,8 @@ export default class JPCollocationsPlugin extends Plugin {
       onDrop: (intent, files) => void this.runDropIntent(intent, files),
       dropCan: () => this.dropCapabilities(),
       openSurface: (s) => void this.openSurface(s),
+      dismiss: () => void this.navBack(),
+      ...this.peekChrome(),
       surfaceBadge: (s) => this.surfaceBadge(s),
     }));
 
@@ -456,6 +622,16 @@ export default class JPCollocationsPlugin extends Plugin {
     this.speakStore.load(stored?._speakSessions);
     this.registerView(JP_FOLLOW_VIEW_TYPE, (leaf) => new FollowAlongView(leaf, {
       parse: parseTranscriptLines,
+      // 鑑賞モード has no identity bar — a navigator across the top of the thing
+      // you are watching is chrome over the content — so it had no way out at
+      // all. The edge drag is its only exit, and it has to be wired here.
+      dismiss: () => void this.navBack(),
+      backPeek: () => this.navPeek(),
+      // This view wires its chrome by hand, so it does not get `peekChrome()`'s
+      // bundle — and the drop road it DOES arm was therefore the only one in
+      // the plugin running without an oracle, falling back to the guess
+      // `resource-url.ts` exists to replace.
+      inVault: (c) => this.resolveVaultPath(c),
       // §6.5 — the 予測 answer the panel used to discard on close.
       recordDrill: (scope, caseId, claim, picked) => {
         void this.ratifyStore.record(drillRow(scope, caseId, claim, picked, Date.now()));
@@ -463,7 +639,20 @@ export default class JPCollocationsPlugin extends Plugin {
       // Returns the tray card id so 鑑賞モード can write a clip back onto the
       // very card the mark became, instead of holding it only in memory.
       addTrayMark: async (m) => {
-        const card = markCard(m, Date.now());
+        // Resolve the line AT MARK TIME. A mark used to store only where and
+        // when, so the tray showed 98 identical 「（メモなし）」 rows and none of
+        // them were ever harvested — you could not tell them apart without
+        // opening the capture modal on each one to find out what you had
+        // flagged. The transcript is already open and parsed at this exact
+        // moment, so this is the cheapest it will ever be; `TrayView`'s
+        // backfill exists only for the marks made before this line did.
+        // A failure here must never cost you the mark itself.
+        let lineText: string | undefined;
+        try {
+          const ctx = await this.resolveMarkContext(m);
+          lineText = (ctx?.example ?? '').trim();
+        } catch { /* the mark is worth more than its caption */ }
+        const card = markCard(lineText === undefined ? m : { ...m, lineText }, Date.now());
         await this.inboxStore.add(card);
         this.refreshTrayViews();
         return card.id;
@@ -484,6 +673,11 @@ export default class JPCollocationsPlugin extends Plugin {
       speak: this.speakStore,
       aspects: () => this.settings.speak.aspects,
       goalPoints: () => this.settings.speak.goalPoints,
+      // §26.3 — the Pencil's own verb: hold the nib over a word in a subtitle
+      // and the dictionary answers without a tap, a pause, or losing the line.
+      dictLookup: (q) => this.dictStore.lookup(q),
+      // §25.4 — writing a note stops the show; closing it starts it again.
+      autoPauseOnWrite: () => this.settings.posture.autoPauseOnWrite,
       openCapture: (ctx) => new CaptureModal(this.app, ctx, this.makeCaptureDeps()).open(),
       mediumOf: (file) => {
         const fm = this.app.metadataCache.getFileCache(file)?.frontmatter ?? {};
@@ -786,6 +980,103 @@ export default class JPCollocationsPlugin extends Plugin {
       () => this.scraper,
       async () => { await this.saveSettings(); }
     ));
+
+    // ── §26.3 step 6: going TO and FROM ──────────────────────────────────
+    // One command per surface, each a TOGGLE: press it away from 辞書 to go
+    // there, press it again to land back on the sentence you left, cursor and
+    // scroll intact. Commands rather than raw key handlers because a command
+    // is what Obsidian's hotkey UI can rebind — and therefore what an Elecom
+    // or Logitech button mapped to a keystroke in its own driver lands on.
+    // Buttons above 4 never reach a webview, so this is the only path that can
+    // work for them, and it needs no driver integration at all.
+    for (const { id, name } of SURFACE_COMMANDS) {
+      this.addCommand({
+        id: `go-${id}`,
+        name: `${name} へ／から戻る`,
+        callback: () => { void this.openSurface(id); },
+      });
+    }
+    this.addCommand({
+      id: "nav-back",
+      name: "戻る（直前の場所へ）",
+      callback: () => { void this.navBack(); },
+    });
+
+    // ── the input layer ──────────────────────────────────────────────────
+    // Every gesture below is ALSO a command, and that is the whole trick.
+    // Three- and four-finger touchpad swipes never reach a webview — Windows
+    // and iPadOS consume them first — and no mouse button above 4 does either.
+    // But Windows Settings → Touchpad → Advanced gestures will bind a swipe to
+    // a custom shortcut, and Elecom Mouse Assistant / Logi Options+ will bind a
+    // button to a keystroke. Both then land here. A command is the only
+    // integration point that hardware we cannot hear from can reach.
+    this.addCommand({ id: "surface-next", name: "次の面へ", callback: () => this.stepSurface(1) });
+    this.addCommand({ id: "surface-prev", name: "前の面へ", callback: () => this.stepSurface(-1) });
+    this.addCommand({ id: "density-up", name: "表示を大きく", callback: () => void this.stepDensity(1) });
+    this.addCommand({ id: "density-down", name: "表示を小さく", callback: () => void this.stepDensity(-1) });
+    this.addCommand({
+      id: "density-reset", name: "表示の大きさを標準に戻す",
+      callback: () => void this.stepDensity(0, true),
+    });
+
+    // Two-finger pan and pinch DO arrive, as `wheel` — the one multi-finger
+    // family we can own outright. `passive: false` because a recognised swipe
+    // must not also scroll the thing underneath it.
+    //
+    // Bound to OUR PANES, never to `document`. This listener was originally on
+    // `document` with the pane test inside the handler, which is far too late:
+    // a non-passive wheel listener on `document` declares that ANY scroll
+    // anywhere might be cancelled, so the compositor must wait for this
+    // JavaScript before scrolling the editor, the settings pane, the file
+    // explorer — everything. The fast scroll path was off across the whole
+    // app, and it was felt directly as scrolling that would not glide.
+    // Scoped to our own panes, ordinary scrolling keeps its fast path and only
+    // the surfaces that actually want the gesture pay for it.
+    const wheelBound = new WeakSet<HTMLElement>();
+    const onWheel = (e: WheelEvent): void => {
+      const r = feedWheel(this.gesture, {
+        deltaX: e.deltaX, deltaY: e.deltaY, ctrlKey: e.ctrlKey, at: e.timeStamp,
+      });
+      this.gesture = r.state;
+      if (!r.gesture) return;
+      e.preventDefault();
+      if (r.gesture.kind === "density-step") void this.stepDensity(r.gesture.by);
+      else this.stepSurface(r.gesture.by);
+    };
+    const bindWheel = (): void => {
+      // A finger never produces `wheel`, so on tablet and phone this listener
+      // is pure cost against the one thing it would slow down. Desk only.
+      if (posture() !== "desk") return;
+      for (const pane of Array.from(document.querySelectorAll<HTMLElement>(
+        '.workspace-leaf-content[data-type^="jp-"]'))) {
+        if (wheelBound.has(pane)) continue;
+        wheelBound.add(pane);   // the listener dies with the node on close
+        pane.addEventListener("wheel", onWheel, { passive: false });
+      }
+    };
+    this.registerEvent(this.app.workspace.on("layout-change", bindWheel));
+    this.app.workspace.onLayoutReady(bindWheel);
+
+    // Rotation. Until now `applyPostureClasses()` ran once at load, so turning
+    // the iPad left every ergonomic in the shape it had at launch.
+    this.register(watchViewport(() => {
+      this.applyDensity();          // re-assert ours; the classes re-apply themselves
+      for (const leaf of this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE)) {
+        (leaf.view as { onResize?: () => void })?.onResize?.();
+      }
+    }));
+
+    // The thumb pair is the only extra mouse button a webview receives. Guarded
+    // to OUR surfaces: inside the 辞書 the back button returns you, in the
+    // editor Obsidian's own back/forward keeps working untouched.
+    this.registerDomEvent(document, "mousedown", (e: MouseEvent) => {
+      if (mouseIntent(e.button) !== "back") return;
+      const type = this.app.workspace.getMostRecentLeaf()?.view?.getViewType?.();
+      if (!type || !SURFACE_BY_VIEW_TYPE[type]) return;   // not ours — hands off
+      e.preventDefault();
+      e.stopPropagation();
+      void this.navBack();
+    });
 
     // Commands
     this.addCommand({
@@ -1222,6 +1513,20 @@ export default class JPCollocationsPlugin extends Plugin {
       },
     });
 
+    /**
+     * §26.3 — settle the Pencil questions on observation, not on documentation.
+     *
+     * Whether this webview hands a pen press to native HTML5 drag, and whether
+     * the Pencil reports hover before it lands, are the two facts the whole
+     * tablet carry design rests on, and neither is knowable from here. Same
+     * house rule as `golden/twc.mjs`: measure it, then decide.
+     */
+    this.addCommand({
+      id: "pen-probe",
+      name: "✎ 調査: ペン／ドラッグの実測（iPad）",
+      callback: () => new PenProbeModal(this.app).open(),
+    });
+
     this.addCommand({
       id: "debug-dump",
       name: "🩺 Debug: dump storage + engine state (clipboard)",
@@ -1295,8 +1600,14 @@ export default class JPCollocationsPlugin extends Plugin {
 
     this.addCommand({
       id: "repair-big-dictionaries",
-      name: "辞書: 変換済み辞書を修復（meta.json を再生成して検索可能に）",
+      name: "辞書: 変換済み辞書を検査・修復（meta.json 再生成＋シャード破損の検出）",
       callback: async () => { await this.repairBigDictionaries(); },
+    });
+
+    this.addCommand({
+      id: "build-intent-index",
+      name: "辞書: 意図索引を構築（英語の願いから引けるようにする §27.2）",
+      callback: async () => { await this.buildIntentIndexes(); },
     });
 
     this.addCommand({
@@ -2222,6 +2533,8 @@ export default class JPCollocationsPlugin extends Plugin {
       onDrop: (intent, files) => void this.runDropIntent(intent, files),
       dropCan: () => this.dropCapabilities(),
       openSurface: (s) => void this.openSurface(s),
+      dismiss: () => void this.navBack(),
+      ...this.peekChrome(),
       surfaceBadge: (s) => this.surfaceBadge(s),
     };
   }
@@ -2282,13 +2595,9 @@ export default class JPCollocationsPlugin extends Plugin {
 
   /** Open (or reveal) the X search view, optionally seeding a query. */
   async openXView(query?: string, live = true): Promise<void> {
-    let leaf: WorkspaceLeaf | undefined;
-    const existing = this.app.workspace.getLeavesOfType(JP_X_VIEW_TYPE);
-    if (existing.length > 0) {
-      leaf = existing[0];
-    } else {
-      leaf = this.app.workspace.getRightLeaf(false) ?? undefined;
-      if (leaf) await leaf.setViewState({ type: JP_X_VIEW_TYPE, active: true });
+    const leaf = this.surfaceLeaf(JP_X_VIEW_TYPE) ?? undefined;
+    {
+      if (leaf && leaf.view?.getViewType() !== JP_X_VIEW_TYPE) await leaf.setViewState({ type: JP_X_VIEW_TYPE, active: true });
     }
     if (leaf) {
       this.app.workspace.revealLeaf(leaf);
@@ -2328,6 +2637,7 @@ export default class JPCollocationsPlugin extends Plugin {
     this.settings.voiceSync = { ...DEFAULT_VOICE_SYNC, ...(stored?.voiceSync ?? {}) };
     this.settings.plex = { ...DEFAULT_PLEX_SETTINGS, ...(stored?.plex ?? {}) };
     this.settings.jimaku = { ...DEFAULT_JIMAKU_SETTINGS, ...(stored?.jimaku ?? {}) };
+    this.settings.posture = { ...DEFAULT_POSTURE_SETTINGS, ...(stored?.posture ?? {}) };
     // Secrets live device-local (never in the synced blob); the runtime
     // settings object carries the real values, the persisted copy carries ''.
     const ls = (k: string): string => (this.app.loadLocalStorage(k) as string | null) ?? "";
@@ -2351,13 +2661,12 @@ export default class JPCollocationsPlugin extends Plugin {
   }
 
   async openTray(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(JP_TRAY_VIEW_TYPE);
-    if (existing.length > 0) { this.app.workspace.revealLeaf(existing[0]); return; }
-    const leaf = this.app.workspace.getRightLeaf(false);
-    if (leaf) {
+    const leaf = this.surfaceLeaf(JP_TRAY_VIEW_TYPE);
+    if (!leaf) return;
+    if (leaf.view?.getViewType() !== JP_TRAY_VIEW_TYPE) {
       await leaf.setViewState({ type: JP_TRAY_VIEW_TYPE, active: true });
-      this.app.workspace.revealLeaf(leaf);
     }
+    this.app.workspace.revealLeaf(leaf);
   }
 
   // ── §29 the drop road: one executor for every dragged-in thing ────────────
@@ -2411,6 +2720,36 @@ export default class JPCollocationsPlugin extends Plugin {
   /** What every surface's drop router reports capability-wise. */
   dropCapabilities(): { ocr: boolean; x: boolean } {
     return { ocr: !!this.settings.notes.ocrApiKey, x: !this.xClient.configIssue() };
+  }
+
+  /**
+   * Every file in a carry came back empty. Salvage the drop rather than lose it.
+   *
+   * The same DataTransfer that promised a file it could not produce usually
+   * also carried `text/plain` — Apple Notes ships recognised handwriting text
+   * alongside the strokes, and a manga panel arrives with its OCR line. Taking
+   * that is a real capture, not a consolation prize, so it is worth saying
+   * plainly what landed and what did not.
+   *
+   * When there is genuinely nothing left, the message names the two gestures
+   * that DO work on this device instead of printing a DOM exception at someone
+   * holding a Pencil (§28 S6: say what failed, and where it would have worked).
+   */
+  private async salvageDrop(p: DropIntent["payload"], n: number): Promise<void> {
+    const text = (p.url ?? p.text ?? "").trim();
+    if (text) {
+      const fresh = await this.inboxStore.add(shapeDrop(text, Date.now()));
+      this.refreshTrayViews();
+      new Notice(fresh ? "⤵ 画像は受け取れませんでしたが、文字はトレイへ" : "同じ内容が既にあります", 8000);
+      void this.openTray();
+      return;
+    }
+    new Notice(
+      `⤵ ${n}件を受け取れませんでした — 送り元がファイルを渡しきる前に指が離れています。\n` +
+      `トレイの上で一拍おいてから離すか、コピーして「📋クリップボードから」で入れてください。`,
+      12000,
+    );
+    void this.openTray();
   }
 
   /**
@@ -2493,17 +2832,66 @@ export default class JPCollocationsPlugin extends Plugin {
           await this.fetchTranscriptsForVideos(videos.slice(0, cap), { source, detected: videos.length, openLog: true });
           return;
         }
+        case "image-pair": {
+          // One carry, one card. The image is the evidence and the text is
+          // what it says; splitting them here would just recreate the pairing
+          // work by hand that this action exists to remove.
+          const chosen = pick();
+          const said = (p.text ?? "").trim();
+          let added = 0;
+          let unreadable = 0;
+          // A selection that spanned a picture and its sentence: the image is
+          // already in the vault, so there is nothing to read and nothing to
+          // save — only the pairing was ever missing. Confirmed once more here
+          // because the tray renders a card by asking the vault for the path,
+          // and a card whose path resolves to nothing is a broken image with
+          // no explanation attached (§28 S6).
+          for (const path of p.imagePaths ?? []) {
+            const real = this.resolveVaultPath(path);
+            if (!real) { unreadable++; continue; }
+            if (await this.inboxStore.add(pairedCard(real, said, Date.now()))) added++;
+          }
+          for (const f of chosen) {
+            const data = await dropBytes(f);
+            if (!data) { unreadable++; continue; }
+            const path = await this.saveInboxImage(f.name, data);
+            if (await this.inboxStore.add(pairedCard(path, said, Date.now()))) added++;
+          }
+          // The picture never materialised, but the words did — and the words
+          // alone are still a capture worth keeping (§28 S6).
+          if (!added && unreadable) { await this.salvageDrop(p, unreadable); return; }
+          this.refreshTrayViews();
+          new Notice(added ? `🖼 ${added}件を文つきでトレイへ` : "同じ内容が既にあります", 6000);
+          void this.openTray();
+          return;
+        }
         case "image-ocr":
         case "image-tray": {
           const chosen = pick();
           let added = 0;
+          let unreadable = 0;
           const paths: string[] = [];
+          // A picture that is already in the vault — carried out of a note, or
+          // out of the tray and back — needs no saving, only a card. Without
+          // this branch such a carry produced 「📷 0枚をトレイへ」, which is a
+          // report of success on a drop that did nothing (§28 S6).
+          for (const held of p.imagePaths ?? []) {
+            const real = this.resolveVaultPath(held);
+            if (!real) { unreadable++; continue; }
+            if (await this.inboxStore.add(imageCard(real, Date.now()))) { added++; paths.push(real); }
+          }
           for (const f of chosen) {
-            const path = await this.saveInboxImage(f.name, await f.arrayBuffer());
+            const data = await dropBytes(f);
+            // A promised file the platform never materialised. Skipping it and
+            // carrying on is the whole point: one dead payload used to take the
+            // entire carry with it.
+            if (!data) { unreadable++; continue; }
+            const path = await this.saveInboxImage(f.name, data);
             if (await this.inboxStore.add(imageCard(path, Date.now()))) { added++; paths.push(path); }
           }
+          if (!added && unreadable) { await this.salvageDrop(p, unreadable); return; }
           this.refreshTrayViews();
-          new Notice(`📷 ${added}枚をトレイへ`, 5000);
+          new Notice(added ? `📷 ${added}枚をトレイへ` : "同じ内容が既にあります", 5000);
           void this.openTray();
           if (intent.action === "image-ocr" && this.settings.notes.ocrApiKey) {
             let ok = 0;
@@ -2578,13 +2966,22 @@ export default class JPCollocationsPlugin extends Plugin {
           const chosen = pick();
           if (chosen.length) {
             let added = 0;
+            let unreadable = 0;
             for (const f of chosen) {
-              const path = await this.saveInboxImage(f.name, await f.arrayBuffer());
+              const data = await dropBytes(f);
+              if (!data) { unreadable++; continue; }
+              const path = await this.saveInboxImage(f.name, data);
               if (await this.inboxStore.add(imageCard(path, Date.now()))) added++;
             }
-            this.refreshTrayViews();
-            new Notice(`⤵ ${added}件をトレイへ`, 5000);
-            void this.openTray();
+            // `!unreadable` with nothing added means every file was already
+            // here — a duplicate, not a failure, and it keeps its old wording.
+            if (added || !unreadable) {
+              this.refreshTrayViews();
+              new Notice(added ? `⤵ ${added}件をトレイへ` : "同じ内容が既にあります", 5000);
+              void this.openTray();
+              return;
+            }
+            await this.salvageDrop(p, unreadable);
             return;
           }
           const text = (p.url ?? p.text ?? "").trim();
@@ -2639,13 +3036,153 @@ export default class JPCollocationsPlugin extends Plugin {
   }
 
   /** §26.3 step 5 — where the identity bar sends you. */
-  async openSurface(s: Surface): Promise<void> {
+  /**
+   * ONE leaf-picking rule for every surface.
+   *
+   * Five of the six used to call `getRightLeaf(false)` unconditionally. That is
+   * a resizable panel on a desktop and a FIXED NARROW DRAWER on mobile, so a
+   * 1366px iPad was rendering the 辞書 in a phone-width column — the "shrunk
+   * up" complaint, and not the views' fault at all. Off the desk, a surface now
+   * takes the main pane at full width; `suite-nav` makes that safe by making
+   * the way back one press.
+   *
+   * An already-open leaf always wins, so toggling never accumulates tabs.
+   */
+  private surfaceLeaf(viewType: string): WorkspaceLeaf | null {
+    const existing = this.app.workspace.getLeavesOfType(viewType)[0];
+    if (existing) return existing;
+    return presentation(posture(), window.innerWidth) === "side"
+      ? this.app.workspace.getRightLeaf(false)
+      : this.app.workspace.getLeaf("tab");
+  }
+
+  /** Raw navigation: put me on that surface. No history — see `openSurface`. */
+  private async openSurfaceRaw(s: Surface): Promise<void> {
     if (s === "lexicon") { await this.openLexiconView(); return; }
     if (s === "dict") { await this.openDictionaryView(); return; }
     if (s === "x") { await this.openXView(undefined, false); return; }
     if (s === "tray") { await this.openTray(); return; }
     if (s === "review") { await this.openReviewView(); return; }
     if (s === "capture") { await this.openPipelineView(); return; }
+  }
+
+  /**
+   * THE verb (§26.3 step 6). Press it away from a surface and you go there;
+   * press it while you are there and you land back where you summoned it from,
+   * cursor and scroll intact. One binding, both directions — which is what
+   * "go to and from" costs, and why the surface bar routes through here.
+   */
+  async openSurface(s: Surface): Promise<void> {
+    const r = navToggle(this.navStack, s, this.capturePlace());
+    this.navStack = r.stack;
+    if (r.to) await this.restorePlace(r.to);
+    else await this.openSurfaceRaw(s);          // nowhere behind — stay put, don't blank
+  }
+
+  /**
+   * Move along the bar. Clamped, never wrapped — on a gesture (unlike a menu)
+   * a wrap reads as a misfire, while stopping tells you where the end is.
+   *
+   * Deliberately NOT the toggle: a swipe is a traversal, and if it toggled you
+   * could never swipe past the surface you are standing on.
+   */
+  private stepSurface(by: number): void {
+    const cur = this.capturePlace();
+    const at = cur?.kind === "surface" ? SURFACE_ORDER.indexOf(cur.surface) : -1;
+    // From the editor, either direction enters at the near end rather than
+    // doing nothing — a swipe that appears dead is worse than one that guesses.
+    const next = at < 0 ? (by > 0 ? 0 : SURFACE_ORDER.length - 1) : stepIndex(SURFACE_ORDER.length, at, by);
+    if (next === at) return;                       // already at the end; let it be felt
+    this.navStack = navGoTo(this.navStack, { kind: "surface", surface: SURFACE_ORDER[next] }, undefined);
+    void this.openSurfaceRaw(SURFACE_ORDER[next]);
+  }
+
+  /** Text scale for the plugin's own surfaces. `reset` overrides `by`. */
+  private async stepDensity(by: number, reset = false): Promise<void> {
+    const next = clampDensity(reset ? DENSITY_DEFAULT : this.density + by);
+    if (next === this.density && !reset) return;
+    this.density = next;
+    this.applyDensity();
+    new Notice(`表示 ${densityLabel(next)}`, 900);
+    this.settings.posture = { ...(this.settings.posture ?? {}), density: next };
+    await this.saveSettings();
+  }
+
+  /**
+   * One custom property, consumed by one stylesheet rule. Multiplicative on the
+   * theme's own text size rather than absolute px, so a vault already running
+   * large text stays proportional instead of being overridden.
+   */
+  private applyDensity(): void {
+    document.body?.style.setProperty("--jp-scale", String(densityScale(this.density)));
+  }
+
+  /** Step back one place. Bound to a command and to mouse button 3. */
+  async navBack(): Promise<void> {
+    const cur = this.capturePlace();
+    if (cur) this.navStack = navGoTo(this.navStack, cur);
+    const r = navBackStep(this.navStack);
+    if (!r.to) { new Notice("戻る先がありません"); return; }
+    this.navStack = r.stack;
+    await this.restorePlace(r.to);
+  }
+
+  /**
+   * What `navBack` would land on, NAMED — so the edge drag can say where it
+   * goes before you commit to it, and can decline to arm at all when there is
+   * nowhere behind you.
+   *
+   * Mirrors `navBack`'s own first two steps rather than reading the raw stack.
+   * `navBack` refreshes the current place before stepping, and a peek that
+   * skipped that would name the wrong destination on a re-entry — a gesture
+   * that promises 辞書 and delivers the note is worse than no gesture.
+   */
+  navPeek(): string | null {
+    const cur = this.capturePlace();
+    const stack = cur ? navGoTo(this.navStack, cur) : this.navStack;
+    const r = navBackStep(stack);
+    if (!r.to) return null;
+    if (r.to.kind === "editor") {
+      const base = r.to.path.split("/").pop() ?? "";
+      return base.replace(/\.md$/i, "") || "ノート";
+    }
+    return SURFACE_LABEL[r.to.surface] ?? null;
+  }
+
+  /** Where am I right now, with enough state to be PUT BACK rather than
+   *  merely re-opened? Null when it is something the suite does not own. */
+  private capturePlace(): Place | null {
+    const md = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (md?.file) {
+      const cur = md.editor?.getCursor();
+      let scroll: number | undefined;
+      try { scroll = md.editor?.getScrollInfo()?.top; } catch { /* no editor yet */ }
+      return { kind: "editor", path: md.file.path, line: cur?.line, ch: cur?.ch, scroll };
+    }
+    const type = this.app.workspace.getMostRecentLeaf()?.view?.getViewType?.();
+    const s = type ? SURFACE_BY_VIEW_TYPE[type] : undefined;
+    return s ? { kind: "surface", surface: s } : null;
+  }
+
+  private async restorePlace(p: Place): Promise<void> {
+    if (p.kind === "surface") { await this.openSurfaceRaw(p.surface); return; }
+    const f = this.app.vault.getAbstractFileByPath(p.path);
+    if (!(f instanceof TFile)) return;                       // renamed or deleted
+    const open = this.app.workspace.getLeavesOfType("markdown")
+      .find((l) => (l.view as MarkdownView).file?.path === p.path);
+    const leaf = open ?? this.app.workspace.getLeaf(false);
+    if (!open) await leaf.openFile(f);
+    this.app.workspace.revealLeaf(leaf);
+    const view = leaf.view;
+    if (!(view instanceof MarkdownView) || p.line == null) return;
+    // after the leaf paints, or setCursor lands on a document that is not laid
+    // out yet and the scroll is discarded
+    window.setTimeout(() => {
+      try {
+        view.editor.setCursor({ line: p.line ?? 0, ch: p.ch ?? 0 });
+        if (p.scroll != null) view.editor.scrollTo(0, p.scroll);
+      } catch { /* the leaf moved on; nothing to restore onto */ }
+    }, 0);
   }
 
   /** Live counts for the identity bar. A zero renders as no badge at all. */
@@ -3383,9 +3920,82 @@ export default class JPCollocationsPlugin extends Plugin {
 
   /** §28 S1/S4 — give a view the catalog-identity pair in one place. */
   /** §26.3 — hand a view the identity bar's wiring. */
+  /**
+   * The ANSWER half of a selection — one implementation, every surface.
+   *
+   * Wired into `ViewChrome` rather than into any one view on purpose: a phrase
+   * highlighted on 𝕏, in the 受け皿, in a 鑑賞 mark or in the 語彙 must say the
+   * same thing, because "what does this mean" is not a per-surface question.
+   * §28 S5's claim about data, made about lookup.
+   *
+   * Local store FIRST: it is in memory and answers in the same tick, so the
+   * common case never shows the waiting state at all. The sharded shelf — the
+   * one holding the 35 books — is the fallback, and it is the only one of the
+   * two worth an await.
+   */
+  private async lookUpPhrase(text: string): Promise<PeekData | null> {
+    const q = text.trim();
+    if (!q) return null;
+    const local = this.dictStore.lookup(q);
+    if (local.length) {
+      const h = local[0];
+      return {
+        headword: h.term.expression,
+        reading: h.term.reading,
+        deinflection: h.deinflection,
+        def: definitionsPreview(h.term.definitions),
+      };
+    }
+    const hit = (await this.bigDict.lookup(q, 1))[0];
+    if (!hit) return null;
+    return {
+      headword: hit.entry.expression,
+      ...(hit.entry.reading ? { reading: hit.entry.reading } : {}),
+      ...(hit.deinflection ? { deinflection: hit.deinflection } : {}),
+      def: definitionsPreview(hit.entry.senses ?? []),
+    };
+  }
+
+  /** The two peek deps every chrome-armed surface gets, spread in at each site. */
+  /**
+   * The chrome every surface shares. `backPeek` rides along here rather than
+   * beside each `dismiss` because this is spread at exactly the same three
+   * sites — and a surface that gets `dismiss` without `backPeek` silently has
+   * no edge gesture, which is the one failure mode the invariant cannot
+   * survive. Coupling them at one line makes that unforgettable.
+   */
+  private peekChrome(): Pick<ViewChrome, "lookUp" | "openWord" | "backPeek" | "inVault"> {
+    return {
+      lookUp: (text) => this.lookUpPhrase(text),
+      openWord: (hw) => void this.openDictionaryView(hw),
+      backPeek: () => this.navPeek(),
+      inVault: (c) => this.resolveVaultPath(c),
+    };
+  }
+
+  /**
+   * A candidate path or link text → the path the vault really holds, or null.
+   *
+   * The only thing in the plugin that can answer "where does the vault root
+   * fall inside this absolute path", which is what a rendered image's resource
+   * URL forces you to ask. Two roads because the DOM offers two kinds of
+   * candidate: an exact tail sliced out of the URL, and the shortest-form link
+   * text of the embed (`![[パネル.png]]`), which only the metadata index can
+   * expand to a real file.
+   */
+  private resolveVaultPath(candidate: string): string | null {
+    const c = candidate.trim();
+    if (!c) return null;
+    const direct = this.app.vault.getAbstractFileByPath(normalizePath(c));
+    if (direct instanceof TFile) return direct.path;
+    return this.app.metadataCache.getFirstLinkpathDest(c, "")?.path ?? null;
+  }
+
   private withChrome(v: CollocationView): CollocationView {
     v.chrome = {
       openSurface: (s) => void this.openSurface(s),
+      dismiss: () => void this.navBack(),
+      ...this.peekChrome(),
       surfaceBadge: (s) => this.surfaceBadge(s),
     };
     return v;
@@ -3398,6 +4008,7 @@ export default class JPCollocationsPlugin extends Plugin {
     v.dropCan = () => this.dropCapabilities();
     v.openSurface = (s) => void this.openSurface(s);
     v.surfaceBadge = (s) => this.surfaceBadge(s);
+    Object.assign(v, this.peekChrome());
     // §27.5 — the converted dictionaries. Same store the 語彙 panel queries, so
     // 辞書 and 語彙 cannot disagree about what is installed.
     v.bigDict = {
@@ -3452,7 +4063,7 @@ export default class JPCollocationsPlugin extends Plugin {
     const gb = (n: number) => (n / 1073741824).toFixed(2);
     try {
       const res = await importDexie(io, src.chunks, {
-        root: this.settings.bigDict?.root || "JP Dictionaries",
+        root: this.bigDictRoot,
         skip: done.length ? skipTitles(done) : undefined,
         onProgress: (p) => {
           notice.setMessage(
@@ -3502,6 +4113,11 @@ export default class JPCollocationsPlugin extends Plugin {
    * plugin could not see: on this vault, 30 dictionaries and 1.8GB hidden by 30
    * missing 150-byte files. `importDexie` now writes meta as it goes, so this is
    * the rescue path for anything converted before that, and after a crash.
+   *
+   * It also VERIFIES, because repair alone cannot: a folder with readable meta
+   * is skipped, so a dictionary that lost shards while keeping its meta was
+   * reported here as 正常 — which is how 英辞郎 came to serve 36% of its
+   * reach-for index with no error anywhere. See `verifySidecar`.
    */
   async repairBigDictionaries(): Promise<string> {
     if (this.conversionRunning) return this.refuseSecondConversion();
@@ -3509,24 +4125,96 @@ export default class JPCollocationsPlugin extends Plugin {
     const notice = new Notice("辞書フォルダを検査中…", 0);
     const io = vaultSidecarIO(this.app);
     try {
-      const res = await repairSidecarMeta(io, this.settings.bigDict?.root || "JP Dictionaries", {
+      const res = await repairSidecarMeta(io, this.bigDictRoot, {
         onProgress: (p) => {
           notice.setMessage(
             `辞書を修復中 ${p.done}/${p.total} — ${p.title}（${(p.bytes / 1048576).toFixed(0)}MB 読込）`,
           );
         },
       });
+      // Rebuilding meta is only half of "is this dictionary usable". A folder
+      // whose meta reads fine is SKIPPED by the repair above, so damage that
+      // left meta intact — a half-finished drop, a shard lost to a sync
+      // conflict — used to be reported here as 正常. Verification is one
+      // listFiles per folder, so it runs every time (§28 S6).
+      notice.setMessage("辞書を検査中…");
+      const verdicts = await verifyAllSidecars(io, this.bigDictRoot);
+      const broken = verdicts.filter((v) => !v.ok);
+
       this.bigDict.invalidate();
-      const msg = res.repaired.length
+      const repairedMsg = res.repaired.length
         ? `${res.repaired.length}辞書を復旧: ` +
           res.repaired.slice(0, 4).map((r) => `${r.title} ${r.headwords.toLocaleString()}語`).join("、") +
           (res.repaired.length > 4 ? ` ほか${res.repaired.length - 4}辞書` : "") +
           "（未完了の可能性があるため「暫定」表示です）"
-        : `復旧が必要な辞書はありません（${res.alreadyOk.length}辞書は正常）。`;
-      new Notice(msg, 15000);
+        : "";
+      const brokenMsg = broken.length
+        ? `⚠️ ${broken.length}辞書に破損: ` +
+          broken.slice(0, 3).map((v) => `【${v.title}】${describeSidecarProblem(v.problems[0])}`).join(" ／ ") +
+          (broken.length > 3 ? ` ほか${broken.length - 3}辞書` : "") +
+          " — 再変換が必要です"
+        : "";
+      const msg = [repairedMsg, brokenMsg].filter(Boolean).join("\n") ||
+        `復旧が必要な辞書はありません（${verdicts.length}辞書を検査、すべて正常）。`;
+      new Notice(msg, broken.length ? 30000 : 15000);
       return msg;
     } catch (err) {
       const msg = `辞書の修復に失敗: ${String(err instanceof Error ? err.message : err)}`;
+      new Notice(msg, 12000);
+      return msg;
+    } finally {
+      this.conversionRunning = null;
+      notice.hide();
+    }
+  }
+
+  /**
+   * §27.2 — build the meaning-side index for every converted dictionary.
+   *
+   * No re-import and no source archive: the English is already stored on every
+   * frame row, so this re-keys data the vault holds. That is the whole reason
+   * the missing entry points were never a data problem — the intention key was
+   * computed at import, dropped at write, and blanked again at read.
+   */
+  async buildIntentIndexes(): Promise<string> {
+    if (this.conversionRunning) return this.refuseSecondConversion();
+    this.conversionRunning = "意図索引";
+    const notice = new Notice("意図索引を構築中…", 0);
+    const io = bufferedSidecarIO(vaultSidecarIO(this.app));
+    try {
+      await this.bigDict.refresh();
+      const installed = this.bigDict.installed();
+      const built: string[] = [];
+      let keys = 0, candidates = 0;
+      for (const d of installed) {
+        const res = await buildIntentIndex(io, d.dir, {
+          shards: d.shards,
+          onProgress: (p) => {
+            notice.setMessage(
+              `意図索引 ${d.title} — ${p.pass}/${p.passes}周目 ${p.shard}/${p.of}シャード`,
+            );
+          },
+        });
+        await io.flush();
+        if (!res.keys) continue;
+        const meta = await readMeta(io, d.dir);
+        if (meta) await writeMeta(io, d.dir, { ...meta, intents: res.keys });
+        built.push(`${d.title} ${res.keys.toLocaleString()}件`);
+        keys += res.keys;
+        candidates += res.candidates;
+      }
+      await io.flush();
+      this.bigDict.invalidate();
+      const msg = built.length
+        ? `意図索引を構築: ${keys.toLocaleString()}項目 / ${candidates.toLocaleString()}候補 — ` +
+          built.slice(0, 3).join("、") + (built.length > 3 ? ` ほか${built.length - 3}辞書` : "")
+        : "意図索引を作れる辞書がありません（reachFor を持つ辞書が必要です）。";
+      new Notice(msg, 15000);
+      return msg;
+    } catch (err) {
+      await io.flush().catch(() => {});
+      this.bigDict.invalidate();
+      const msg = `意図索引の構築に失敗: ${String(err instanceof Error ? err.message : err)}`;
       new Notice(msg, 12000);
       return msg;
     } finally {
@@ -3583,16 +4271,12 @@ export default class JPCollocationsPlugin extends Plugin {
   }
 
   async openLexiconView(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
-    if (existing.length > 0) {
-      this.app.workspace.revealLeaf(existing[0]);
-      return;
-    }
-    const leaf = this.app.workspace.getRightLeaf(false);
-    if (leaf) {
+    const leaf = this.surfaceLeaf(JP_COLLOCATIONS_VIEW_TYPE);
+    if (!leaf) return;
+    if (leaf.view?.getViewType() !== JP_COLLOCATIONS_VIEW_TYPE) {
       await leaf.setViewState({ type: JP_COLLOCATIONS_VIEW_TYPE, active: true });
-      this.app.workspace.revealLeaf(leaf);
     }
+    this.app.workspace.revealLeaf(leaf);
   }
 
   /**
@@ -3714,8 +4398,47 @@ export default class JPCollocationsPlugin extends Plugin {
     return out;
   }
 
-  private async watchReaches(incoming: Array<{ surface: string; source?: Reach['offers'][number]['source']; frameKey?: string; at: number }>): Promise<void> {
-    if (!this.reachStore.open().length || !incoming.length) return;
+  /**
+   * The SHELF as arrivals (§27.2).
+   *
+   * Every other arrival is something the user met — an attestation, a pattern.
+   * A want written in English can never collide with any of them: it cannot
+   * token-match a Japanese surface and it carries no slot, so before the
+   * meaning-side index existed there was literally no path from "undergo" to a
+   * Japanese phrase, and the reach on this vault sat open with zero offers.
+   *
+   * So the dictionary is asked directly, once per open want. The candidates
+   * arrive as ordinary `Incoming` and go through the same `collide` as
+   * everything else — they are OFFERS, judged by the same hand, and the
+   * dictionary that filed each one is carried as its provenance (§28 S2).
+   */
+  private async intentionArrivals(): Promise<Incoming[]> {
+    const open = this.reachStore.open();
+    if (!open.length || !this.bigDict.hasIntentIndex()) return [];
+    const now = Date.now();
+    const out: Incoming[] = [];
+    for (const r of open) {
+      for (const want of [r.want, r.gloss]) {
+        if (!want?.trim()) continue;
+        for (const hit of await this.bigDict.intention(want, 12)) {
+          out.push({
+            surface: hit.candidate.surface,
+            source: { medium: hit.dictionary },
+            intentionKey: hit.candidate.intentionKey,
+            intention: hit.candidate.intention,
+            ...(hit.candidate.frameKey ? { frameKey: hit.candidate.frameKey } : {}),
+            at: now,
+          });
+        }
+      }
+    }
+    return out;
+  }
+
+  private async watchReaches(incoming: Incoming[]): Promise<void> {
+    if (!this.reachStore.open().length) return;
+    incoming = [...incoming, ...(await this.intentionArrivals())];
+    if (!incoming.length) return;
     const made = await this.reachStore.watch(incoming, { juxtaposeLimit: 2 });
     if (made) {
       const s = reachStats(this.reachStore.all());
@@ -4328,10 +5051,9 @@ export default class JPCollocationsPlugin extends Plugin {
    *  a session over exactly those patterns (the ⚡ run's fresh cards). */
   async openReviewView(focusIds?: string[]): Promise<void> {
     await this.srsStore.prune(new Set(this.patternStore.all().map((p) => p.id)));
-    let leaf = this.app.workspace.getLeavesOfType(JP_REVIEW_VIEW_TYPE)[0];
-    if (!leaf) {
-      const right = this.app.workspace.getRightLeaf(false);
-      if (right) { await right.setViewState({ type: JP_REVIEW_VIEW_TYPE, active: true }); leaf = right; }
+    const leaf = this.surfaceLeaf(JP_REVIEW_VIEW_TYPE);
+    if (leaf && leaf.view?.getViewType() !== JP_REVIEW_VIEW_TYPE) {
+      await leaf.setViewState({ type: JP_REVIEW_VIEW_TYPE, active: true });
     }
     if (leaf) {
       this.app.workspace.revealLeaf(leaf);
@@ -4965,7 +5687,7 @@ export default class JPCollocationsPlugin extends Plugin {
     const io = bufferedSidecarIO(vaultSidecarIO(this.app));
     try {
       const res = await importEijiro(io, src, {
-        root: this.settings.bigDict?.root || "JP Dictionaries",
+        root: this.bigDictRoot,
         shouldStop: () => cancelled,
         onProgress: (p) => {
           notice.setMessage(
@@ -5214,6 +5936,13 @@ export default class JPCollocationsPlugin extends Plugin {
       `- 台帳パターン: ${this.patternStore.size()}件`,
       `- 𝕏 コーパス: ${this.xCorpus.size()}件（オフライン検索は全端末対応）`,
       `- SRS デッキ設定: 新規 ${s.srsNewPerSession ?? 20}枚/回`,
+      "",
+      // The mobile slowdown is a WRITE-SIZE problem, and write size is the one
+      // thing this report could not previously show. Measured 2026-08-06: a
+      // single 15.17MB data.json meant ~30MB of IO for every debounced save.
+      // These lines are how you check, ON THE DEVICE, that the split landed.
+      "## 💾 保存の重さ（モバイルの引っかかりはここ）",
+      ...(await this.storageWeightLines()),
     ];
     const path = "_診断.md";
     const body = L.join("\n");
@@ -5222,6 +5951,41 @@ export default class JPCollocationsPlugin extends Plugin {
       ? (await this.app.vault.modify(ex, body), ex)
       : await this.app.vault.create(path, body);
     await this.app.workspace.getLeaf(false).openFile(outFile);
+  }
+
+  /**
+   * What a save actually costs on THIS device, in files and bytes.
+   *
+   * The typical save is the one that matters: a mark, an SRS answer, a
+   * settings toggle. Those write the main file only, so its size IS the cost
+   * of studying. A partitioned store is listed separately because it is paid
+   * only when that store changes — the corpus no longer rides along on every
+   * keystroke.
+   */
+  private async storageWeightLines(): Promise<string[]> {
+    const pluginDir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/jp-collocations`;
+    const kb = async (p: string): Promise<number> => {
+      try {
+        const st = await this.app.vault.adapter.stat(normalizePath(p));
+        return st ? Math.round(st.size / 1024) : 0;
+      } catch { return 0; }
+    };
+    const main = await kb(`${pluginDir}/data.json`);
+    const parts = this.dm.partitionedKeys();
+    const L = [`- 通常の保存 1回 = **${main} KB** ×2（本体 + .bak）— data.json`];
+    if (!parts.length) {
+      L.push("- 分割ファイル: なし（全ストアが data.json 内）");
+    } else {
+      L.push("- 分割済みストア（そのストアを触ったときだけ書く）:");
+      for (const key of parts) {
+        const size = await kb(this.dm.partPath(key));
+        L.push(`    - \`${key}\` — ${size >= 1024 ? `${(size / 1024).toFixed(1)} MB` : `${size} KB`}`);
+      }
+    }
+    const bad = this.dm.quarantinedKeys();
+    if (bad.length) L.push(`- ⚠️ 読めない分割ファイル: ${bad.join(", ")} — 書き込みを拒否中`);
+    L.push(`- 保存回数（今セッション）: 本体 ${this.dm.writes} / 分割 ${this.dm.partWrites}`);
+    return L;
   }
 
   /** Write an environment + tools report to the vault. Independent of the
@@ -5834,9 +6598,11 @@ export default class JPCollocationsPlugin extends Plugin {
   }
 
   async openPipelineView(): Promise<void> {
-    const existing = this.app.workspace.getLeavesOfType(JP_PIPELINE_VIEW_TYPE);
-    const leaf = existing[0] ?? this.app.workspace.getLeaf(true);
-    if (!existing.length) await leaf.setViewState({ type: JP_PIPELINE_VIEW_TYPE, active: true });
+    const leaf = this.surfaceLeaf(JP_PIPELINE_VIEW_TYPE);
+    if (!leaf) return;
+    if (leaf.view?.getViewType() !== JP_PIPELINE_VIEW_TYPE) {
+      await leaf.setViewState({ type: JP_PIPELINE_VIEW_TYPE, active: true });
+    }
     await this.app.workspace.revealLeaf(leaf);
   }
 
@@ -6220,15 +6986,9 @@ export default class JPCollocationsPlugin extends Plugin {
   }
 
   async openDictionaryView(query?: string): Promise<void> {
-    let leaf: WorkspaceLeaf | undefined;
-    const existing = this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE);
-    if (existing.length > 0) {
-      leaf = existing[0];
-    } else {
-      leaf = this.app.workspace.getRightLeaf(false) ?? undefined;
-      if (leaf) {
-        await leaf.setViewState({ type: JP_DICTIONARY_VIEW_TYPE, active: true });
-      }
+    const leaf = this.surfaceLeaf(JP_DICTIONARY_VIEW_TYPE) ?? undefined;
+    if (leaf && leaf.view?.getViewType() !== JP_DICTIONARY_VIEW_TYPE) {
+      await leaf.setViewState({ type: JP_DICTIONARY_VIEW_TYPE, active: true });
     }
     if (leaf) {
       this.app.workspace.revealLeaf(leaf);

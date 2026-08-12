@@ -32,9 +32,10 @@ import { renderXUsage } from './x-usage-panel.ts';
 import type { XUsage } from '../x/usage.ts';
 import { knowledgeBox } from './knowledge-box.ts';
 import { HoverPeek, definitionsPreview } from './hover-peek.ts';
+import { wordAtPoint } from './word-at.ts';
 import { attachDropRouter } from './drop-router.ts';
 import { attachSelectionEcho } from './selection-echo.ts';
-import { thumbDock } from './view-chrome.ts';
+import { wideDock } from './view-chrome.ts';
 import { pointerDragActive } from './pointer-drag.ts';
 import { makeDraggable } from './drag-out.ts';
 import type { DropIntent } from '../notes/drop-intent.ts';
@@ -407,10 +408,11 @@ export class LexiconPanel {
 
   // ── list view ──────────────────────────────────────────────
   private renderList(root: HTMLElement): void {
-    // search row — §26.3: docked under the thumb on a phone, where the most
-    // used control on this surface belongs. `thumbDock` is null everywhere
-    // else, so on desktop and iPad this is the row exactly where it was.
-    const dock = thumbDock(root);
+    // search row — §26.3: docked under the reaching hand, where the most used
+    // control on this surface belongs. `wideDock` and not `edgeDock`: a query
+    // box, three mode chips and a completions list are the definition of a
+    // control that needs width, and the tablet's edge rail is 58px across.
+    const dock = wideDock(root);
     const searchRow = (dock ?? root).createDiv('jp-lex-searchrow');
     const input = searchRow.createEl('input', {
       type: 'search',
@@ -832,7 +834,7 @@ export class LexiconPanel {
       html: `<b>${e.headword}</b>${e.reading ? `（${e.reading}）` : ''}${e.gloss ? ` — ${e.gloss}` : ''}` +
         (e.example ? `<blockquote>${e.example}</blockquote>` : ''),
       meta: { patternId: e.kind === 'pattern' ? e.id : undefined, cls: e.cls },
-    }));
+    }), { grip: top });
   }
 
   /**
@@ -1334,6 +1336,15 @@ export class LexiconPanel {
         for (const ex of group) {
         const kind = ex.kind ?? (ex.url ? 'attested' : 'phrase');
         const row = g.createDiv(`jp-lex-goho-ex jp-lex-goho-ex--${kind}`);
+        // This row's whole body is a SENTENCE, and a sentence is the thing you
+        // most want to select — `.jp-lex-leaf-quote` already declares
+        // `user-select: text`. Arming the row for drag silently revoked that.
+        // So the carry gets its own handle, as it does on a transcript line,
+        // and the sentence keeps the gesture it was always meant to have.
+        const exgrip = row.createSpan({
+          text: '⠿', cls: 'jp-lex-exgrip',
+          attr: { title: 'この用例を持ち出す（ドラッグ）' },
+        });
         const quote = row.createSpan({ cls: 'jp-lex-leaf-quote jp-lex-tappable' });
         const [open, close] = kind === 'attested' ? ['「', '」'] : ['〈', '〉'];
         const [s, e] = ex.span ?? [0, 0];
@@ -1380,7 +1391,7 @@ export class LexiconPanel {
           label: ex.text,
           sub: cited || goho.source,
           meta: { headword: p.key, source: cited || goho.source, url: ex.url, frame: ex.frame },
-        }));
+        }), { grip: exgrip });
         }
       }
     } else if (goho) {
@@ -1440,21 +1451,12 @@ export class LexiconPanel {
   }
 
   /** Longest dictionary-validated word at a screen point (shared by tap
-   *  飛び込み and hover peek — no tokenizer guessing, dictionary or nothing). */
+   *  飛び込み and hover peek — no tokenizer guessing, dictionary or nothing).
+   *
+   *  The body moved to `ui/word-at.ts` so the transcript resolves a hovered
+   *  word by the SAME rule rather than a second copy of it. */
   private wordAt(x: number, y: number): DictLookupResult | null {
-    const range = (document as Document & { caretRangeFromPoint?: (x: number, y: number) => Range | null })
-      .caretRangeFromPoint?.(x, y);
-    const node = range?.startContainer;
-    if (!range || !node || node.nodeType !== Node.TEXT_NODE) return null;
-    const text = node.textContent ?? '';
-    const off = Math.min(range.startOffset, Math.max(0, text.length - 1));
-    for (let n = Math.min(8, text.length - off); n >= 1; n--) {
-      const probe = text.slice(off, off + n).trim();
-      if (!probe || !/[぀-ヿ㐀-䶿一-鿿]/.test(probe)) continue;
-      const hits = this.deps.dictLookup(probe);
-      if (hits.length) return hits[0];
-    }
-    return null;
+    return wordAtPoint(x, y, (probe) => this.deps.dictLookup(probe));
   }
 
   // ── §26.3 hover peek (shared component; mouse/Pencil only, never touch) ──
@@ -1568,7 +1570,7 @@ export class LexiconPanel {
         kind: 'entry', text: it, label: it,
         sub: m ? `${goho.source} · ${m.freq.toLocaleString()}回` : goho.source,
         meta: { headword: p.key, frame: f.label, source: goho.source },
-      }));
+      }), { grip: word });
     }
     this.gohoMoreButton(box, key, all.length - rows.length);
   }
@@ -1737,6 +1739,12 @@ export class LexiconPanel {
         : undefined;
       const where = leaf.att.scene?.sourceName ?? leaf.file?.split('/').pop()?.replace(/\.md$/, '');
       const cite = [where, at].filter(Boolean).join(' ');
+      // The handle, not the row: this row's body is the 用例 itself, and a
+      // confirmed quote is exactly the text you reach for with a Pencil.
+      const leafgrip = meta.createSpan({
+        text: '⠿', cls: 'jp-lex-exgrip',
+        attr: { title: 'この用例を持ち出す（ドラッグ）' },
+      });
       makeDraggable(row, () => ({
         kind: 'quote',
         text: leaf.quote,
@@ -1747,7 +1755,7 @@ export class LexiconPanel {
           file: leaf.file, tSec: leaf.tStartSec ?? undefined,
           videoId: leaf.att.videoId ?? undefined, deepLink: leaf.att.scene?.deepLink,
         },
-      }));
+      }), { grip: leafgrip });
     }
     if (leaf.suggested && candidateOf) {
       const yes = meta.createEl('button', { text: '✓', cls: 'jp-lex-leaf-btn jp-lex-cand-yes', attr: { title: '本物 — 確定用例にする（キー: ⏎ / 右スワイプ）' } });

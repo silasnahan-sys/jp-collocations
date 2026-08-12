@@ -7,7 +7,9 @@ import { normalizeCookieInput, cookieValue, YtHistoryClient } from "../notes/yt-
 import { detectSpeechTools } from "../notes/voice-lab.ts";
 import { USERSCRIPT_SOURCE } from "../x/mobile-capture.ts";
 import type { Plugin } from "obsidian";
-import type { PluginSettings, SpeakerFormat } from "../types.ts";
+import type { PluginSettings, SpeakerFormat, PostureSettings } from "../types.ts";
+import { DEFAULT_POSTURE_SETTINGS } from "../types.ts";
+import { configurePosture } from "./posture.ts";
 import type { CollocationStore } from "../data/CollocationStore.ts";
 import type { HyogenScraper } from "../scraper/HyogenScraper.ts";
 
@@ -517,6 +519,67 @@ export class SettingsTab extends PluginSettingTab {
           renderStatus(`検出失敗: ${String(e)}`);
         }
       }));
+
+    // ── §26.3 posture — how the device is held ─────────────────────────────
+    containerEl.createEl("h3", { text: "端末の持ち方（iPad / Apple Pencil）" });
+    if (!this.settings.posture) this.settings.posture = { ...DEFAULT_POSTURE_SETTINGS };
+    const post = this.settings.posture;
+    const postDesc = containerEl.createEl("p", { cls: "setting-item-description" });
+    postDesc.innerHTML =
+      "タブレットは「大きなスマホ」ではありません。片手の親指ではなく<b>ペンを持つ側の縁</b>が届く範囲なので、" +
+      "鑑賞モードの操作列はその縁に出ます。<br>" +
+      "ペンの有無は検出できない（iPadOS は Pencil の有無にかかわらず <code>pointer: coarse</code> と報告します）ため、" +
+      "ホバー辞書などのペン専用機能は<b>実際にペンが使われた瞬間</b>に有効化されます。";
+
+    new Setting(containerEl)
+      .setName("ペンを持つ手")
+      .setDesc("鑑賞モードの操作列をどちら側に出すか。反対側だと毎回腕を伸ばすことになります。")
+      .addDropdown(d => d
+        .addOption("right", "右手")
+        .addOption("left", "左手")
+        .setValue(post.hand)
+        .onChange(async (v) => {
+          post.hand = v as "right" | "left";
+          await this.onSettingsChange();
+          // The rail's edge is a body class, so it has to be restamped now —
+          // a setting that only takes effect after a restart is a setting the
+          // user cannot tell they changed.
+          configurePosture({ hand: post.hand });
+        }));
+
+    new Setting(containerEl)
+      .setName("メモを書く間は自動で一時停止")
+      .setDesc(
+        "気づきを書き始めたら再生を止め、書き終わったら再開します（Plex 同期中は映像そのもの、" +
+        "そうでなければ字幕の時計）。自分で止めていた場合は再開しません。",
+      )
+      .addToggle(t => t
+        .setValue(post.autoPauseOnWrite)
+        .onChange(async (v) => { post.autoPauseOnWrite = v; await this.onSettingsChange(); }));
+
+    new Setting(containerEl)
+      .setName("レイアウトの上書き")
+      .setDesc("端末の判定が誤っているときだけ変更してください（通常は「自動」）。")
+      .addDropdown(d => d
+        .addOption("auto", "自動")
+        .addOption("desk", "デスクトップ（マウス）")
+        .addOption("slate", "タブレット（縁の操作列）")
+        .addOption("thumb", "スマホ（下端の操作列）")
+        .setValue(post.override)
+        .onChange(async (v) => {
+          post.override = v as PostureSettings["override"];
+          await this.onSettingsChange();
+          configurePosture({ override: post.override });
+        }));
+
+    const verdict = containerEl.createEl("p", { cls: "setting-item-description" });
+    verdict.innerHTML =
+      `実測値 — この端末でペンがネイティブのドラッグを開始できるか: <b>${
+        post.penNativeDrag === "yes" ? "する（他アプリへ持ち出せます）"
+        : post.penNativeDrag === "no" ? "しない（アプリ内の移動のみ）"
+        : "未測定"
+      }</b>。これは推測ではなく実際のドラッグから学習した値で、` +
+      "コマンドパレットの「✎ 調査: ペン／ドラッグの実測」で詳しく確認できます。";
 
     // ── Plex / TV co-viewing (DESIGN §25.4 — clock (b) + clips) ───
     containerEl.createEl("h3", { text: "Plex / TV 連携（鑑賞モード）" });

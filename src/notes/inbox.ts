@@ -10,6 +10,8 @@
  * what the content is — dialogue, example sentence, word, URL, image).
  */
 
+import { isRemoteUrl } from './resource-url.ts';
+
 export type InboxKind = 'image' | 'url' | 'dialogue' | 'sentence' | 'word' | 'text' | 'mark';
 
 /** §25.1: a MARK — the cheapest live-phase gesture's residue. Carries only
@@ -23,6 +25,27 @@ export interface MarkRef {
   sourceName?: string;
   /** the retrieval cue for YOUR thought (never the note itself). */
   seed?: string;
+  /**
+   * WHAT WAS SAID at `tSec` — resolved once, then kept.
+   *
+   * A mark used to be a pointer with no payload: `medium` + `file` + `tSec` and
+   * nothing else, with `content` empty. Measured on the live vault 2026-08-08:
+   * 98 of 106 tray cards were marks, and every one of them rendered as
+   * 「（メモなし）」 with a timestamp. Ninety-eight indistinguishable rows.
+   *
+   * That is why they were never harvested. Not because classifying is hard —
+   * because you could not SEE which mark was which without opening the capture
+   * modal on it, one at a time, to find out what you had flagged. Triage was
+   * impossible, so the whole downstream funnel (catalog → ratify → predict) ran
+   * on four entries while 98 noticings sat here.
+   *
+   * The line was always recoverable — `resolveMarkContext` reads the transcript
+   * note and finds it — so this is a cache, not new evidence. `''` means
+   * RESOLVED AND ABSENT (the transcript had no line at that second), which is a
+   * different fact from `undefined` = not looked up yet, and the difference is
+   * what stops an unresolvable mark being retried on every render forever.
+   */
+  lineText?: string;
   wallClock: number;
 }
 
@@ -42,6 +65,20 @@ export interface InboxCard {
   lines?: Array<{ speaker?: string; text: string }>;
   /** image: OCR'd manga bubbles in reading order, bbox 0–1000 normalized. */
   bubbles?: Array<{ text: string; bbox: [number, number, number, number] }>;
+  /**
+   * image: the words that arrived WITH the picture, in the same carry.
+   *
+   * A manga panel dragged out of Manatan comes with the sentence it already
+   * OCR'd; an Apple Notes selection comes with strokes and the recognised text
+   * together. Before this field the classifier saw both, kept the file and
+   * dropped the text on the floor (`drop-intent.ts` returned early on
+   * `files.length`), so the pair had to be carried twice and re-paired by hand
+   * — which is the moment a capture stops being worth making.
+   *
+   * Distinct from `bubbles`, which is what OCR found INSIDE the image and
+   * carries geometry. This is what the sending app said the image means.
+   */
+  said?: string;
   /** mark: the §25.1 pointer. */
   mark?: MarkRef;
   /** mark: §25.4 the scene cut at it — vault paths, not blobs. */
@@ -73,7 +110,11 @@ export function shapeDrop(raw: string, now: number, origin?: string): InboxCard 
   const t = raw.trim();
   const id = `inb-${fnv(`${t}|${now}`)}`;
 
-  if (/^https?:\/\/\S+$/.test(t)) {
+  // `isRemoteUrl`, not `/^https?:/` — on Android Obsidian serves the vault over
+  // `http://localhost/_capacitor_file_/…`, and a card that calls that a URL is
+  // claiming a web address for a file on the device. Such a thing falls through
+  // to `text`, which is the truth: it is a string we could not place.
+  if (isRemoteUrl(t)) {
     let host = '';
     try { host = new URL(t).host; } catch { /* keep '' */ }
     return { id, kind: 'url', content: t, createdAt: now, origin: origin ?? host };
@@ -106,6 +147,25 @@ export function shapeDrop(raw: string, now: number, origin?: string): InboxCard 
 
 export function imageCard(vaultPath: string, now: number, origin?: string): InboxCard {
   return { id: `inb-${fnv(`${vaultPath}|${now}`)}`, kind: 'image', content: vaultPath, createdAt: now, origin };
+}
+
+/**
+ * One card for a picture and the words that came with it — a single thing that
+ * arrived, not two things that happen to share a timestamp.
+ *
+ * The id hashes both halves, so re-dropping the same panel with a different
+ * sentence is a new card while re-dropping the identical pair is a duplicate.
+ */
+export function pairedCard(vaultPath: string, said: string, now: number, origin?: string): InboxCard {
+  const t = said.trim();
+  return {
+    id: `inb-${fnv(`${vaultPath}|${t}|${now}`)}`,
+    kind: 'image',
+    content: vaultPath,
+    said: t || undefined,
+    createdAt: now,
+    origin,
+  };
 }
 
 export function markCard(mark: MarkRef, now: number): InboxCard {
@@ -219,6 +279,32 @@ export class InboxStore {
     if (c.mark) c.mark = { ...c.mark, seed: text || undefined };
     await this.persist();
     return true;
+  }
+
+  /** Marks that point at a transcript line nobody has resolved yet. */
+  marksNeedingLine(): InboxCard[] {
+    return [...this.cards.values()].filter(
+      (c) => c.kind === 'mark' && !!c.mark?.file && c.mark.tSec != null && c.mark.lineText === undefined,
+    );
+  }
+
+  /**
+   * Record resolved lines — in ONE batch, one write.
+   *
+   * Deliberately plural. The backfill resolves ~100 marks in a run, and a
+   * per-card setter would persist the whole blob ~100 times; this vault has
+   * already been down that road once (30MB of IO for a single checkbox).
+   */
+  async setMarkLines(pairs: ReadonlyArray<{ id: string; line: string }>): Promise<number> {
+    let n = 0;
+    for (const { id, line } of pairs) {
+      const c = this.cards.get(id);
+      if (!c || c.kind !== 'mark' || !c.mark) continue;
+      c.mark = { ...c.mark, lineText: line };
+      n++;
+    }
+    if (n) await this.persist();
+    return n;
   }
 
   /** Mark cards standing against one transcript note, oldest first. */

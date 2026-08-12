@@ -207,7 +207,58 @@ export interface PluginSettings {
    * absurd. The converted shards DO live in the vault, under `bigDictRoot`.
    */
   bigDict: { exportFolder: string; root: string; backupFile: string };
+  /** §26.3 — how this device is HELD, and what follows from that. */
+  posture: PostureSettings;
 }
+
+/**
+ * §26.3 — the ergonomics that cannot be detected, only told.
+ *
+ * Posture itself is detected (`ui/posture.ts`); these three are the parts no
+ * API reports. Handedness decides which edge the tablet rail sits on, and
+ * getting it wrong puts every control under the hand that is holding the
+ * Pencil. `penNativeDrag` is a MEASUREMENT the plugin makes at runtime and
+ * writes back, so the drag commit does not have to relearn the platform on
+ * every launch — see `posture.ts` for why it is learned rather than assumed.
+ */
+export interface PostureSettings {
+  /** Which hand holds the Pencil / does the reaching. */
+  hand: 'right' | 'left';
+  /** Force a layout posture when the platform flags are wrong. */
+  override: 'auto' | 'desk' | 'thumb' | 'slate';
+  /** §25.4 — pause what is playing while a note is being written. */
+  autoPauseOnWrite: boolean;
+  /** Learned, not configured: does a pen reach native HTML5 drag here. */
+  penNativeDrag: 'unknown' | 'yes' | 'no';
+  /** The same measurement for a fingertip — a separate fact, separately
+   *  observed. Optional so an existing settings file upgrades silently. */
+  touchNativeDrag?: 'unknown' | 'yes' | 'no';
+  /**
+   * Where the user last parked the tablet's floating rail, and whether they
+   * folded it away. Remembered rather than reset, because a rail that returns
+   * to the middle of the page every launch is one nobody bothers to move
+   * twice. Absent until they move it — the default comes from handedness.
+   */
+  rail?: { edge: 'left' | 'right'; y: number; collapsed: boolean };
+  /**
+   * Text scale for the plugin's surfaces, 0–4 (2 = 1×). A live control rather
+   * than a setting you find once — pinch, or a hotkey — because a Pencil at a
+   * desk and a thumb on a couch want different sizes of the same view.
+   */
+  density: number;
+}
+
+export const DEFAULT_POSTURE_SETTINGS: PostureSettings = {
+  hand: 'right',
+  override: 'auto',
+  density: 2,               // exactly 1× — nothing resizes itself on first run
+  // ON by default. The alternative is the behaviour that shipped — the show
+  // keeps playing while you type with your eyes down — and nobody watching a
+  // drama wants that; it is the single change most likely to be missed if it
+  // has to be found in settings first.
+  autoPauseOnWrite: true,
+  penNativeDrag: 'unknown',
+};
 
 export const DEFAULT_SRS_SETTINGS: SRSSettings = {
   tagPrefix: 'flashcards/jp',
@@ -248,6 +299,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
   plex: { ...DEFAULT_PLEX_SETTINGS },
   jimaku: { ...DEFAULT_JIMAKU_SETTINGS },
   bigDict: { exportFolder: '', root: 'JP Dictionaries', backupFile: '' },
+  posture: { ...DEFAULT_POSTURE_SETTINGS },
 };
 
 export interface StoreStats {

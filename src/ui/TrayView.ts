@@ -12,7 +12,7 @@
  *   image — thumbnail + open (OCR arrives with the manga stage, §22.9)
  */
 
-import { ItemView, WorkspaceLeaf, Notice, normalizePath, setIcon } from 'obsidian';
+import { ItemView, WorkspaceLeaf, Notice, normalizePath, setIcon, TFile } from 'obsidian';
 import type { InboxStore, InboxCard, ReadingSession, MarkRef, MarkClip } from '../notes/inbox.ts';
 import { shapeDrop, imageCard, sessionGroups } from '../notes/inbox.ts';
 import { fmtStamp } from '../notes/srt.ts';
@@ -22,6 +22,8 @@ import { classBadge, applyClassRail } from './class-grammar.ts';
 import type { Reach } from '../notes/reach.ts';
 import { armDrops, armSelectionEcho, mountSurfaceBar, type ViewChrome } from './view-chrome.ts';
 import { makeDraggable } from './drag-out.ts';
+import { receiveClipboard } from './clipboard-door.ts';
+import { isDeviceUrl, looksLikeImageUrl, vaultPathOf } from '../notes/resource-url.ts';
 
 export const JP_TRAY_VIEW_TYPE = 'jp-tray-view';
 
@@ -105,7 +107,12 @@ export interface TrayDeps {
   /** §29 the drag road + §26.3 the identity bar (see ui/view-chrome.ts). */
   onDrop?: ViewChrome['onDrop'];
   dropCan?: ViewChrome['dropCan'];
+  /** main.ts spreads this in with the rest of the shared chrome, and both the
+   *  drop router and the clipboard door read it — so leaving it undeclared
+   *  meant the tray's oracle was invisible to every reader of this type. */
+  inVault?: ViewChrome['inVault'];
   openSurface?: ViewChrome['openSurface'];
+  dismiss?: ViewChrome['dismiss'];
   surfaceBadge?: ViewChrome['surfaceBadge'];
 }
 
@@ -201,13 +208,7 @@ export class TrayView extends ItemView {
     zone.createDiv({ text: 'マンガのコマ・辞書の用例・ツイート・記事の一節・YouTube や X のリンク・字幕ファイル — 何でも。落としたものは失われません。', cls: 'jp-tray-zone-sub' });
     const zoneBtns = zone.createDiv('jp-tray-zone-btns');
     const pasteBtn = zoneBtns.createEl('button', { text: '📋 クリップボードから', cls: 'jp-tray-paste' });
-    pasteBtn.onclick = async () => {
-      try {
-        const text = await navigator.clipboard.readText();
-        if (!text.trim()) { new Notice('クリップボードが空です'); return; }
-        await this.addText(text);
-      } catch { new Notice('クリップボードを読めませんでした'); }
-    };
+    pasteBtn.onclick = () => void this.receivePaste();
     // §25.7 session ingest: one visit to the photo picker, multi-select the
     // evening's screenshots. No Shortcuts, no setup — the picker is the path.
     const pickBtn = zoneBtns.createEl('button', { text: '📷 スクショ取り込み', cls: 'jp-tray-paste' });
@@ -274,7 +275,14 @@ export class TrayView extends ItemView {
       if (g.cards.length < 2) { this.renderCard(list, g.cards[0]); continue; }
       this.renderSession(list, g);
     }
+
+    // After the paint, never during it. Resolves each mark's line exactly once
+    // in the life of the vault, then re-renders with them in place.
+    void this.backfillMarkLines();
   }
+
+  /** One backfill pass at a time — `render()` fires this and it calls back. */
+  private backfilling = false;
 
   /**
    * §30 — the front door's two rows: 入れる (get it in) and 開く (go somewhere).
@@ -358,10 +366,97 @@ export class TrayView extends ItemView {
     }
     if (!added) {
       const uri = dt.getData('text/uri-list').split('\n')[0]?.trim();
-      const text = uri || dt.getData('text/plain');
-      if (text?.trim()) { await this.addText(text); return; }
+      // A picture dragged out of a note is not a file drag — `dt.files` is
+      // empty and the `<img>`'s resource URL rides on `text/uri-list`. Passing
+      // that to `addText` made a URL card pointing at `app://…?<mtime>`, which
+      // dies the moment the file is touched (and on Android looked like a real
+      // web address, `http://localhost/…`). It is a vault path; keep it as one.
+      const held = uri && isDeviceUrl(uri) ? vaultPathOf(uri, (p) => this.inVault(p)) : null;
+      if (held && looksLikeImageUrl(held)) {
+        if (await this.deps.store.add(imageCard(held, Date.now()))) added++;
+        else { new Notice('同じ内容が既にあります'); this.render(); return; }
+      } else {
+        const text = (held || (uri && !isDeviceUrl(uri) ? uri : '')) || dt.getData('text/plain');
+        if (text?.trim()) { await this.addText(text); return; }
+      }
     }
     if (added) { new Notice(`⤵ ${added}件をトレイへ`); this.render(); }
+  }
+
+  /**
+   * What a card puts on the wire when it leaves — the `text`/`html`/`url`/`path`
+   * half of its drag payload.
+   *
+   * The shapes are chosen so a card that leaves and comes back is the SAME
+   * card. A picture carrying a sentence keeps both, and lands on the far side
+   * as one `image-pair` rather than as a picture and a stray line; a picture
+   * with no words sends its embed markup, which renders if it is dropped into
+   * an editor pane and is recognised as "not a caption" by `isJustEmbed` if it
+   * is dropped on a plugin surface.
+   */
+  private carryOf(c: InboxCard): { text: string; label?: string; html?: string; url?: string; path?: string } {
+    if (c.kind === 'image') {
+      const name = c.content.split('/').pop() ?? c.content;
+      let url: string | undefined;
+      try { url = this.app.vault.adapter.getResourcePath(normalizePath(c.content)); } catch { /* no url */ }
+      const img = url ? `<img src="${url}" alt="${name}">` : '';
+      return {
+        // The words when there are words — that is what makes the pair a pair
+        // on arrival. Otherwise the embed, which an editor pane draws.
+        text: c.said || `![[${c.content}]]`,
+        label: c.said ? undefined : name,
+        html: c.said ? `${img}<blockquote>${c.said}</blockquote>` : img,
+        ...(url ? { url } : {}),
+        path: c.content,
+      };
+    }
+    // A link card is a link. Without this it left as a plain string, so
+    // dropping one into Safari did nothing at all.
+    if (c.kind === 'url') return { text: c.content, url: c.content };
+    return { text: c.content };
+  }
+
+  /** A candidate path or link text → the path the vault really holds, or null.
+   *  Mirrors `main.ts:resolveVaultPath`; this view has its own `app`. */
+  private inVault(candidate: string): string | null {
+    const c = candidate.trim();
+    if (!c) return null;
+    const direct = this.app.vault.getAbstractFileByPath(normalizePath(c));
+    if (direct instanceof TFile) return direct.path;
+    return this.app.metadataCache.getFirstLinkpathDest(c, '')?.path ?? null;
+  }
+
+  /**
+   * §28 S5 — the tray's paste button takes the SAME road as the 📋 in the rail
+   * and as ⌘V over any surface.
+   *
+   * It used to read `readText()` and hand the string straight to `shapeDrop`,
+   * which is the road the plugin had BEFORE there was a classifier — so the
+   * biggest, most obvious paste button in the plugin knew the fewest verbs. A
+   * copied YouTube link became a URL card instead of a transcript; a copied
+   * .srt body became a wall of text instead of a transcript note; a copied
+   * picture was not visible to it at all, and it said the clipboard was empty.
+   *
+   * The fallback below is not dead code: a TrayView built without chrome has no
+   * executor to hand an intent to, and a button that silently does nothing is
+   * worse than the old road (§28 S6).
+   */
+  private async receivePaste(): Promise<void> {
+    const onDrop = this.deps.onDrop;
+    if (!onDrop) {
+      try {
+        const text = await navigator.clipboard.readText();
+        if (!text.trim()) { new Notice('クリップボードが空です'); return; }
+        await this.addText(text);
+      } catch { new Notice('クリップボードを読めませんでした'); }
+      return;
+    }
+    await receiveClipboard({
+      surface: () => 'tray',
+      can: () => this.deps.dropCan?.() ?? {},
+      run: (intent, files) => onDrop(intent, files),
+      inVault: (c) => this.inVault(c),
+    });
   }
 
   private async addText(text: string): Promise<void> {
@@ -443,6 +538,121 @@ export class TrayView extends ItemView {
 
   /** The cut scene, shown rather than described — a still you can recognise is
    *  worth more than the words 「クリップあり」. */
+  /**
+   * The line the mark points at.
+   *
+   * Three states, and they are three different facts: not looked up yet,
+   * resolved to nothing, resolved. Collapsing the last two is how you get a
+   * card that silently retries forever — see `MarkRef.lineText`.
+   */
+  private renderMarkLine(body: HTMLElement, c: InboxCard): void {
+    const m = c.mark;
+    if (!m?.file || m.tSec == null) return;
+    if (m.lineText === undefined) {
+      body.createDiv({ text: '⋯', cls: 'jp-tray-mark-line jp-tray-mark-line--pending' });
+      return;
+    }
+    if (!m.lineText) {
+      body.createDiv({
+        text: 'この時刻に台詞が見つかりませんでした',
+        cls: 'jp-tray-mark-line jp-tray-mark-line--none',
+      });
+      return;
+    }
+    body.createDiv({ text: m.lineText, cls: 'jp-tray-mark-line' });
+  }
+
+  /**
+   * Six chips. One tap. The modal opens ALREADY ANSWERED.
+   *
+   * Not a headless save, deliberately: `CaptureModal` says a capture is "never
+   * auto-committed", and that is right for an evidence catalog — a class
+   * written without a human looking is a guess wearing a judgement's clothes.
+   * So the tap does not decide, it PRE-FILLS: `classHint` selects the chip
+   * (recorded as `classSuggested`, never as a verdict), the resolved line
+   * becomes the example, and the surrounding turns ride along. What is left is
+   * to press 保存.
+   *
+   * The unit: whatever you have SELECTED inside the line, or the whole line if
+   * nothing. That is the one decision a chip cannot make for you — 談話 and
+   * セリフ are utterance-sized, 連語 and 慣用構文 are spans — and now that the
+   * line is on the card, selecting inside it is the natural way to say which.
+   */
+  private renderMarkClasses(act: HTMLElement, c: InboxCard, card: HTMLElement): void {
+    if (!c.mark?.lineText) return;          // nothing readable yet — nothing to judge
+    const row = act.createDiv('jp-tray-markclasses');
+    for (const id of Object.keys(NOTE_TYPES) as NoteClass[]) {
+      const t = NOTE_TYPES[id];
+      const b = row.createEl('button', {
+        cls: 'jp-tray-markclass',
+        attr: { title: `${t.label} で分類（選択した範囲、なければ行全体）`, 'aria-label': t.label },
+      });
+      b.createSpan({ text: t.emoji, cls: 'jp-tray-markclass-dot' });
+      b.createSpan({ text: t.label, cls: 'jp-tray-markclass-label' });
+      b.onclick = () => void this.openPreAnswered(c, id, card);
+    }
+  }
+
+  /** The span the user picked inside THIS card, or nothing. */
+  private selectionInside(card: HTMLElement): string {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed) return '';
+    const node = sel.anchorNode;
+    if (!node || !card.contains(node.nodeType === 1 ? node : node.parentNode)) return '';
+    return sel.toString().trim();
+  }
+
+  private async openPreAnswered(c: InboxCard, cls: NoteClass, card: HTMLElement): Promise<void> {
+    const m = c.mark;
+    if (!m) return;
+    const span = this.selectionInside(card);
+    const ctx = this.deps.resolveMarkContext ? await this.deps.resolveMarkContext(m) : null;
+    const base: CaptureContext = ctx ?? {
+      text: '',
+      example: m.lineText ?? '',
+      source: {
+        kind: 'manual', sourceName: c.origin, medium: m.medium,
+        file: m.file, tStartSec: m.tSec ?? null,
+      },
+    };
+    this.deps.openCapture(withMarkClip(
+      { ...base, classHint: cls, text: span || m.lineText || base.text },
+      c.clip,
+    ));
+  }
+
+  /**
+   * Resolve every mark that has never had its line looked up — once, ever.
+   *
+   * Runs after a render rather than during it: 98 transcript reads inside a
+   * paint is a stall, and the answer is persisted, so this whole loop happens
+   * exactly one time in the life of the vault and then never again.
+   *
+   * `''` is written for a mark whose transcript has no line at that second.
+   * That is a resolved answer, and writing it is what keeps the retry from
+   * coming back every render for a mark that can never be resolved.
+   */
+  private async backfillMarkLines(): Promise<void> {
+    if (this.backfilling || !this.deps.resolveMarkContext) return;
+    const todo = this.deps.store.marksNeedingLine();
+    if (!todo.length) return;
+    this.backfilling = true;
+    try {
+      const out: Array<{ id: string; line: string }> = [];
+      for (const c of todo) {
+        try {
+          const ctx = await this.deps.resolveMarkContext(c.mark!);
+          out.push({ id: c.id, line: (ctx?.example ?? '').trim() });
+        } catch {
+          out.push({ id: c.id, line: '' });
+        }
+      }
+      if (await this.deps.store.setMarkLines(out)) this.render();
+    } finally {
+      this.backfilling = false;
+    }
+  }
+
   private renderMarkClip(body: HTMLElement, clip: MarkClip): void {
     const wrap = body.createDiv('jp-tray-clip');
     if (clip.still) {
@@ -489,13 +699,27 @@ export class TrayView extends ItemView {
     card.addEventListener('pointerdown', () => { this.focusId = c.id; }, { capture: true });
     // §23.5 cross-surface drop: drag a text card ONTO the 語彙 view → capture
     // there with tray provenance (the card stays — quarantine until classified)
-    if (c.kind !== 'image') {
+    {
+      // Image cards used to be excluded from this entirely — `c.kind !== 'image'`
+      // — so the ONE card type that is a file was the one type that could not
+      // leave. The exclusion was load-bearing at the time: a picture had no way
+      // to say it was a picture (`drag-out.ts` put no `text/uri-list` on the
+      // wire), so dragging one could only ever have sent the string of its own
+      // path. It can say so now, so it goes out like everything else.
+      //
+      // From a handle. A card IS its text — the thing you came here to read
+      // and, with a Pencil, to select part of — and `draggable` on the card
+      // would take that away to buy a gesture the grip gives back.
+      const grip = card.createSpan({
+        text: '⠿', cls: 'jp-lex-exgrip',
+        attr: { title: 'このカードを持ち出す（ドラッグ）' },
+      });
       makeDraggable(card, () => ({
         kind: 'card',
-        text: c.content,
+        ...this.carryOf(c),
         sub: c.origin,
         meta: { cardId: c.id, origin: c.origin, tSec: c.mark?.tSec ?? undefined, file: c.mark?.file },
-      }));
+      }), { grip });
       // The old `application/x-jpc-tray` flavour stays on the wire: it is what
       // the 語彙 panel reads to keep tray provenance across the seam.
       card.addEventListener('dragstart', (e) => {
@@ -541,6 +765,10 @@ export class TrayView extends ItemView {
         const img = wrap.createEl('img', { cls: 'jp-tray-img' });
         img.src = this.app.vault.adapter.getResourcePath(normalizePath(c.content));
         img.onclick = () => void this.app.workspace.openLinkText(c.content, '', false);
+        // The words that arrived WITH the picture, shown as part of the same
+        // card — so the pair stays a pair on screen too, not just in storage.
+        // Selectable, because it is the half you classify from.
+        if (c.said) body.createDiv({ cls: 'jp-tray-said', text: c.said });
         if (c.bubbles?.length) {
           for (const b of c.bubbles) {
             const box = wrap.createDiv('jp-tray-bbox');
@@ -601,6 +829,9 @@ export class TrayView extends ItemView {
         const multi = c.content.includes('\n') || c.content.length > 42;
         if (multi) body.createDiv({ text: c.content, cls: 'jp-tray-mark-note' });
         else row.createSpan({ text: c.content || '（メモなし）', cls: c.content ? 'jp-tray-mark-seed' : 'jp-tray-mark-seed jp-tray-mark-seed--none' });
+        // …and WHAT WAS SAID there. Without this the card is a timestamp and a
+        // 「（メモなし）」, which is the same card 98 times. See `MarkRef.lineText`.
+        this.renderMarkLine(body, c);
         // §25.4 — the scene cut at this mark, visible so you can tell at a
         // glance which marks are ready to become cards with sound and picture.
         if (c.clip) this.renderMarkClip(body, c.clip);
@@ -633,6 +864,9 @@ export class TrayView extends ItemView {
 
     if (c.kind === 'mark') {
       const act = card.createDiv('jp-tray-card-actions');
+      // The fast path, above the full one: six chips, one tap, modal opens
+      // already answered. See `renderMarkClasses`.
+      this.renderMarkClasses(act, c, card);
       const tag = act.createEl('button', { text: '🏷️ 分類' + (c.clip ? ' 🎬' : ''), cls: 'jp-tray-classify' });
       tag.onclick = async () => {
         const m = c.mark;

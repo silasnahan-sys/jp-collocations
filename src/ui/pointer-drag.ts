@@ -44,7 +44,7 @@
  * one of them is to make carrying begin from a stationary hold.
  */
 
-import { Platform } from 'obsidian';
+import { dragCommitMs, noteDragPress } from './posture.ts';
 // TYPE-ONLY, and deliberately so: `drag-out.ts` imports `beginPointerDrag` from
 // here as a value, so a value import in this direction would be a runtime
 // cycle. The pill is built by the caller and handed over for the same reason.
@@ -84,14 +84,24 @@ const SLOP = 10;
 /** When the row starts LOOKING picked up — feedback before the commitment. */
 const ARM_MS = 350;
 /**
- * When we take over, given native has not.
+ * When we take over, given native has not — now asked per press, not fixed.
  *
  * On a phone no `dragstart` is ever coming, so this is just the long-press
  * beat. Everywhere else it has to outlast the platform's own drag lift
  * (~500ms on iPadOS) or we would steal the cross-app drag before the system
  * could offer it — see step 3 above.
+ *
+ * That reasoning is sound and its old implementation still guessed: a flat
+ * 700ms for every non-phone press, including a PEN, on the untested assumption
+ * that iPadOS lifts a native drag for a Pencil inside Obsidian's webview the
+ * way it does for a finger. If it does not, that assumption costs a 700ms dead
+ * hold on every single Pencil carry — the row sits there looking broken — and
+ * buys nothing, because the drag it is politely waiting for is never coming.
+ *
+ * `posture.ts` decides it by watching instead: the long wait stands until the
+ * platform has declined a pen press several times over, then drops to the
+ * ordinary beat. `notePenPress` below is what feeds it.
  */
-const COMMIT_MS = Platform.isPhone ? 380 : 700;
 
 interface Session {
   end(): void;
@@ -313,6 +323,7 @@ export function bindPointerDrag(
     if (e.pointerType === 'mouse' || e.button !== 0 || live) return;
 
     const pid = e.pointerId, x0 = e.clientX, y0 = e.clientY;
+    const kind = e.pointerType;
     let armTimer: number | null = window.setTimeout(
       () => el.addClass('jp-draggable--arming'), ARM_MS);
     let commitTimer: number | null = null;
@@ -328,7 +339,15 @@ export function bindPointerDrag(
     };
 
     // The platform took it. Its drag leaves the app; ours does not.
-    const onNative = (): void => done();
+    //
+    // This is also the ONLY positive evidence that this pointer type CAN reach
+    // the system drag on this device, so it is worth one call before standing
+    // down. Reported for a finger as well as a pen: the finger is the primary
+    // input on the iPad and it had no way to learn anything at all.
+    const onNative = (): void => {
+      noteDragPress(kind, true);
+      done();
+    };
 
     const onCandidateMove = (ev: PointerEvent): void => {
       if (ev.pointerId !== pid) return;
@@ -336,11 +355,17 @@ export function bindPointerDrag(
     };
 
     commitTimer = window.setTimeout(() => {
+      // Reaching the deadline with no `dragstart` IS the observation: the
+      // platform had its full first refusal and passed. Reported only here and
+      // in `onNative`, never on an early cancel — a press abandoned to a scroll
+      // says nothing about whether a drag would have been offered, and counting
+      // it would convict the platform on evidence it never gave.
+      noteDragPress(kind, false);
       const p = payload();
       done();
       if (!p || !p.text.trim()) return;
       beginPointerDrag(el, p, pill(p), pid, x0, y0);
-    }, COMMIT_MS);
+    }, dragCommitMs(e.pointerType));
 
     el.addEventListener('dragstart', onNative);
     el.addEventListener('pointermove', onCandidateMove);

@@ -173,7 +173,39 @@ code near one, run its golden.
    shortest, not the first), capped at `MAX_DEINFLECT_CANDIDATES`, and
    `lookupKeys` groups by shard so N candidates cost N *unique* shard reads.
    Hits carry `deinflection` for the 〈…〉 badge. → `golden/big-dict.mjs`
-4. **`frontmatterSources` is plural, or singular-with-a-wikilink.** The key
+4. **A sidecar has THREE shard families, and the third is optional.**
+   `head-NNN` (headword) / `frame-NNN` (Japanese shape) / `intent-NNN` (the
+   English — §27.2's meaning side). All three key through the SAME
+   normalization: `intentionKeyOf` is `normalizeFrame`, so a want and the row
+   filed under it cannot drift apart. `meta.intents` absent means "never built"
+   and must never be read as damage — `verifySidecar` reports it as
+   `noIntentIndex` and `BigDictStore.intention()` skips those books in silence
+   rather than returning an empty answer. Building it needs no re-import:
+   `buildIntentIndex` re-keys `StoredCandidate.i`, which every frame row already
+   carries. `buildIntentIndex`'s `passes` is a MEMORY knob only — an intention
+   key's candidates are scattered across every frame shard, so a single grouping
+   pass would hold ~1.8M rows at once; more passes, less peak memory, identical
+   output. → `golden/intent-index.mjs`
+5. **Verify is not repair.** `repairSidecarMeta` skips any folder whose meta is
+   readable, which is exactly the state a half-finished `dropSidecar` leaves —
+   so damage that kept its meta was reported as 正常. `dropSidecar` now deletes
+   `meta.json` FIRST (an interrupt then leaves something repair can see), and
+   `verifyAllSidecars` runs from the repair command. A missing shard file is
+   silent everywhere else: `read` → null → `decodeLines` → `[]`.
+   → `golden/sidecar-verify.mjs`
+6. **The blob is PARTITIONED — a save writes only the keys that changed.**
+   Measured 2026-08-06 on the live vault: `data.json` was **15.17 MB**
+   (`_patternStore` 11.4 MB of it) and every debounced flush wrote all of it
+   twice, bak + main. **~30 MB of IO to record that a checkbox moved** —
+   invisible on desktop, seconds of main-thread stall on iPadOS. Every store
+   persists through exactly one `setKey(key, …)`, so which key changed is known
+   exactly; keys over 64 KB get `part_<key>.json`. Ordinary saves dropped
+   **275×**. Rules: partition files are written BEFORE the main file that
+   promises them (`_parts` manifest — the dropSidecar lesson, item 5); a listed
+   partition that will not read is QUARANTINED, not treated as an empty store,
+   and `setKey` on it REJECTS; promotion at 64 KB, demotion at 32 KB so a key
+   on the line cannot flip every flush. → `golden/storage.mjs`
+7. **`frontmatterSources` is plural, or singular-with-a-wikilink.** The key
    regex was `sources?`, which also matched the medium tag every transcript
    carries (`source: tv`), so the ⚡ gate accepted every transcript and then
    failed at `getFirstLinkpathDest('tv')`. The two cases differ by SHAPE: a
@@ -181,6 +213,121 @@ code near one, run its golden.
    `frontmatterMedium()` for the latter and `isCaptureNote()` for the test.
    `ensureSourceFrontmatter` now writes the plural list form.
    → `golden/capture-rung.mjs`
+8. **Never call `getRightLeaf` for a surface — use `surfaceLeaf()`.** Obsidian's
+   right sidebar is a resizable panel on a desktop and a FIXED NARROW DRAWER on
+   mobile. Five of the six surfaces mounted there unconditionally, so a 1366px
+   iPad rendered the 辞書 in a phone-width column — the whole "shrunk up on
+   mobile" complaint, and not the views' fault. `presentation()` decides:
+   sidebar only on `desk` at ≥880px, main pane everywhere else.
+   The drawer was only tolerable because it kept the editor reachable, and that
+   is no longer its job: **`openSurface` is a TOGGLE** over a place-stack
+   (`ui/suite-nav.ts`) — press 辞書 to go, press it again to land back on the
+   sentence you left with cursor and scroll restored. Revisiting a place
+   TRUNCATES the stack rather than pushing, so wandering cannot accumulate.
+   Every surface also gets a command, because a command is what a hotkey — and
+   therefore an Elecom/Logi button mapped to a keystroke in its own driver —
+   can reach; mouse buttons above 4 never arrive at a webview at all, so that
+   indirection is the only thing that can work for them.
+   → `golden/suite-nav.mjs`
+9. **Two fingers are heard; three are not — so every gesture is also a command.**
+   A webview receives two-finger pan as `wheel.deltaX` and pinch as `wheel` with
+   `ctrlKey`. It receives NOTHING for 3/4-finger swipes (Windows and iPadOS
+   consume them) and nothing for mouse buttons above 4. Those are reached by
+   binding them to a keystroke in Windows Touchpad → Advanced gestures or in
+   Elecom Mouse Assistant / Logi Options+, which then hits an Obsidian command.
+   Never add a gesture without its command. The swipe reducer
+   (`ui/input-map.ts`) has two non-obvious rules, both load-bearing: a
+   vertically-dominant wheel event RESETS the horizontal accumulator (a
+   touchpad drifts sideways on every scroll — 600px of one-sided drift must not
+   swipe), and a fired swipe LATCHES until the touchpad rests (one flick emits
+   dozens of events). → `golden/input-map.mjs`
+10. **Posture is re-evaluated on rotation.** `applyPostureClasses()` used to run
+   once at load, so turning the iPad left every ergonomic in its launch shape —
+   the same once-per-device mistake as `Platform.isPhone`, one layer up. Use
+   `watchViewport()`; it debounces (iOS reports stale dimensions *during*
+   `orientationchange`, so that is correctness, not throttling) and fires only
+   on a real posture/orientation change. Body carries `jp-orient-*`.
+
+11. **Never put a non-passive scroll listener on `document`.** A `wheel` or
+   `touchmove` listener registered `{ passive: false }` on `document` declares
+   that ANY scroll anywhere might be cancelled, so the browser must run that
+   JavaScript before it will scroll — the editor, settings, the file explorer,
+   everything loses the compositor fast path, and it is felt as scrolling that
+   will not glide. Testing `e.target.closest('…')` inside the handler does not
+   help; by then the scroll is already blocked. Bind to OUR panes instead
+   (`layout-change` + a `WeakSet`), and only in `desk` posture — a finger never
+   emits `wheel`. Same rule for `touch-action: none`: it takes BOTH axes, so a
+   row that only draws horizontally must say `pan-y` or it eats the page's
+   scroll.
+
+12. **`draggable` goes on a grip, never on a body you would want to read.**
+   `draggable="true"` revokes text selection inside the element it is set on,
+   and a selection and a drag both open as press-then-move, so no element can
+   serve both — whichever the browser claims, the other is gone. On any row
+   whose body is words (a 用例, a mark, a tray card, an entry), selection is
+   worth more. Pass `makeDraggable(row, payload, { grip })`: the attribute and
+   both drag paths bind to the grip, the row still dims while its copy is in
+   the air. Use the head where one exists (辞書 `headerRow`, 𝕏 `head`, 語彙
+   `.jp-lex-row-top`), otherwise `.jp-lex-exgrip`.
+
+13. **A selection answers AND acts, in place — never a trip.** The plugin had
+   both halves of a lookup and neither was whole: `HoverPeek` gave the meaning
+   but carried no verbs, refused touch outright, and lived on two surfaces;
+   `selection-echo` gave the verbs but never said what the phrase meant. Either
+   way the loop closed somewhere else, and *that trip* is the whole cost of
+   looking something up mid-video. They are now one card: `SelectionEchoDeps`
+   takes `look` (text → `PeekData`, off the shelf) and `open` (the way into the
+   full entry), rendered as a head above the verb row. Wire it once through
+   `ViewChrome.lookUp`/`openWord` — per-surface lookup would let two surfaces
+   disagree about what a word means. Selection, not hover, is the arming
+   gesture: it is the only one a Pencil, a finger, a trackpad and a keyboard
+   all produce, and on the phone (video + PiP + なりきり) hover does not exist.
+   Every surface is armed, **including 辞書** — the note that used to exclude it
+   ("it already answers a selection with `offerCapture`") was simply wrong:
+   `offerCapture` hangs off an explicit ⚡ button in `entry-grammar.ts`
+   (`b.onclick`), never off a selection, so the one surface whose job is
+   answering "what does this mean" could not answer it about a word inside its
+   own glosses. The two cover different gestures and do not collide.
+
+14. **A plugin surface must opt back INTO text selection.** Obsidian sets
+   `user-select: none` on the app shell and re-enables it only for the editor
+   and the preview, so everything a plugin renders inherits `none`. This
+   stylesheet knew it and opted back in at five elements out of hundreds —
+   which meant that on the iPad most plugin content could not be selected at
+   all, and by rule 13 that disarms the entire lookup layer on the device it
+   was designed for. The opt-in is now stated once per view root and inherits;
+   the opt-outs are chrome you press rather than read. Scope every such rule to
+   a `.jp-*` root — a bare `button { user-select: none }` reaches Obsidian's own
+   ribbon and settings.
+
+15. **The dock asks two questions: is this control an ICON, or does it need
+   WIDTH?** `edgeDock` returns a full-width bottom sheet on a phone and a ~58px
+   vertical rail on a tablet. Views posted *everything* into it, so 辞書, 𝕏 and
+   語彙 were putting a text input, mode chips and a completions dropdown into
+   that rail — reported as 「the search tab … isnt very useable … it COVERS
+   stuff」. That is a category error, not a styling miss. Use `edgeDock` for
+   fingertip-sized controls and `wideDock` for query boxes, chip rows and
+   lists; on a phone both return the same element, so nothing stacks.
+
+16. **An overlay must be movable and dismissible, or it is an obstruction.**
+   The tablet rail is the only dock that floats over content, and it was pinned
+   at `top: 50%` — the vertical middle, which is where the line you are reading
+   is. `floating-rail.ts` gives it a grip: drag to move (compositor-only
+   `transform` during the gesture; changing `top` per frame relayouts the pane
+   and *is* the stutter), snap to the nearer edge on release, tap to fold it to
+   a puck. Position is stored as `{edge, y-as-a-FRACTION}` — an iPad rotates and
+   resizes, and a pixel offset puts the control the user placed off-screen the
+   first time it does.
+
+17. **Nothing about a file changes because you looked at a different pane.**
+   `active-leaf-change` fires for plugin-to-plugin tab switches, and
+   `getActiveFile()` keeps returning the last markdown file, so every tab switch
+   re-ran `detectPatterns` over that whole note, rebuilt both indexes, re-read
+   the sidecar and scheduled a write — the felt "lag between tabs". Guard on
+   `(path, mtime)`. Related: keep derived per-file data in a `Map` keyed by
+   path, never an append-only array — `_utteranceCache.push()` meant a
+   re-indexed file was counted twice (then five times, then forty) in the
+   constellation, and a deleted file could never stop voting.
 
 ### Corpus adapters (`scraper/`) — the 語法プロフィール, §22.7
 

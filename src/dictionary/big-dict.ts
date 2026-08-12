@@ -28,8 +28,9 @@
 import type { DictHeadword, DictSense, ReachCandidate } from './eijiro.ts';
 import type { DictLookupResult, YomitanTag } from './types.ts';
 import {
-  readMeta, lookupHead, lookupFrame, normalizeLookupKey, headPath, framePath,
-  decodeLines, hashKey, type SidecarIO, type SidecarMeta, type HeadLine, type FrameLine,
+  readMeta, lookupHead, lookupFrame, normalizeLookupKey, headPath, framePath, intentPath,
+  intentionKeyOf, decodeLines, hashKey,
+  type SidecarIO, type SidecarMeta, type HeadLine, type FrameLine, type IntentLine,
 } from './sidecar.ts';
 import { normalizeFrame } from './frames.ts';
 import { deinflect } from './deinflect.ts';
@@ -166,10 +167,13 @@ export class BigDictStore {
 
   installed(): Array<{
     title: string; headwords: number; frames: number; dir: string;
+    /** null when this dictionary has no meaning-side index (§27.2). */
+    intents: number | null; shards: number;
     partial: boolean; revision: string;
   }> {
     return this.metas.map(({ dir, meta }) => ({
       title: meta.title, headwords: meta.headwords, frames: meta.frames, dir,
+      intents: meta.intents ?? null, shards: meta.shards,
       // `partial` means a conversion is still filling this, or the meta was
       // reconstructed by repair — either way the counts are a running total
       // and the UI must not present it as a settled install.
@@ -323,6 +327,52 @@ export class BigDictStore {
     }
     return interleave(perDict, limit);
   }
+
+  /**
+   * THE INTENTION QUERY (§27.2) — the reach-for query run from the other end.
+   *
+   * `frame()` asks "what fills this Japanese shape?"; this asks "how is this
+   * said?" and takes the want in English, as felt: "at some point", "undergo".
+   * §27.0.1's claim is that a phrase is one meaning externalized twice, so the
+   * shelf has to be reachable from either externalization — and until the
+   * intent shards existed it was reachable from only one, which is why an
+   * English want could sit open forever without ever receiving an offer.
+   *
+   * Dictionaries with no intention index are skipped in silence, not counted as
+   * empty answers: the honest report of "not indexed" belongs to verification,
+   * not to every query (§28 S6).
+   */
+  async intention(intention: string, limit = 40): Promise<BigFrameHit[]> {
+    await this.ready();
+    const k = intentionKeyOf(intention);
+    if (!k) return [];
+    const perDict: BigFrameHit[][] = [];
+    for (const { dir, meta } of this.metas) {
+      if (meta.intents == null) continue;      // never built — not an empty answer
+      const body = await this.shard(intentPath(dir, hashKey(normalizeLookupKey(k)) % meta.shards));
+      const found: BigFrameHit[] = [];
+      for (const l of decodeLines<IntentLine>(body)) {
+        if (l.k !== k) continue;
+        for (const c of l.c) {
+          found.push({
+            dictionary: meta.title,
+            candidate: {
+              surface: c.s, intention: c.i,
+              classHint: c.h as ReachCandidate['classHint'],
+              ...(c.p ? { shape: c.p } : {}), ...(c.t ? { situation: c.t } : {}),
+              frameKey: c.f, intentionKey: k,
+              slots: (c.f.match(/[～＿]/g) ?? []).length,
+            },
+          });
+        }
+      }
+      if (found.length) perDict.push(found);
+    }
+    return interleave(perDict, limit);
+  }
+
+  /** Does any installed dictionary have a meaning-side index at all? */
+  hasIntentIndex(): boolean { return this.metas.some((m) => m.meta.intents != null); }
 
   /** Uninstall detection / manual invalidation after a re-convert. */
   invalidate(): void { this.loaded = false; this.cache.clear(); }

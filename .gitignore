@@ -3,3 +3,15 @@ node_modules/
 .DS_Store
 *.d.ts
 # main.js and dist/ are committed so iOS/mobile users can install without building
+
+# scratch/research artifacts, not part of the shipped plugin
+_tmp_*
+_probe_*
+*.zip
+CopyQ*.png
+discourse-demo*.html
+discourse-workspace*.html
+v07-analysis-report.html
+parserchat.txt
+otherlogic/
+.claude/settings.local.json

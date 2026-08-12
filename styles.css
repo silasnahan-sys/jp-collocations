@@ -3,6 +3,47 @@
    Supports Obsidian light and dark themes via CSS variables
    ──────────────────────────────────────────────────────────── */
 
+/* ── Density: the live text scale (§26.3 input layer) ─────────
+   "shrunk up" has no single right answer — a Pencil at a desk and a thumb on
+   a couch want different sizes of the same view — so it is a live control
+   (pinch, or 表示を大きく／小さく) rather than a setting found once.
+
+   ONE rule, keyed off the leaf's own data-type so it reaches every jp- surface
+   including ones not yet written, and MULTIPLICATIVE on the theme's own text
+   size so a vault already running large text stays proportional instead of
+   being overridden. --jp-scale is set on <body> by applyDensity().           */
+.workspace-leaf-content[data-type^="jp-"] .view-content {
+  font-size: calc(var(--font-text-size, 16px) * var(--jp-scale, 1));
+}
+
+/* Fingertip targets scale with it. A 44px target at 85% is 37px, which is
+   below the floor the posture work established — so the floor wins. */
+body.jp-posture-slate .workspace-leaf-content[data-type^="jp-"] .view-content,
+body.jp-posture-thumb .workspace-leaf-content[data-type^="jp-"] .view-content {
+  --jp-tap: max(44px, calc(44px * var(--jp-scale, 1)));
+}
+
+/* The way OUT, in the reaching hand. Obsidian's own close is the tab drawer —
+   two-handed, top of the screen, and on a phone not even on screen. Touch
+   postures only; on a desk the tab bar is visible and this would be clutter. */
+.jp-dismiss {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  min-height: var(--jp-tap, 44px);
+  padding: 0 0.9em;
+  border-radius: 999px;
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+  font-size: 0.9em;
+  cursor: pointer;
+}
+.jp-dismiss:active { background: var(--background-modifier-active-hover); }
+/* Sits at the near edge of the dock, after the identity bar. */
+body.jp-posture-slate .jp-dismiss,
+body.jp-posture-thumb .jp-dismiss { order: 99; }
+
 /* ── View Layout ──────────────────────────────────────────── */
 .jp-collocations-view {
   display: flex;
@@ -4433,11 +4474,25 @@
   color: var(--text-muted);
 }
 .jp-capture-edge-target { font-size: 0.74rem; color: var(--text-muted); }
+/* The action row rides the foot of the modal, always.
+   MEASURED 2026-08-08, camera recording of the iPad: ~90 seconds inside this
+   one modal (v1 480–572s). In a small window the IME takes the top half, the
+   body scrolls, and an in-flow action row is then BELOW THE FOLD exactly when
+   you have finished and want out — so 保存して台帳へ has to be hunted for after
+   every capture. Sticking it costs nothing on a roomy window, where it already
+   sits at the bottom, and it is the difference between finishing a capture and
+   losing your place mid-sentence. */
 .jp-capture-btnrow {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 14px;
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  padding: 10px 0 max(8px, env(safe-area-inset-bottom));
+  background: var(--modal-background, var(--background-primary));
+  border-top: 1px solid var(--background-modifier-border);
 }
 .jp-capture-btn {
   font-size: 0.86rem;
@@ -4827,6 +4882,69 @@
 .jp-tray-mark-stamp { font-size: 11px; font-family: var(--font-monospace); color: var(--text-muted); }
 .jp-tray-mark-seed { font-size: 15px; font-weight: 600; }
 .jp-tray-mark-seed--none { font-weight: 400; color: var(--text-faint); font-size: 12px; }
+
+/* ── what was said ──────────────────────────────────────────────────────────
+   The mark's own content, and therefore the most important thing on the card —
+   it outweighs the stamp, the seed and every button, because it is the only
+   part you actually judge. Before this existed a mark card was a timestamp and
+   「（メモなし）」, which is the same card 98 times over.
+   Selectable ON PURPOSE: the span you highlight inside this line becomes the
+   notation when you tap a class, so selection is how you say "the phrase, not
+   the whole utterance". See `renderMarkClasses`. */
+.jp-tray-mark-line {
+  margin-top: 4px;
+  padding-left: 9px;
+  border-left: 2px solid var(--background-modifier-border);
+  font-size: 15px;
+  line-height: 1.62;
+  color: var(--text-normal);
+  user-select: text;
+  -webkit-user-select: text;
+}
+.jp-tray-mark-line--pending {
+  color: var(--text-faint);
+  font-size: 12px;
+  border-left-color: transparent;
+}
+.jp-tray-mark-line--none {
+  color: var(--text-faint);
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* ── the fast path: six chips, one tap ──────────────────────────────────────
+   The modal opens already answered, so this row is the whole classification
+   for the ordinary case. Wraps rather than scrolls: a chip you have to find by
+   scrolling is a chip you will not use, and six is few enough to just show. */
+.jp-tray-markclasses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+  margin-bottom: 4px;
+}
+.jp-tray-markclass {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--jp-tap, 34px);
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.jp-tray-markclass:active,
+.jp-tray-markclass:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  border-color: var(--background-modifier-border-hover);
+}
+.jp-tray-markclass-dot { font-size: 10px; line-height: 1; }
+.jp-tray-markclass-label { letter-spacing: 0.02em; }
 /* A note can be several lines now, so it gets a block that keeps its breaks. */
 .jp-tray-mark-note {
   font-size: 14px; font-weight: 500; line-height: 1.6; white-space: pre-wrap;
@@ -5010,7 +5128,12 @@
 
 /* ── §22.4 TokenCanvas: pills + marks (draw-then-snap) ── */
 .jp-canvas { margin: 6px 0; }
-.jp-canvas-row { display: flex; flex-wrap: wrap; gap: 3px 2px; line-height: 1; touch-action: none; user-select: none; }
+/* `pan-y`, not `none`. Drawing across tokens is a HORIZONTAL gesture, so that
+   is the only axis worth taking; `none` also took the vertical one, and a
+   finger or Pencil that landed on a canvas row could not scroll the page at
+   all — the list simply refused to move under it. Give the page back the axis
+   the drawing never wanted. Same idiom as `.jp-lex-leaf-cand`. */
+.jp-canvas-row { display: flex; flex-wrap: wrap; gap: 3px 2px; line-height: 1; touch-action: pan-y; user-select: none; }
 .jp-canvas-pill {
   font-size: 15px; padding: 8px 5px; border-radius: 6px; cursor: pointer;
   border: 1px solid transparent; min-height: 34px; display: inline-flex; align-items: center;
@@ -6257,6 +6380,52 @@ body.is-mobile .jp-part-capture { opacity: 0.55; position: static; margin-left: 
 .jp-draggable:active { cursor: grabbing; }
 .jp-draggable--lifted { opacity: 0.45; transition: opacity 90ms ease; }
 
+/* ── the carry handle ─────────────────────────────────────────────────────────
+   `draggable="true"` revokes text selection inside whatever it is set on, and
+   a press-then-move opens both gestures identically, so no element can serve
+   both. On rows whose body is a sentence — a 用例, a mark, a tray card — the
+   selection is worth more, so it keeps the glyphs and the carry moves here.
+   Same bargain the transcript line struck with `.jp-follow-grip`. */
+.jp-lex-exgrip {
+  flex-shrink: 0;
+  align-self: flex-start;
+  cursor: grab;
+  color: var(--text-faint);
+  font-size: 0.82em;
+  line-height: 1.2;
+  padding: 2px 4px;
+  margin-right: 2px;
+  border-radius: 5px;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;          /* it IS the drag; nothing else should claim it */
+  opacity: 0.28;
+  transition: opacity 110ms ease, background 110ms ease;
+}
+.jp-lex-exgrip:active { cursor: grabbing; }
+/* A pointer that can hover doesn't need it always lit — the row reveals it. */
+body.jp-posture-desk .jp-lex-exgrip { opacity: 0; }
+body.jp-posture-desk *:hover > .jp-lex-exgrip,
+body.jp-posture-desk .jp-lex-exgrip:focus-visible { opacity: 0.5; }
+body.jp-posture-desk .jp-lex-exgrip:hover {
+  opacity: 1; background: var(--background-modifier-hover);
+}
+/* A finger and a Pencil get no hover and no second chance: always visible, and
+   never below the fingertip floor (§ posture — sized by class, never width). */
+body.jp-posture-thumb .jp-lex-exgrip,
+body.jp-posture-slate .jp-lex-exgrip {
+  opacity: 0.55;
+  min-width: var(--jp-tap, 44px);
+  min-height: var(--jp-tap, 44px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jp-lex-exgrip { transition: none; }
+}
+
 /* What follows the nib. The browser default is a translucent screenshot of the
    whole row — accurate, and unreadable at arm's length. */
 .jp-drag-pill {
@@ -6362,6 +6531,108 @@ body.is-mobile .jp-part-capture { opacity: 0.55; position: static; margin-left: 
   color: var(--text-normal);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
 }
+/* ══════════════════════════════════════════════════════════════════════════
+   THE NAVIGATOR ANSWERS THE PANE
+   ══════════════════════════════════════════════════════════════════════════
+   `pane-size.ts` writes `.jp-pane-{xs,sm,md,lg}` onto each view root from a
+   ResizeObserver, so everything below is correct in a Slide Over strip, a
+   split column beside Apple Notes, a floating window over Manatan and a
+   maximised desktop leaf — without any of them knowing which it is.
+
+   Two properties are being bought here, and they are the ones that make a
+   toolbar feel like somewhere your hand already knows:
+
+   1. POSITION IS DETERMINISTIC. Buttons share the bar equally (`flex: 1 1 0`),
+      so a destination's place is a fixed FRACTION of the bar, not a
+      consequence of how wide its label happened to render. 辞書 is the second
+      of five at every pane width there is. Muscle memory can form because the
+      target stops moving.
+   2. NOTHING IS EVER OUT OF REACH. `.jp-surfbar` has `overflow-x: auto`, which
+      means that whenever the row did not fit, a destination silently scrolled
+      off the end — and a destination you have to go looking for is one you
+      stop using. Shrinking to fit removes the overflow instead of scrolling
+      it, so all five are always on screen and one tap away. */
+.jp-surfbar-btn {
+  flex: 1 1 0;
+  min-width: 0;
+}
+/* The rail is a vertical column: there is no horizontal budget to share, and
+   stretching would make each tool as tall as a sixth of the pane. */
+.jp-surfbar--rail .jp-surfbar-btn { flex: 0 0 auto; }
+
+/* Below 380px the captions come off. Five 44px targets plus gaps is ~230px,
+   which fits a 320px Slide Over strip with room to spare — captions on would
+   overflow, and overflow is what used to hide トレイ off the right-hand end.
+   Uniform glyphs also mean no single button reads as the odd one out. */
+.jp-pane-xs .jp-surfbar-label { display: none; }
+.jp-pane-xs .jp-surfbar-btn { min-width: 44px; padding-inline: 4px; }
+.jp-pane-xs .jp-surfbar--foot .jp-surfbar-btn { min-height: 44px; }
+/* …and the bar stops eating a pane that has none to give. */
+.jp-pane-xs .jp-surfbar { margin-bottom: 4px; padding: 2px; }
+.jp-pane-xs .jp-surfbar--foot { margin-top: 4px; }
+
+/* A tight pane cannot afford a floating rail sitting on top of the reading
+   column as well as a foot bar. The tools fold into the foot with the places,
+   which is also where the hand already is. */
+.jp-pane-xs .jp-slaterail { padding: 2px; }
+
+/* ── the bar leaves while you read ─────────────────────────────────────────
+   `bar-retreat.ts` decides when; this is only the move. Transform, so it is
+   compositor-only and cannot cost a frame of the scroll that triggered it —
+   the same reason the rail drag was rebuilt on transform. Coming back is
+   faster than going away: reaching for the bar should feel answered, leaving
+   should feel like it got out of the way rather than fled. */
+.jp-surfbar--foot {
+  transition: transform 180ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 180ms ease;
+  will-change: transform;
+}
+.jp-surfbar--foot.jp-surfbar--away {
+  transform: translateY(calc(100% + 10px));
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: 260ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  .jp-surfbar--foot { transition: none; }
+}
+
+/* ── where you are, lit rather than moved ──────────────────────────────────
+   See NEXT in surface-bar.ts. Contrast only: no width, no order, no padding,
+   nothing that could move a neighbour's centre by a pixel. The rest of the bar
+   sits back instead of the next moves growing, so the bar's total geometry is
+   identical on every surface. */
+.jp-surfbar-btn { opacity: 0.62; transition: opacity 140ms ease; }
+.jp-surfbar-btn--on,
+.jp-surfbar-btn--next { opacity: 1; }
+.jp-surfbar-btn--next .jp-surfbar-glyph { color: var(--text-accent); }
+/* A hairline under the next moves, drawn inside the button's own box so it
+   adds no height. */
+.jp-surfbar-btn--next::after {
+  content: '';
+  position: absolute;
+  left: 28%;
+  right: 28%;
+  bottom: 3px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--text-accent);
+  opacity: 0.55;
+}
+.jp-surfbar-btn { position: relative; }
+/* A pointer that can hover gets the usual full-contrast affordance back. */
+@media (hover: hover) {
+  .jp-surfbar-btn:hover { opacity: 1; }
+}
+
+/* The clipboard door. Borrows the bar button's geometry so it is the same
+   fingertip target, and takes an accent edge so it does not read as a sixth
+   place to go — it is a verb about what is already in your hand. */
+.jp-cbdoor {
+  color: var(--text-accent);
+  box-shadow: inset 0 0 0 1px var(--background-modifier-border);
+}
+.jp-cbdoor:active { transform: scale(0.94); }
+
 .jp-surfbar-glyph { display: flex; align-items: center; justify-content: center; font-size: 0.95rem; line-height: 1; }
 .jp-surfbar-glyph .svg-icon { width: 17px; height: 17px; }
 .jp-surfbar-label { font-size: 0.62rem; letter-spacing: 0.02em; }
@@ -6487,6 +6758,12 @@ body.is-mobile .jp-part-capture { opacity: 0.55; position: static; margin-left: 
   position: absolute;
   z-index: 55;
   display: flex;
+  /* Column now: the answer sits above the verbs, because you read what a
+     phrase IS before you decide what to do with it. With no head the bar is a
+     single row and looks exactly as it always did. */
+  flex-direction: column;
+  align-items: stretch;
+  max-width: min(360px, calc(100vw - 24px));
   gap: 2px;
   padding: 3px;
   border-radius: 11px;
@@ -6523,6 +6800,39 @@ body.is-mobile .jp-part-capture { opacity: 0.55; position: static; margin-left: 
 .jp-echo-btn:hover { background: var(--background-modifier-hover); }
 .jp-echo-icon { font-size: 0.95rem; line-height: 1; }
 .jp-echo-label { font-weight: 550; }
+.jp-echo-verbs { display: flex; gap: 2px; }
+
+/* ── the answer ───────────────────────────────────────────────────────────────
+   Selecting used to offer verbs for a phrase and never say what the phrase
+   meant; hovering said what it meant and could not act, and would not speak to
+   a finger at all. Two halves of one gesture. This is the missing half, in the
+   same card, so a lookup stops being a journey. */
+.jp-echo-head {
+  padding: 6px 9px 7px;
+  border-radius: 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  max-height: 8.5em;
+  overflow-y: auto;
+  overscroll-behavior: contain;     /* never chain into the view underneath */
+}
+.jp-echo-head--open { cursor: pointer; }
+.jp-echo-head--open:hover { border-color: var(--interactive-accent); }
+.jp-echo-head-top { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; }
+.jp-echo-head-hw { font-weight: 700; font-size: 0.95rem; }
+.jp-echo-head-reading { font-size: 0.78rem; color: var(--text-muted); }
+.jp-echo-head-def {
+  margin-top: 3px;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+/* Waiting is a STATE, not an answer: it must not read as "this is the word".
+   The shelf answers a cached word in the same tick and never shows this. */
+.jp-echo-head--waiting { opacity: 0.5; }
+.jp-echo-head--waiting .jp-echo-head-hw { font-weight: 500; }
+.jp-echo-head--none .jp-echo-head-hw { font-weight: 500; color: var(--text-faint); }
 
 /* Phone: §26.3's device law — an action at the selection is an action under
    your own thumb, where you cannot see it. So it pins to the floor instead,
@@ -6710,4 +7020,569 @@ body.is-mobile .jp-part-capture { opacity: 0.55; position: static; margin-left: 
 @media (hover: none) and (pointer: coarse) {
   .jp-xu-row { padding: 7px 0; font-size: 0.88rem; }
   .jp-xu-btn { min-height: 34px; min-width: 34px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   POSTURE — the third device class, and the breakpoint bug it exposes
+   ══════════════════════════════════════════════════════════════════════════
+
+   Everything below is scoped by a BODY CLASS (`jp-posture-slate` etc., stamped
+   by `ui/posture.ts`) rather than by a width media query. That is the whole
+   correction, so it is worth stating plainly:
+
+     `@media (max-width: 600px)` describes the WINDOW. The thing that actually
+     needs a fingertip-sized target is a PANE, which may be a third of it — and
+     on a full-screen iPad the window is 1024–1366px, so the phone breakpoint
+     never matches and the 44px rules above this line have never once applied
+     on a tablet. The iPad has been running desktop-sized hit targets under a
+     finger and a Pencil this entire time.
+
+   `(pointer: coarse)` is the correct QUESTION and it is true on both touch
+   postures, so it cannot tell a phone from a slate on its own. The body class
+   can, it is set once, and it costs no layout thrash. Width queries stay where
+   they belong: deciding how many columns fit, not how big a thumb is. */
+
+/* ── fingertip sizing, on any touch posture, at any pane width ────────────── */
+body.jp-posture-thumb .jp-follow-line,
+body.jp-posture-slate .jp-follow-line {
+  /* THE most-tapped element in the plugin, and it shipped at 34px against
+     Apple's 44pt floor — while your eyes are on the show and each tap is
+     load-bearing (it re-anchors the clock AND drops a mark). A miss here does
+     not cost a mis-tap, it costs the sentence you were trying to keep. */
+  min-height: 48px;
+  padding: 11px 12px;
+  /* Kills the double-tap-zoom wait so a mark lands when the nib lands. Pan and
+     pinch are untouched — the transcript still scrolls normally. */
+  touch-action: manipulation;
+}
+body.jp-posture-thumb .jp-follow-text,
+body.jp-posture-slate .jp-follow-text { font-size: 1.02rem; }
+body.jp-posture-slate .jp-follow-line--now .jp-follow-text { font-size: 22px; }
+
+body.jp-posture-thumb .jp-follow-btn,
+body.jp-posture-slate .jp-follow-btn,
+body.jp-posture-thumb .jp-follow-tp-btn,
+body.jp-posture-slate .jp-follow-tp-btn,
+body.jp-posture-thumb .jp-follow-nudgebtn,
+body.jp-posture-slate .jp-follow-nudgebtn {
+  min-height: 44px;
+  min-width: 44px;
+  touch-action: manipulation;
+}
+/* The scrub bar is a drag target for a nib — 6px of it was a dare. */
+body.jp-posture-thumb .jp-follow-tp-bar,
+body.jp-posture-slate .jp-follow-tp-bar { min-height: 18px; touch-action: none; }
+
+/* ── the slate rail ───────────────────────────────────────────────────────────
+   A phone's reachable region is the bottom arc of one thumb. A tablet's is the
+   near EDGE — the side the writing hand comes from — because the device is
+   propped or held in two hands and the hand that reaches is the one already
+   holding the Pencil. A full-width strip at the foot of a 1366px screen is a
+   journey; the near edge is under the nib before you decide to go there.
+
+   Out of flow deliberately: the transcript column must keep its full width and
+   its scroll, and a rail that reflowed the reading column every time a control
+   appeared would move the line you were reading. */
+/* `.jp-rail-host` is stamped by `posture.ts` on whatever element the rail was
+   actually created into — see there for why this is not a `:has()` rule. */
+.jp-rail-host,
+body.jp-posture-slate .jp-follow { position: relative; }
+
+.jp-slaterail {
+  position: absolute;
+  /* `top` is written by `floating-rail.ts` from the stored fraction. It used to
+     be `top: 50%` with a centring translate, which parked the rail over the
+     middle of the reading column — the one place an overlay must never sit —
+     and the translate would have fought the drag transform besides. */
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 6px 8px;
+  border-radius: 14px;
+  /* Opaque, not blurred. A backdrop-filter over a scrolling transcript is a
+     full-pane recomposite every frame, and on an iPad that is felt directly as
+     the scroll refusing to glide. See the touch-posture block below. */
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  /* Elevation has to be legible on a DARK theme, and a dark shadow on a dark
+     page is nothing: at rgba(0,0,0,0.18) the rail read as a HOLE punched in the
+     text rather than an object above it. The top highlight is the part that
+     actually says "lit from above"; the shadow only says "not flat". */
+  box-shadow:
+    0 6px 22px rgba(0, 0, 0, 0.34),
+    0 1px 3px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  /* ONLY the elevation transitions. `transform` must never appear here — the
+     drag rewrites it every frame and the release animates it on a spring
+     (`floating-rail.ts`), and a CSS transition on the same property would fight
+     both. Nor `top`, for the same reason the drag uses a transform at all. */
+  transition: box-shadow 180ms ease, border-color 180ms ease, opacity 180ms ease;
+  will-change: transform;
+  max-height: 86%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  /* The whole rail is chrome: nothing in it is text to be read, and a stray
+     selection inside it would fight the grip. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.jp-slaterail::-webkit-scrollbar { display: none; }
+/* Handedness is the STARTING edge, not a cage — `snapRail` writes whichever
+   edge the user last dragged it to, and that wins from then on. */
+.jp-slaterail--right { right: calc(6px + env(safe-area-inset-right, 0px)); left: auto; }
+.jp-slaterail--left  { left:  calc(6px + env(safe-area-inset-left, 0px)); right: auto; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE WAY OUT, UNDER A FINGER  (see src/ui/touch-nav.ts)
+   ══════════════════════════════════════════════════════════════════════════
+   A drag from the pane's left edge goes back, and NAMES where it is going
+   while you are still deciding. It exists because the back-stack and the
+   gesture reducer were both already built and neither was reachable on a
+   tablet — `input-map.ts` listens to `wheel`, and an iPad has no wheel. */
+.jp-nav-host { position: relative; }
+
+.jp-edgeback {
+  position: absolute;
+  left: 0;
+  z-index: 40;
+  /* Centred on the finger, and pulled just off the edge so the first pixel of
+     travel is already visible rather than hidden behind its own container. */
+  margin-top: -21px;
+  margin-left: -14px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 62%;
+  padding: 9px 14px 9px 16px;
+  border-radius: 0 999px 999px 0;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-left: none;
+  /* Same elevation language as the rail: light, never scale. */
+  box-shadow:
+    0 6px 22px rgba(0, 0, 0, 0.34),
+    0 1px 3px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;          /* it reports; it is never a target */
+  user-select: none;
+  -webkit-user-select: none;
+  /* NOT `transform`: the drag writes that every frame and the refusal springs
+     it home, exactly as on the rail. Only the arming colours transition. */
+  transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+.jp-edgeback-arrow { font-size: 1.15rem; line-height: 1; opacity: 0.7; }
+.jp-edgeback-label { overflow: hidden; text-overflow: ellipsis; }
+
+/* Past the commit point. The drag has ALSO gone heavy by here (`pullFor`
+   resists beyond `commitPx`), so the colour is confirming what the hand has
+   already felt rather than being the only signal. */
+.jp-edgeback--armed {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.jp-edgeback--armed .jp-edgeback-arrow { opacity: 1; }
+
+/* ── the handle ────────────────────────────────────────────────────────────
+   Drag it to move the rail, tap it to fold the rail away. Both verbs live on
+   one small target for the same reason `drag-out.ts` moved to grips: a rail of
+   buttons cannot also be a drag surface without every button press becoming a
+   candidate drag. */
+.jp-rail-grip {
+  height: 22px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;              /* it IS the drag; nothing else claims it */
+  border-radius: 8px;
+  color: var(--text-faint);
+}
+.jp-rail-grip::before {
+  content: '';
+  width: 22px;
+  height: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0.5;
+}
+.jp-rail-grip:active { cursor: grabbing; }
+.jp-rail-grip:active::before { opacity: 0.9; }
+
+/* In your hand.
+   The SCALE lives in the drag transform itself (`floating-rail.ts`), so the
+   spring can carry it home on release; everything here is the shadow that makes
+   the lift readable — and the shadow is the one thing that may transition
+   during a drag, because it is not the thing moving.
+   There used to be a `transition: none` here, suppressing a transition the base
+   never declared. That is why the release had nothing to ease: `apply()` wrote
+   the final `top` and cleared the transform in the same frame and the rail
+   teleported. Measured off the 2026-08-08 iPad capture — peak velocity on the
+   last frame, then dead. See the header of `floating-rail.ts`. */
+.jp-slaterail--moving {
+  box-shadow:
+    0 18px 48px rgba(0, 0, 0, 0.46),
+    0 2px 8px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.10);
+  border-color: var(--background-modifier-border-hover);
+  /* Slightly see-through only while it is moving, so you can watch what it is
+     about to land on. It goes fully opaque again the moment it settles. */
+  opacity: 0.97;
+}
+
+/* Folded away. Everything but the handle goes, so the rail becomes a puck you
+   can see but cannot be obstructed by — the dismissal an overlay has to have.
+   `display: none` rather than opacity: a hidden control that still takes the
+   press is worse than one that is merely invisible. */
+.jp-slaterail--collapsed {
+  padding: 4px;
+  opacity: 0.45;
+  box-shadow: none;
+}
+.jp-slaterail--collapsed > *:not(.jp-rail-grip) { display: none; }
+.jp-slaterail--collapsed:hover { opacity: 1; }
+
+/* ── the foot bar: controls that need WIDTH ────────────────────────────────
+   The tablet counterpart of `.jp-thumbdock`. IN FLOW as the last child of the
+   view, never floating: a query box is not an overlay, and the whole reason
+   the search row was unusable on the iPad is that it had been posted into one.
+   It reaches the foot of a 1366px pane the honest way — by being the bottom of
+   the column — so nothing is covered and nothing has to be moved out of the
+   way. */
+.jp-slatebar {
+  order: 99;
+  flex-shrink: 0;
+  position: sticky;
+  bottom: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  /* No defensive side padding: `floating-rail.ts` subtracts this bar's height
+     from the rail's travel, so a rail dragged all the way down stops ABOVE it
+     and the two can never collide. Reserving width here instead would have
+     cost the query box ~120px on every pane to solve one edge case. */
+  padding: 8px 10px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: var(--background-primary);
+  border-top: 1px solid var(--background-modifier-border);
+}
+/* Same bottom-up order as the phone dock: what you are typing lowest, what it
+   produces above it. */
+.jp-slatebar > .jp-lex-searchrow,
+.jp-slatebar > .jp-dict-search-row,
+.jp-slatebar > .jp-x-search-row { order: 1; }
+
+/* ── the destinations, at the FOOT ────────────────────────────────────────────
+   `order: 2` puts the navigator below the query box and hard against the bottom
+   of the pane — the tab-bar position, and the most reachable row there is.
+   These five used to live on the floating rail, which is a category error:
+   a destination you must first drag out of the way before you can read is not
+   reachable, it is in the way, and no edge fixes that because the text runs
+   full-bleed under both of them. `surface-bar.ts` has the whole argument.
+   In here it is a segmented control, not a floating bar — the bar it sits in is
+   already the sticky, opaque, safe-area-aware thing, so it stops being all
+   three and just draws itself. */
+.jp-slatebar > .jp-surfbar { order: 2; margin: 2px 0 0; }
+.jp-slatebar > .jp-surfbar--foot {
+  position: static;
+  border-radius: 11px;
+  border-top: none;
+  background: var(--background-secondary);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  padding-bottom: 3px;
+}
+.jp-slatebar > .jp-dict-suggestions,
+.jp-slatebar > .jp-x-chips { order: 0; max-height: 34vh; }
+/* 16px is the threshold below which iOS zooms the page on focus and leaves the
+   view scrolled somewhere nobody asked for. */
+.jp-slatebar input { min-height: 44px; font-size: 16px; }
+.jp-slatebar button { min-height: 40px; }
+/* Completions open UPWARD from a docked box — downward is off-screen. */
+.jp-slatebar .jp-lex-ac { top: auto; bottom: calc(100% + 2px); }
+
+.jp-slaterail button,
+.jp-slaterail .jp-rail-btn {
+  min-height: 46px;
+  min-width: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 11px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.05rem;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.jp-slaterail button:active,
+.jp-slaterail .jp-rail-btn:active { background: var(--background-modifier-hover); }
+.jp-slaterail .is-on { background: var(--background-modifier-hover); color: var(--text-normal); }
+.jp-rail-sep { height: 1px; background: var(--background-modifier-border); margin: 2px 4px; }
+.jp-rail-label { font-size: 0.54rem; letter-spacing: 0.02em; }
+
+/* What is left on the rail: the VERBS. One capture button and the way out.
+   Transparent, because the rail is already the container — a second filled
+   panel inside it was drawing a box around a single button. */
+.jp-surfbar--rail {
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+.jp-surfbar--rail .jp-surfbar-btn { min-height: 46px; min-width: 46px; }
+
+/* 戻る is a tool here, not a labelled pill. `.jp-dismiss` is `inline-flex` with
+   0.9em side padding and a text label, so inside a 58px rail it grew wider than
+   its own container and rendered as a separate control stuck to the bottom of
+   it — visible in the iPad capture. Stacked and square, it is just the last
+   button on the palette. */
+.jp-slaterail .jp-dismiss {
+  width: 100%;
+  min-width: 46px;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  padding: 0;
+  border: none;
+  border-radius: 11px;
+  background: transparent;
+  font-size: 0.54rem;
+  letter-spacing: 0.02em;
+}
+.jp-slaterail .jp-dismiss:active { background: var(--background-modifier-hover); }
+
+/* ── pen-only affordances ─────────────────────────────────────────────────────
+   `body.jp-pen` is latched the first time a `pointerType: 'pen'` event arrives
+   anywhere in the app, because there is no way to ASK whether a Pencil is
+   paired — iPadOS reports `pointer: coarse` and `hover: none` either way. So a
+   hover hint stays dark for a finger, which could never trigger it, and lights
+   up mid-session the moment a Pencil is actually used. */
+.jp-pen-hint { display: none; }
+body.jp-pen .jp-pen-hint { display: inline-flex; }
+
+/* A carried thing must stay readable at a wrist's distance — iOS substitutes
+   its own drag image and ignores `setDragImage`, so the synthetic pill is the
+   only one we control. Bigger where a nib is doing the carrying. */
+body.jp-posture-slate .jp-drag-pill--live { font-size: 1rem; padding: 8px 12px; }
+
+/* Keyboard hints are noise on a device with no keyboard, and they cost the
+   transcript vertical space it needs more. The rail carries these verbs now. */
+body.jp-posture-thumb .jp-dm-keys,
+body.jp-posture-slate .jp-dm-keys { display: none; }
+
+/* ── the line's carry grip ─────────────────────────────────────────────────────
+   The timestamp doubles as the drag handle (a transcript row's long press is
+   already §25.1's seed note, and two long presses cannot share one element).
+   So it has to LOOK grabbable without becoming a second thing to read. */
+.jp-follow-grip { cursor: grab; user-select: none; }
+.jp-follow-grip--bare { color: var(--text-faint); font-size: 0.8em; letter-spacing: -1px; }
+body.jp-posture-thumb .jp-follow-grip,
+body.jp-posture-slate .jp-follow-grip {
+  /* A nib needs something to land on. Padding rather than a bigger glyph: the
+     stamp still reads as a timestamp, it just has a margin of error now. */
+  padding: 4px 6px;
+  margin: -4px 0;
+  border-radius: 6px;
+  background: var(--background-modifier-border-hover, transparent);
+  touch-action: none;
+}
+.jp-follow-grip:active { cursor: grabbing; }
+.jp-follow-nudge-val { font-size: 0.72rem; color: var(--text-muted); padding: 0 4px; align-self: center; }
+/* Off Plex the transport drives the transcript only — say so quietly. */
+.jp-follow-tp-player { font-size: 0.7rem; color: var(--text-faint); align-self: center; }
+
+/* ── ✎ pen probe ─────────────────────────────────────────────────────────────
+   A diagnostic, so it is styled for legibility on a tablet held at arm's
+   length and for nothing else. */
+.jp-penprobe-lead { color: var(--text-muted); font-size: 0.85rem; line-height: 1.6; }
+.jp-penprobe-pad {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 12px 0;
+  border: 2px dashed var(--interactive-accent);
+  border-radius: 14px;
+  color: var(--text-muted);
+  background: var(--background-secondary);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.jp-penprobe-live {
+  font-family: var(--font-monospace);
+  font-size: 0.74rem;
+  line-height: 1.65;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--background-primary-alt);
+}
+.jp-penprobe-h { font-weight: 700; margin-top: 8px; color: var(--text-normal); }
+.jp-penprobe-row { color: var(--text-muted); word-break: break-word; }
+.jp-penprobe-acts { display: flex; gap: 8px; margin-top: 12px; }
+.jp-penprobe-acts button { min-height: 44px; }
+
+/* The watching surface's dock is the one whose children lie down: on a phone
+   these are verbs (📍 ✎ ⌄ 📝), not a search box stacked over a navigator. */
+.jp-thumbdock.jp-follow-rail {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: space-around;
+  align-items: center;
+}
+.jp-thumbdock.jp-follow-rail .jp-rail-btn {
+  flex: 1;
+  min-height: 48px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.15rem;
+  border-radius: 10px;
+  touch-action: manipulation;
+}
+.jp-thumbdock.jp-follow-rail .jp-rail-btn:active { background: var(--background-modifier-hover); }
+.jp-thumbdock.jp-follow-rail .jp-rail-sep { display: none; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SELECTION — the gesture the whole answer layer is armed by
+   ══════════════════════════════════════════════════════════════════════════
+   Reported from the iPad: 「things arent actually selectable nor draggable」.
+
+   Obsidian sets `user-select: none` on the app shell and re-enables it for the
+   editor and the preview — so every element a plugin renders inherits NONE
+   unless it says otherwise. This stylesheet already knew that (`.jp-x-card-body`
+   carries the note "Obsidian panes often inherit none") and opted back in at
+   exactly five places out of hundreds. Everywhere else, the plugin's own text
+   could not be selected at all.
+
+   That is worse than an inconvenience, because §26.3 made SELECTION the arming
+   gesture for the entire lookup layer — the echo, the answer head, the capture
+   verbs. On a device with no hover and no keyboard, an unselectable surface is
+   a surface with no verbs at all. The one gesture everything hangs off was
+   switched off on the device it was designed for.
+
+   So the opt-in is stated once, at the root of each surface, and inherits. The
+   opt-OUTS below are the honest short list: chrome you press rather than read.
+   Inheritance means any subtree that declares `none` for its own reasons (the
+   token canvas, a drag grip) still wins inside itself. */
+.jp-collocations-view,
+.jp-dict-view,
+.jp-x-view,
+.jp-tray-view,
+.jp-pipeline-view,
+.jp-follow,
+.jp-lex,
+.jp-srs-view,
+.jp-dm,
+.jp-recon-library {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Chrome is pressed, not read. A selection starting inside a toolbar is always
+   a misfire, and on touch it also blocks the press it was meant to be. */
+.jp-slaterail,
+.jp-thumbdock,
+.jp-slatebar,
+.jp-surfbar,
+.jp-echo-verbs,
+.jp-col-tab-bar,
+.jp-rail-grip,
+.jp-draggable,
+.jp-lex-mode,
+.jp-surfbar-btn,
+.jp-rail-btn,
+/* Scoped to OUR roots — a bare `button` here would reach into Obsidian's own
+   ribbon, tab bar and settings, which is not this stylesheet's business. */
+.jp-collocations-view button,
+.jp-dict-view button,
+.jp-x-view button,
+.jp-tray-view button,
+.jp-pipeline-view button,
+.jp-follow button,
+.jp-lex button,
+.jp-srs-view button,
+.jp-dm button,
+.jp-recon-library button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* iOS puts a magnifier and a callout menu on a long press over selectable text.
+   Inside a scrolling list that is a press we want for scrolling, and over a
+   grip it fights the carry — but on real prose it is the system behaviour and
+   removing it would be worse than the problem. So it is suppressed exactly
+   where a press means something else, and nowhere near the text. */
+.jp-slaterail,
+.jp-thumbdock,
+.jp-slatebar,
+.jp-rail-grip,
+.jp-draggable,
+.jp-lex-exgrip,
+.jp-canvas-row {
+  -webkit-touch-callout: none;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   TOUCH: no backdrop blur
+   ══════════════════════════════════════════════════════════════════════════
+   `backdrop-filter: blur()` forces the compositor to re-sample everything
+   behind the element every frame. Behind these elements is a long scrolling
+   list, so the cost is paid exactly while scrolling — which is where it was
+   felt (「scrolling also feels not smooth … its like, weird」). On the desktop
+   there is GPU headroom to spare and it looks better, so it stays there.
+
+   An opaque background is not a downgrade here: these are docks pinned against
+   the edge of an opaque pane, and the translucency was never carrying meaning. */
+body.jp-posture-thumb .jp-thumbdock,
+body.jp-posture-slate .jp-thumbdock,
+body.jp-posture-thumb .jp-surfbar--foot,
+body.jp-posture-slate .jp-surfbar--foot,
+body.jp-posture-thumb .jp-echo--foot,
+body.jp-posture-slate .jp-echo--foot,
+body.jp-posture-thumb .jp-sel-toolbar,
+body.jp-posture-slate .jp-sel-toolbar {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--background-primary);
+}
+
+/* The drop veil covers the pane during a carry, so its blur is over content
+   that is deliberately NOT scrolling — but it is also the largest blurred
+   surface in the plugin, and a carry is the one moment that must not stutter. */
+body.jp-posture-thumb .jp-drop-veil,
+body.jp-posture-slate .jp-drop-veil {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* The words that arrived with a picture, on the same card. Selectable — it is
+   the half you classify from, and `user-select: none` on the app shell is what
+   disarmed the whole lookup layer on the iPad once already. */
+.jp-tray-said {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-left: 2px solid var(--text-accent);
+  border-radius: 0 6px 6px 0;
+  background: var(--background-secondary);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--text-normal);
+  -webkit-user-select: text;
+  user-select: text;
 }

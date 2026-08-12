@@ -31,7 +31,7 @@ import { detectPatterns, CATEGORY_COLORS, CATEGORY_LABELS } from '../discourse/d
 import type { PatternCategory } from '../discourse/discourse-patterns';
 import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
 import { classBadge } from './class-grammar';
-import { armDrops, mountSurfaceBar, thumbDock, type ViewChrome } from './view-chrome';
+import { armDrops, mountSurfaceBar, wideDock, type ViewChrome } from './view-chrome';
 import { buildXUsage } from '../x/usage';
 import { renderXUsage } from './x-usage-panel';
 import { makeDraggable } from './drag-out';
@@ -71,6 +71,7 @@ export interface XViewDeps {
   onDrop?: ViewChrome['onDrop'];
   dropCan?: ViewChrome['dropCan'];
   openSurface?: ViewChrome['openSurface'];
+  dismiss?: ViewChrome['dismiss'];
   surfaceBadge?: ViewChrome['surfaceBadge'];
 }
 
@@ -138,13 +139,15 @@ export class XSearchView extends ItemView {
     // this", and ⌘V is that sentence on a keyboard.
     armDrops(container, this.deps, 'x', { paste: true });
 
-    // §26.3 — the query row and the identity bar belong under the thumb on a
-    // phone. Null on every other device, so `dock ?? header` is the old code.
-    const dock = thumbDock(container);
+    // §26.3 — the query row belongs under the reaching hand and needs WIDTH,
+    // so it takes the foot bar; `wide` is null on the desktop, which is what
+    // each `?? header` below preserves. Posting it into the rail instead was
+    // the iPad bug. The navigator's container is `mountSurfaceBar`'s call now.
+    const wide = wideDock(container);
 
     // Header
     const header = container.createDiv('jp-x-header');
-    mountSurfaceBar(dock ?? header, this.deps, 'x');
+    mountSurfaceBar(container, this.deps, 'x', header);
     const titleRow = header.createDiv('jp-x-title-row');
     titleRow.createEl('h4', { text: '𝕏 検索辞書', cls: 'jp-x-title' });
     const actions = titleRow.createDiv('jp-x-header-actions');
@@ -178,7 +181,7 @@ export class XSearchView extends ItemView {
     importBtn.addEventListener('click', () => this.openCorpusModal());
 
     // Main search row
-    const searchRow = (dock ?? header).createDiv('jp-x-search-row');
+    const searchRow = (wide ?? header).createDiv('jp-x-search-row');
     this.mainInput = searchRow.createEl('input', {
       type: 'search',
       placeholder: '語をスペース区切りで（AND）… 例: 以前の でさえ',
@@ -212,7 +215,7 @@ export class XSearchView extends ItemView {
     // Required-term chips — they belong WITH the input that produces them, so
     // they travel to the dock with it. 並び替え and 詳細検索 stay in the header:
     // they are set once and then read, not touched while typing.
-    this.chipsEl = (dock ?? header).createDiv('jp-x-chips');
+    this.chipsEl = (wide ?? header).createDiv('jp-x-chips');
 
     // Sort control
     const sortRow = header.createDiv('jp-x-sortrow');

@@ -90,10 +90,22 @@ export class HoverPeek {
   }
 }
 
-/** Fold Yomitan-style definitions to a single preview string (shared helper). */
+/**
+ * Fold definitions to a single preview string (shared helper).
+ *
+ * Takes both shapes the shelf speaks: a Yomitan definition (a string, or an
+ * object with `text`) and a `DictSense` off the sharded books (`gloss`). One
+ * preview function, because the card showing it does not care which of the
+ * two answered and neither should the caller.
+ */
 export function definitionsPreview(defs: unknown[]): string {
   return defs
-    .map((d) => (typeof d === 'string' ? d : (d && typeof d === 'object' && 'text' in d ? String((d as { text?: string }).text ?? '') : '')))
+    .map((d) => {
+      if (typeof d === 'string') return d;
+      if (!d || typeof d !== 'object') return '';
+      const o = d as { text?: unknown; gloss?: unknown };
+      return String(o.text ?? o.gloss ?? '');
+    })
     .filter(Boolean)
     .join(' / ');
 }

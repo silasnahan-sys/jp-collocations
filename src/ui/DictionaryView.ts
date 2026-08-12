@@ -44,7 +44,7 @@ import { JP_COLLOCATIONS_VIEW_TYPE, CollocationView } from './CollocationView';
 import { HoverPeek, definitionsPreview } from './hover-peek';
 import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
 import { classBadge } from './class-grammar';
-import { armDrops, mountSurfaceBar, thumbDock, type ViewChrome } from './view-chrome';
+import { armDrops, armSelectionEcho, mountSurfaceBar, wideDock, type ViewChrome } from './view-chrome';
 import { makeDraggable } from './drag-out';
 
 export const JP_DICTIONARY_VIEW_TYPE = 'jp-dictionary-view';
@@ -437,15 +437,39 @@ export class DictionaryView extends ItemView {
     // Paste is routed here too: the search box keeps its own ⌘V, everywhere
     // else in the view a paste means "do something with this".
     armDrops(container, this, 'dict', { paste: true });
+    /**
+     * The 辞書 gets the selection layer too — it was the one surface without it,
+     * on a premise that turned out to be false.
+     *
+     * `view-chrome` recorded that 辞書 "already answers a selection with its own
+     * relation-typed capture", so wiring the echo here would mean two bars for
+     * one gesture. But `offerCapture` is not fired by a selection at all: it
+     * hangs off an explicit ⚡ button that `entry-grammar` renders on each part,
+     * cell and citation. Selecting free text inside a definition — a word in a
+     * gloss you do not know, which is the single most common thing that happens
+     * while reading a dictionary — did nothing whatsoever, on the surface whose
+     * entire job is answering that question.
+     *
+     * So the two do not collide, they cover different gestures: press the ⚡ on
+     * a part the book itself delimited and you get the relation menu; select
+     * arbitrary text and you get its meaning and the ordinary verbs.
+     */
+    armSelectionEcho(container, this, 'dict');
 
-    // §26.3 — on a phone the search box, its suggestions and the identity bar
-    // all live under the thumb instead of at the top of the screen. `dock` is
-    // null everywhere else, so each `dock ?? header` below is the old code.
-    const dock = thumbDock(container);
+    // §26.3 — the search box, its suggestions and the identity bar all live
+    // under the reaching hand rather than at the top of the screen. Both docks
+    // are null on the desktop, so each `?? header` below is the old code.
+    //
+    // The search box and its completions need WIDTH, so they take the foot bar.
+    // Posting them into `edgeDock` is what crammed a text input into a 58px
+    // floating rail on the iPad. Where the NAVIGATOR goes is no longer this
+    // view's call — `mountSurfaceBar` resolves both docks itself, so a
+    // destination lands in the same container on all four surfaces.
+    const wide = wideDock(container);
 
     // Header
     const header = container.createDiv('jp-dict-header');
-    mountSurfaceBar(dock ?? header, this, 'dict');
+    mountSurfaceBar(container, this, 'dict', header);
     const titleRow = header.createDiv('jp-dict-title-row');
     titleRow.createEl('h4', { text: '辞書', cls: 'jp-dict-title' });
     this.headerActionsEl = titleRow.createDiv('jp-dict-header-actions');
@@ -467,7 +491,7 @@ export class DictionaryView extends ItemView {
     manageBtn.addEventListener('click', () => this.showManageDialog());
 
     // Search bar
-    const searchRow = (dock ?? header).createDiv('jp-dict-search-row');
+    const searchRow = (wide ?? header).createDiv('jp-dict-search-row');
     this.searchInput = searchRow.createEl('input', {
       type: 'search',
       placeholder: '検索… (漢字・ひらがな・カタカナ)',
@@ -509,7 +533,7 @@ export class DictionaryView extends ItemView {
     // Suggestions dropdown. In the dock too when there is one: a list of
     // completions that opens at the top of the screen while you are typing at
     // the bottom of it is a list you have to look away to read.
-    this.suggestionsEl = (dock ?? container).createDiv('jp-dict-suggestions');
+    this.suggestionsEl = (wide ?? container).createDiv('jp-dict-suggestions');
     this.suggestionsEl.style.display = 'none';
 
     // Stats

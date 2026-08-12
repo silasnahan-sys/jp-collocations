@@ -29,6 +29,7 @@
  */
 
 import { parseYouTubeId } from './audio-provider.ts';
+import { isRemoteUrl, isDeviceUrl, looksLikeImageUrl, vaultPathOf, type InVault } from './resource-url.ts';
 
 /** Where the drop landed. Surfaces offer different verbs for the same object. */
 export type DropSurface =
@@ -47,6 +48,7 @@ export type DropAction =
   | 'history'         // Takeout watch-history → batch transcripts
   | 'link'            // any other URL → the tray, with its host as origin
   | 'image-tray'      // image files → tray cards
+  | 'image-pair'      // image files + the text that arrived with them → ONE card
   | 'image-ocr'       // image files → OCR'd tray cards (吹き出し extracted)
   | 'attest'          // Japanese text onto an open entry → a 用例
   | 'capture'         // Japanese text → ⚡ 分類キャプチャ
@@ -68,6 +70,9 @@ export interface DropPayload {
   srt?: string;
   /** file indices into the drop's own FileList — the executor re-reads them. */
   fileIdx?: number[];
+  /** Images ALREADY in the vault, by path — a selection that spanned a picture
+   *  and its sentence. Nothing to save; `fileIdx` is empty in that case. */
+  imagePaths?: string[];
   /** a suggested note title (episode name from the filename, video id, …). */
   title?: string;
 }
@@ -104,10 +109,17 @@ export interface DropContext {
    * `x` = X cookies are set.
    */
   can?: { ocr?: boolean; x?: boolean };
+  /**
+   * Ask the vault whether a path is real. Optional, and what it buys is the
+   * difference between a picture you already have being MOVED and being
+   * re-linked: an in-vault image dragged out of a note carries no file, only
+   * its resource URL, and without this there is no way to tell that URL apart
+   * from a web address. See `notes/resource-url.ts`.
+   */
+  inVault?: InVault;
 }
 
 const JP = /[぀-ゟ゠-ヿ㐀-䶿一-鿿ｦ-ﾟ]/;
-const URL_ONLY = /^https?:\/\/\S+$/;
 /** A cue clock: `00:00:12,340 --> 00:00:14,120` (srt) or `.` (vtt). */
 const CUE = /\d{1,2}:\d{2}:\d{2}[,.]\d{3}\s*-->\s*\d{1,2}:\d{2}:\d{2}[,.]\d{3}/;
 const X_STATUS = /(?:^|\/\/)(?:www\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status(?:es)?\/(\d{5,25})/;
@@ -193,6 +205,12 @@ export function dropIntents(sample: DropSample, ctx: DropContext): DropIntent[] 
   const seen = new Set<DropAction>();
   const push = (i: DropIntent): void => { if (!seen.has(i.action)) { seen.add(i.action); out.push(i); } };
 
+  /** A phrase short enough to name a target card without wrapping it. */
+  const clip = (s: string): string => {
+    const one = s.replace(/\s+/g, ' ').trim();
+    return [...one].length > 18 ? `${[...one].slice(0, 18).join('')}…` : one;
+  };
+
   const files = sample.files ?? [];
   const preview = !!sample.preview;
   const text = (sample.text ?? '').trim();
@@ -215,6 +233,24 @@ export function dropIntents(sample: DropSample, ctx: DropContext): DropIntent[] 
     }
     if (imgs.length) {
       const n = imgs.length;
+      // ── the pair ───────────────────────────────────────────────────────
+      // A carry can hold a picture AND words, and the interesting ones nearly
+      // always do: a Manatan panel arrives with the sentence it already OCR'd,
+      // an Apple Notes selection arrives as strokes plus recognised text. This
+      // branch used to fall straight through to the image verbs and then
+      // `return out`, so the text was read into the sample and discarded —
+      // the pair had to be carried twice and re-paired by hand.
+      //
+      // Offered FIRST because it is the most specific reading of what arrived:
+      // keeping both is never a worse answer than keeping half, and the halves
+      // are still right underneath it if that is what you meant.
+      if (text && !preview) {
+        push({
+          action: 'image-pair', icon: '🖼', label: '画像と文をまとめて',
+          detail: n > 1 ? `${n}枚 + 「${clip(text)}」` : `画像 + 「${clip(text)}」`,
+          payload: { fileIdx: imgs.map((x) => x.i), text },
+        });
+      }
       if (ctx.can?.ocr) {
         push({
           action: 'image-ocr', icon: '🔎', label: 'OCRして取り込む',
@@ -240,10 +276,85 @@ export function dropIntents(sample: DropSample, ctx: DropContext): DropIntent[] 
     if (out.length) return out;
   }
 
+  // ── a picture already in the vault ───────────────────────────────────────
+  /**
+   * The verbs for a picture the vault ALREADY holds — the same three, whatever
+   * form the reference arrived in, because it is the same picture and which
+   * road you took must not be a seam you have to learn (§26.0 property 4).
+   *
+   * Three roads reach this, and each one used to end somewhere else:
+   *   - a DRAG carries the `<img>`'s resource URL on `text/uri-list`
+   *   - a PASTE of a copied embed carries `![[パネル.png]]` on `text/plain`
+   *   - a PASTE of a copied image address carries that address as the text
+   *
+   * `said` is the words that came with it, already cleared of the markup and
+   * addresses that are the reference rather than a sentence about it.
+   */
+  const vaultImage = (path: string, said: string): DropIntent[] => {
+    if (said && !preview) {
+      push({
+        action: 'image-pair', icon: '🖼', label: '画像と文をまとめて',
+        detail: `画像 + 「${clip(said)}」`,
+        payload: { imagePaths: [path], text: said },
+      });
+    }
+    // A panel already in the vault is exactly the thing worth OCR'ing — it is
+    // how a Manatan page that was saved before it was read gets its words.
+    // `ocrMangaImage` takes a vault path, so this needs no file at all.
+    if (ctx.can?.ocr) {
+      push({
+        action: 'image-ocr', icon: '🔎', label: 'OCRして取り込む',
+        detail: '吹き出しを抽出してトレイへ',
+        payload: { imagePaths: [path] },
+      });
+    }
+    push({
+      action: 'image-tray', icon: '🖼', label: '画像をトレイへ',
+      detail: path.split('/').pop() ?? '画像',
+      payload: { imagePaths: [path] },
+    });
+    return out;
+  };
+
+  // Dragging a panel out of a note and into the tray is the most natural way
+  // to move a picture you already have, and it is NOT a file drag: there is no
+  // `File`, only the `<img>`'s resource URL on `text/uri-list`. Every platform
+  // used to read that as a link and mint a URL card pointing at `app://…?<mtime>`
+  // — a card that looked right and stopped resolving the moment the file was
+  // touched. On Android the URL is literally `http://localhost/…`, so it even
+  // got a hostname. It is a vault path; `resource-url.ts` recovers it.
+  const held = uri && isDeviceUrl(uri) ? vaultPathOf(uri, ctx.inVault) : null;
+  if (held && looksLikeImageUrl(held)) {
+    // An internal image drag usually puts the embed's own markup on
+    // `text/plain` — `![[パネル.png]]`; a COPIED image address puts the address
+    // itself there. Both are the reference, not a sentence about it, and
+    // captioning a picture with the string that points at it is noise.
+    const said = isJustEmbed(text) || text === uri ? '' : text;
+    return vaultImage(held, said);
+  }
+  if (held) {
+    // A vault file that is not a picture — a PDF, an audio clip. The tray takes
+    // anything (§28 S6), and its PATH is the useful thing to keep, not the
+    // resource URL that will expire.
+    push({
+      action: 'tray', icon: '⤵', label: 'トレイへ',
+      detail: held.split('/').pop() ?? held,
+      payload: { text: held },
+    });
+    return out;
+  }
+  // A device URL the vault does not know — a picture from outside it, or one
+  // that moved. Not a link either: opening `app://…` in a browser does nothing.
+  // Fall through to text so the drop still lands somewhere honest.
+  const deviceish = !!uri && isDeviceUrl(uri);
+
   // ── links ────────────────────────────────────────────────────────────────
   // `uriList` is readable in neither pass, but its PRESENCE in `types` is — so
   // a preview over a dragged link can still show link verbs, generically.
-  const linkish = uri ?? (URL_ONLY.test(text) ? text : null);
+  //
+  // `isRemoteUrl`, not `/^https?:/`: on Android Obsidian serves the vault over
+  // `http://localhost/_capacitor_file_/…`, so the scheme is not the question.
+  const linkish = (uri && !deviceish ? uri : null) ?? (isRemoteUrl(text) ? text : null);
   if (preview && !linkish && kinds.includes('text/uri-list')) {
     push({
       action: 'link', icon: '🔗', label: 'リンクを取り込む',
@@ -308,6 +419,20 @@ export function dropIntents(sample: DropSample, ctx: DropContext): DropIntent[] 
   }
 
   if (!text) return out;
+
+  // ── the same picture, arriving by REFERENCE rather than by URL ───────────
+  // Copy an embed out of a note — select the line, tap Copy — and what reaches
+  // the clipboard is `![[パネル.png]]` and nothing else: no `text/uri-list`, no
+  // file, just the markup. That is the only way a vault picture gets onto the
+  // clipboard on iPadOS, and the bail below read it as an Obsidian-internal
+  // drag and returned nothing — so the paste road's answer for a picture the
+  // vault was holding all along was 「受け取れる形ではありませんでした」.
+  //
+  // The vault has to CONFIRM it, and it has to be an embed (`!`) of a picture.
+  // Anything else falls through to the bail, so the drops Obsidian owns are
+  // still not stolen.
+  const shown = ctx.inVault ? embedTarget(text, ctx.inVault) : null;
+  if (shown && looksLikeImageUrl(shown)) return vaultImage(shown, '');
 
   // An Obsidian-internal drag (a note out of the file explorer) arrives as a
   // bare wikilink. We have no verb for it that beats Obsidian's own — and
@@ -385,4 +510,36 @@ export function fmtClock(sec: number): string {
 function hostOf(url: string): string | null {
   const m = url.match(/^https?:\/\/([^/?#]+)/i);
   return m ? m[1].replace(/^www\./, '') : null;
+}
+
+/**
+ * The vault file an embed's markup points at — `![[パネル.png]]`, `![[a.png|300]]`,
+ * `![](attachments/a.png)` — or null when it is not an embed, or when the vault
+ * does not have it.
+ *
+ * The `!` is required. A BARE `[[note]]` is what Obsidian's own file-explorer
+ * drag puts on the wire, and stealing that drop is exactly what the wikilink
+ * bail exists to prevent. An embed is a different claim: it is a file being
+ * SHOWN, and no other handler is waiting for it on a plugin surface.
+ *
+ * Resolution goes through `inVault` rather than string work because embed
+ * targets are written in SHORTEST-UNIQUE form — `![[パネル.png]]` for a file
+ * filed six folders deep — and only the vault can expand that.
+ */
+function embedTarget(text: string, inVault: InVault): string | null {
+  const t = text.trim();
+  const wiki = /^!\[\[([^\]|#^]+)(?:[|#^][^\]]*)?\]\]$/.exec(t);
+  const md = /^!\[[^\]\n]*\]\(([^)\s]+)\)$/.exec(t);
+  const raw = (wiki?.[1] ?? md?.[1] ?? '').trim();
+  if (!raw) return null;
+  let target = raw;
+  try { target = decodeURIComponent(raw); } catch { /* keep raw */ }
+  return inVault(target);
+}
+
+/** Nothing but the markup that draws an embed — `![[x.png]]`, `![](x.png)`. */
+function isJustEmbed(text: string): boolean {
+  const t = text.trim();
+  if (!t) return true;
+  return /^!\[\[[^\]]*\]\]$/.test(t) || /^!\[[^\]\n]*\]\([^)\s]*\)$/.test(t);
 }

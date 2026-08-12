@@ -1,0 +1,21 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint"],
+  "extends": ["eslint:recommended", "plugin:@typescript-eslint/recommended"],
+  "env": { "node": true, "browser": true, "es2022": true },
+  "parserOptions": { "ecmaVersion": 2022, "sourceType": "module" },
+  "ignorePatterns": ["main.js", "*.mjs", "otherlogic/", "_tmp_*"],
+  "rules": {
+    "@typescript-eslint/no-explicit-any": "off",
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
+    "@typescript-eslint/no-non-null-assertion": "off",
+    "no-empty": ["warn", { "allowEmptyCatch": true }],
+    "prefer-const": "warn",
+    "no-control-regex": "off",
+    "no-constant-condition": ["error", { "checkLoops": false }],
+    "no-irregular-whitespace": ["error", { "skipStrings": true, "skipTemplates": true, "skipRegExps": true, "skipComments": true }],
+    "no-useless-escape": "warn",
+    "@typescript-eslint/ban-ts-comment": "warn"
+  }
+}

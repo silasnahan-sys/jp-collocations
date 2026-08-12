@@ -14,7 +14,7 @@ import { type SentenceRelation, RELATION_COLORS } from "../discourse/sentence-re
 import { heuristicResolver, type RelationsResolver } from "../discourse/relations-resolver";
 import type { ContextEngine, ContextCard, PatternContextCard, UnifiedExample, VaultOccurrence } from "../context/ContextEngine";
 import { LexiconPanel, type LexiconDeps } from "./LexiconPanel";
-import { mountSurfaceBar, thumbDock, type ViewChrome } from "./view-chrome";
+import { mountSurfaceBar, type ViewChrome } from "./view-chrome";
 
 // Module-level resolver, injected from main.ts at onload. Defaults to
 // heuristic-only so tests / direct view construction still work.
@@ -106,16 +106,15 @@ export class CollocationView extends ItemView {
     container.empty();
     container.addClass("jp-collocations-view");
 
-    // §26.3 — the identity bar goes under the thumb on a phone. LexiconPanel
-    // docks its own search row separately (it owns one and this view does not),
-    // and the two stack correctly: this dock is the last child of the view, the
-    // panel's is sticky against the bottom of the results scroller just above
-    // it — nav lowest, the box you are typing in directly above it.
-    const dock = thumbDock(container);
+    // §26.3 — the identity bar goes under the reaching hand, and WHICH dock
+    // that is now belongs to `mountSurfaceBar` rather than to each view. It
+    // takes the view root and resolves both. LexiconPanel docks its own search
+    // row separately (it owns one and this view does not) and the two still
+    // stack correctly: nav lowest, the box you are typing in directly above it.
 
     // Header
     const header = container.createDiv("jp-col-header");
-    mountSurfaceBar(dock ?? header, this.chrome, 'lexicon');
+    mountSurfaceBar(container, this.chrome, 'lexicon', header);
     header.createEl("h4", { text: "JP コロケーション", cls: "jp-col-title" });
 
     // Tab bar

@@ -30,6 +30,7 @@
 
 import { Notice } from 'obsidian';
 import { dropIntents, type DropIntent, type DropSample, type DropSurface } from '../notes/drop-intent.ts';
+import type { InVault } from '../notes/resource-url.ts';
 import { registerPointerDropZone } from './pointer-drag.ts';
 import type { DragPayload } from './drag-out.ts';
 
@@ -41,6 +42,10 @@ export interface DropRouterDeps {
   entryKey?: () => string | undefined;
   /** Capabilities, re-read per drag: settings change without a reload. */
   can?: () => { ocr?: boolean; x?: boolean };
+  /** Ask the vault whether a path is real — what lets a picture dragged out of
+   *  a note be recognised as the vault file it already is, rather than as a
+   *  link to a URL that expires. See `notes/resource-url.ts`. */
+  inVault?: InVault;
   /** §28 S5 — the one road in. Every surface hands its drop to the same executor. */
   run: (intent: DropIntent, files: File[]) => void | Promise<void>;
   /**
@@ -51,6 +56,54 @@ export interface DropRouterDeps {
 }
 
 const MAX_CARDS = 4;
+
+/**
+ * Bytes for a dropped file, read the instant it landed.
+ *
+ * A cross-app carry on iPadOS does not hand over a file — it hands over a
+ * *promise* of one, and WebKit materialises it lazily from the sending app's
+ * item provider. That provider is only guaranteed alive for the duration of the
+ * `drop` dispatch. A read started even one microtask later can find nothing
+ * behind the `File` and throws `NotFoundError: The object can not be found
+ * here.` — which is precisely what an Apple Notes handwriting selection did,
+ * three times, on the 2026-08-08 iPad recording: lasso the strokes, drag them
+ * onto 収集トレイ, and the carry died on the doorstep.
+ *
+ * So the read STARTS here, synchronously, while the door is still open, and the
+ * executor awaits the result whenever it gets around to it. This is the whole
+ * fix; everything downstream is just refusing to lose the rest of the drop when
+ * one payload comes back empty.
+ */
+const bytes = new WeakMap<File, Promise<ArrayBuffer | null>>();
+
+/**
+ * Begin reading every file in a carry. Called synchronously from the `drop` and
+ * `paste` handlers — moving this off the event dispatch reintroduces the bug.
+ */
+function holdBytes(files: File[]): void {
+  for (const f of files) dropBytes(f);
+}
+
+/**
+ * The bytes for `f`: the read begun at drop time, or a fresh one if this file
+ * never went through a drop (a file picker hands over a live handle and needs
+ * no rescue).
+ *
+ * Memoised per File, so a payload is pulled off the provider exactly once no
+ * matter how many callers ask — asking twice is how you turn a file that WAS
+ * readable into one that isn't.
+ *
+ * Never rejects. `null` means "the platform never produced this" — a fact to
+ * report to the user, not an exception to bubble. Resolve-to-null also keeps an
+ * unawaited hold from becoming an unhandled rejection.
+ */
+export function dropBytes(f: File): Promise<ArrayBuffer | null> {
+  const held = bytes.get(f);
+  if (held) return held;
+  const fresh = f.arrayBuffer().then((b) => b, () => null);
+  bytes.set(f, fresh);
+  return fresh;
+}
 
 /**
  * Arm `root` as a drop surface. Returns a detach function; calling twice on the
@@ -75,6 +128,7 @@ export function attachDropRouter(root: HTMLElement, deps: DropRouterDeps): () =>
     surface: typeof deps.surface === 'function' ? deps.surface() : deps.surface,
     entryKey: deps.entryKey?.(),
     can: deps.can?.() ?? {},
+    ...(deps.inVault ? { inVault: deps.inVault } : {}),
   });
 
   const teardown = (): void => {
@@ -120,6 +174,10 @@ export function attachDropRouter(root: HTMLElement, deps: DropRouterDeps): () =>
 
   const realSample = (dt: DataTransfer): { sample: DropSample; files: File[] } => {
     const files = Array.from(dt.files ?? []);
+    // Synchronous, inside the drop dispatch, before anything awaits. See
+    // `holdBytes` — this line is the difference between a Pencil carry that
+    // lands and one that reports a DOM exception.
+    holdBytes(files);
     return {
       sample: {
         text: dt.getData('text/plain') || undefined,
@@ -204,6 +262,10 @@ export function attachDropRouter(root: HTMLElement, deps: DropRouterDeps): () =>
     const cb = e.clipboardData;
     if (!cb) return;
     const files = Array.from(cb.files ?? []);
+    // A pasted image is promised the same way a dropped one is, and the paste
+    // chooser puts a human decision between the event and the read — by far the
+    // longest gap in the app. Hold the bytes now.
+    holdBytes(files);
     const sample: DropSample = {
       text: cb.getData('text/plain') || undefined,
       uriList: cb.getData('text/uri-list') || undefined,
@@ -248,9 +310,23 @@ export function attachDropRouter(root: HTMLElement, deps: DropRouterDeps): () =>
    * payload from the first frame, so the cards drawn are the cards meant, and
    * that correction branch cannot fire.
    */
+  /**
+   * A carry that holds a FILE has to say so here too.
+   *
+   * This used to build `{text, kinds, files: []}` and drop `p.url` on the
+   * floor — so a picture carried by finger or Pencil arrived as the string of
+   * its own path, while the same card dragged with a mouse arrived as a
+   * picture. That is the seam §26.0 property 4 forbids, and it fell on the
+   * transport that is the ONLY one iOS touch ever uses (see `drag-out.ts`:
+   * WebKit never fires `dragstart` from a touch), so the platform where this
+   * matters most was the platform where it never worked.
+   */
   const carried = (p: DragPayload): DropSample => ({
     text: p.text,
-    kinds: ['text/plain', 'text/html', 'application/x-jpc-drag'],
+    kinds: p.url
+      ? ['text/plain', 'text/html', 'text/uri-list', 'application/x-jpc-drag']
+      : ['text/plain', 'text/html', 'application/x-jpc-drag'],
+    ...(p.url ? { uriList: p.url } : {}),
     files: [],
   });
 

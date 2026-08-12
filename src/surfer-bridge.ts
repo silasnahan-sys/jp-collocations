@@ -67,7 +67,21 @@ export class SurferBridge {
   private kwicIndex: KWICIndex;
   private variationTrees: VariationTree[] | null = null;
   private constellation: Constellation | null = null;
-  private _utteranceCache: PatternMatch[][] = [];
+  /**
+   * filePath → that file's matches. Keyed BY FILE, and that is the whole point.
+   *
+   * This was an array that `indexFile` pushed onto. Re-indexing a file — which
+   * happens whenever it is edited, and used to happen on every leaf change —
+   * appended a second copy of its matches instead of replacing the first, so
+   * the constellation counted the same utterances two, five, forty times and
+   * called the result a co-occurrence frequency. The array also never shrank,
+   * on a path that could fire indefinitely.
+   *
+   * A map keyed by the thing that owns the data makes re-indexing idempotent
+   * by construction, and lets `removeFileFromIndex` actually remove it — which
+   * it could not do before, so a deleted file kept voting.
+   */
+  private utterancesByFile: Map<string, PatternMatch[]> = new Map();
 
   // Sidecar-backed typed-relation index. Populated lazily when files are
   // indexed via indexFileWithSidecar(). When the active file has no sidecar,
@@ -124,7 +138,7 @@ export class SurferBridge {
   purgeIndexes(): void {
     this.discourseIndex = new DiscourseIndex();
     this.kwicIndex = new KWICIndex();
-    this._utteranceCache = [];
+    this.utterancesByFile.clear();
     this.constellation = null;
     this.variationTrees = null;
     this.rawTextByFile.clear();
@@ -226,8 +240,9 @@ export class SurferBridge {
     this.discourseIndex.indexFile(filePath, cleanContent, matches);
     this.kwicIndex.indexFile(filePath, cleanContent, matches);
 
-    // Cache for constellation building
-    this._utteranceCache.push(matches);
+    // Cache for constellation building — replaces this file's previous
+    // contribution rather than adding to it.
+    this.utterancesByFile.set(filePath, matches);
     // Invalidate constellation cache
     this.constellation = null;
 
@@ -253,6 +268,10 @@ export class SurferBridge {
     }
     this.rawTextByFile.delete(filePath);
     this.lastSidecarOutcome.delete(filePath);
+    // A removed file must stop voting in the constellation. With the old
+    // append-only array there was no way to find its contribution, so it never
+    // did — every deleted or renamed note kept counting forever.
+    if (this.utterancesByFile.delete(filePath)) this.constellation = null;
     this.schedulePersist();
   }
 
@@ -472,8 +491,8 @@ export class SurferBridge {
   }
 
   private ensureConstellation(): void {
-    if (this.constellation || this._utteranceCache.length === 0) return;
-    this.constellation = buildConstellation(this._utteranceCache);
+    if (this.constellation || this.utterancesByFile.size === 0) return;
+    this.constellation = buildConstellation([...this.utterancesByFile.values()]);
   }
 
   // ── Index queries ────────────────────────────────────────

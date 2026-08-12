@@ -32,7 +32,12 @@ import {
 } from '../notes/speak-session.ts';
 import type { MarkRef } from '../notes/inbox.ts';
 import type { CaptureContext } from './CaptureModal.ts';
-import { armDrops, armSelectionEcho, type ViewChrome } from './view-chrome.ts';
+import type { DictLookupResult } from '../dictionary/types.ts';
+import { armDrops, armSelectionEcho, armEdgeBack, type ViewChrome } from './view-chrome.ts';
+import { makeDraggable, type DragPayload } from './drag-out.ts';
+import { HoverPeek, definitionsPreview } from './hover-peek.ts';
+import { wordAtPoint } from './word-at.ts';
+import { edgeDock, isTouchy, onPenFirstSeen } from './posture.ts';
 // The discourse calculus (DISCOURSE-CALCULUS.md): pure fold → live board.
 // 🔴 study = next-move prediction on the affordance set (FABLE-BRIEF §4.3).
 import { reduce, affordances } from '../discourse/calculus/scoreboard.mjs';
@@ -115,6 +120,34 @@ export interface FollowDeps {
   /** §29 the drag road (see ui/view-chrome.ts). */
   onDrop?: ViewChrome['onDrop'];
   dropCan?: ViewChrome['dropCan'];
+  /** …and the oracle that road needs to tell a picture the vault already holds
+   *  from a link. 鑑賞モード is the one drop surface that wires its chrome by
+   *  hand rather than through `peekChrome()`, so it was the one that had none. */
+  inVault?: ViewChrome['inVault'];
+  /**
+   * The way OUT. 鑑賞モード is the one surface with no identity bar — it is a
+   * full-pane watching mode and a navigator across the top of it would be
+   * chrome over the thing you are watching — so it had no exit at all, by
+   * button or otherwise. The edge drag is the right answer precisely here:
+   * invisible until you reach for it, and then it names where it goes.
+   */
+  dismiss?: ViewChrome['dismiss'];
+  backPeek?: ViewChrome['backPeek'];
+  /**
+   * §26.3 hover peek — the dictionary, for a nib held over a subtitle.
+   *
+   * The one thing an iPad does that no other device the plugin runs on can, and
+   * the only surface that lacked it was the one you use with your eyes on a
+   * screen. Optional: without it the peek simply never arms, exactly as on a
+   * device with no pointer that hovers.
+   */
+  dictLookup?: (q: string) => DictLookupResult[];
+  /**
+   * §25.4 — pause what is playing while a note is being written, and resume on
+   * close. Setting-backed; absent or false means the old behaviour (the show
+   * runs on while you type, which is what it always did).
+   */
+  autoPauseOnWrite?: () => boolean;
   /**
    * AUDIT §6.5 — record one 予測 answer against the calculus's own.
    *
@@ -196,6 +229,10 @@ export class FollowAlongView extends ItemView {
   private pickingSession = false;
   /** The session currently followed — kept for the transport's player name. */
   private plexSession: PlexSession | null = null;
+  /** §26.3 hover peek — the Pencil's own verb. Null where no dictionary was
+   *  supplied, which is the same as "this device cannot hover" downstream. */
+  private peek: HoverPeek | null = null;
+  private detachPenWatch: (() => void) | null = null;
   /** Transport DOM, repainted in place by the tick rather than re-rendered. */
   private transportEl: HTMLElement | null = null;
   private transportTimeEl: HTMLElement | null = null;
@@ -264,12 +301,44 @@ export class FollowAlongView extends ItemView {
     this.registerDomEvent(this.contentEl, 'keydown', (e) => this.onKey(e));
     this.tickId = window.setInterval(() => this.tick(), 500);
     this.registerInterval(this.tickId);
+    /**
+     * §26.3 hover peek, on the surface that needed it most and had it least.
+     *
+     * A nib held over a word in a subtitle gives its reading and gloss without
+     * touching anything — no tap, no mark, no pause, no navigation. On a device
+     * being watched rather than operated that is the whole difference between
+     * looking a word up and deciding not to bother, and it is the only
+     * interaction here that a finger fundamentally cannot perform.
+     *
+     * `HoverPeek` refuses `pointerType: 'touch'` itself, so this is armed
+     * unconditionally and simply never fires for a fingertip. It resolves the
+     * word by the same `wordAtPoint` rule the catalog uses — one grammar.
+     */
+    if (this.deps.dictLookup) {
+      this.peek = new HoverPeek((x, y) => {
+        const hit = wordAtPoint(x, y, (probe) => this.deps.dictLookup!(probe));
+        if (!hit) return null;
+        return {
+          headword: hit.term.expression,
+          reading: hit.term.reading,
+          deinflection: hit.deinflection,
+          def: definitionsPreview(hit.term.definitions),
+        };
+      });
+      this.peek.attach(this.contentEl, '.jp-follow-text');
+      // Nothing announces a Pencil until one is used, so the hint that this
+      // exists cannot be painted at first render — it lights up the moment the
+      // Pencil first touches anything, anywhere in the app.
+      this.detachPenWatch = onPenFirstSeen(() => this.updatePenHint());
+    }
     this.render();
   }
 
   async onClose(): Promise<void> {
     if (this.tickId != null) window.clearInterval(this.tickId);
     this.stopPlexPoll();
+    this.peek?.cancel();
+    this.detachPenWatch?.();
   }
 
   private async loadFile(): Promise<void> {
@@ -754,41 +823,206 @@ export class FollowAlongView extends ItemView {
    * was no way to tell a sync that is 8 seconds out from one that is following a
    * completely different episode. A bar makes the second case obvious instantly.
    */
+  /**
+   * The rail — every verb that acts on "whatever is playing right now".
+   *
+   * ## The problem it actually solves
+   *
+   * §23.5 gave this view eleven keyboard shortcuts and a `<kbd>` hint bar
+   * advertising them. On a tablet there is no keyboard, so the bar was a list
+   * of things you cannot do, occupying space the transcript wanted — and two
+   * of those verbs had no touch route at ALL: `n` (write a note on the line in
+   * play) and `c` (cut its clip). The rest were reachable only by finding and
+   * hitting the right row.
+   *
+   * Which is the deeper issue. **The now-line moves.** Every touch verb in this
+   * view is aimed at a target that is scrolling and that will be a different
+   * line by the time the nib lands — while your eyes are on a screen across the
+   * room, not on the thing you are aiming at. That is the ergonomic failure
+   * underneath "it's fiddly on the iPad", and no amount of enlarging rows fixes
+   * it, because the problem is not the size of the target but that it is in
+   * motion.
+   *
+   * A rail fixed to the writing-hand edge does. It never moves, it needs no
+   * aim, and every button on it means "…the line playing now" — which is the
+   * line you are reacting to, because reacting is what watching is. Tapping a
+   * row stays exactly as it was for the other case, when you want a specific
+   * line you can see.
+   *
+   * `edgeDock` returns null on the desktop, where the keyboard is real and the
+   * hint bar is honest, so nothing changes there.
+   */
+  private renderRail(root: HTMLElement): void {
+    const rail = edgeDock(root);
+    if (!rail) return;
+    // On a phone `edgeDock` returns the shared bottom dock, which is a COLUMN
+    // (it stacks a search row over a navigator elsewhere). A column of verb
+    // buttons across the bottom of a phone would be a tower; this marks it as
+    // the one dock whose children lie down.
+    rail.addClass('jp-follow-rail');
+    const btn = (label: string, title: string, fn: () => void): HTMLButtonElement => {
+      const b = rail.createEl('button', { text: label, cls: 'jp-rail-btn', attr: { title, 'aria-label': title } });
+      // `pointerdown`, not `click`: the same reasoning as the selection echo —
+      // it is the first event every input device agrees on, and with a Pencil
+      // the gap to `click` is long enough to feel like a dropped tap.
+      b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fn(); });
+      return b;
+    };
+    /** The line in play, or a complaint that says which thing is missing. */
+    const nowLine = (): MatcherLine | null => {
+      const l = this.lineForButtons();
+      if (!l) new Notice(this.clock ? '再生位置が不明です' : '先に行をタップして同期', 1500);
+      return l;
+    };
+
+    btn('📍', 'いまの行をマーク', () => { const l = nowLine(); if (l) void this.dropMark('note', l); });
+    btn('✎', 'いまの行に気づきを書く（書いている間は自動で一時停止）', () => {
+      const l = nowLine();
+      if (!l) return;
+      const row = this.contentEl.querySelector<HTMLElement>(`.jp-follow-line[data-idx="${l.index}"]`);
+      if (row) this.seedPrompt(row, l);
+    });
+    if (this.session) {
+      btn('🎤', 'いまの行で発話マーク', () => { const l = nowLine(); if (l) void this.dropMark('speak', l); });
+    }
+    if (this.deps.plexClip && this.plexPartKey) {
+      btn('🎬', 'いまの行のクリップを切り出す', () => { const l = nowLine(); if (l) void this.clipAtLine(l); });
+    }
+    rail.createDiv('jp-rail-sep');
+    btn('⌄', '再生中の行まで戻る', () => this.jumpToNow());
+    btn('📝', `マーク${this.marks.length ? ` (${this.marks.length})` : ''}`, () => {
+      this.marksOn = !this.marksOn;
+      this.render();
+    });
+  }
+
+  /**
+   * Cut the clip at a line. Lifted out of the `c` key handler so the rail
+   * button and the key are one implementation rather than two that agree today.
+   */
+  private async clipAtLine(l: MatcherLine): Promise<void> {
+    if (l.tStartSec == null) { new Notice('この行には時刻がありません'); return; }
+    new Notice('🎬 切り出し中…', 1500);
+    const existing = this.marks.find((m) => m.lineIndex === l.index);
+    const m: WatchMark = existing ?? {
+      cardId: null, tSec: l.tStartSec, lineIndex: l.index, lineText: l.text, seed: null, at: Date.now(),
+    };
+    if (!existing) this.marks.push(m);
+    await this.clipMark(m, false);
+    if (this.marksOn) this.repaintMarks();
+    else this.updateMarksChip();
+  }
+
+  /**
+   * How long the thing being watched runs, from whichever source knows.
+   *
+   * Plex says so outright. Nothing else does — but a stamped transcript already
+   * describes its own span, and its last stamp is within one line of the end.
+   * That is enough to scrub against, and "enough to scrub against" is the only
+   * thing the number is used for. Without this the scrub bar could exist only
+   * when Plex was driving, which is precisely backwards: the mode with no
+   * remote control is the one where a scrub bar is the only control there is.
+   */
+  private effectiveDuration(): number | null {
+    if (this.plexDuration) return this.plexDuration;
+    for (let i = this.lines.length - 1; i >= 0; i--) {
+      const t = this.lines[i].tStartSec;
+      if (t != null) return t + 4;      // a beat past the last line, not on it
+    }
+    return null;
+  }
+
+  /**
+   * ⏯ for whatever is actually playing.
+   *
+   * Where Plex owns the clock this has to stop the VIDEO — pausing only the
+   * transcript's idea of it makes the two disagree the moment you use it, which
+   * is the exact failure the transport exists to fix. Where nothing owns it
+   * (YouTube on a phone across the room) there is no video to command, so it
+   * pauses the local clock, which is the only thing there is to pause.
+   *
+   * Lifted out of `onKey` verbatim so the button and the `p` key cannot drift.
+   */
+  private togglePlayPause(): void {
+    if (this.plexSyncOn && this.plexSession?.playerId && this.deps.plexCommand) {
+      void this.sendPlex(this.plexPaused ? 'play' : 'pause');
+      return;
+    }
+    if (!this.clock) return;
+    this.clock = this.clock.pausedAtTSec != null
+      ? resumeClock(this.clock, Date.now())
+      : pauseClock(this.clock, Date.now());
+    this.updateClockChip();
+    this.updateTransport();
+  }
+
+  /** True when the thing we are following is stopped, whoever owns it. */
+  private isPaused(): boolean {
+    if (this.plexSyncOn) return this.plexPaused;
+    return !!this.clock && this.clock.pausedAtTSec != null;
+  }
+
+  /**
+   * The transport — no longer Plex's.
+   *
+   * It used to render only under `plexSyncOn || plexDuration`, and the ズレ
+   * calibration only under `plexEnabled && plexSyncOn`. So the setup with a
+   * REMOTE CONTROL got a full control surface, and the setup with none — a
+   * video playing on a different device entirely, where every correction has to
+   * be made by hand — got no scrub bar, no ⏯, no ±10s and no drift control at
+   * all. The transcript just ran and you either kept up or you didn't.
+   *
+   * Everything here already worked without Plex: `seekTo` and `nudgePlayback`
+   * move the local clock and additionally command the player only when one is
+   * listening. Only the BUTTONS were gated. So the gate moves to what each
+   * control actually needs — a clock, or a duration — and the two rows that
+   * genuinely require a claimed remote client stay behind that requirement.
+   */
   private renderTransport(root: HTMLElement): HTMLElement {
     const wrap = root.createDiv('jp-follow-transport');
     const time = wrap.createDiv({ cls: 'jp-follow-tp-time' });
+    const dur = this.effectiveDuration();
     const bar = wrap.createDiv('jp-follow-tp-bar');
     bar.createDiv('jp-follow-tp-fill');
-    bar.title = 'タップでこの位置へ（同期中ならプレイヤーも動かします）';
+    bar.title = dur
+      ? 'タップでこの位置へ（同期中ならプレイヤーも動かします）'
+      : 'タイムスタンプがないため位置を指定できません';
     bar.onclick = (e) => {
-      if (!this.plexDuration) return;
+      if (!dur) return;
       const box = bar.getBoundingClientRect();
       if (box.width <= 0) return;
       const frac = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width));
-      void this.seekTo(frac * this.plexDuration);
+      void this.seekTo(frac * dur);
     };
-    // Remote control only exists if a client claimed the session and said who it
-    // is. Absent that, the bar still moves the transcript — degrade soft.
-    const pid = this.plexSession?.playerId;
-    if (this.plexSyncOn && pid && this.deps.plexCommand) {
-      const acts = wrap.createDiv('jp-follow-tp-acts');
-      const btn = (label: string, title: string, fn: () => void): HTMLButtonElement => {
-        const b = acts.createEl('button', { text: label, cls: 'jp-follow-tp-btn', attr: { title } });
-        b.onclick = fn;
-        return b;
-      };
-      btn('⏪', '10秒戻す', () => void this.nudgePlayback(-10));
-      btn(this.plexPaused ? '▶' : '⏸', this.plexPaused ? '再生' : '一時停止',
-        () => void this.sendPlex(this.plexPaused ? 'play' : 'pause'));
-      btn('⏩', '10秒進める', () => void this.nudgePlayback(10));
+
+    const acts = wrap.createDiv('jp-follow-tp-acts');
+    const btn = (label: string, title: string, fn: () => void): HTMLButtonElement => {
+      const b = acts.createEl('button', { text: label, cls: 'jp-follow-tp-btn', attr: { title } });
+      b.onclick = fn;
+      return b;
+    };
+    // Available the moment a clock exists, remote or not. Off Plex these move
+    // the transcript alone — which is the whole job when the video is on a
+    // device this plugin cannot reach.
+    if (this.clock || this.plexSyncOn) {
+      const paused = this.isPaused();
+      const remote = this.plexSyncOn && !!this.plexSession?.playerId && !!this.deps.plexCommand;
+      btn('⏪', remote ? '10秒戻す' : '字幕を10秒戻す', () => void this.nudgePlayback(-10));
+      btn(paused ? '▶' : '⏸', paused ? '再生' : '一時停止', () => this.togglePlayPause());
+      btn('⏩', remote ? '10秒進める' : '字幕を10秒進める', () => void this.nudgePlayback(10));
+      // Say WHAT is being driven, so a tap that moves only the transcript is
+      // never mistaken for one that moved the show.
       acts.createSpan({
-        text: this.plexSession?.playerName ?? this.plexSession?.playerProduct ?? '',
+        text: remote
+          ? (this.plexSession?.playerName ?? this.plexSession?.playerProduct ?? '')
+          : '字幕のみ',
         cls: 'jp-follow-tp-player',
       });
     }
+
     this.transportEl = wrap;
     this.transportTimeEl = time;
-    this.transportPlayerId = pid ?? null;
+    this.transportPlayerId = this.plexSession?.playerId ?? null;
     this.transportPaused = this.plexPaused;
     this.updateTransport();
     return wrap;
@@ -820,7 +1054,7 @@ export class FollowAlongView extends ItemView {
     const wrap = this.transportEl;
     if (!wrap || !wrap.isConnected) return;
     const pos = clockPosition(this.clock, Date.now());
-    const dur = this.plexDuration;
+    const dur = this.effectiveDuration();
     const fill = wrap.querySelector<HTMLElement>('.jp-follow-tp-fill');
     if (fill) {
       const frac = pos != null && dur ? Math.max(0, Math.min(1, pos / dur)) : 0;
@@ -829,7 +1063,7 @@ export class FollowAlongView extends ItemView {
     this.transportTimeEl?.setText(
       pos == null ? '未同期' : dur ? `${fmtDur(pos)} / ${fmtDur(dur)}` : fmtDur(pos),
     );
-    wrap.toggleClass('is-paused', !!this.clock && this.clock.pausedAtTSec != null);
+    wrap.toggleClass('is-paused', this.isPaused());
     wrap.toggleClass('is-live', this.plexSyncOn && !this.plexSession?.paused);
   }
 
@@ -995,6 +1229,50 @@ export class FollowAlongView extends ItemView {
     const key = this.markRowKey(m);
     const clip = this.clipAt.get(key);
     const row = box.createDiv('jp-follow-mark');
+    /**
+     * A mark is the most finished thing this view makes: the line, the second
+     * it was said, the show, and whatever you thought about it. That is exactly
+     * what you want to drop into Apple Notes, an entry, or the editor, and
+     * until now the only way out of this panel was 🏷 harvest into the tray —
+     * one destination, inside Obsidian.
+     *
+     * It carries from a HANDLE, not from the whole row. The original note here
+     * said nothing on the row competes for a long press, which was true and is
+     * not the whole account: `draggable` costs the element its text selection
+     * outright, on every pointer, long press or not. A mark row is mostly the
+     * line you saved plus what you wrote about it — the text most worth
+     * selecting in the view — so the row keeps its glyphs and the carry takes
+     * the grip, exactly as the transcript line above it does.
+     */
+    const grip = row.createSpan({
+      text: '⠿', cls: 'jp-lex-exgrip',
+      attr: { title: 'この記録を持ち出す（ドラッグ）' },
+    });
+    makeDraggable(row, () => {
+      const text = (m.lineText ?? '').trim() || (m.seed ?? '').trim();
+      if (!text) return null;
+      const stamp = m.tSec != null ? fmtStamp(m.tSec) : '';
+      const sub = [stamp, this.sourceName].filter(Boolean).join(' · ');
+      return {
+        kind: 'quote',
+        text,
+        label: text,
+        ...(sub ? { sub } : {}),
+        // The seed rides along in the rich flavour only. A plain-text receiver
+        // asked for the Japanese, not for the Japanese plus your marginalia.
+        ...(m.seed?.trim()
+          ? { html: `<blockquote>${m.lineText ?? ''}<br><small>${m.seed} — ${sub}</small></blockquote>` }
+          : {}),
+        meta: {
+          file: this.filePath ?? undefined,
+          tSec: m.tSec ?? undefined,
+          lineIndex: m.lineIndex ?? undefined,
+          cardId: m.cardId ?? undefined,
+          seed: m.seed ?? undefined,
+          source: this.sourceName ?? undefined,
+        },
+      };
+    }, { grip });
     const top = row.createDiv('jp-follow-mark-top');
     if (m.tSec != null) {
       const at = m.tSec;
@@ -1134,22 +1412,8 @@ export class FollowAlongView extends ItemView {
     if (k === 's' && focused) return go(() => { this.syncTo(focused); new Notice('⌖ 同期', 800); });
     if (k === 'm') { const l = this.lineForButtons(); if (l) return go(() => this.dropMark('note', l)); }
     if (k === 'y' && this.session) { const l = this.lineForButtons(); if (l) return go(() => this.dropMark('speak', l)); }
-    if (k === 'p' && this.clock) {
-      return go(() => {
-        // While following a real player, ⏯ should stop the video, not just the
-        // transcript's idea of it — otherwise the two disagree the moment you
-        // use it, which is the whole failure the transport exists to fix.
-        if (this.plexSyncOn && this.plexSession?.playerId && this.deps.plexCommand) {
-          void this.sendPlex(this.plexPaused ? 'play' : 'pause');
-          return;
-        }
-        this.clock = this.clock!.pausedAtTSec != null
-          ? resumeClock(this.clock!, Date.now())
-          : pauseClock(this.clock!, Date.now());
-        this.updateClockChip();
-        this.updateTransport();
-      });
-    }
+    // One implementation, shared with the ⏸ button — see `togglePlayPause`.
+    if (k === 'p' && this.clock) return go(() => this.togglePlayPause());
     if (k === 'g') return go(() => this.jumpToNow());
     // §25.1 — write a note on the line in play without hunting for a long-press.
     if (k === 'n') {
@@ -1160,19 +1424,8 @@ export class FollowAlongView extends ItemView {
     // §25.4 — cut the clip at the line in play, straight from the keyboard.
     if (k === 'c' && this.deps.plexClip && this.plexPartKey) {
       const l = this.lineForButtons();
-      if (l && l.tStartSec != null) {
-        return go(async () => {
-          new Notice('🎬 切り出し中…', 1500);
-          const existing = this.marks.find((m) => m.lineIndex === l.index);
-          const m: WatchMark = existing ?? {
-            cardId: null, tSec: l.tStartSec ?? null, lineIndex: l.index, lineText: l.text, seed: null, at: Date.now(),
-          };
-          if (!existing) this.marks.push(m);
-          await this.clipMark(m, false);
-          if (this.marksOn) this.repaintMarks();
-          else this.updateMarksChip();
-        });
-      }
+      // One implementation, shared with the rail's 🎬 — see `clipAtLine`.
+      if (l && l.tStartSec != null) return go(() => this.clipAtLine(l));
     }
     if (k === '[') return go(() => this.nudgeOffset(-0.5));
     if (k === ']') return go(() => this.nudgeOffset(0.5));
@@ -1203,6 +1456,22 @@ export class FollowAlongView extends ItemView {
       ?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 
+  /**
+   * Say that hovering works, but only once we know something can hover.
+   *
+   * Painted into the bar hint rather than as its own chip: an affordance that
+   * has to announce itself with furniture is usually not worth the furniture,
+   * and this one is discovered by accident within about two seconds of holding
+   * a Pencil over the text anyway. The line exists so that discovery is not
+   * required.
+   */
+  private updatePenHint(): void {
+    const hint = this.contentEl.querySelector<HTMLElement>('.jp-follow-bar-hint');
+    if (!hint || !this.peek) return;
+    if (hint.querySelector('.jp-pen-hint')) return;
+    hint.createSpan({ cls: 'jp-pen-hint', text: '　✎ 単語の上にペンをかざすと辞書' });
+  }
+
   private updateClockChip(): void {
     const chip = this.contentEl.querySelector<HTMLElement>('.jp-follow-clock');
     if (!chip) return;
@@ -1226,6 +1495,11 @@ export class FollowAlongView extends ItemView {
     // §26.3 step 4 — select a phrase out of a line you are watching and act on
     // it in place. The whole point of 鑑賞モード is that you do not stop.
     armSelectionEcho(root, this.deps, 'follow');
+    // The exit. Every other surface gets this from `mountSurfaceBar`; this one
+    // has no surface bar, and "works on four surfaces out of five" is not an
+    // invariant — it is a thing you have to remember, which is the whole
+    // failure being fixed.
+    armEdgeBack(root, this.deps);
 
     if (!this.filePath || !this.lines.length) {
       root.createDiv({ cls: 'jp-follow-empty', text: 'トランスクリプトのノートから「鑑賞モード」コマンドで開いてください。' });
@@ -1291,13 +1565,38 @@ export class FollowAlongView extends ItemView {
           if (this.aligning) new Notice('いま聞こえているセリフの行をタップしてください', 4000);
           this.render();
         };
-        // Known small drift does not need the tap-align dance — say the number.
-        const nudge = chips.createDiv('jp-follow-nudge');
-        for (const d of [-1, -0.5, 0.5, 1]) {
-          const b = nudge.createEl('button', { text: `${d > 0 ? '+' : ''}${d}`, cls: 'jp-follow-nudgebtn' });
-          b.title = `字幕のズレを ${d > 0 ? '+' : ''}${d}秒 ずらす`;
-          b.onclick = () => void this.nudgeOffset(d);
-        }
+      }
+    }
+
+    /**
+     * §25.4b ズレ, for everyone who has stamps — not just for Plex.
+     *
+     * This row used to live inside the Plex block, two conditions deep. But a
+     * subtitle that runs half a second off the video runs half a second off it
+     * whoever is playing the video, and jimaku's files are cut to a different
+     * release than the one you are watching as often off Plex as on. Gating the
+     * only correction for that on the presence of a remote control meant the
+     * setup that CANNOT be corrected any other way was the one denied the
+     * control — the video on a phone across the room, where nudging the
+     * transcript by hand is the entire repertoire.
+     *
+     * The ⌖ tap-align dance above stays Plex-only, and correctly: off Plex a tap
+     * on a line already re-anchors the clock, so the gesture exists there
+     * already under a different name.
+     */
+    if (this.hasStamps()) {
+      const nudge = chips.createDiv('jp-follow-nudge');
+      nudge.title = '字幕と映像のズレ（この値はノートに保存されます）';
+      for (const d of [-1, -0.5, 0.5, 1]) {
+        const b = nudge.createEl('button', { text: `${d > 0 ? '+' : ''}${d}`, cls: 'jp-follow-nudgebtn' });
+        b.title = `字幕のズレを ${d > 0 ? '+' : ''}${d}秒 ずらす`;
+        b.onclick = () => void this.nudgeOffset(d);
+      }
+      if (this.subOffsetSec) {
+        nudge.createSpan({
+          text: `${this.subOffsetSec > 0 ? '+' : ''}${this.subOffsetSec}s`,
+          cls: 'jp-follow-nudge-val',
+        });
       }
     }
     // 📝 the marks made while watching — the working set, always reachable.
@@ -1321,21 +1620,31 @@ export class FollowAlongView extends ItemView {
       root.createDiv({ cls: 'jp-follow-warn', text: '⚠ タイムスタンプが見つかりません — 今ここ追従は無効です（マークは可能）。' });
     }
 
-    if (this.plexSyncOn || this.plexDuration) this.renderTransport(root);
+    // A clock is enough. See `renderTransport` — the controls were never Plex's,
+    // only their gate was.
+    if (this.plexSyncOn || this.plexDuration || this.clock || this.hasStamps()) {
+      this.renderTransport(root);
+    }
     if (this.pickingSession) this.renderSessionPicker(root);
 
-    // §23.5 keyboard hints
-    const keys = root.createDiv('jp-dm-keys');
-    const hints: Array<[string, string]> = [
-      ['j/k', '移動'], ['⏎', '📍'], ['n', '気づき'], ['s', '同期'], ['p', '⏯'], ['g', '今へ'], ['⇧M', '📝'],
-    ];
-    if (this.deps.plexClip && this.plexPartKey) hints.push(['c', '🎬']);
-    if (this.plexSyncOn) { hints.push(['[ ]', 'ズレ']); hints.push([', .', '±10s']); }
-    if (this.session) hints.push(['y', '🎤']);
-    for (const [key, label] of hints) {
-      const chip = keys.createSpan('jp-dm-key');
-      chip.createEl('kbd', { text: key });
-      chip.createSpan({ text: label });
+    // §23.5 keyboard hints — on a device that HAS a keyboard. Advertising
+    // eleven shortcuts to a tablet was a list of things the reader could not
+    // do, printed where the transcript wanted the space. The rail below carries
+    // those verbs there instead.
+    if (!isTouchy()) {
+      const keys = root.createDiv('jp-dm-keys');
+      const hints: Array<[string, string]> = [
+        ['j/k', '移動'], ['⏎', '📍'], ['n', '気づき'], ['s', '同期'], ['p', '⏯'], ['g', '今へ'], ['⇧M', '📝'],
+      ];
+      if (this.deps.plexClip && this.plexPartKey) hints.push(['c', '🎬']);
+      if (this.hasStamps()) hints.push(['[ ]', 'ズレ']);
+      if (this.clock) hints.push([', .', '±10s']);
+      if (this.session) hints.push(['y', '🎤']);
+      for (const [key, label] of hints) {
+        const chip = keys.createSpan('jp-dm-key');
+        chip.createEl('kbd', { text: key });
+        chip.createSpan({ text: label });
+      }
     }
 
     if (this.marksOn) this.renderMarksPanel(root);
@@ -1346,7 +1655,12 @@ export class FollowAlongView extends ItemView {
     // ── the transcript ──
     const list = root.createDiv('jp-follow-list');
     this.listEl = list;
-    list.addEventListener('scroll', () => { this.scrollHoldUntil = Date.now() + SCROLL_HOLD_MS; }, { passive: true });
+    list.addEventListener('scroll', () => {
+      this.scrollHoldUntil = Date.now() + SCROLL_HOLD_MS;
+      // A peek anchored to a word that has since scrolled away is pointing at
+      // whatever moved under it — worse than no peek.
+      this.peek?.cancel();
+    }, { passive: true });
     for (const line of this.lines) this.renderLine(list, line);
 
     const nowPill = root.createDiv({ text: '⌄ 今へ', cls: 'jp-follow-nowpill' });
@@ -1384,8 +1698,42 @@ export class FollowAlongView extends ItemView {
       bar.createDiv({ cls: 'jp-follow-bar-hint', text: this.clock ? '行をタップ＝📍マーク（長押しで一語シード）' : '今聞こえた行をタップ＝同期' });
     }
 
+    // Last, so it stacks above the transcript it floats over.
+    this.renderRail(root);
+
     this.updateClockChip();
+    this.updatePenHint();
     this.tick();
+  }
+
+  /**
+   * What a transcript line IS when you carry it somewhere else.
+   *
+   * `drag-out.ts` has declared `'line'` as a DragKind since it was written and
+   * nothing has ever produced one — the watching surface was a drop TARGET and
+   * never a source, so the richest object in the plugin (the Japanese, the
+   * second it was said, who said it, and which show) was the one thing you
+   * could not take out. Retyping it off the screen was the only route, on the
+   * device that is hardest to type on, during the activity you least want to
+   * stop.
+   */
+  private linePayload(line: MatcherLine): DragPayload {
+    const stamp = line.tStartSec != null ? fmtStamp(line.tStartSec) : '';
+    const sub = [stamp, line.speaker, this.sourceName].filter(Boolean).join(' · ');
+    return {
+      kind: 'line',
+      text: line.text,
+      label: line.text,
+      ...(sub ? { sub } : {}),
+      // §28 S2 — provenance survives the boundary. A line dropped on an entry
+      // can become a 用例 that still knows which second of which show it is.
+      meta: {
+        file: this.filePath ?? undefined,
+        tSec: line.tStartSec ?? undefined,
+        lineIndex: line.index,
+        source: this.sourceName ?? undefined,
+      },
+    };
   }
 
   private renderLine(list: HTMLElement, line: MatcherLine): void {
@@ -1393,15 +1741,58 @@ export class FollowAlongView extends ItemView {
     row.dataset.idx = String(line.index);
     if (line.index === this.nowIdx) row.addClass('jp-follow-line--now');
     if (line.index === this.focusIdx) row.addClass('jp-follow-line--focus');
-    if (line.tStartSec != null) row.createSpan({ text: fmtStamp(line.tStartSec), cls: 'jp-follow-stamp' });
+    /**
+     * The stamp is the line's grip — and ONLY the stamp is.
+     *
+     * Two reasons the row itself is not a drag source, and the second is the
+     * one that matters:
+     *
+     *   1. Two long-press gestures cannot live on one element, and this row's
+     *      is already spoken for by §25.1's seed note.
+     *   2. `draggable="true"` suppresses text selection inside the element it
+     *      is set on. Arming the whole row would have silently killed
+     *      `armSelectionEcho` on this view — highlight a phrase inside a
+     *      subtitle and act on it in place, which §26.3 step 4 calls the whole
+     *      point of 鑑賞モード. Trading "select any phrase in the line" for
+     *      "drag the line from anywhere in it" is a bad trade in both
+     *      directions: the grip already gives the drag, and nothing else gives
+     *      back the selection.
+     *
+     * Unstamped transcripts get a plain grip in the same slot rather than no
+     * carry at all, because "this file happened to lack timestamps" is not a
+     * reason to lose the gesture.
+     */
+    const grip = line.tStartSec != null
+      ? row.createSpan({ text: fmtStamp(line.tStartSec), cls: 'jp-follow-stamp jp-follow-grip' })
+      : row.createSpan({ text: '⠿', cls: 'jp-follow-grip jp-follow-grip--bare' });
+    grip.setAttribute('aria-label', 'この行を持ち出す');
+    grip.title = '長押しで持ち出し（他のアプリにも落とせます）';
+    makeDraggable(grip, () => this.linePayload(line));
     if (line.speaker) row.createSpan({ text: line.speaker, cls: 'jp-follow-speaker' });
     row.createSpan({ text: line.text, cls: 'jp-follow-text' });
 
     // tap: first tap (unsynced) = sync only; synced = resync + 📍 mark
     let pressTimer: number | null = null;
     let longFired = false;
-    row.addEventListener('pointerdown', () => {
+    /**
+     * A LONG press that began on the grip belongs to the carry, start to
+     * finish. Without this the two gestures stack on the same finger: the seed
+     * editor opens at 550ms, the drag commits at 700, and letting go drops a
+     * mark on top of both. The grip is the one place on this row where a long
+     * press does NOT mean "write something here".
+     *
+     * A SHORT press on it is still just a tap on the row. Sacrificing the
+     * stamp's area from the tap target would shrink the thing you aim at while
+     * watching, and aiming is already the expensive part — so the two are
+     * separated by duration, which is the axis they actually differ on.
+     */
+    let onGrip = false;
+    let pressAt = 0;
+    row.addEventListener('pointerdown', (e) => {
+      onGrip = !!(e.target as HTMLElement | null)?.closest?.('.jp-follow-grip');
+      pressAt = Date.now();
       longFired = false;
+      if (onGrip) return;
       pressTimer = window.setTimeout(() => { longFired = true; this.seedPrompt(row, line); }, LONG_PRESS_MS);
     });
     const cancel = () => { if (pressTimer != null) { window.clearTimeout(pressTimer); pressTimer = null; } };
@@ -1410,6 +1801,9 @@ export class FollowAlongView extends ItemView {
     row.addEventListener('pointerup', () => {
       cancel();
       if (longFired) return;
+      // Comfortably under every commit beat (380ms at the shortest), so a tap
+      // can never be mistaken for an abandoned carry.
+      if (onGrip && Date.now() - pressAt > 300) return;
       // ⌖ align mode consumes the tap: it is a measurement, not a mark.
       if (this.aligning) { void this.alignTo(line); return; }
       if (!this.clock && line.tStartSec != null) {
@@ -1450,12 +1844,35 @@ export class FollowAlongView extends ItemView {
       attr: { rows: '2', placeholder: '気づき…（⏎ 保存 / ⇧⏎ 改行 / Esc 取消）' },
     });
     ta.value = initial ?? '';
+    /**
+     * §25.4 — writing buys back the time it costs.
+     *
+     * Every machine needed for this has been here since §25.4c: `plexCommand`
+     * relays play/pause to the client that owns the session, and the local
+     * clock has pause/resume of its own. `dropMark` never called either. So
+     * the plugin could stop a show playing on another device, and the one
+     * moment it obviously should — you are typing, with your eyes down, and
+     * the dialogue is still going — was the moment it did not.
+     *
+     * It hangs off the NOTE EDITOR, not off marking. A bare 📍 tap is §25.1's
+     * cheapest gesture and costs no attention; pausing on every one of those
+     * would be an interruption nobody asked for. Opening a text field is the
+     * unambiguous signal that you have stopped watching.
+     *
+     * Only what we paused gets resumed. If the show was already stopped when
+     * the editor opened — or you paused it yourself while typing — closing the
+     * editor must not start it playing at you.
+     */
+    const shouldHold = this.deps.autoPauseOnWrite?.() ?? false;
+    const held = shouldHold && !this.isPaused() && (this.clock != null || this.plexSyncOn);
+    if (held) this.togglePlayPause();
     let settled = false;
     const finish = (save: boolean): void => {
       if (settled) return;
       settled = true;
       const text = ta.value.trim();
       wrap.remove();
+      if (held && this.isPaused()) this.togglePlayPause();
       if (save) void onSave(text);
     };
     ta.onkeydown = (e) => {
