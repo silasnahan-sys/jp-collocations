@@ -123,11 +123,11 @@ async function sapisidAuth(cookie, nowSec, origin = ORIGIN) {
     return null;
   const p1 = cookieValue(cookie, "__Secure-1PAPISID");
   const p3 = cookieValue(cookie, "__Secure-3PAPISID");
-  const mk = async (sid, label) => sid ? `${label} ${nowSec}_${await sha1Hex(`${nowSec} ${sid} ${origin}`)}` : null;
+  const mk2 = async (sid, label) => sid ? `${label} ${nowSec}_${await sha1Hex(`${nowSec} ${sid} ${origin}`)}` : null;
   const parts = [
-    await mk(sapisid, "SAPISIDHASH"),
-    await mk(p1, "SAPISID1PHASH"),
-    await mk(p3, "SAPISID3PHASH")
+    await mk2(sapisid, "SAPISIDHASH"),
+    await mk2(p1, "SAPISID1PHASH"),
+    await mk2(p3, "SAPISID3PHASH")
   ].filter(Boolean);
   return parts.join(" ");
 }
@@ -5462,8 +5462,8 @@ function assignQuoteRelations(text, hits, quotes) {
         continue;
       const hStart = h.offset;
       const hEnd = h.offset + (h.length || 0);
-      const overlap = hStart <= q.offset && q.offset < hEnd;
-      const dist = overlap ? 0 : Math.min(
+      const overlap2 = hStart <= q.offset && q.offset < hEnd;
+      const dist = overlap2 ? 0 : Math.min(
         Math.abs(hStart - (q.offset + q.length)),
         Math.abs(hEnd - q.offset)
       );
@@ -5570,18 +5570,18 @@ function assignQuoteRelations(text, hits, quotes) {
       continue;
     }
     const surface = h.surface || "";
-    const mk = surface.match(/っていう|という|って|と/);
-    if (!mk)
+    const mk2 = surface.match(/っていう|という|って|と/);
+    if (!mk2)
       continue;
-    const mkOffset = h.offset + mk.index;
-    const cited = surface.slice(0, mk.index) || text.slice(Math.max(0, h.offset - 15), h.offset);
+    const mkOffset = h.offset + mk2.index;
+    const cited = surface.slice(0, mk2.index) || text.slice(Math.max(0, h.offset - 15), h.offset);
     const synthType = "quote.hypothetical";
     const synthSource = inferSource(synthType, cited, "") || "hypothetical";
     const synthFrame = {
       quoteId: `q${spans.length + frames.length}`,
       quoteType: synthType,
       markerOffset: mkOffset,
-      markerSurface: mk[0],
+      markerSurface: mk2[0],
       citedSurface: cited,
       citedSpan: [Math.max(0, mkOffset - cited.length), mkOffset],
       hostOpId: h.opId,
@@ -8162,16 +8162,16 @@ function detectCrossRefs(flow, sa) {
       continue;
     for (const prev of recent) {
       for (const pp of prev.parts) {
-        const overlap = kw.filter((k) => pp.content.includes(k));
-        if (overlap.length < 1 || pp.content.length < 4)
+        const overlap2 = kw.filter((k) => pp.content.includes(k));
+        if (overlap2.length < 1 || pp.content.length < 4)
           continue;
-        const strong = overlap.length >= 2 || overlap.some((k) => {
+        const strong = overlap2.length >= 2 || overlap2.some((k) => {
           var _a3;
           return ((_a3 = idf == null ? void 0 : idf.get(k)) != null ? _a3 : 99) - 1 >= 2.5;
         });
         if (!strong)
           continue;
-        const idfSum = overlap.reduce((s, k) => {
+        const idfSum = overlap2.reduce((s, k) => {
           var _a3;
           return s + Math.max(0.5, ((_a3 = idf == null ? void 0 : idf.get(k)) != null ? _a3 : 1.5) - 1);
         }, 0);
@@ -8180,7 +8180,7 @@ function detectCrossRefs(flow, sa) {
           to: fullId(prev.sentenceId, pp.id),
           kind: "echoes",
           score: Math.min(0.55, 0.18 + 0.08 * idfSum),
-          evidence: [`kw-overlap:${overlap.join("|")}`]
+          evidence: [`kw-overlap:${overlap2.join("|")}`]
         });
       }
     }
@@ -18449,14 +18449,14 @@ function extractCollocations(text) {
   const kept = [];
   const occupied = /* @__PURE__ */ new Set();
   for (const r2 of results) {
-    let overlap = false;
+    let overlap2 = false;
     for (let i = r2.start; i < r2.end; i++) {
       if (occupied.has(i)) {
-        overlap = true;
+        overlap2 = true;
         break;
       }
     }
-    if (overlap)
+    if (overlap2)
       continue;
     kept.push(r2);
     for (let i = r2.start; i < r2.end; i++)
@@ -19511,8 +19511,8 @@ function classifyMove(parse, feats, act, prevParse, prevFeats, prevAct, state) {
   if (act.act === "question" || act.act === "clarification-request") {
     const otherClaim = lastStandingClaimByOther(state, me);
     if (otherClaim && !otherClaim.challenged) {
-      const overlap = feats.topicNPs.some((t) => otherClaim.topicNPs.includes(t));
-      if (overlap || act.act === "clarification-request") {
+      const overlap2 = feats.topicNPs.some((t) => otherClaim.topicNPs.includes(t));
+      if (overlap2 || act.act === "clarification-request") {
         return {
           move: "doubt-sowing-challenge",
           reason: `Q on ${otherClaim.claimer}'s standing claim #${otherClaim.sentenceIdx + 1}`,
@@ -19588,8 +19588,8 @@ function updateState(state, idx, parse, feats, act, move) {
       const c = state.standingClaims[i];
       if (c.claimer === me)
         continue;
-      const overlap = feats.topicNPs.some((t) => c.topicNPs.includes(t)) || feats.contentHeads.some((h) => c.topicNPs.includes(h));
-      if (overlap || differentSpeaker({ speaker: c.claimer }, parse)) {
+      const overlap2 = feats.topicNPs.some((t) => c.topicNPs.includes(t)) || feats.contentHeads.some((h) => c.topicNPs.includes(h));
+      if (overlap2 || differentSpeaker({ speaker: c.claimer }, parse)) {
         c.challenged = true;
         state.recentDoubts.push({
           sentenceIdx: idx,
@@ -19827,9 +19827,9 @@ var ADJACENCY_PAIRS = [
       const oppositionEvidence = hasStrongLeadOpposition || hasInlineOpposition || hasDisagreementOpener || negatesPrev;
       if (!oppositionEvidence)
         return null;
-      const overlap = topicOverlap(f1, f2);
+      const overlap2 = topicOverlap(f1, f2);
       const hasExplicitRef = hasInlineOpposition || hasDisagreementOpener;
-      if (overlap < 0.6 && !hasExplicitRef)
+      if (overlap2 < 0.6 && !hasExplicitRef)
         return null;
       if (sameSpeaker2 && f2.repairTriggers.length === 0 && !hasInlineOpposition)
         return null;
@@ -19852,7 +19852,7 @@ var ADJACENCY_PAIRS = [
         [hasInlineOpposition, 0.2],
         [hasDisagreementOpener, 0.15],
         [negatesPrev, 0.15],
-        [overlap >= 1, 0.1],
+        [overlap2 >= 1, 0.1],
         [!sameSpeaker2, 0.1]
       ]);
       return { reason: "pair:assertion-disagreement", triggers, confidence };
@@ -19984,8 +19984,8 @@ var ADJACENCY_PAIRS = [
       const oppRole = (_b2 = f2.leadingMarker) == null ? void 0 : _b2.role;
       if (oppRole !== "opposition" && f2.oppositionTriggers.length === 0)
         return null;
-      const overlap = topicOverlap(f1, f2);
-      if (overlap < 0.6)
+      const overlap2 = topicOverlap(f1, f2);
+      if (overlap2 < 0.6)
         return null;
       const triggers = [f1.leadingMarker.surface];
       if (f2.leadingMarker)
@@ -19994,7 +19994,7 @@ var ADJACENCY_PAIRS = [
         triggers.push(t.text);
       const confidence = computeConfidence(0.7, [
         [((_c2 = f2.leadingMarker) == null ? void 0 : _c2.strength) === "strong", 0.1],
-        [overlap >= 1, 0.1]
+        [overlap2 >= 1, 0.1]
       ]);
       return { reason: "pair:concession-counter", triggers, confidence };
     }
@@ -20020,13 +20020,13 @@ var ADJACENCY_PAIRS = [
       const hasConclusion = f2Role === "summary" || f2Role === "consequence" || f2Role === "rephrasing";
       if (!hasConclusion)
         return null;
-      const overlap = topicOverlap(f1, f2);
-      if (overlap < 0.6)
+      const overlap2 = topicOverlap(f1, f2);
+      if (overlap2 < 0.6)
         return null;
       const triggers = [f1.leadingMarker.surface, f2.leadingMarker.surface];
       const confidence = computeConfidence(0.7, [
         [((_c2 = f2.leadingMarker) == null ? void 0 : _c2.strength) === "strong", 0.1],
-        [overlap >= 1, 0.1]
+        [overlap2 >= 1, 0.1]
       ]);
       return { reason: "pair:evidence-for", triggers, confidence };
     }
@@ -20048,15 +20048,15 @@ var ADJACENCY_PAIRS = [
         return null;
       if (!f2.hasAssertionMarker)
         return null;
-      const overlap = topicOverlap(f1, f2);
-      if (overlap < 0.6)
+      const overlap2 = topicOverlap(f1, f2);
+      if (overlap2 < 0.6)
         return null;
       const triggers = [];
       if (((_a2 = f1.leadingMarker) == null ? void 0 : _a2.role) === "hedge")
         triggers.push(f1.leadingMarker.surface);
       triggers.push(f1.terminalForm.trim(), f2.terminalForm.trim());
       const confidence = computeConfidence(0.65, [
-        [overlap >= 1, 0.1]
+        [overlap2 >= 1, 0.1]
       ]);
       return { reason: "pair:hedge-then-assert", triggers, confidence };
     }
@@ -31097,6 +31097,13 @@ var TokenCanvas = class {
     const best = ((_a2 = opts.suggestions) != null ? _a2 : [])[0];
     this.faint = best ? suggestionToTokenRange(this.tokens, best) : null;
   }
+  /** The layered-bundle path (capture-bundle.ts) reads the canvas state whole. */
+  getTokens() {
+    return this.tokens;
+  }
+  getMarks() {
+    return this.marks;
+  }
   hasMarks() {
     return !!(this.marks.span || this.marks.parts.length || this.marks.struck.length || this.marks.circled != null);
   }
@@ -31282,6 +31289,273 @@ var TokenCanvas = class {
   }
 };
 
+// src/dictionary/frames.ts
+var SLOT_ANY = "\uFF5E";
+var SLOT_NUM = "\uFF3F";
+function normalizeFrame(input) {
+  let s = String(input != null ? input : "").normalize("NFKC");
+  s = s.replace(/\$?_+/g, SLOT_NUM);
+  s = s.replace(/[~〜～]/g, SLOT_ANY);
+  s = s.replace(/[○◯]{2,}|[□]{2,}/g, SLOT_ANY);
+  s = s.replace(/\[[^\]]*\]/g, "");
+  s = s.replace(new RegExp(`^(\\S{0,4}\\s?[${SLOT_ANY}${SLOT_NUM}])\\s*\\1`), "$1");
+  s = s.replace(new RegExp(`${SLOT_ANY}\\s*${SLOT_ANY}+`, "g"), SLOT_ANY);
+  s = s.replace(new RegExp(`${SLOT_NUM}\\s*${SLOT_NUM}+`, "g"), SLOT_NUM);
+  return s.replace(/\s+/g, " ").trim();
+}
+function toFrame2(input, shape) {
+  const key = normalizeFrame(input);
+  const slots = [];
+  for (let i = 0; i < key.length; i++) {
+    if (key[i] === SLOT_ANY)
+      slots.push({ kind: "any", at: i });
+    else if (key[i] === SLOT_NUM)
+      slots.push({ kind: "num", at: i });
+  }
+  return { key, slots, fixed: slots.length === 0, ...shape ? { shape } : {} };
+}
+function classHintForFrame(frame, opts = {}) {
+  if (opts.evocativeHead)
+    return "rhet_collocation";
+  if (opts.situation && frame.slots.length)
+    return "phrase_schema";
+  if (frame.slots.length >= 2)
+    return "phrase_schema";
+  if (frame.slots.length === 1)
+    return frame.shape ? "skeletal" : "phrase_schema";
+  return "collocation";
+}
+
+// src/notes/analysis-bundle.ts
+var overlap = (aS, aE, bS, bE) => Math.max(aS, bS) < Math.min(aE, bE);
+var within = (inner, oS, oE) => {
+  const [s, e] = Array.isArray(inner) ? inner : [inner.start, inner.end];
+  return s >= oS && e <= oE;
+};
+var sortMarks = (ms) => [...ms].sort((x, y) => x.start - y.start);
+var keyOf = (notation) => normalizeFrame(notation.replace(/〔[^〕]*〕/g, ""));
+function carveNotation(text, lo, hi, marks, opts = {}) {
+  var _a2;
+  const inRange = sortMarks(marks.filter((m) => within(m, lo, hi)));
+  const slotTypes = [];
+  let out = "";
+  let at = lo;
+  for (const m of inRange) {
+    if (m.kind !== "slot" && !(m.kind === "glue" && opts.dropGlue))
+      continue;
+    if (m.start < at)
+      continue;
+    out += text.slice(at, m.start);
+    if (m.kind === "slot") {
+      out += SLOT_ANY + (m.contentType ? `\u3014${m.contentType}\u3015` : "");
+      slotTypes.push((_a2 = m.contentType) != null ? _a2 : "");
+    }
+    at = m.end;
+  }
+  out += text.slice(at, hi);
+  return { notation: out, slotTypes };
+}
+var mk = (cls, role, notation, span, extra = {}) => {
+  const key = keyOf(notation);
+  return { cls, role, notation, key, keys: [key], span, ...extra };
+};
+function deriveBundle(text, marks = [], links = []) {
+  const layers = [];
+  const edges = [];
+  const whole = [0, text.length];
+  layers.push(mk("serifu", "whole", text, whole));
+  const l0 = 0;
+  const ranges = marks.filter((m) => m.kind === "range");
+  const top = marks.filter((m) => m.kind !== "range" && !ranges.some((r2) => within(m, r2.start, r2.end)));
+  const axes = marks.filter((m) => m.kind === "axis").map((m) => ({ text: text.slice(m.start, m.end), mates: m.mates }));
+  const glueSurfaces = marks.filter((m) => m.kind === "glue").map((m) => text.slice(m.start, m.end));
+  let frameIdx = -1;
+  if (top.some((m) => m.kind === "slot")) {
+    const { notation, slotTypes } = carveNotation(text, 0, text.length, top);
+    frameIdx = layers.push(mk("phrase_schema", "frame", notation, whole, {
+      slotTypes,
+      axes: axes.length ? axes : void 0
+    })) - 1;
+    edges.push({ from: l0, to: frameIdx, kind: "derives" });
+    for (const a of axes)
+      edges.push({ from: frameIdx, to: frameIdx, kind: "axis", surfaces: [a.text] });
+  }
+  if (top.some((m) => m.kind === "glue")) {
+    const { notation, slotTypes } = carveNotation(text, 0, text.length, top, { dropGlue: true });
+    const from = frameIdx >= 0 ? frameIdx : l0;
+    const coreIdx = layers.push(mk("phrase_schema", "core", notation, whole, {
+      slotTypes: slotTypes.length ? slotTypes : void 0,
+      glue: glueSurfaces
+    })) - 1;
+    edges.push({ from, to: coreIdx, kind: "glue", surfaces: glueSurfaces });
+  }
+  const chunkIdxs = [];
+  for (const r2 of marks.filter((m) => m.kind === "range")) {
+    const inner = marks.filter((m) => m.kind !== "range" && within(m, r2.start, r2.end));
+    const { notation, slotTypes } = carveNotation(text, r2.start, r2.end, inner);
+    const idx = layers.push(mk("phrase_schema", "chunk", notation, [r2.start, r2.end], {
+      slotTypes: slotTypes.length ? slotTypes : void 0
+    })) - 1;
+    chunkIdxs.push(idx);
+    edges.push({ from: l0, to: idx, kind: "derives" });
+  }
+  for (const ln of links) {
+    const [aS, aE] = ln.a;
+    const [bS, bE] = ln.b;
+    const aText = text.slice(aS, aE);
+    const bText = text.slice(bS, bE);
+    const between = text.slice(Math.min(aE, bS), Math.max(aE, bS));
+    const crosses = /[。．.!?！？]/.test(between);
+    const plain = `${aText}${SLOT_ANY}${bText}`;
+    const notation = crosses ? `${aText}(\u3002)${SLOT_ANY}${bText}` : plain;
+    const idx = layers.push(mk("skeletal", "link", notation, [Math.min(aS, bS), Math.max(aE, bE)])) - 1;
+    const l = layers[idx];
+    const plainKey = keyOf(plain);
+    if (!l.keys.includes(plainKey))
+      l.keys.push(plainKey);
+    edges.push({ from: l0, to: idx, kind: "derives" });
+    for (const cIdx of chunkIdxs) {
+      const [cS, cE] = layers[cIdx].span;
+      for (const [pS, pE] of [ln.a, ln.b]) {
+        if (overlap(cS, cE, pS, pE)) {
+          edges.push({
+            from: cIdx,
+            to: idx,
+            kind: "shares-token",
+            at: [Math.max(cS, pS), Math.min(cE, pE)]
+          });
+        }
+      }
+    }
+  }
+  return { text, layers, edges };
+}
+function withLemma(bundle, span, halo) {
+  const lemma = bundle.text.slice(span[0], span[1]);
+  const layer = mk("rhet_collocation", "lemma", lemma, span);
+  if (halo) {
+    layer.halo = halo;
+    layer.keys.push(keyOf(halo));
+  }
+  const layers = [...bundle.layers, layer];
+  const edges = [...bundle.edges, { from: 0, to: layers.length - 1, kind: "derives" }];
+  return { ...bundle, layers, edges };
+}
+
+// src/notes/capture-bundle.ts
+var runsOf = (idxs) => {
+  const s = [...idxs].sort((a, b) => a - b);
+  const out = [];
+  for (const i of s) {
+    const last = out[out.length - 1];
+    if (last && i === last[1] + 1)
+      last[1] = i;
+    else
+      out.push([i, i]);
+  }
+  return out;
+};
+var charSpan = (tokens, from, to) => {
+  const a = tokens[from];
+  const b = tokens[to];
+  return a && b ? [a.start, b.end] : null;
+};
+function toCarves(tokens, marks) {
+  var _a2, _b2, _c2, _d2;
+  const carves = [];
+  const links = [];
+  if (marks.span) {
+    const s = charSpan(tokens, marks.span[0], marks.span[1]);
+    if (s)
+      carves.push({ kind: "range", start: s[0], end: s[1] });
+  }
+  for (const [f, t] of runsOf(marks.struck)) {
+    const s = charSpan(tokens, f, t);
+    if (s)
+      carves.push({ kind: "slot", start: s[0], end: s[1] });
+  }
+  for (const [f, t] of runsOf((_a2 = marks.glue) != null ? _a2 : [])) {
+    const s = charSpan(tokens, f, t);
+    if (s)
+      carves.push({ kind: "glue", start: s[0], end: s[1] });
+  }
+  for (const p of (_b2 = marks.pivots) != null ? _b2 : []) {
+    const s = charSpan(tokens, p.index, p.index);
+    if (s)
+      carves.push({ kind: "axis", start: s[0], end: s[1], ...((_c2 = p.mates) == null ? void 0 : _c2.length) ? { mates: p.mates } : {} });
+  }
+  if ((_d2 = marks.links) == null ? void 0 : _d2.length) {
+    for (const l of marks.links) {
+      const a = charSpan(tokens, l.a[0], l.a[1]);
+      const b = charSpan(tokens, l.b[0], l.b[1]);
+      if (a && b)
+        links.push({ a, b });
+    }
+  } else if (marks.parts.length >= 2) {
+    const sorted = [...marks.parts].sort((a, b) => a - b);
+    for (let i = 0; i + 1 < sorted.length; i++) {
+      const a = charSpan(tokens, sorted[i], sorted[i]);
+      const b = charSpan(tokens, sorted[i + 1], sorted[i + 1]);
+      if (a && b)
+        links.push({ a, b });
+    }
+  }
+  return { carves, links };
+}
+function bundleFromCanvas(text, tokens, marks) {
+  var _a2;
+  const { carves, links } = toCarves(tokens, marks);
+  let b = deriveBundle(text, carves, links);
+  if (marks.circled != null && tokens[marks.circled]) {
+    const [hf, ht] = (_a2 = marks.halo) != null ? _a2 : [marks.circled, marks.circled];
+    const halo = charSpan(tokens, hf, ht);
+    const pivot = charSpan(tokens, marks.circled, marks.circled);
+    if (pivot) {
+      const haloText = halo && (halo[0] !== pivot[0] || halo[1] !== pivot[1]) ? text.slice(halo[0], halo[1]) : void 0;
+      b = withLemma(b, pivot, haloText);
+    }
+  }
+  return b;
+}
+var fnv2 = (s) => {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+};
+var toStoreFrame = (notation) => notation.replace(/〔[^〕]*〕/g, "").split(SLOT_ANY).join("\u25CB\u25CB");
+function bundleRecords(bundle) {
+  const bundleId = `b_${fnv2(bundle.text)}`;
+  return bundle.layers.map((l, i) => {
+    var _a2, _b2;
+    const payload = { bundleId };
+    if (i === 0 && bundle.edges.length)
+      payload.bundleEdges = bundle.edges.map((e) => ({ ...e }));
+    switch (l.role) {
+      case "frame":
+      case "core":
+      case "chunk":
+        payload.frame = toStoreFrame(l.notation);
+        if ((_a2 = l.slotTypes) == null ? void 0 : _a2.some(Boolean))
+          payload.slotTypes = l.slotTypes;
+        if ((_b2 = l.glue) == null ? void 0 : _b2.length)
+          payload.glueParts = l.glue;
+        break;
+      case "link":
+        payload.parts = l.notation.replace("(\u3002)", "").split(SLOT_ANY).filter(Boolean);
+        break;
+      case "lemma":
+        payload.lemma = l.notation;
+        if (l.halo)
+          payload.halo = l.halo;
+        break;
+    }
+    return { note: l.notation, cls: l.cls, payload };
+  });
+}
+
 // src/notes/discourse-gold.ts
 var KNOWN_ACTS = [
   "INFORM",
@@ -31303,7 +31577,7 @@ var EDGE_KINDS = [
   "\u21B3",
   "\u21A7"
 ];
-function fnv2(s) {
+function fnv3(s) {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
@@ -31314,7 +31588,7 @@ function fnv2(s) {
 function goldIdFor(source, utterance) {
   var _a2, _b2, _c2;
   const loc = `${source.kind}|${(_b2 = (_a2 = source.file) != null ? _a2 : source.url) != null ? _b2 : ""}|${(_c2 = source.tStartSec) != null ? _c2 : ""}`;
-  return `gold-${fnv2(`${loc}|${utterance.trim()}`)}`;
+  return `gold-${fnv3(`${loc}|${utterance.trim()}`)}`;
 }
 function goldStats(examples) {
   var _a2, _b2;
@@ -31380,7 +31654,7 @@ var DiscourseGoldStore = class {
 
 // src/ui/CaptureModal.ts
 init_relational();
-var CaptureModal = class extends import_obsidian15.Modal {
+var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
   constructor(app, ctx, deps) {
     var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2;
     super(app);
@@ -31397,6 +31671,10 @@ var CaptureModal = class extends import_obsidian15.Modal {
     // turns back
     this.goldNote = "";
     this.suggestedEdge = null;
+    // layered-bundle state (capture-bundle.ts): the canvas, read whole at save
+    this.canvas = null;
+    this.canvasText = "";
+    this.layersEl = null;
     const d = derivePattern(ctx.text);
     const top = (_b2 = (_a2 = deps.suggestClass) == null ? void 0 : _a2.call(deps, ctx.text)) == null ? void 0 : _b2[0];
     this.suggested = top && top.score > 0 ? top.cls : (_c2 = ctx.classHint) != null ? _c2 : d.suggestedClass;
@@ -31456,7 +31734,8 @@ var CaptureModal = class extends import_obsidian15.Modal {
     if (exampleText && exampleText.length >= 4) {
       const wrap = contentEl.createDiv("jp-capture-canvaswrap");
       wrap.createSpan({ text: "\u51FA\u5178\uFF08\u30DE\u30FC\u30AF\u3067\u5206\u985E \u2014 \u30BF\u30C3\u30D7=\u90E8\u54C1 / \u30C9\u30E9\u30C3\u30B0=\u7BC4\u56F2 / \u9577\u62BC\u3057\u30C9\u30E9\u30C3\u30B0=\u30B9\u30ED\u30C3\u30C8 / 2\u56DE\u30BF\u30C3\u30D7=\u8EF8\uFF09", cls: "jp-capture-example-label" });
-      new TokenCanvas({
+      this.canvasText = exampleText;
+      this.canvas = new TokenCanvas({
         text: exampleText,
         probe: this.deps.canvasProbe,
         suggestions: (_d2 = (_c2 = (_b2 = this.deps).spanSuggestions) == null ? void 0 : _c2.call(_b2, exampleText)) != null ? _d2 : [],
@@ -31475,8 +31754,12 @@ var CaptureModal = class extends import_obsidian15.Modal {
             selectClass(d.cls);
           else
             this.renderPayload();
+          this.updateLayerStrip();
         }
-      }).render(wrap);
+      });
+      this.canvas.render(wrap);
+      this.layersEl = wrap.createDiv("jp-capture-layers");
+      this.updateLayerStrip();
     }
     chipHandle = classChips(contentEl, {
       value: this.cls,
@@ -31649,6 +31932,29 @@ var CaptureModal = class extends import_obsidian15.Modal {
       this.goldNote = ta.value;
     });
   }
+  /** The bundle the canvas marks currently derive — null when no canvas. */
+  currentBundle() {
+    if (!this.canvas || !this.canvasText)
+      return null;
+    return bundleFromCanvas(this.canvasText, this.canvas.getTokens(), this.canvas.getMarks());
+  }
+  updateLayerStrip() {
+    var _a2;
+    if (!this.layersEl)
+      return;
+    const b = this.currentBundle();
+    const layers = (_a2 = b == null ? void 0 : b.layers) != null ? _a2 : [];
+    if (layers.length <= 1) {
+      this.layersEl.setText("");
+      return;
+    }
+    this.layersEl.setText(
+      `\u2FFB \u5C0E\u51FA\u3055\u308C\u308B\u5C64 (${layers.length}): ` + layers.map((l) => {
+        var _a3;
+        return `${NOTE_TYPES[l.cls].emoji}${(_a3 = _CaptureModal.ROLE_LABEL[l.role]) != null ? _a3 : l.role}`;
+      }).join(" / ")
+    );
+  }
   renderButtons() {
     const row = this.saveRowEl;
     row.empty();
@@ -31656,8 +31962,45 @@ var CaptureModal = class extends import_obsidian15.Modal {
     const again = row.createEl("button", { text: "\u4FDD\u5B58\u3057\u3066\u5225\u5206\u985E\u3082", cls: "jp-capture-btn" });
     again.title = "\u540C\u3058\u30B9\u30D1\u30F3\u3092\u5225\u306E\u30EC\u30F3\u30BA\uFF08\u5206\u985E\uFF09\u3067\u3082\u4FDD\u5B58\u3067\u304D\u307E\u3059\uFF08\u591A\u91CD\u5206\u985EOK \u2014 perspectival\uFF09";
     again.addEventListener("click", () => void this.save(false));
+    const layers = row.createEl("button", { text: "\u2FFB \u5168\u5C64\u4FDD\u5B58", cls: "jp-capture-btn" });
+    layers.title = "\u30DE\u30FC\u30AF\u304C\u5C0E\u51FA\u3059\u308B\u5C64\uFF08\u4E38\u3054\u3068\u30FB\u578B\u30FB\u6838\u30FB\u30EA\u30F3\u30AF\u2026\uFF09\u3092\u3001\u3072\u3068\u3064\u306E\u675F\u3068\u3057\u3066\u307E\u3068\u3081\u3066\u53F0\u5E33\u3078\u3002\u5C64\u304C\u3072\u3068\u3064\u306A\u3089\u666E\u901A\u306E\u4FDD\u5B58\u3068\u540C\u3058\u3002";
+    layers.addEventListener("click", () => void this.saveBundle());
     const save = row.createEl("button", { text: "\u4FDD\u5B58", cls: "jp-capture-btn jp-capture-btn--cta" });
     save.addEventListener("click", () => void this.save(true));
+  }
+  /**
+   * ⿻ one sighting, many layers: every derived layer lands as its own entry
+   * (shared bundleId; edges ride the L0 record), each with the SAME
+   * attestation — one encounter, cut several ways. Falls back to the plain
+   * save when the marks derive nothing beyond the whole.
+   */
+  async saveBundle() {
+    var _a2, _b2, _c2;
+    const b = this.currentBundle();
+    const recs = b ? bundleRecords(b) : [];
+    if (recs.length <= 1) {
+      await this.save(true);
+      return;
+    }
+    try {
+      const keys = [];
+      for (const r2 of recs) {
+        const entry2 = await this.deps.recordClassified({
+          note: r2.note,
+          cls: r2.cls,
+          suggested: this.suggested,
+          payload: r2.payload,
+          att: this.buildAttestation((_a2 = this.ctx.example) != null ? _a2 : r2.note)
+        });
+        keys.push(`${NOTE_TYPES[r2.cls].emoji}${entry2.key}`);
+        (_c2 = (_b2 = this.deps).onSaved) == null ? void 0 : _c2.call(_b2, entry2);
+      }
+      const shown = keys.join(" / ");
+      new import_obsidian15.Notice(`\u2FFB ${recs.length}\u5C64\u3092\u53F0\u5E33\u306B\u8A18\u9332: ${shown.length > 90 ? shown.slice(0, 90) + "\u2026" : shown}`);
+      this.close();
+    } catch (e) {
+      new import_obsidian15.Notice(`\u2FFB \u4FDD\u5B58\u306B\u5931\u6557: ${e.message}`, 6e3);
+    }
   }
   buildAttestation(quote) {
     var _a2, _b2, _c2, _d2;
@@ -31744,6 +32087,15 @@ var CaptureModal = class extends import_obsidian15.Modal {
     this.contentEl.empty();
   }
 };
+_CaptureModal.ROLE_LABEL = {
+  whole: "\u30BB\u30EA\u30D5",
+  frame: "\u578B",
+  core: "\u6838",
+  chunk: "\u584A",
+  link: "\u30EA\u30F3\u30AF",
+  lemma: "\u30EC\u30F3\u30DE"
+};
+var CaptureModal = _CaptureModal;
 
 // src/srs/scheduler.ts
 var MIN = 6e4;
@@ -32109,7 +32461,7 @@ var MOVE_MIN_SHARE = 0.5;
 var ratifyId = (kind, patternId, subject) => `${kind}:${patternId}:${subject}`;
 var DISPOSE = "__dispose__";
 var JA_CLASS = (c) => `${NOTE_TYPES[c].emoji} ${NOTE_TYPES[c].label}`;
-function fnv3(s) {
+function fnv4(s) {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
@@ -32212,7 +32564,7 @@ function sightingProbe(p, data, seq) {
   let a;
   if (useRandom) {
     const sorted = [...open].sort((x, y) => attestationKey(x).localeCompare(attestationKey(y)));
-    a = sorted[fnv3(`${p.id}#${seq}`) % sorted.length];
+    a = sorted[fnv4(`${p.id}#${seq}`) % sorted.length];
   } else {
     a = [...open].sort((x, y) => {
       var _a3, _b2;
@@ -33465,43 +33817,6 @@ var YomitanImporter = class {
     };
   }
 };
-
-// src/dictionary/frames.ts
-var SLOT_ANY = "\uFF5E";
-var SLOT_NUM = "\uFF3F";
-function normalizeFrame(input) {
-  let s = String(input != null ? input : "").normalize("NFKC");
-  s = s.replace(/\$?_+/g, SLOT_NUM);
-  s = s.replace(/[~〜～]/g, SLOT_ANY);
-  s = s.replace(/[○◯]{2,}|[□]{2,}/g, SLOT_ANY);
-  s = s.replace(/\[[^\]]*\]/g, "");
-  s = s.replace(new RegExp(`^(\\S{0,4}\\s?[${SLOT_ANY}${SLOT_NUM}])\\s*\\1`), "$1");
-  s = s.replace(new RegExp(`${SLOT_ANY}\\s*${SLOT_ANY}+`, "g"), SLOT_ANY);
-  s = s.replace(new RegExp(`${SLOT_NUM}\\s*${SLOT_NUM}+`, "g"), SLOT_NUM);
-  return s.replace(/\s+/g, " ").trim();
-}
-function toFrame2(input, shape) {
-  const key = normalizeFrame(input);
-  const slots = [];
-  for (let i = 0; i < key.length; i++) {
-    if (key[i] === SLOT_ANY)
-      slots.push({ kind: "any", at: i });
-    else if (key[i] === SLOT_NUM)
-      slots.push({ kind: "num", at: i });
-  }
-  return { key, slots, fixed: slots.length === 0, ...shape ? { shape } : {} };
-}
-function classHintForFrame(frame, opts = {}) {
-  if (opts.evocativeHead)
-    return "rhet_collocation";
-  if (opts.situation && frame.slots.length)
-    return "phrase_schema";
-  if (frame.slots.length >= 2)
-    return "phrase_schema";
-  if (frame.slots.length === 1)
-    return frame.shape ? "skeletal" : "phrase_schema";
-  return "collocation";
-}
 
 // src/dictionary/sidecar.ts
 var dottedRoot = (root) => root.startsWith(".") ? root : `.${root}`;
@@ -46815,17 +47130,17 @@ function tileUpscale(shortSide, maxDim = 1400, cap = 3) {
 function planTiles(width, height, opts = {}) {
   var _a2, _b2, _c2;
   const maxDim = (_a2 = opts.maxDim) != null ? _a2 : 1400;
-  const overlap = (_b2 = opts.overlap) != null ? _b2 : 80;
+  const overlap2 = (_b2 = opts.overlap) != null ? _b2 : 80;
   const maxTiles = (_c2 = opts.maxTiles) != null ? _c2 : 12;
   const long = Math.max(width, height);
   if (long <= maxDim)
     return [{ x: 0, y: 0, w: width, h: height }];
   const vertical = height >= width;
-  let n = Math.ceil((long - overlap) / (maxDim - overlap));
+  let n = Math.ceil((long - overlap2) / (maxDim - overlap2));
   if (n > maxTiles)
     n = maxTiles;
-  const size = Math.ceil((long - overlap) / n) + overlap;
-  const stride = size - overlap;
+  const size = Math.ceil((long - overlap2) / n) + overlap2;
+  const stride = size - overlap2;
   const tiles = [];
   for (let i = 0; i < n; i++) {
     const start = Math.min(i * stride, long - size);
@@ -47569,7 +47884,7 @@ var ImportModal = class extends import_obsidian32.Modal {
 // src/notes/inbox.ts
 var JP_RE = /[぀-ヿ㐀-䶿一-鿿]/;
 var SPEAKER_LINE = /^\s*([A-Za-z一-鿿ぁ-ヶ]{1,8})[:：]\s*(.+)$/;
-function fnv4(s) {
+function fnv5(s) {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
@@ -47579,7 +47894,7 @@ function fnv4(s) {
 }
 function shapeDrop(raw, now, origin) {
   const t = raw.trim();
-  const id = `inb-${fnv4(`${t}|${now}`)}`;
+  const id = `inb-${fnv5(`${t}|${now}`)}`;
   if (isRemoteUrl(t)) {
     let host = "";
     try {
@@ -47611,12 +47926,12 @@ function shapeDrop(raw, now, origin) {
   return { id, kind: "text", content: t, createdAt: now, origin };
 }
 function imageCard(vaultPath, now, origin) {
-  return { id: `inb-${fnv4(`${vaultPath}|${now}`)}`, kind: "image", content: vaultPath, createdAt: now, origin };
+  return { id: `inb-${fnv5(`${vaultPath}|${now}`)}`, kind: "image", content: vaultPath, createdAt: now, origin };
 }
 function pairedCard(vaultPath, said, now, origin) {
   const t = said.trim();
   return {
-    id: `inb-${fnv4(`${vaultPath}|${t}|${now}`)}`,
+    id: `inb-${fnv5(`${vaultPath}|${t}|${now}`)}`,
     kind: "image",
     content: vaultPath,
     said: t || void 0,
@@ -47628,7 +47943,7 @@ function markCard(mark, now) {
   var _a2, _b2, _c2, _d2;
   const at = mark.tSec != null ? String(mark.tSec) : (_a2 = mark.loc) != null ? _a2 : "";
   return {
-    id: `inb-${fnv4(`${(_c2 = (_b2 = mark.file) != null ? _b2 : mark.sourceName) != null ? _c2 : mark.medium}|${at}|${now}`)}`,
+    id: `inb-${fnv5(`${(_c2 = (_b2 = mark.file) != null ? _b2 : mark.sourceName) != null ? _c2 : mark.medium}|${at}|${now}`)}`,
     kind: "mark",
     content: (_d2 = mark.seed) != null ? _d2 : "",
     mark,
@@ -48976,7 +49291,7 @@ var SPEAK_MODES = [
   { id: "jiyu", label: "\u81EA\u7531", hint: "\u5185\u5BB9\u3078\u306E\u30AA\u30FC\u30D7\u30F3\u306A\u5FDC\u7B54" },
   { id: "shunpatsu", label: "\u77AC\u767A", hint: "\u30E9\u30A4\u30C8\u30CB\u30F3\u30B0 \u2014 \u77ED\u304F\u901F\u304F" }
 ];
-function fnv5(s) {
+function fnv6(s) {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
@@ -48986,7 +49301,7 @@ function fnv5(s) {
 }
 function newSession(opts) {
   return {
-    id: `spk-${fnv5(`${opts.file}|${opts.now}`)}`,
+    id: `spk-${fnv6(`${opts.file}|${opts.now}`)}`,
     file: opts.file,
     mode: opts.mode,
     constraint: opts.constraint,
@@ -48999,7 +49314,7 @@ function newSession(opts) {
 function newMark(opts) {
   var _a2;
   return {
-    id: `smk-${fnv5(`${opts.kind}|${(_a2 = opts.lineIndex) != null ? _a2 : -1}|${opts.now}`)}`,
+    id: `smk-${fnv6(`${opts.kind}|${(_a2 = opts.lineIndex) != null ? _a2 : -1}|${opts.now}`)}`,
     kind: opts.kind,
     tSec: opts.tSec,
     lineIndex: opts.lineIndex,

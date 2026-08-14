@@ -115,6 +115,19 @@ export interface CanvasMarks {
   circled?: number;
   /** halo range [from, to] around the pivot (defaults to the pivot alone). */
   halo?: [number, number];
+  /**
+   * Layered-bundle marks (2026-08-14, analysis-bundle.ts). Optional — the flat
+   * deriveFromMarks path ignores them; bundleFromCanvas consumes them. The
+   * GESTURES that write these are deferred to on-device feel work (house rule:
+   * when unsure of feel, expose the knob, don't guess) — the data path is live.
+   */
+  /** demoted coupling tokens (になる) — fixed in the frame, absent from the core. */
+  glue?: number[];
+  /** paradigm pivots (こんな⇄そんな⇄あんな) with known mates. */
+  pivots?: Array<{ index: number; mates?: string[] }>;
+  /** pole links with MULTI-token poles (においては ↔ と考えている) — token-index
+   *  ranges [from, to] inclusive. When absent, parts (≥2) chain into links. */
+  links?: Array<{ a: [number, number]; b: [number, number] }>;
 }
 
 export const emptyMarks = (): CanvasMarks => ({ parts: [], struck: [] });

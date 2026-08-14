@@ -46,6 +46,10 @@ export class TokenCanvas {
     this.faint = best ? suggestionToTokenRange(this.tokens, best) : null;
   }
 
+  /** The layered-bundle path (capture-bundle.ts) reads the canvas state whole. */
+  getTokens(): CanvasToken[] { return this.tokens; }
+  getMarks(): CanvasMarks { return this.marks; }
+
   private hasMarks(): boolean {
     return !!(this.marks.span || this.marks.parts.length || this.marks.struck.length || this.marks.circled != null);
   }

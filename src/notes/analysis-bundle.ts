@@ -105,6 +105,8 @@ export interface Layer {
   axes?: Array<{ text: string; mates?: string[] }>;
   /** glue surfaces stripped between frame and core. */
   glue?: string[];
+  /** lemma layers only — the halo text, verbatim (the key lives in keys[1]). */
+  halo?: string;
   /** the source span this layer stands on ([0, text.length) for whole/frame/core). */
   span: [number, number];
 }
@@ -213,7 +215,10 @@ export function deriveBundle(text: string, marks: CarveMark[] = [], links: LinkM
   layers.push(mk('serifu', 'whole', text, whole));
   const l0 = 0;
 
-  const top = marks.filter((m) => m.kind !== 'range');
+  // Carves inside a range belong to that chunk, not to a whole-text frame —
+  // a span+strike canvas means "this sub-span, with these holes", once.
+  const ranges = marks.filter((m) => m.kind === 'range');
+  const top = marks.filter((m) => m.kind !== 'range' && !ranges.some((r) => within(m, r.start, r.end)));
   const axes = marks
     .filter((m) => m.kind === 'axis')
     .map((m) => ({ text: text.slice(m.start, m.end), mates: m.mates }));
@@ -293,7 +298,7 @@ export function deriveBundle(text: string, marks: CarveMark[] = [], links: LinkM
 export function withLemma(bundle: Bundle, span: [number, number], halo?: string): Bundle {
   const lemma = bundle.text.slice(span[0], span[1]);
   const layer = mk('rhet_collocation', 'lemma', lemma, span);
-  if (halo) layer.keys.push(keyOf(halo));
+  if (halo) { layer.halo = halo; layer.keys.push(keyOf(halo)); }
   const layers = [...bundle.layers, layer];
   const edges = [...bundle.edges, { from: 0, to: layers.length - 1, kind: 'derives' as EdgeKind }];
   return { ...bundle, layers, edges };

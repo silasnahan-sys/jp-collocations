@@ -22,6 +22,8 @@ import { NOTE_TYPES, NOTE_CLASSES, type NoteClass } from '../notes/note-types.ts
 import { classChips, CLASS_HINTS } from './class-grammar.ts';
 import { derivePattern, type PatternEntry, type Attestation } from '../notes/pattern-store.ts';
 import { TokenCanvas } from './TokenCanvas.ts';
+import { bundleFromCanvas, bundleRecords } from '../notes/capture-bundle.ts';
+import type { Bundle } from '../notes/analysis-bundle.ts';
 import { splitPatternParts } from '../notes/pipeline.ts';
 import { KNOWN_ACTS, EDGE_KINDS, type GoldExample, type GoldEdge, type GoldSource } from '../notes/discourse-gold.ts';
 import { analyzeCrossTurn } from '../discourse/relational';
@@ -92,6 +94,11 @@ export class CaptureModal extends Modal {
   private goldNote = '';
   private suggestedAct?: string;
   private suggestedEdge: GoldEdge | null = null;
+
+  // layered-bundle state (capture-bundle.ts): the canvas, read whole at save
+  private canvas: TokenCanvas | null = null;
+  private canvasText = '';
+  private layersEl: HTMLElement | null = null;
 
   constructor(app: App, private ctx: CaptureContext, private deps: CaptureDeps) {
     super(app);
@@ -164,7 +171,8 @@ export class CaptureModal extends Modal {
     if (exampleText && exampleText.length >= 4) {
       const wrap = contentEl.createDiv('jp-capture-canvaswrap');
       wrap.createSpan({ text: '出典（マークで分類 — タップ=部品 / ドラッグ=範囲 / 長押しドラッグ=スロット / 2回タップ=軸）', cls: 'jp-capture-example-label' });
-      new TokenCanvas({
+      this.canvasText = exampleText;
+      this.canvas = new TokenCanvas({
         text: exampleText,
         probe: this.deps.canvasProbe,
         suggestions: this.deps.spanSuggestions?.(exampleText) ?? [],
@@ -176,8 +184,14 @@ export class CaptureModal extends Modal {
           if (d.payload.halo) this.halo = d.payload.halo;
           if (d.cls) selectClass(d.cls);
           else this.renderPayload();
+          this.updateLayerStrip();
         },
-      }).render(wrap);
+      });
+      this.canvas.render(wrap);
+      // ⿻ the lattice the marks currently derive — visible, so multi-layer
+      // capture is a fact on screen, never a surprise at save.
+      this.layersEl = wrap.createDiv('jp-capture-layers');
+      this.updateLayerStrip();
     }
 
     chipHandle = classChips(contentEl, {
@@ -342,6 +356,27 @@ export class CaptureModal extends Modal {
     ta.addEventListener('input', () => { this.goldNote = ta.value; });
   }
 
+  /** The bundle the canvas marks currently derive — null when no canvas. */
+  private currentBundle(): Bundle | null {
+    if (!this.canvas || !this.canvasText) return null;
+    return bundleFromCanvas(this.canvasText, this.canvas.getTokens(), this.canvas.getMarks());
+  }
+
+  private static readonly ROLE_LABEL: Record<string, string> = {
+    whole: 'セリフ', frame: '型', core: '核', chunk: '塊', link: 'リンク', lemma: 'レンマ',
+  };
+
+  private updateLayerStrip(): void {
+    if (!this.layersEl) return;
+    const b = this.currentBundle();
+    const layers = b?.layers ?? [];
+    if (layers.length <= 1) { this.layersEl.setText(''); return; }
+    this.layersEl.setText(
+      `⿻ 導出される層 (${layers.length}): ` +
+      layers.map((l) => `${NOTE_TYPES[l.cls].emoji}${CaptureModal.ROLE_LABEL[l.role] ?? l.role}`).join(' / '),
+    );
+  }
+
   private renderButtons(): void {
     const row = this.saveRowEl;
     row.empty();
@@ -350,8 +385,42 @@ export class CaptureModal extends Modal {
     const again = row.createEl('button', { text: '保存して別分類も', cls: 'jp-capture-btn' });
     again.title = '同じスパンを別のレンズ（分類）でも保存できます（多重分類OK — perspectival）';
     again.addEventListener('click', () => void this.save(false));
+    const layers = row.createEl('button', { text: '⿻ 全層保存', cls: 'jp-capture-btn' });
+    layers.title = 'マークが導出する層（丸ごと・型・核・リンク…）を、ひとつの束としてまとめて台帳へ。層がひとつなら普通の保存と同じ。';
+    layers.addEventListener('click', () => void this.saveBundle());
     const save = row.createEl('button', { text: '保存', cls: 'jp-capture-btn jp-capture-btn--cta' });
     save.addEventListener('click', () => void this.save(true));
+  }
+
+  /**
+   * ⿻ one sighting, many layers: every derived layer lands as its own entry
+   * (shared bundleId; edges ride the L0 record), each with the SAME
+   * attestation — one encounter, cut several ways. Falls back to the plain
+   * save when the marks derive nothing beyond the whole.
+   */
+  private async saveBundle(): Promise<void> {
+    const b = this.currentBundle();
+    const recs = b ? bundleRecords(b) : [];
+    if (recs.length <= 1) { await this.save(true); return; }
+    try {
+      const keys: string[] = [];
+      for (const r of recs) {
+        const entry = await this.deps.recordClassified({
+          note: r.note,
+          cls: r.cls,
+          suggested: this.suggested,
+          payload: r.payload,
+          att: this.buildAttestation(this.ctx.example ?? r.note),
+        });
+        keys.push(`${NOTE_TYPES[r.cls].emoji}${entry.key}`);
+        this.deps.onSaved?.(entry);
+      }
+      const shown = keys.join(' / ');
+      new Notice(`⿻ ${recs.length}層を台帳に記録: ${shown.length > 90 ? shown.slice(0, 90) + '…' : shown}`);
+      this.close();
+    } catch (e) {
+      new Notice(`⿻ 保存に失敗: ${(e as Error).message}`, 6000);
+    }
   }
 
   private buildAttestation(quote: string): Attestation {

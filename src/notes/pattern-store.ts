@@ -123,6 +123,19 @@ export interface PatternEntry {
      * lands (see upsertEntry).
      */
     scaffold?: string[];
+    /**
+     * Layered-bundle fields (2026-08-14, notes/analysis-bundle.ts): one
+     * utterance, many cuts. Entries carved from the same gestalt share a
+     * `bundleId`; the L0 (whole-thought) entry carries the `bundleEdges`
+     * (derives / glue / axis / shares-token) ONCE for the whole bundle.
+     * Purely additive — every flat consumer keeps reading entries as before.
+     */
+    bundleId?: string;
+    bundleEdges?: Array<{ from: number; to: number; kind: string; at?: [number, number]; surfaces?: string[] }>;
+    /** 💠 slot content-types (思/量/…) in notation order — display apparatus, never in the key. */
+    slotTypes?: string[];
+    /** 💠 core layers: the demoted glue surfaces (になる) stripped from the match key. */
+    glueParts?: string[];
   };
   attestations: Attestation[];
   /**

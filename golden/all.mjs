@@ -22,7 +22,7 @@ const suites = [
   'voicesync.mjs', 'transcript.mjs', 'history.mjs', 'audio.mjs',
   'patterns.mjs', 'dictionary.mjs', 'x-transaction.mjs', 'x-format.mjs', 'x-usage.mjs',
   'match-japanese.mjs', 'hyogen.mjs', 'twc.mjs',
-  'class-grammar.mjs', 'entry-parts.mjs', 'analysis-bundle.mjs', 'shape-index.mjs', 'usage-board.mjs', 'savable.mjs', 'concordance.mjs', 'frames.mjs', 'eijiro.mjs', 'sidecar.mjs', 'import-eijiro.mjs', 'generic-yomitan.mjs', 'sidecar-verify.mjs', 'intent-index.mjs', 'suite-nav.mjs', 'input-map.mjs', 'big-dict.mjs', 'dexie-stream.mjs', 'import-dexie.mjs', 'reach.mjs',
+  'class-grammar.mjs', 'entry-parts.mjs', 'analysis-bundle.mjs', 'capture-bundle.mjs', 'shape-index.mjs', 'usage-board.mjs', 'savable.mjs', 'concordance.mjs', 'frames.mjs', 'eijiro.mjs', 'sidecar.mjs', 'import-eijiro.mjs', 'generic-yomitan.mjs', 'sidecar-verify.mjs', 'intent-index.mjs', 'suite-nav.mjs', 'input-map.mjs', 'big-dict.mjs', 'dexie-stream.mjs', 'import-dexie.mjs', 'reach.mjs',
   // The input layer. `ui-gestures` needs a DOM, which `golden/stub/` provides —
   // see that folder for why it is 150 hand-written lines and not jsdom.
   'floating-rail.mjs', 'touch-nav.mjs', 'ui-gestures.mjs', 'drop-bytes.mjs', 'clipboard-door.mjs', 'pane-size.mjs', 'bar-retreat.mjs', 'image-pair.mjs', 'selection-images.mjs', 'resource-url.mjs', 'drag-out-files.mjs',
