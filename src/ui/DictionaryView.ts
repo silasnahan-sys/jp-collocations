@@ -30,6 +30,7 @@ import type {
 import { YomitanImporter } from '../dictionary/YomitanImporter';
 import { dedupeAgainst, type BigDictHit } from '../dictionary/big-dict';
 import { renderEntryParts, renderEntryNodes } from './entry-grammar';
+import { summarize, usageNodes } from '../dictionary/shape-index';
 import {
   offeredBy, statedRelation, buildCapture, RELATION_SPECS,
   classifyCollocation, COLLOCATION_KINDS,
@@ -843,63 +844,127 @@ export class DictionaryView extends ItemView {
       this.renderPitchAccent(card, primary.pitch, primary.term.reading || primary.term.expression);
     }
 
-    // ── Definitions ──────────────────────────────────────────
-    const defsSection = card.createDiv('jp-dict-defs');
+    // ── The two questions (§27.2, shape-index.ts): 意味は ⇄ 使い方は ────
+    // 「意味は」 every book answers; the plugin exists for 「使い方は」 — and
+    // the nodes that answer it (使い分け・対比表・語群・文型・実例) live in a
+    // handful of specialist books. The toggle exists ONLY when at least one
+    // book in this group can answer (§28 S6 — no empty mode to fall into),
+    // and the publisher-verbatim badges say who answers with what, before
+    // any scrolling.
+    const usable = group.filter((r) => r.entryNodes?.length && summarize(r.entryNodes).second);
+    let usageOnly = false;
 
-    let defIndex = 0;
-    for (const result of group) {
-      // §26.1 — when the source gave us real structure, typeset it: senses
-      // numbered, 〔context〕/《register》 as their own marks, examples as
-      // blocks. Only a dictionary whose tree was flattened at conversion falls
-      // through to the prose path, and it SHOULD look worse — that is the
-      // honest signal that it still needs re-converting (§28 S6).
-      const renderOpts = {
-        highlight: this.currentQuery,
-        onLookup: (w: string) => this.recursiveLookup(w),
-        // The book's own illustrations, if they were extracted. Returning
-        // undefined when the file is not there is what makes an un-extracted
-        // vault show nothing instead of a broken frame (§28 S6).
-        resolveMedia: (src: string) => this.resolveDictMedia(result.dictionary, src),
-        headword: result.term.expression,
-        // ONE capture verb for everything in the entry — a sense's example, a
-        // synonym, a judgement cell and a citation all arrive here, and
-        // `offeredBy` decides what each can honestly become. The old
-        // example-only callback is deliberately not passed: two capture
-        // behaviours on one screen is the drift this design prevents.
-        onCapture: (sel: Selection, evt: MouseEvent) => this.offerCapture({
-          ...sel, dictionary: result.dictionary, headword: result.term.expression,
-        }, evt),
+    const optsFor = (result: (typeof group)[number]) => ({
+      highlight: this.currentQuery,
+      onLookup: (w: string) => this.recursiveLookup(w),
+      // The book's own illustrations, if they were extracted. Returning
+      // undefined when the file is not there is what makes an un-extracted
+      // vault show nothing instead of a broken frame (§28 S6).
+      resolveMedia: (src: string) => this.resolveDictMedia(result.dictionary, src),
+      headword: result.term.expression,
+      // ONE capture verb for everything in the entry — a sense's example, a
+      // synonym, a judgement cell and a citation all arrive here, and
+      // `offeredBy` decides what each can honestly become. The old
+      // example-only callback is deliberately not passed: two capture
+      // behaviours on one screen is the drift this design prevents.
+      onCapture: (sel: Selection, evt: MouseEvent) => this.offerCapture({
+        ...sel, dictionary: result.dictionary, headword: result.term.expression,
+      }, evt),
+    });
+
+    let usageToggle: HTMLButtonElement | null = null;
+    if (usable.length) {
+      const qRow = card.createDiv('jp-dict-usage-row');
+      usageToggle = qRow.createEl('button', { cls: 'jp-dict-usage-toggle', text: '使い方は ▸' });
+      usageToggle.title = 'この語の使い方だけを、持っている全辞書から — 使い分け・対比表・語群・文型・実例（語義は畳まれます）';
+      usageToggle.onclick = () => {
+        usageOnly = !usageOnly;
+        usageToggle!.setText(usageOnly ? '意味は ▸' : '使い方は ▸');
+        renderDefs();
       };
-      if (result.entryBlocks?.length) {
-        renderEntryParts(defsSection, result.entryBlocks, renderOpts);
-        // The book's RELATIONS, when it has any a sense list cannot hold — a
-        // 類語対比表, a 語群, a corpus citation set. Drawn under the senses
-        // because they are about the entry as a whole, not about one sense.
-        if (result.entryNodes?.length) {
-          renderEntryNodes(defsSection, result.entryNodes, renderOpts);
-        }
-        continue;
+      // Publisher-verbatim badges: WHO answers, WITH WHAT. Capped at six with
+      // the overflow stated — a silent cap reads as "that's all there is".
+      const badges: Array<{ label: string; book: string }> = [];
+      for (const r of usable) {
+        for (const b of summarize(r.entryNodes!).badges) badges.push({ label: b.label, book: r.dictionary });
       }
-      if (result.entryNodes?.length) {
-        renderEntryNodes(defsSection, result.entryNodes, renderOpts);
-        continue;
+      const shown = badges.slice(0, 6);
+      for (const b of shown) {
+        const chip = qRow.createSpan({ cls: 'jp-dict-usage-badge', text: b.label });
+        chip.title = `${b.book} が「${b.label}」を持っています — タップで表示`;
+        chip.onclick = () => {
+          if (!usageOnly) { usageOnly = true; usageToggle!.setText('意味は ▸'); renderDefs(); }
+          const target = Array.from(defsSection.querySelectorAll('.jp-shape-label'))
+            .find((x) => x.textContent === b.label);
+          target?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        };
       }
-      for (const def of result.term.definitions) {
-        defIndex++;
-        const defRow = defsSection.createDiv('jp-dict-def-row');
-        defRow.createSpan({ text: `${defIndex}.`, cls: 'jp-dict-def-num' });
-
-        const defContent = defRow.createDiv('jp-dict-def-content');
-        this.renderDefinition(defContent, def);
+      if (badges.length > shown.length) {
+        qRow.createSpan({ cls: 'jp-dict-usage-badge jp-dict-usage-badge--more', text: `+${badges.length - shown.length}` })
+          .title = 'ほかにもあります — 使い方は で全部表示';
       }
     }
 
-    // Make all Japanese text in definitions clickable for recursive lookup
-    this.makeJapaneseClickable(defsSection);
+    // ── Definitions ──────────────────────────────────────────
+    const defsSection = card.createDiv('jp-dict-defs');
 
-    // §22.5: every example sentence is one 🏷️ from the catalog — the
-    // dictionary as a mine. Curated stratum; the door leads back here.
-    this.attachExampleCaptures(defsSection, group);
+    const renderDefs = (): void => {
+      defsSection.empty();
+
+      if (usageOnly && usable.length) {
+        // The second question, asked of every book that can answer it at once.
+        // Books with no usage apparatus simply do not appear — their absence
+        // is the fact, and the mode itself is gated on ≥1 answer.
+        for (const result of usable) {
+          const head = defsSection.createDiv('jp-dict-usage-book');
+          head.createSpan({ text: result.dictionary, cls: 'jp-dict-dict-badge' });
+          renderEntryNodes(defsSection, usageNodes(result.entryNodes!), optsFor(result));
+        }
+        this.makeJapaneseClickable(defsSection);
+        this.attachExampleCaptures(defsSection, group);
+        return;
+      }
+
+      let defIndex = 0;
+      for (const result of group) {
+        // §26.1 — when the source gave us real structure, typeset it: senses
+        // numbered, 〔context〕/《register》 as their own marks, examples as
+        // blocks. Only a dictionary whose tree was flattened at conversion falls
+        // through to the prose path, and it SHOULD look worse — that is the
+        // honest signal that it still needs re-converting (§28 S6).
+        const renderOpts = optsFor(result);
+        if (result.entryBlocks?.length) {
+          renderEntryParts(defsSection, result.entryBlocks, renderOpts);
+          // The book's RELATIONS, when it has any a sense list cannot hold — a
+          // 類語対比表, a 語群, a corpus citation set. Drawn under the senses
+          // because they are about the entry as a whole, not about one sense.
+          if (result.entryNodes?.length) {
+            renderEntryNodes(defsSection, result.entryNodes, renderOpts);
+          }
+          continue;
+        }
+        if (result.entryNodes?.length) {
+          renderEntryNodes(defsSection, result.entryNodes, renderOpts);
+          continue;
+        }
+        for (const def of result.term.definitions) {
+          defIndex++;
+          const defRow = defsSection.createDiv('jp-dict-def-row');
+          defRow.createSpan({ text: `${defIndex}.`, cls: 'jp-dict-def-num' });
+
+          const defContent = defRow.createDiv('jp-dict-def-content');
+          this.renderDefinition(defContent, def);
+        }
+      }
+
+      // Make all Japanese text in definitions clickable for recursive lookup
+      this.makeJapaneseClickable(defsSection);
+
+      // §22.5: every example sentence is one 🏷️ from the catalog — the
+      // dictionary as a mine. Curated stratum; the door leads back here.
+      this.attachExampleCaptures(defsSection, group);
+    };
+    renderDefs();
 
     // ── Copy button ──────────────────────────────────────────
     const actionsRow = card.createDiv('jp-dict-card-actions');

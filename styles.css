@@ -7586,3 +7586,14 @@ body.jp-posture-slate .jp-drop-veil {
   -webkit-user-select: text;
   user-select: text;
 }
+
+/* ── §27.2 the two questions: 使い方は toggle + publisher badges (2026-08-14) ──
+   Shape/weight only — the class taxonomy owns hue (class-grammar rule). */
+.jp-dict-usage-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0 2px; }
+.jp-dict-usage-toggle { font-size: 0.82em; padding: 6px 14px; border-radius: 14px; border: 1px solid var(--background-modifier-border); background: var(--background-secondary); cursor: pointer; min-height: 40px; } /* §23.5: touch-first sizing — feel-tune on device */
+.jp-dict-usage-toggle:hover { background: var(--background-modifier-hover); }
+.jp-dict-usage-badge { font-size: 0.75em; padding: 5px 10px; min-height: 30px; display: inline-flex; align-items: center; border-radius: 10px; border: 1px dashed var(--background-modifier-border); color: var(--text-muted); cursor: pointer; user-select: none; }
+.jp-dict-usage-badge:hover { color: var(--text-normal); border-style: solid; }
+.jp-dict-usage-badge--more { border-style: dotted; cursor: default; }
+.jp-dict-usage-book { margin: 10px 0 2px; opacity: 0.9; }
+.jp-capture-layers { font-size: 0.78em; color: var(--text-muted); margin-top: 4px; min-height: 1.2em; }

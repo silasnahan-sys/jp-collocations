@@ -35517,6 +35517,59 @@ function renderEntryParts(parent, blocks, opts = {}) {
   return article;
 }
 
+// src/dictionary/shape-index.ts
+var USAGE_SHAPES = [
+  "members",
+  // the 語群 — who shares this meaning
+  "comparison",
+  // items × frames → judgement (類語対比表, 類語スケール)
+  "distinctions",
+  // ordered contrastive prose (使い分け)
+  "examples",
+  // example pairs, incl. 文型-patterned groups
+  "attestations"
+  // attested corpus citations (用例.jp KWIC)
+];
+var isUsageShape = (s) => USAGE_SHAPES.includes(s);
+function shapesOf(nodes) {
+  const out = /* @__PURE__ */ new Set();
+  const walk = (n) => {
+    var _a2;
+    out.add(n.shape);
+    (_a2 = n.children) == null ? void 0 : _a2.forEach(walk);
+  };
+  nodes.forEach(walk);
+  return out;
+}
+function summarize(nodes) {
+  const present = shapesOf(nodes);
+  const usage = USAGE_SHAPES.filter((s) => present.has(s));
+  const badges = [];
+  const walk = (n) => {
+    var _a2;
+    if (isUsageShape(n.shape) && n.label)
+      badges.push({ shape: n.shape, label: n.label });
+    (_a2 = n.children) == null ? void 0 : _a2.forEach(walk);
+  };
+  nodes.forEach(walk);
+  return { usage: [...usage], badges, second: usage.length > 0 };
+}
+function usageNodes(nodes) {
+  const prune = (n) => {
+    var _a2;
+    if (isUsageShape(n.shape))
+      return n;
+    if (n.shape === "section" || n.shape === "pos-group") {
+      const kept = ((_a2 = n.children) != null ? _a2 : []).map(prune).filter((c) => c !== null);
+      if (kept.length === 0)
+        return null;
+      return { ...n, children: kept };
+    }
+    return null;
+  };
+  return nodes.map(prune).filter((n) => n !== null);
+}
+
 // src/dictionary/savable.ts
 var RELATION_SPECS = {
   \u985E\u8A9E: { binary: true, hint: "\u540C\u3058\u610F\u5473\u3092\u5206\u3051\u5408\u3046\u8A9E \u2014 \u3069\u3061\u3089\u3092\u9078\u3076\u304B\u306F\u4F7F\u3044\u5206\u3051\u304C\u6C7A\u3081\u308B" },
@@ -36685,7 +36738,7 @@ var DictionaryView = class extends import_obsidian17.ItemView {
   }
   // ── Render entry card ──────────────────────────────────────
   renderEntryCard(parent, group) {
-    var _a2, _b2, _c2, _d2, _e2, _f2, _g2;
+    var _a2, _b2, _c2, _d2;
     const primary = group[0];
     const card = parent.createDiv("jp-dict-card");
     const headerRow = card.createDiv("jp-dict-card-header");
@@ -36738,49 +36791,103 @@ ${sense}` : primary.term.expression,
     if (primary.pitch && this.dictStore.settings.showPitch) {
       this.renderPitchAccent(card, primary.pitch, primary.term.reading || primary.term.expression);
     }
-    const defsSection = card.createDiv("jp-dict-defs");
-    let defIndex = 0;
-    for (const result of group) {
-      const renderOpts = {
-        highlight: this.currentQuery,
-        onLookup: (w) => this.recursiveLookup(w),
-        // The book's own illustrations, if they were extracted. Returning
-        // undefined when the file is not there is what makes an un-extracted
-        // vault show nothing instead of a broken frame (§28 S6).
-        resolveMedia: (src) => this.resolveDictMedia(result.dictionary, src),
-        headword: result.term.expression,
-        // ONE capture verb for everything in the entry — a sense's example, a
-        // synonym, a judgement cell and a citation all arrive here, and
-        // `offeredBy` decides what each can honestly become. The old
-        // example-only callback is deliberately not passed: two capture
-        // behaviours on one screen is the drift this design prevents.
-        onCapture: (sel, evt) => this.offerCapture({
-          ...sel,
-          dictionary: result.dictionary,
-          headword: result.term.expression
-        }, evt)
+    const usable = group.filter((r2) => {
+      var _a3;
+      return ((_a3 = r2.entryNodes) == null ? void 0 : _a3.length) && summarize(r2.entryNodes).second;
+    });
+    let usageOnly = false;
+    const optsFor = (result) => ({
+      highlight: this.currentQuery,
+      onLookup: (w) => this.recursiveLookup(w),
+      // The book's own illustrations, if they were extracted. Returning
+      // undefined when the file is not there is what makes an un-extracted
+      // vault show nothing instead of a broken frame (§28 S6).
+      resolveMedia: (src) => this.resolveDictMedia(result.dictionary, src),
+      headword: result.term.expression,
+      // ONE capture verb for everything in the entry — a sense's example, a
+      // synonym, a judgement cell and a citation all arrive here, and
+      // `offeredBy` decides what each can honestly become. The old
+      // example-only callback is deliberately not passed: two capture
+      // behaviours on one screen is the drift this design prevents.
+      onCapture: (sel, evt) => this.offerCapture({
+        ...sel,
+        dictionary: result.dictionary,
+        headword: result.term.expression
+      }, evt)
+    });
+    let usageToggle = null;
+    if (usable.length) {
+      const qRow = card.createDiv("jp-dict-usage-row");
+      usageToggle = qRow.createEl("button", { cls: "jp-dict-usage-toggle", text: "\u4F7F\u3044\u65B9\u306F \u25B8" });
+      usageToggle.title = "\u3053\u306E\u8A9E\u306E\u4F7F\u3044\u65B9\u3060\u3051\u3092\u3001\u6301\u3063\u3066\u3044\u308B\u5168\u8F9E\u66F8\u304B\u3089 \u2014 \u4F7F\u3044\u5206\u3051\u30FB\u5BFE\u6BD4\u8868\u30FB\u8A9E\u7FA4\u30FB\u6587\u578B\u30FB\u5B9F\u4F8B\uFF08\u8A9E\u7FA9\u306F\u7573\u307E\u308C\u307E\u3059\uFF09";
+      usageToggle.onclick = () => {
+        usageOnly = !usageOnly;
+        usageToggle.setText(usageOnly ? "\u610F\u5473\u306F \u25B8" : "\u4F7F\u3044\u65B9\u306F \u25B8");
+        renderDefs();
       };
-      if ((_b2 = result.entryBlocks) == null ? void 0 : _b2.length) {
-        renderEntryParts(defsSection, result.entryBlocks, renderOpts);
-        if ((_c2 = result.entryNodes) == null ? void 0 : _c2.length) {
-          renderEntryNodes(defsSection, result.entryNodes, renderOpts);
-        }
-        continue;
+      const badges = [];
+      for (const r2 of usable) {
+        for (const b of summarize(r2.entryNodes).badges)
+          badges.push({ label: b.label, book: r2.dictionary });
       }
-      if ((_d2 = result.entryNodes) == null ? void 0 : _d2.length) {
-        renderEntryNodes(defsSection, result.entryNodes, renderOpts);
-        continue;
+      const shown = badges.slice(0, 6);
+      for (const b of shown) {
+        const chip = qRow.createSpan({ cls: "jp-dict-usage-badge", text: b.label });
+        chip.title = `${b.book} \u304C\u300C${b.label}\u300D\u3092\u6301\u3063\u3066\u3044\u307E\u3059 \u2014 \u30BF\u30C3\u30D7\u3067\u8868\u793A`;
+        chip.onclick = () => {
+          if (!usageOnly) {
+            usageOnly = true;
+            usageToggle.setText("\u610F\u5473\u306F \u25B8");
+            renderDefs();
+          }
+          const target = Array.from(defsSection.querySelectorAll(".jp-shape-label")).find((x) => x.textContent === b.label);
+          target == null ? void 0 : target.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        };
       }
-      for (const def of result.term.definitions) {
-        defIndex++;
-        const defRow = defsSection.createDiv("jp-dict-def-row");
-        defRow.createSpan({ text: `${defIndex}.`, cls: "jp-dict-def-num" });
-        const defContent = defRow.createDiv("jp-dict-def-content");
-        this.renderDefinition(defContent, def);
+      if (badges.length > shown.length) {
+        qRow.createSpan({ cls: "jp-dict-usage-badge jp-dict-usage-badge--more", text: `+${badges.length - shown.length}` }).title = "\u307B\u304B\u306B\u3082\u3042\u308A\u307E\u3059 \u2014 \u4F7F\u3044\u65B9\u306F \u3067\u5168\u90E8\u8868\u793A";
       }
     }
-    this.makeJapaneseClickable(defsSection);
-    this.attachExampleCaptures(defsSection, group);
+    const defsSection = card.createDiv("jp-dict-defs");
+    const renderDefs = () => {
+      var _a3, _b3, _c3;
+      defsSection.empty();
+      if (usageOnly && usable.length) {
+        for (const result of usable) {
+          const head = defsSection.createDiv("jp-dict-usage-book");
+          head.createSpan({ text: result.dictionary, cls: "jp-dict-dict-badge" });
+          renderEntryNodes(defsSection, usageNodes(result.entryNodes), optsFor(result));
+        }
+        this.makeJapaneseClickable(defsSection);
+        this.attachExampleCaptures(defsSection, group);
+        return;
+      }
+      let defIndex = 0;
+      for (const result of group) {
+        const renderOpts = optsFor(result);
+        if ((_a3 = result.entryBlocks) == null ? void 0 : _a3.length) {
+          renderEntryParts(defsSection, result.entryBlocks, renderOpts);
+          if ((_b3 = result.entryNodes) == null ? void 0 : _b3.length) {
+            renderEntryNodes(defsSection, result.entryNodes, renderOpts);
+          }
+          continue;
+        }
+        if ((_c3 = result.entryNodes) == null ? void 0 : _c3.length) {
+          renderEntryNodes(defsSection, result.entryNodes, renderOpts);
+          continue;
+        }
+        for (const def of result.term.definitions) {
+          defIndex++;
+          const defRow = defsSection.createDiv("jp-dict-def-row");
+          defRow.createSpan({ text: `${defIndex}.`, cls: "jp-dict-def-num" });
+          const defContent = defRow.createDiv("jp-dict-def-content");
+          this.renderDefinition(defContent, def);
+        }
+      }
+      this.makeJapaneseClickable(defsSection);
+      this.attachExampleCaptures(defsSection, group);
+    };
+    renderDefs();
     const actionsRow = card.createDiv("jp-dict-card-actions");
     const copyBtn = actionsRow.createEl("button", { text: "Copy", cls: "jp-dict-action-btn" });
     copyBtn.addEventListener("click", () => {
@@ -36821,13 +36928,13 @@ ${sense}` : primary.term.expression,
         );
       });
     }
-    const mine = (_f2 = (_e2 = this.patternsIn) == null ? void 0 : _e2.call(this, primary.term.expression)) != null ? _f2 : [];
+    const mine = (_c2 = (_b2 = this.patternsIn) == null ? void 0 : _b2.call(this, primary.term.expression)) != null ? _c2 : [];
     if (mine.length) {
       const row = card.createDiv("jp-dict-mine");
       row.createSpan({ text: "\u53F0\u5E33", cls: "jp-dict-mine-label" });
       for (const p of mine.slice(0, 6)) {
         const b = classBadge(row, p.class, { ratified: p.classRatified });
-        (_g2 = b.querySelector(".jp-cls-badge-label")) == null ? void 0 : _g2.setText(p.key);
+        (_d2 = b.querySelector(".jp-cls-badge-label")) == null ? void 0 : _d2.setText(p.key);
         b.title = `${NOTE_TYPES[p.class].label} \u2014 \u3042\u306A\u305F\u306E\u53F0\u5E33\u306B\u3042\u308A\u307E\u3059\uFF08\u30BF\u30C3\u30D7\u3067\u958B\u304F\uFF09`;
         if (this.openPattern) {
           b.style.cursor = "pointer";
