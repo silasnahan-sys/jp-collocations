@@ -19,6 +19,7 @@
 import { Modal, Notice } from 'obsidian';
 import type { App } from 'obsidian';
 import { NOTE_TYPES, NOTE_CLASSES, type NoteClass } from '../notes/note-types.ts';
+import type { ClassEvidence, ClassSignal } from '../notes/class-suggester.ts';
 import { classChips, CLASS_HINTS } from './class-grammar.ts';
 import { derivePattern, type PatternEntry, type Attestation } from '../notes/pattern-store.ts';
 import { TokenCanvas } from './TokenCanvas.ts';
@@ -63,9 +64,12 @@ export interface CaptureDeps {
    *  where else this phrase has already been heard. */
   onSaved?: (entry: PatternEntry) => void;
   /** §21: the calibrated class-suggester (structural signals + the user's
-   *  own suggested-vs-chosen record). Ranked; [0] is preselected. Absent →
-   *  notation-only derivePattern fallback. */
-  suggestClass?: (note: string) => Array<{ cls: NoteClass; score: number; why: string[] }>;
+   *  own suggested-vs-chosen record). Takes the full EVIDENCE — span, example,
+   *  prior-turn presence, medium — because three of the six classes are
+   *  defined relationally and the bare string cannot witness a relation.
+   *  Ranked; [0] is preselected. Absent → notation-only derivePattern
+   *  fallback. */
+  suggestClass?: (ev: ClassEvidence) => ClassSignal[];
   /** §22.4 TokenCanvas: dictionary probe for token validation. */
   canvasProbe?: (s: string) => boolean;
   /** §22.4 pentimento: faint span suggestions over the example text. */
@@ -100,25 +104,60 @@ export class CaptureModal extends Modal {
   private canvasText = '';
   private layersEl: HTMLElement | null = null;
 
+  // The hand owns what the hand typed: once the user edits 見出し, canvas
+  // derivations stop overwriting it (the five-clobber war, IMG_1082/1083).
+  private noteEdited = false;
+  // One tap = one entry. A second tap while a save is in flight is a REPEAT
+  // (the feedback was missed), never a request for a duplicate.
+  private saving = false;
+
+  // the full ranking + the reason line shown under the chips — a suggestion
+  // whose why is hidden costs a re-derivation on every capture (§21: every
+  // offer carries its own skeletal reason).
+  private ranking: ClassSignal[] = [];
+  private suggestWhy = '';
+  private whyEl: HTMLElement | null = null;
+
   constructor(app: App, private ctx: CaptureContext, private deps: CaptureDeps) {
     super(app);
     const d = derivePattern(ctx.text);
     // calibrated suggester when wired; notation-derivation as the floor.
     // Whatever is preselected is RECORDED as classSuggested — every override
     // is the next training example (the loop that improves this).
-    const top = deps.suggestClass?.(ctx.text)?.[0];
+    this.ranking = deps.suggestClass?.({
+      note: ctx.text,
+      example: ctx.example,
+      hasPriorTurns: (ctx.contextBefore?.length ?? 0) > 0,
+      medium: ctx.source.medium,
+    }) ?? [];
+    const top = this.ranking[0];
     // An explicit caller hint (a curated candidate's frame shape) outranks bare
     // notation derivation, but the calibrated suggester still wins when it has
     // real confidence — it is the one that learns from the user's overrides.
     this.suggested = top && top.score > 0 ? top.cls : (ctx.classHint ?? d.suggestedClass);
     this.cls = this.suggested;
+    if (top && top.score > 0) {
+      this.suggestWhy = top.why.join('・');
+      const alt = this.ranking[1];
+      if (alt && alt.score > 0 && alt.why.length) {
+        this.suggestWhy += ` ／ 次点 ${NOTE_TYPES[alt.cls].emoji} ${alt.why[0]}`;
+      }
+    } else if (ctx.classHint) {
+      this.suggestWhy = '呼び出し元の型ヒント';
+    } else {
+      this.suggestWhy = d.keyKind === 'link' ? '〜記法（部品リンク）'
+        : d.keyKind === 'frame' ? '○○スロット記法'
+        : '記法・構造の手がかりなし — 手で選んでください';
+    }
     const p = splitPatternParts(ctx.text);
     this.parts = p.length >= 2 ? p.join(' 〜 ') : '';
     this.frame = /[○〇]{2}/.test(ctx.text) ? ctx.text : '';
 
     // Run the current parser over the real context ONCE — its output is
-    // frozen into the gold example whatever the user decides.
-    const utterance = ctx.example ?? ctx.text;
+    // frozen into the gold example whatever the user decides. Curated text
+    // (medium 'dict') is nobody's utterance — running a discourse parser over
+    // dictionary apparatus is how INFORM（パーサ提案） got filmed on a gloss.
+    const utterance = ctx.source.medium === 'dict' ? '' : ctx.example ?? ctx.text;
     if (utterance) {
       const turnsIn = [
         ...(ctx.contextBefore ?? []),
@@ -153,8 +192,15 @@ export class CaptureModal extends Modal {
       attr: { autocapitalize: 'off', spellcheck: 'false' },
     });
     this.noteInput.value = this.ctx.text;
+    // typed by the hand ⇒ owned by the hand (see noteEdited)
+    this.noteInput.addEventListener('input', () => { this.noteEdited = true; });
 
-    // ── class chips (built before the canvas so it can drive selection) ──
+    // ── class chips + the suggestion's WHY, ABOVE the canvas ──
+    // Two reasons for the placement, both filmed (IMG_1067): the class choice
+    // is the decision the modal exists for, so it must sit in the top third
+    // where the iPad keyboard + the Apple Intelligence bar cannot cover it;
+    // and a suggestion without its reason cannot be trusted at a glance, so
+    // the why line rides directly under the chips.
     // The control itself is the SHARED one (class-grammar.ts) — the same chips
     // the library, catalog and lexicon panel use. Only the placement differs.
     let chipHandle: { set: (c: NoteClass) => void } | null = null;
@@ -164,6 +210,16 @@ export class CaptureModal extends Modal {
       this.hintEl.setText(CLASS_HINTS[c]);
       this.renderPayload();
     };
+    chipHandle = classChips(contentEl, {
+      value: this.cls,
+      suggested: this.suggested,
+      keys: true,
+      onPick: (c) => selectClass(c),
+    });
+    this.whyEl = contentEl.createDiv('jp-capture-whyrow');
+    this.whyEl.setText(this.suggestWhy ? `提案の根拠: ${this.suggestWhy}` : '');
+    this.hintEl = contentEl.createDiv('jp-capture-hint');
+    this.hintEl.setText(CLASS_HINTS[this.cls]);
 
     // ── the example, as a manipulable TokenCanvas (§22.4): tap=部品,
     // drag=範囲, 長押しドラッグ=取り消し線(スロット), ダブルタップ=◯ ──
@@ -177,7 +233,8 @@ export class CaptureModal extends Modal {
         probe: this.deps.canvasProbe,
         suggestions: this.deps.spanSuggestions?.(exampleText) ?? [],
         onChange: (d) => {
-          if (d.note) this.noteInput.value = d.note;
+          // the canvas proposes; it never overwrites what the hand typed
+          if (d.note && !this.noteEdited) this.noteInput.value = d.note;
           if (d.payload.parts) this.parts = d.payload.parts.join(' 〜 ');
           if (d.payload.frame) this.frame = d.payload.frame;
           if (d.payload.lemma) this.lemma = d.payload.lemma;
@@ -193,15 +250,6 @@ export class CaptureModal extends Modal {
       this.layersEl = wrap.createDiv('jp-capture-layers');
       this.updateLayerStrip();
     }
-
-    chipHandle = classChips(contentEl, {
-      value: this.cls,
-      suggested: this.suggested,
-      keys: true,
-      onPick: (c) => selectClass(c),
-    });
-    this.hintEl = contentEl.createDiv('jp-capture-hint');
-    this.hintEl.setText(CLASS_HINTS[this.cls]);
 
     // §23.5 ergonomics: the capture modal is the hot path from EVERY medium.
     // 1–6 = class (matching chip order), Ctrl/Cmd+Enter = save, Esc closes
@@ -392,6 +440,33 @@ export class CaptureModal extends Modal {
     save.addEventListener('click', () => void this.save(true));
   }
 
+  /** One save at a time: the buttons go dead while one is in flight, so a
+   *  second tap (the filmed take-2, IMG_1082) cannot mint a duplicate. */
+  private setButtonsBusy(busy: boolean): void {
+    this.saving = busy;
+    for (const b of Array.from(this.saveRowEl.querySelectorAll('button'))) b.disabled = busy;
+  }
+
+  /**
+   * Feedback WHERE THE HAND IS. The Notice lands top-right — off-screen of a
+   * thumb that is hovering over the save row — which is exactly how the
+   * double-save war started (the first save's toast was never seen). After a
+   * stay-open save the row itself says what happened.
+   */
+  private markSavedInPlace(cls: NoteClass): void {
+    const def = NOTE_TYPES[cls];
+    this.hintEl.setText(`✓ ${def.emoji} ${def.label} として記録済み — 別のレンズ（分類）を選んで再保存できます`);
+    this.hintEl.addClass('jp-capture-hint--saved');
+    window.setTimeout(() => this.hintEl?.removeClass('jp-capture-hint--saved'), 1600);
+    // per-class residue must not leak into the next lens: the gloss typed for
+    // 🟢 is not a fact about the 🔵 reading of the same span (別分類も starts
+    // clean — the 1082/1083 finding). Notation (parts/frame) survives: it is
+    // derived from the marks, which are still on screen.
+    this.gloss = '';
+    this.goldNote = '';
+    this.renderPayload();
+  }
+
   /**
    * ⿻ one sighting, many layers: every derived layer lands as its own entry
    * (shared bundleId; edges ride the L0 record), each with the SAME
@@ -399,16 +474,22 @@ export class CaptureModal extends Modal {
    * save when the marks derive nothing beyond the whole.
    */
   private async saveBundle(): Promise<void> {
+    if (this.saving) return;
     const b = this.currentBundle();
     const recs = b ? bundleRecords(b) : [];
     if (recs.length <= 1) { await this.save(true); return; }
+    this.setButtonsBusy(true);
     try {
       const keys: string[] = [];
       for (const r of recs) {
         const entry = await this.deps.recordClassified({
           note: r.note,
           cls: r.cls,
-          suggested: this.suggested,
+          // each layer's class was DERIVED from the marks — that derivation is
+          // the machine's suggestion for THIS layer, so the calibration record
+          // reads (suggested=derived, chosen=derived), a confirmation, not a
+          // phantom correction from the modal's overall preselection.
+          suggested: r.cls,
           payload: r.payload,
           att: this.buildAttestation(this.ctx.example ?? r.note),
         });
@@ -420,6 +501,8 @@ export class CaptureModal extends Modal {
       this.close();
     } catch (e) {
       new Notice(`⿻ 保存に失敗: ${(e as Error).message}`, 6000);
+    } finally {
+      this.setButtonsBusy(false);
     }
   }
 
@@ -449,8 +532,10 @@ export class CaptureModal extends Modal {
   }
 
   private async save(closeAfter: boolean): Promise<void> {
+    if (this.saving) return;
     const note = this.noteInput.value.trim();
     if (!note) { new Notice('見出しを入力してください'); return; }
+    this.setButtonsBusy(true);
 
     const payload: PatternEntry['payload'] = {};
     const parts = this.parts.split(/\s*[〜~,、]\s*/).map((p) => p.trim()).filter((p) => p.length > 0);
@@ -495,8 +580,11 @@ export class CaptureModal extends Modal {
       new Notice(`${def.emoji} ${def.label} として台帳に記録: ${entry.key}`);
       this.deps.onSaved?.(entry);
       if (closeAfter) this.close();
+      else this.markSavedInPlace(this.cls);
     } catch (e) {
       new Notice(`保存に失敗: ${(e as Error).message}`, 6000);
+    } finally {
+      this.setButtonsBusy(false);
     }
   }
 

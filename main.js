@@ -24895,7 +24895,7 @@ function renderXUsage(host, u, deps) {
       const grab = acts.createEl("button", { cls: "jp-xu-btn", text: "\u{1F4CE}", attr: { title: "\u3053\u306E\u4E00\u884C\u3092\u7528\u4F8B\u3068\u3057\u3066\u6DFB\u4ED8" } });
       grab.onclick = (e) => {
         e.stopPropagation();
-        deps.onCapture((l.clippedLeft ? "\u2026" : "") + l.left + l.hit + l.right + (l.clippedRight ? "\u2026" : ""), l.url, l.handle);
+        deps.onCapture((l.clippedLeft ? "\u2026" : "") + l.left + l.hit + l.right + (l.clippedRight ? "\u2026" : ""), l.url, l.handle, l.hit);
       };
     }
     const go = acts.createEl("button", { cls: "jp-xu-btn", text: "\u21AA", attr: { title: `@${l.handle} \u306E\u6295\u7A3F\u3092\u958B\u304F` } });
@@ -31656,7 +31656,7 @@ var DiscourseGoldStore = class {
 init_relational();
 var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
   constructor(app, ctx, deps) {
-    var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2;
+    var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2;
     super(app);
     this.ctx = ctx;
     this.deps = deps;
@@ -31675,26 +31675,55 @@ var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
     this.canvas = null;
     this.canvasText = "";
     this.layersEl = null;
+    // The hand owns what the hand typed: once the user edits 見出し, canvas
+    // derivations stop overwriting it (the five-clobber war, IMG_1082/1083).
+    this.noteEdited = false;
+    // One tap = one entry. A second tap while a save is in flight is a REPEAT
+    // (the feedback was missed), never a request for a duplicate.
+    this.saving = false;
+    // the full ranking + the reason line shown under the chips — a suggestion
+    // whose why is hidden costs a re-derivation on every capture (§21: every
+    // offer carries its own skeletal reason).
+    this.ranking = [];
+    this.suggestWhy = "";
+    this.whyEl = null;
     const d = derivePattern(ctx.text);
-    const top = (_b2 = (_a2 = deps.suggestClass) == null ? void 0 : _a2.call(deps, ctx.text)) == null ? void 0 : _b2[0];
-    this.suggested = top && top.score > 0 ? top.cls : (_c2 = ctx.classHint) != null ? _c2 : d.suggestedClass;
+    this.ranking = (_d2 = (_c2 = deps.suggestClass) == null ? void 0 : _c2.call(deps, {
+      note: ctx.text,
+      example: ctx.example,
+      hasPriorTurns: ((_b2 = (_a2 = ctx.contextBefore) == null ? void 0 : _a2.length) != null ? _b2 : 0) > 0,
+      medium: ctx.source.medium
+    })) != null ? _d2 : [];
+    const top = this.ranking[0];
+    this.suggested = top && top.score > 0 ? top.cls : (_e2 = ctx.classHint) != null ? _e2 : d.suggestedClass;
     this.cls = this.suggested;
+    if (top && top.score > 0) {
+      this.suggestWhy = top.why.join("\u30FB");
+      const alt = this.ranking[1];
+      if (alt && alt.score > 0 && alt.why.length) {
+        this.suggestWhy += ` \uFF0F \u6B21\u70B9 ${NOTE_TYPES[alt.cls].emoji} ${alt.why[0]}`;
+      }
+    } else if (ctx.classHint) {
+      this.suggestWhy = "\u547C\u3073\u51FA\u3057\u5143\u306E\u578B\u30D2\u30F3\u30C8";
+    } else {
+      this.suggestWhy = d.keyKind === "link" ? "\u301C\u8A18\u6CD5\uFF08\u90E8\u54C1\u30EA\u30F3\u30AF\uFF09" : d.keyKind === "frame" ? "\u25CB\u25CB\u30B9\u30ED\u30C3\u30C8\u8A18\u6CD5" : "\u8A18\u6CD5\u30FB\u69CB\u9020\u306E\u624B\u304C\u304B\u308A\u306A\u3057 \u2014 \u624B\u3067\u9078\u3093\u3067\u304F\u3060\u3055\u3044";
+    }
     const p = splitPatternParts(ctx.text);
     this.parts = p.length >= 2 ? p.join(" \u301C ") : "";
     this.frame = /[○〇]{2}/.test(ctx.text) ? ctx.text : "";
-    const utterance = (_d2 = ctx.example) != null ? _d2 : ctx.text;
+    const utterance = ctx.source.medium === "dict" ? "" : (_f2 = ctx.example) != null ? _f2 : ctx.text;
     if (utterance) {
       const turnsIn = [
-        ...(_e2 = ctx.contextBefore) != null ? _e2 : [],
+        ...(_g2 = ctx.contextBefore) != null ? _g2 : [],
         utterance,
-        ...(_f2 = ctx.contextAfter) != null ? _f2 : []
+        ...(_h2 = ctx.contextAfter) != null ? _h2 : []
       ].map((text, i) => {
         var _a3, _b3;
         return { text, speaker: (_b3 = (_a3 = ctx.speakers) == null ? void 0 : _a3[i]) != null ? _b3 : null };
       });
       try {
         const turns = analyzeCrossTurn(turnsIn);
-        const me = turns[(_h2 = (_g2 = ctx.contextBefore) == null ? void 0 : _g2.length) != null ? _h2 : 0];
+        const me = turns[(_j2 = (_i2 = ctx.contextBefore) == null ? void 0 : _i2.length) != null ? _j2 : 0];
         if (me) {
           this.suggestedAct = me.act;
           this.act = me.act;
@@ -31723,6 +31752,9 @@ var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
       attr: { autocapitalize: "off", spellcheck: "false" }
     });
     this.noteInput.value = this.ctx.text;
+    this.noteInput.addEventListener("input", () => {
+      this.noteEdited = true;
+    });
     let chipHandle = null;
     const selectClass = (c) => {
       this.cls = c;
@@ -31730,6 +31762,16 @@ var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
       this.hintEl.setText(CLASS_HINTS[c]);
       this.renderPayload();
     };
+    chipHandle = classChips(contentEl, {
+      value: this.cls,
+      suggested: this.suggested,
+      keys: true,
+      onPick: (c) => selectClass(c)
+    });
+    this.whyEl = contentEl.createDiv("jp-capture-whyrow");
+    this.whyEl.setText(this.suggestWhy ? `\u63D0\u6848\u306E\u6839\u62E0: ${this.suggestWhy}` : "");
+    this.hintEl = contentEl.createDiv("jp-capture-hint");
+    this.hintEl.setText(CLASS_HINTS[this.cls]);
     const exampleText = (_a2 = this.ctx.example) != null ? _a2 : this.ctx.text;
     if (exampleText && exampleText.length >= 4) {
       const wrap = contentEl.createDiv("jp-capture-canvaswrap");
@@ -31740,7 +31782,7 @@ var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
         probe: this.deps.canvasProbe,
         suggestions: (_d2 = (_c2 = (_b2 = this.deps).spanSuggestions) == null ? void 0 : _c2.call(_b2, exampleText)) != null ? _d2 : [],
         onChange: (d) => {
-          if (d.note)
+          if (d.note && !this.noteEdited)
             this.noteInput.value = d.note;
           if (d.payload.parts)
             this.parts = d.payload.parts.join(" \u301C ");
@@ -31761,14 +31803,6 @@ var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
       this.layersEl = wrap.createDiv("jp-capture-layers");
       this.updateLayerStrip();
     }
-    chipHandle = classChips(contentEl, {
-      value: this.cls,
-      suggested: this.suggested,
-      keys: true,
-      onPick: (c) => selectClass(c)
-    });
-    this.hintEl = contentEl.createDiv("jp-capture-hint");
-    this.hintEl.setText(CLASS_HINTS[this.cls]);
     contentEl.addEventListener("keydown", (e) => {
       const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
       if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
@@ -31968,6 +32002,31 @@ var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
     const save = row.createEl("button", { text: "\u4FDD\u5B58", cls: "jp-capture-btn jp-capture-btn--cta" });
     save.addEventListener("click", () => void this.save(true));
   }
+  /** One save at a time: the buttons go dead while one is in flight, so a
+   *  second tap (the filmed take-2, IMG_1082) cannot mint a duplicate. */
+  setButtonsBusy(busy) {
+    this.saving = busy;
+    for (const b of Array.from(this.saveRowEl.querySelectorAll("button")))
+      b.disabled = busy;
+  }
+  /**
+   * Feedback WHERE THE HAND IS. The Notice lands top-right — off-screen of a
+   * thumb that is hovering over the save row — which is exactly how the
+   * double-save war started (the first save's toast was never seen). After a
+   * stay-open save the row itself says what happened.
+   */
+  markSavedInPlace(cls) {
+    const def = NOTE_TYPES[cls];
+    this.hintEl.setText(`\u2713 ${def.emoji} ${def.label} \u3068\u3057\u3066\u8A18\u9332\u6E08\u307F \u2014 \u5225\u306E\u30EC\u30F3\u30BA\uFF08\u5206\u985E\uFF09\u3092\u9078\u3093\u3067\u518D\u4FDD\u5B58\u3067\u304D\u307E\u3059`);
+    this.hintEl.addClass("jp-capture-hint--saved");
+    window.setTimeout(() => {
+      var _a2;
+      return (_a2 = this.hintEl) == null ? void 0 : _a2.removeClass("jp-capture-hint--saved");
+    }, 1600);
+    this.gloss = "";
+    this.goldNote = "";
+    this.renderPayload();
+  }
   /**
    * ⿻ one sighting, many layers: every derived layer lands as its own entry
    * (shared bundleId; edges ride the L0 record), each with the SAME
@@ -31976,19 +32035,26 @@ var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
    */
   async saveBundle() {
     var _a2, _b2, _c2;
+    if (this.saving)
+      return;
     const b = this.currentBundle();
     const recs = b ? bundleRecords(b) : [];
     if (recs.length <= 1) {
       await this.save(true);
       return;
     }
+    this.setButtonsBusy(true);
     try {
       const keys = [];
       for (const r2 of recs) {
         const entry2 = await this.deps.recordClassified({
           note: r2.note,
           cls: r2.cls,
-          suggested: this.suggested,
+          // each layer's class was DERIVED from the marks — that derivation is
+          // the machine's suggestion for THIS layer, so the calibration record
+          // reads (suggested=derived, chosen=derived), a confirmation, not a
+          // phantom correction from the modal's overall preselection.
+          suggested: r2.cls,
           payload: r2.payload,
           att: this.buildAttestation((_a2 = this.ctx.example) != null ? _a2 : r2.note)
         });
@@ -32000,6 +32066,8 @@ var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
       this.close();
     } catch (e) {
       new import_obsidian15.Notice(`\u2FFB \u4FDD\u5B58\u306B\u5931\u6557: ${e.message}`, 6e3);
+    } finally {
+      this.setButtonsBusy(false);
     }
   }
   buildAttestation(quote) {
@@ -32030,11 +32098,14 @@ var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
   }
   async save(closeAfter) {
     var _a2, _b2, _c2, _d2, _e2, _f2;
+    if (this.saving)
+      return;
     const note = this.noteInput.value.trim();
     if (!note) {
       new import_obsidian15.Notice("\u898B\u51FA\u3057\u3092\u5165\u529B\u3057\u3066\u304F\u3060\u3055\u3044");
       return;
     }
+    this.setButtonsBusy(true);
     const payload = {};
     const parts = this.parts.split(/\s*[〜~,、]\s*/).map((p) => p.trim()).filter((p) => p.length > 0);
     if ((this.cls === "skeletal" || this.cls === "collocation") && parts.length >= 2)
@@ -32079,8 +32150,12 @@ var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
       (_f2 = (_e2 = this.deps).onSaved) == null ? void 0 : _f2.call(_e2, entry2);
       if (closeAfter)
         this.close();
+      else
+        this.markSavedInPlace(this.cls);
     } catch (e) {
       new import_obsidian15.Notice(`\u4FDD\u5B58\u306B\u5931\u6557: ${e.message}`, 6e3);
+    } finally {
+      this.setButtonsBusy(false);
     }
   }
   onClose() {
@@ -36253,16 +36328,16 @@ var DictionaryView = class extends import_obsidian17.ItemView {
    */
   offerCapture(sel, evt) {
     const stated = statedRelation(sel.text);
-    if (stated) {
-      this.commitCapture({ ...sel, text: stated.target }, stated.relation);
-      return;
-    }
     const offers = offeredBy(sel);
-    if (offers.length === 1) {
+    if (!stated && offers.length === 1) {
       this.commitCapture(sel, offers[0]);
       return;
     }
     const menu = new import_obsidian17.Menu();
+    if (stated) {
+      menu.addItem((i) => i.setTitle(`\u26A1 ${stated.relation}\uFF1A${stated.target}${sel.headword ? ` \u2194 ${sel.headword}` : ""} \u2014 \u51FA\u5178\u306E\u8A18\u53F7\u304B\u3089`).onClick(() => this.commitCapture({ ...sel, text: stated.target }, stated.relation)));
+      menu.addSeparator();
+    }
     for (const rel of offers) {
       menu.addItem((i) => i.setTitle(`${rel} \u2014 ${RELATION_SPECS[rel].hint}`).onClick(() => this.commitCapture(sel, rel)));
     }
@@ -36585,7 +36660,7 @@ var DictionaryView = class extends import_obsidian17.ItemView {
       return;
     }
     if (merged.length === 0) {
-      this.renderEmpty(`"${query}" \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F`);
+      this.renderEmpty(this.bigDict ? `"${query}" \u2014 \u5909\u63DB\u6E08\u307F\u8F9E\u66F8\u3092\u691C\u7D22\u4E2D\u2026` : `"${query}" \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F`);
     } else {
       this.resultsEl.empty();
       for (const group of this.groupResults(merged)) {
@@ -36606,7 +36681,7 @@ var DictionaryView = class extends import_obsidian17.ItemView {
       return;
     this.statsEl.empty();
     this.statsEl.createSpan({
-      text: count === 0 && !pending ? `"${query}" \u2014 no results` : `${count} entries for "${query}"`,
+      text: count === 0 ? pending ? `"${query}" \u2014 \u691C\u7D22\u4E2D\u2026` : `"${query}" \u2014 no results` : `${count} entries for "${query}"`,
       cls: "jp-dict-stat-text"
     });
     if (pending) {
@@ -36643,14 +36718,21 @@ var DictionaryView = class extends import_obsidian17.ItemView {
       hits = await this.bigDict.lookup(query, 40);
     } catch (e) {
       console.error("[jp-collocations] sidecar lookup failed:", e);
-      if (gen === this.searchGen)
+      if (gen === this.searchGen) {
         this.setStats(query, local.length, false);
+        if (!local.length)
+          this.renderEmpty(`"${query}" \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F`);
+      }
       return;
     }
     if (gen !== this.searchGen || !this.resultsEl || !this.statsEl)
       return;
     const extra = dedupeAgainst(hits, local);
     this.setStats(query, local.length + extra.length, false);
+    if (!local.length && !extra.length) {
+      this.renderEmpty(`"${query}" \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F`);
+      return;
+    }
     if (!extra.length)
       return;
     if (!local.length)
@@ -36711,7 +36793,7 @@ var DictionaryView = class extends import_obsidian17.ItemView {
       return;
     }
     if (results.length === 0) {
-      this.renderEmpty(`"${query}" \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F`);
+      this.renderEmpty(this.bigDict ? `"${query}" \u2014 \u5909\u63DB\u6E08\u307F\u8F9E\u66F8\u3092\u691C\u7D22\u4E2D\u2026` : `"${query}" \u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F`);
     } else {
       this.resultsEl.empty();
       for (const group of this.groupResults(results)) {
@@ -39323,7 +39405,7 @@ var XSearchView = class extends import_obsidian22.ItemView {
       const u = buildXUsage(this.deps.corpus.getAll(), single, total);
       renderXUsage(this.resultsEl, u, {
         openUrl: (url) => window.open(url, "_blank"),
-        onCapture: this.deps.onCaptureLine ? (quote, url, handle) => this.deps.onCaptureLine(quote, url, handle) : void 0
+        onCapture: this.deps.onCaptureLine ? (quote, url, handle, hit) => this.deps.onCaptureLine(quote, url, handle, hit) : void 0
       });
     }
     const terms = highlightTerms(this.query);
@@ -47741,8 +47823,11 @@ var CASE_PARTICLE = /[をがにでへとも]/;
 var VERBAL_TAIL = /[うくぐすつぬぶむる]$/;
 var SLOT_RE = /[○〇]{2,}/;
 var KANA_RE = /^[぀-ヿー]+$/;
-function structuralSignals(noteRaw) {
-  const note = normalizeJapanese(noteRaw).trim();
+var JAPANESE_RE = /[ぁ-ゖァ-ヶ一-鿿ー]/;
+function structuralSignals(evidence) {
+  var _a2, _b2;
+  const ev = typeof evidence === "string" ? { note: evidence } : evidence;
+  const note = normalizeJapanese((_a2 = ev.note) != null ? _a2 : "").trim();
   const compact2 = note.replace(/\s+/g, "");
   const out = new Map(
     NOTE_CLASSES.map((c) => [c, { cls: c, score: 0, why: [] }])
@@ -47752,6 +47837,8 @@ function structuralSignals(noteRaw) {
     s.score += pts;
     s.why.push(why);
   };
+  if (!JAPANESE_RE.test(compact2))
+    return [...out.values()];
   const tildeParts = compact2.split(/[〜~]/).filter(Boolean);
   if (tildeParts.length >= 2)
     add("skeletal", 8, "\u301C\u8A18\u6CD5\uFF08\u90E8\u54C1\u30EA\u30F3\u30AF\uFF09");
@@ -47763,31 +47850,55 @@ function structuralSignals(noteRaw) {
     add("discourse", 2, "\u5BFE\u8A71\u7684\u306A\u7D42\u52A9\u8A5E");
     add("serifu", 2, "\u767A\u8A71\u3089\u3057\u3044\u7D42\u308F\u308A");
   }
+  if (ev.hasPriorTurns && out.get("discourse").score > 0)
+    add("discourse", 2, "\u524D\u306E\u767A\u8A71\u306B\u5FDC\u3058\u308B\u6587\u8108\u304C\u3042\u308B");
   if (compact2.length >= 10 && SENTENCE_FINAL.test(compact2))
     add("serifu", 3, "\u6587\u3089\u3057\u3044\u9577\u3055+\u6587\u672B\u5F62");
   if (/[。？！?!]/.test(compact2))
     add("serifu", 2, "\u6587\u672B\u8A18\u53F7\u3092\u542B\u3080");
-  if (!SLOT_RE.test(compact2) && tildeParts.length < 2 && compact2.length >= 3 && compact2.length <= 9 && CASE_PARTICLE.test(compact2) && VERBAL_TAIL.test(compact2)) {
+  if (ev.example && compact2.length >= 8 && compact2 === normalizeJapanese(ev.example).trim().replace(/\s+/g, "")) {
+    add("serifu", 2, "\u767A\u8A71\u307E\u308B\u3054\u3068\u306E\u9078\u629E");
+  }
+  if (!SLOT_RE.test(compact2) && tildeParts.length < 2 && compact2.length >= 3 && compact2.length <= 14 && CASE_PARTICLE.test(compact2) && VERBAL_TAIL.test(compact2)) {
     add("collocation", 5, "\u540D\u8A5E+\u52A9\u8A5E+\u52D5\u8A5E\u306E\u5BC6\u306A\u5F62");
+    if (ev.lexeme) {
+      const m = /^(.+?)[をがにでへとも](.+)$/.exec(compact2);
+      if (m && m[1].length >= 2 && m[2].length >= 2 && ev.lexeme(m[1]) && ev.lexeme(m[2])) {
+        add("collocation", 3, "\u4E21\u6210\u5206\u3068\u3082\u8F9E\u66F8\u306B\u8F09\u308B\u8A9E");
+      }
+    }
   }
   if (compact2.length <= 4 && !CASE_PARTICLE.test(compact2) && !SLOT_RE.test(compact2) && tildeParts.length < 2) {
     add("rhet_collocation", 2, "\u88F8\u306E\u30EC\u30F3\u30DE\u3089\u3057\u3044\u77ED\u3055");
     if (!KANA_RE.test(compact2))
       add("rhet_collocation", 1, "\u6F22\u5B57\u30EC\u30F3\u30DE");
+    if ((_b2 = ev.lexeme) == null ? void 0 : _b2.call(ev, compact2))
+      add("rhet_collocation", 1, "\u8F9E\u66F8\u306B\u8F09\u308B\u8A9E");
+  }
+  if (ev.medium === "dict") {
+    const d = out.get("discourse");
+    if (d.score > 0) {
+      d.score = 0;
+      d.why = ["\u8F9E\u66F8\u7531\u6765 \u2014 \u5FDC\u7B54\u3059\u308B\u76F8\u624B\u304C\u5B58\u5728\u3057\u306A\u3044"];
+    }
+    const s = out.get("serifu");
+    if (s.score > 0) {
+      s.score = Math.floor(s.score / 2);
+      s.why.push("\u8F9E\u66F8\u7531\u6765 \u2014 \u8AB0\u304B\u306E\u30BB\u30EA\u30D5\u3067\u306F\u306A\u3044");
+    }
   }
   return [...out.values()];
 }
-function suggestClass(note, history) {
+var PRIOR_CAP = 2.5;
+function suggestClass(evidence, history) {
   var _a2, _b2;
-  const structural = structuralSignals(note);
+  const structural = structuralSignals(evidence);
   const chosen = /* @__PURE__ */ new Map();
   const transfer = /* @__PURE__ */ new Map();
-  let overridden = 0;
   for (const h of history) {
     chosen.set(h.chosen, ((_a2 = chosen.get(h.chosen)) != null ? _a2 : 0) + 1);
     if (h.suggested && h.suggested !== h.chosen) {
       transfer.set(`${h.suggested}\u2192${h.chosen}`, ((_b2 = transfer.get(`${h.suggested}\u2192${h.chosen}`)) != null ? _b2 : 0) + 1);
-      overridden++;
     }
   }
   const total = history.length;
@@ -47795,9 +47906,9 @@ function suggestClass(note, history) {
   const calibrated = structural.map((s) => {
     var _a3, _b3, _c2;
     const sig = { cls: s.cls, score: s.score, why: [...s.why] };
-    if (total >= 5) {
+    if (total >= 5 && s.score > 0) {
       const prior = (((_a3 = chosen.get(s.cls)) != null ? _a3 : 0) + 1) / (total + NOTE_CLASSES.length);
-      const pts = prior * 3 * NOTE_CLASSES.length;
+      const pts = Math.min(PRIOR_CAP, prior * 3 * NOTE_CLASSES.length);
       if (pts > 1)
         sig.why.push(`\u3042\u306A\u305F\u306E\u9078\u629E\u50BE\u5411 (${(_b3 = chosen.get(s.cls)) != null ? _b3 : 0}/${total})`);
       sig.score += pts;
@@ -54549,9 +54660,15 @@ ${summary}
         void this.autoSweepAfterCapture(entry2);
       },
       // §21: calibrated by the user's own suggested-vs-chosen record —
-      // every past capture makes the next preselection smarter.
-      suggestClass: (note) => suggestClass(
-        note,
+      // every past capture makes the next preselection smarter. The evidence
+      // object carries what the modal knows beyond the span (example, prior
+      // turns, medium); the lexeme probe lets 🔵/🟢 signals check their
+      // components against the dictionaries the vault actually has.
+      suggestClass: (ev) => suggestClass(
+        {
+          ...ev,
+          lexeme: this.dictStore.hasDictionaries() ? (s) => this.dictStore.lookup(s).length > 0 : void 0
+        },
         this.patternStore.all().filter((p) => p.classRatified).map((p) => ({ suggested: p.classSuggested, chosen: p.class }))
       ),
       // §22.4 TokenCanvas: deinflection-backed token validation + faint
@@ -54726,9 +54843,12 @@ ${summary}
       // §29.2 — a concordance line goes down the SAME road every capture does
       // (§28 S5): the classify modal, with the window as the example and the
       // post as the scene. Not a side channel that writes straight to a store.
-      onCaptureLine: (quote, url, handle) => {
+      onCaptureLine: (quote, url, handle, hit) => {
         new CaptureModal(this.app, {
-          text: "",
+          // the concordance line was found BY a query — the capture is already
+          // about that surface, so it arrives as the 見出し instead of asking
+          // the flick keyboard to retype what the machine just matched.
+          text: hit != null ? hit : "",
           example: quote,
           source: { kind: "x", medium: "x", url, sourceName: handle ? `@${handle}` : "X" }
         }, this.makeCaptureDeps()).open();

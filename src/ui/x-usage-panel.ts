@@ -22,8 +22,11 @@ import { spreadOf, type XUsage } from '../x/usage.ts';
 export interface XUsagePanelDeps {
   /** Open a permalink — the door back on every concordance row (§28 S2). */
   openUrl: (url: string) => void;
-  /** Capture this line as a 用例 on the entry being viewed, when there is one. */
-  onCapture?: (quote: string, url: string, handle: string) => void;
+  /** Capture this line as a 用例 on the entry being viewed, when there is one.
+   *  `hit` is the matched surface in THIS line — the concordance already knows
+   *  what the capture is about, so the receiver never re-asks (filmed: the
+   *  KWIC capture modal opened with an empty 見出し). */
+  onCapture?: (quote: string, url: string, handle: string, hit: string) => void;
 }
 
 const SPREAD_JA: Record<ReturnType<typeof spreadOf>, string> = {
@@ -94,7 +97,7 @@ export function renderXUsage(host: HTMLElement, u: XUsage, deps: XUsagePanelDeps
       const grab = acts.createEl('button', { cls: 'jp-xu-btn', text: '📎', attr: { title: 'この一行を用例として添付' } });
       grab.onclick = (e) => {
         e.stopPropagation();
-        deps.onCapture!((l.clippedLeft ? '…' : '') + l.left + l.hit + l.right + (l.clippedRight ? '…' : ''), l.url, l.handle);
+        deps.onCapture!((l.clippedLeft ? '…' : '') + l.left + l.hit + l.right + (l.clippedRight ? '…' : ''), l.url, l.handle, l.hit);
       };
     }
     const go = acts.createEl('button', { cls: 'jp-xu-btn', text: '↪', attr: { title: `@${l.handle} の投稿を開く` } });

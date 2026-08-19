@@ -56,5 +56,45 @@ console.log('══ calibration: the user\'s record bends the ranking ══');
   })());
 }
 
+console.log('══ history RANKS, it never NOMINATES (the 2026-08 audit rule) ══');
+{
+  // The filmed misfire: English dictionary apparatus + a skewed history used
+  // to preselect the user's most-ratified class (🔴) with zero structural
+  // evidence. Non-Japanese text has no evidence for ANY class, and no amount
+  // of history may invent one.
+  check('non-Japanese text scores zero everywhere', S.suggestClass('common divisor,common multiple.', []).every((s) => s.score === 0));
+  const skew = Array.from({ length: 20 }, () => ({ chosen: 'discourse' }));
+  check('a skewed history cannot create a suggestion from nothing',
+    S.suggestClass('common divisor,common multiple.', skew)[0].score === 0);
+  // and even for Japanese, the prior lands only on structurally nominated
+  // classes: a tight collocation shape with a 🔴-heavy history must not flip
+  // to 🔴 (which scored nothing structurally).
+  check('prior cannot lift a class structure never nominated',
+    S.suggestClass('気になる', skew).find((s) => s.cls === 'discourse').score === 0);
+}
+
+console.log('══ evidence beyond the span (relationally defined classes) ══');
+{
+  const pos = (r, c) => r.findIndex((s) => s.cls === c);
+  // 🔴 is defined by responsivity: a witnessed prior turn strengthens it
+  const iso = S.suggestClass({ note: 'いやそれはないでしょ', hasPriorTurns: false }, []);
+  const ctx = S.suggestClass({ note: 'いやそれはないでしょ', hasPriorTurns: true }, []);
+  check('prior turns strengthen 🔴', ctx.find((s) => s.cls === 'discourse').score > iso.find((s) => s.cls === 'discourse').score);
+  // a dictionary is nobody's utterance: 🔴 impossible, 🟡 weakened
+  const dict = S.suggestClass({ note: 'いやそれはないでしょ', medium: 'dict' }, []);
+  check('dict medium zeroes 🔴', dict.find((s) => s.cls === 'discourse').score === 0);
+  check('dict suppression carries its why', dict.find((s) => s.cls === 'discourse').why.some((w) => w.includes('辞書')));
+  const utter = 'そんなこと言われても困りますよ。';
+  const whole = S.suggestClass({ note: utter, example: utter }, []);
+  const span = S.suggestClass({ note: utter }, []);
+  check('whole-utterance selection strengthens 🟡', whole.find((s) => s.cls === 'serifu').score > span.find((s) => s.cls === 'serifu').score);
+  // the lexeme probe gives 🔵 real endpoints — and the window now admits
+  // captures at real length (外的要因に左右される, IMG_1144)
+  const probe = (s) => ['外的要因', '左右される'].includes(s);
+  const withProbe = S.suggestClass({ note: '外的要因に左右される', lexeme: probe }, []);
+  check('real-length collocation is nominated', withProbe[0].cls === 'collocation');
+  check('probe-backed components add evidence', withProbe[0].why.some((w) => w.includes('辞書に載る')));
+}
+
 console.log(fail ? `\n✗ suggester: ${fail} failed (${pass} passed)` : `\n✓ suggester: all ${pass} pass`);
 process.exit(fail ? 1 : 0);

@@ -65,8 +65,9 @@ export interface XViewDeps {
   patternsIn?: (text: string) => Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }>;
   /** Open a catalog pattern in the lexicon (the door back — §28 S4). */
   openPattern?: (id: string) => void;
-  /** §29.2 — capture one concordance line (not the whole tweet) as a 用例. */
-  onCaptureLine?: (quote: string, url: string, handle: string) => void;
+  /** §29.2 — capture one concordance line (not the whole tweet) as a 用例.
+   *  `hit` = the matched surface, so the capture arrives already about it. */
+  onCaptureLine?: (quote: string, url: string, handle: string, hit?: string) => void;
   /** §29 the drag road + §26.3 the identity bar (see ui/view-chrome.ts). */
   onDrop?: ViewChrome['onDrop'];
   dropCan?: ViewChrome['dropCan'];
@@ -421,7 +422,7 @@ export class XSearchView extends ItemView {
       renderXUsage(this.resultsEl, u, {
         openUrl: (url) => window.open(url, '_blank'),
         onCapture: this.deps.onCaptureLine
-          ? (quote, url, handle) => this.deps.onCaptureLine!(quote, url, handle)
+          ? (quote, url, handle, hit) => this.deps.onCaptureLine!(quote, url, handle, hit)
           : undefined,
       });
     }

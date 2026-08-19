@@ -2296,9 +2296,17 @@ export default class JPCollocationsPlugin extends Plugin {
       // into "here are the other places you have already heard it."
       onSaved: (entry) => { this.refreshReconLibrary(); void this.autoSweepAfterCapture(entry); },
       // §21: calibrated by the user's own suggested-vs-chosen record —
-      // every past capture makes the next preselection smarter.
-      suggestClass: (note) => suggestClass(
-        note,
+      // every past capture makes the next preselection smarter. The evidence
+      // object carries what the modal knows beyond the span (example, prior
+      // turns, medium); the lexeme probe lets 🔵/🟢 signals check their
+      // components against the dictionaries the vault actually has.
+      suggestClass: (ev) => suggestClass(
+        {
+          ...ev,
+          lexeme: this.dictStore.hasDictionaries()
+            ? (s) => this.dictStore.lookup(s).length > 0
+            : undefined,
+        },
         this.patternStore.all()
           .filter((p) => p.classRatified)
           .map((p) => ({ suggested: p.classSuggested, chosen: p.class })),
@@ -2471,9 +2479,12 @@ export default class JPCollocationsPlugin extends Plugin {
       // §29.2 — a concordance line goes down the SAME road every capture does
       // (§28 S5): the classify modal, with the window as the example and the
       // post as the scene. Not a side channel that writes straight to a store.
-      onCaptureLine: (quote, url, handle) => {
+      onCaptureLine: (quote, url, handle, hit) => {
         new CaptureModal(this.app, {
-          text: "",
+          // the concordance line was found BY a query — the capture is already
+          // about that surface, so it arrives as the 見出し instead of asking
+          // the flick keyboard to retype what the machine just matched.
+          text: hit ?? "",
           example: quote,
           source: { kind: "x", medium: "x", url, sourceName: handle ? `@${handle}` : "X" },
         }, this.makeCaptureDeps()).open();

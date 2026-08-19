@@ -4445,6 +4445,22 @@ body.jp-posture-thumb .jp-dismiss { order: 99; }
   margin: 2px 0 6px;
   min-height: 1.2em;
 }
+/* the suggestion's stated reason — an offer carries its why (§21) */
+.jp-capture-whyrow {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  margin: 0 0 2px;
+}
+.jp-capture-whyrow:empty { display: none; }
+/* in-place save confirmation, where the thumb already is */
+.jp-capture-hint--saved {
+  color: var(--text-success, var(--interactive-accent));
+  font-weight: 600;
+}
+.jp-capture-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
 .jp-capture-turns {
   margin: 6px 0;
   border: 1px solid var(--background-modifier-border);

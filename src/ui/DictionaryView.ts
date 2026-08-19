@@ -185,14 +185,23 @@ export class DictionaryView extends ItemView {
    * (`⇔うんと`) is applied directly instead of being asked about again.
    */
   private offerCapture(sel: Selection, evt: MouseEvent): void {
+    // A relation the source marked (⇔/⇒/＝) leads the menu as a ONE-TAP offer
+    // — never a silent commit. The old auto-commit fired on the publisher's
+    // glyph alone, and the glyph is not one language: 新英和's ⇒ before
+    // 「common divisor」 is a compounds cross-ref, not a 言い換え, so the
+    // "stated" relation walked English apparatus straight into the catalog
+    // with no hand in the loop (filmed, 2026-08-08). The book still speaks
+    // first; the hand still decides.
     const stated = statedRelation(sel.text);
-    if (stated) {
-      this.commitCapture({ ...sel, text: stated.target }, stated.relation);
-      return;
-    }
     const offers = offeredBy(sel);
-    if (offers.length === 1) { this.commitCapture(sel, offers[0]); return; }
+    if (!stated && offers.length === 1) { this.commitCapture(sel, offers[0]); return; }
     const menu = new Menu();
+    if (stated) {
+      menu.addItem((i) => i
+        .setTitle(`⚡ ${stated.relation}：${stated.target}${sel.headword ? ` ↔ ${sel.headword}` : ''} — 出典の記号から`)
+        .onClick(() => this.commitCapture({ ...sel, text: stated.target }, stated.relation)));
+      menu.addSeparator();
+    }
     for (const rel of offers) {
       menu.addItem((i) => i
         .setTitle(`${rel} — ${RELATION_SPECS[rel].hint}`)
@@ -598,10 +607,15 @@ export class DictionaryView extends ItemView {
       return;
     }
 
-    // "Not found" is only true once the sidecars have answered too, so the
-    // placeholder goes up as a PROVISIONAL state that appendBigResults clears.
+    // "Not found" is only true once the sidecars have answered too — and the
+    // provisional state must SAY it is provisional. The old placeholder read
+    // 「見つかりませんでした」 while the sidecar search was still in flight,
+    // which is a verdict, not a status (filmed: "common" declared missing with
+    // 検索中… on the same screen). appendBigResults renders the real verdict.
     if (merged.length === 0) {
-      this.renderEmpty(`"${query}" が見つかりませんでした`);
+      this.renderEmpty(this.bigDict
+        ? `"${query}" — 変換済み辞書を検索中…`
+        : `"${query}" が見つかりませんでした`);
     } else {
       this.resultsEl.empty();
       for (const group of this.groupResults(merged)) {
@@ -623,8 +637,12 @@ export class DictionaryView extends ItemView {
   private setStats(query: string, count: number, pending: boolean): void {
     if (!this.statsEl) return;
     this.statsEl.empty();
+    // "0 entries" is an assertion; while a read is in flight the honest count
+    // is "so far". Only a settled search may claim a number for zero.
     this.statsEl.createSpan({
-      text: count === 0 && !pending ? `"${query}" — no results` : `${count} entries for "${query}"`,
+      text: count === 0
+        ? (pending ? `"${query}" — 検索中…` : `"${query}" — no results`)
+        : `${count} entries for "${query}"`,
       cls: 'jp-dict-stat-text',
     });
     if (pending) {
@@ -658,13 +676,22 @@ export class DictionaryView extends ItemView {
       hits = await this.bigDict.lookup(query, 40);
     } catch (e) {
       console.error('[jp-collocations] sidecar lookup failed:', e);
-      if (gen === this.searchGen) this.setStats(query, local.length, false);
+      if (gen === this.searchGen) {
+        this.setStats(query, local.length, false);
+        // the provisional 検索中… placeholder must not outlive the search
+        if (!local.length) this.renderEmpty(`"${query}" が見つかりませんでした`);
+      }
       return;
     }
     if (gen !== this.searchGen || !this.resultsEl || !this.statsEl) return;
 
     const extra = dedupeAgainst(hits, local);
     this.setStats(query, local.length + extra.length, false);
+    // both halves answered with nothing — NOW "not found" is true
+    if (!local.length && !extra.length) {
+      this.renderEmpty(`"${query}" が見つかりませんでした`);
+      return;
+    }
     if (!extra.length) return;
 
     // The placeholder was provisional — these entries are the answer to it.
@@ -733,7 +760,11 @@ export class DictionaryView extends ItemView {
     }
 
     if (results.length === 0) {
-      this.renderEmpty(`"${query}" が見つかりませんでした`);
+      // provisional while the sidecars are still reading (same rule as the
+      // live path — appendBigResults renders the real verdict)
+      this.renderEmpty(this.bigDict
+        ? `"${query}" — 変換済み辞書を検索中…`
+        : `"${query}" が見つかりませんでした`);
     } else {
       // Group by sequence & expression for merging related senses
       this.resultsEl.empty();
