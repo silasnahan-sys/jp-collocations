@@ -36327,11 +36327,16 @@ var DictionaryView = class extends import_obsidian17.ItemView {
    * (`⇔うんと`) is applied directly instead of being asked about again.
    */
   offerCapture(sel, evt) {
+    var _a2;
     const stated = statedRelation(sel.text);
-    const offers = offeredBy(sel);
+    let offers = offeredBy(sel);
     if (!stated && offers.length === 1) {
       this.commitCapture(sel, offers[0]);
       return;
+    }
+    const formRead = offers.some((r2) => COLLOCATION_KINDS.includes(r2)) ? classifyCollocation(sel.text, (_a2 = sel.headword) != null ? _a2 : "") : null;
+    if (formRead && offers.includes(formRead)) {
+      offers = [formRead, ...offers.filter((r2) => r2 !== formRead)];
     }
     const menu = new import_obsidian17.Menu();
     if (stated) {
@@ -36339,7 +36344,8 @@ var DictionaryView = class extends import_obsidian17.ItemView {
       menu.addSeparator();
     }
     for (const rel of offers) {
-      menu.addItem((i) => i.setTitle(`${rel} \u2014 ${RELATION_SPECS[rel].hint}`).onClick(() => this.commitCapture(sel, rel)));
+      const lead = rel === formRead ? `\u26A1 ${rel} \u2014 \u3053\u306E\u5F62\u304B\u3089\u8AAD\u3081\u308B` : `${rel} \u2014 ${RELATION_SPECS[rel].hint}`;
+      menu.addItem((i) => i.setTitle(lead).onClick(() => this.commitCapture(sel, rel)));
     }
     menu.showAtMouseEvent(evt);
   }

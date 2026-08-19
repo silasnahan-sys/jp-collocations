@@ -193,8 +193,18 @@ export class DictionaryView extends ItemView {
     // with no hand in the loop (filmed, 2026-08-08). The book still speaks
     // first; the hand still decides.
     const stated = statedRelation(sel.text);
-    const offers = offeredBy(sel);
+    let offers = offeredBy(sel);
     if (!stated && offers.length === 1) { this.commitCapture(sel, offers[0]); return; }
+    // The menu was a 12-item wall of 待つ-examples the eye had to translate
+    // (filmed: browsed 6s, abandoned). The surface form already SAYS which
+    // collocation relation it instantiates — the particle IS the case frame,
+    // the complementizer IS the complement — so that reading leads, named as
+    // the form's own, and the teaching list follows for the disagreeing hand.
+    const formRead = offers.some((r) => COLLOCATION_KINDS.includes(r))
+      ? classifyCollocation(sel.text, sel.headword ?? '') : null;
+    if (formRead && offers.includes(formRead)) {
+      offers = [formRead, ...offers.filter((r) => r !== formRead)];
+    }
     const menu = new Menu();
     if (stated) {
       menu.addItem((i) => i
@@ -203,8 +213,9 @@ export class DictionaryView extends ItemView {
       menu.addSeparator();
     }
     for (const rel of offers) {
+      const lead = rel === formRead ? `⚡ ${rel} — この形から読める` : `${rel} — ${RELATION_SPECS[rel].hint}`;
       menu.addItem((i) => i
-        .setTitle(`${rel} — ${RELATION_SPECS[rel].hint}`)
+        .setTitle(lead)
         .onClick(() => this.commitCapture(sel, rel)));
     }
     menu.showAtMouseEvent(evt);
