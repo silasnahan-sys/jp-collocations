@@ -95,7 +95,11 @@ const LEDGER = {
   // Block D — suite-nav.ts:145-155 states the mice ride the hotkey layer,
   // because buttons above 4 never reach a webview and must be driver-mapped to
   // a keystroke. Zero default hotkeys means that layer is a plan, not a road.
-  'D:default-hotkeys': '74 addCommand, 0 with a default hotkey — the Elecom/Logi substrate is unbuilt',
+  // 'D:default-hotkeys' DELETED 2026-08-19: the hold commands (hold-selection,
+  // hold-toss-newest) ship the plugin's first default hotkeys — the ratchet's
+  // own rule: a fixed hole may not sit in the allow-list pretending to be
+  // permission. The wider substrate (a default on every surface command) is
+  // Move 1½ work, tracked there, not here.
 };
 const used = new Set();
 /** True when the violation is already on the books; marks the entry live. */

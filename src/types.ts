@@ -170,6 +170,11 @@ export const DEFAULT_JIMAKU_SETTINGS: JimakuSettings = {
 };
 
 export interface PluginSettings {
+  /** PHYSICS Move 1 — feel knobs for the hold dock (掴む), all optional:
+   *  cap = chips held before the oldest is handed to the tray;
+   *  flickPx = pointer travel that turns a release into a toss.
+   *  Defaults live in notes/hold.ts (DEFAULT_HOLD_KNOBS); edit here to tune. */
+  hold?: { cap?: number; flickPx?: number };
   hyogenEnabled: boolean;
   hyogenRateLimit: number;
   hyogenWordList: string[];

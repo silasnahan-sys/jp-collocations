@@ -25762,6 +25762,20 @@ function attachSelectionEcho(root, deps) {
         deps.run(intent);
       });
     }
+    if (deps.hold) {
+      const sentence = sentenceAround(sel.rangeCount ? sel.getRangeAt(0) : null, root);
+      const b = verbs.createEl("button", { cls: "jp-echo-btn jp-echo-btn--hold", attr: { title: "\u6301\u3063\u3066\u304A\u304F \u2014 \u753B\u9762\u7AEF\u306B\u7F6E\u3044\u3066\u8AAD\u307F\u7D9A\u3051\u308B" } });
+      b.createSpan({ cls: "jp-echo-icon", text: "\u270A" });
+      b.createSpan({ cls: "jp-echo-label", text: "\u6301\u3064" });
+      b.addEventListener("pointerdown", (e) => {
+        var _a3;
+        e.preventDefault();
+        e.stopPropagation();
+        hide();
+        (_a3 = window.getSelection()) == null ? void 0 : _a3.removeAllRanges();
+        deps.hold(text, ctx().surface, sentence);
+      });
+    }
     place(rect);
   };
   const onChange = () => {
@@ -25788,6 +25802,22 @@ function attachSelectionEcho(root, deps) {
   };
   host._jpcEcho = detach;
   return detach;
+}
+function sentenceAround(range, root) {
+  var _a2, _b2;
+  if (!range)
+    return void 0;
+  let node = range.startContainer;
+  let el = node.nodeType === 1 ? node : node.parentElement;
+  for (let hops = 0; el && el !== root && hops < 5; hops++) {
+    const text = (_b2 = (_a2 = el.textContent) == null ? void 0 : _a2.trim().replace(/\s+/g, " ")) != null ? _b2 : "";
+    if (text.length >= 8 && text.length <= 300)
+      return text;
+    if (text.length > 300)
+      return void 0;
+    el = el.parentElement;
+  }
+  return void 0;
 }
 function imagesIn(range, inVault) {
   var _a2, _b2, _c2;
@@ -26312,7 +26342,8 @@ function armSelectionEcho(host, chrome, surface, opts = {}) {
     run: (intent) => chrome.onDrop(intent, []),
     ...chrome.lookUp ? { look: chrome.lookUp } : {},
     ...chrome.openWord ? { open: chrome.openWord } : {},
-    ...chrome.inVault ? { inVault: chrome.inVault } : {}
+    ...chrome.inVault ? { inVault: chrome.inVault } : {},
+    ...chrome.hold ? { hold: chrome.hold } : {}
   });
 }
 function mountSurfaceBar(viewRoot, chrome, current2, fallback) {
@@ -48316,6 +48347,181 @@ var InboxStore = class {
   }
 };
 
+// src/notes/hold.ts
+var DEFAULT_HOLD_KNOBS = { cap: 3, flickPx: 24 };
+var fnv6 = (s) => {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+};
+function chipLabel(text, max = 10) {
+  const t = text.trim().replace(/\s+/g, " ");
+  const chars = [...t];
+  return chars.length > max ? `${chars.slice(0, max).join("")}\u2026` : t;
+}
+function isToss(dx, dy, flickPx) {
+  return Math.hypot(dx, dy) >= flickPx;
+}
+var HoldStore = class {
+  constructor(saveFn, knobs = DEFAULT_HOLD_KNOBS) {
+    this.chips = [];
+    this.saveFn = saveFn;
+    this.knobs = knobs;
+  }
+  load(data) {
+    if (!Array.isArray(data))
+      return;
+    this.chips = data.filter(
+      (c) => !!c && typeof c.text === "string" && typeof c.id === "string"
+    );
+  }
+  all() {
+    return this.chips;
+  }
+  /**
+   * Hold a specimen. Returns `{chip, evicted}` — `evicted` is the chip the cap
+   * pushed out, which the CALLER must land in the tray (law 1: handed to
+   * gravity, never dropped). An identical re-grab (same text+sentence) is the
+   * hand double-checking, not a request for a twin: the existing chip is
+   * refreshed to the top instead.
+   */
+  hold(text, surface, sentence) {
+    var _a2;
+    const t = text.trim();
+    const id = `hold-${fnv6(`${t}|${sentence != null ? sentence : ""}`)}`;
+    const existing = this.chips.findIndex((c) => c.id === id);
+    if (existing >= 0) {
+      const [chip2] = this.chips.splice(existing, 1);
+      chip2.at = Date.now();
+      this.chips.push(chip2);
+      this.persist();
+      return { chip: chip2, evicted: null };
+    }
+    const chip = { id, text: t, surface, at: Date.now() };
+    if (sentence && sentence.trim() && sentence.trim() !== t)
+      chip.sentence = sentence.trim();
+    this.chips.push(chip);
+    let evicted = null;
+    if (this.chips.length > this.knobs.cap)
+      evicted = (_a2 = this.chips.shift()) != null ? _a2 : null;
+    this.persist();
+    return { chip, evicted };
+  }
+  /** Take a chip OUT (it landed somewhere, or was discarded on purpose). */
+  release(id) {
+    const i = this.chips.findIndex((c) => c.id === id);
+    if (i < 0)
+      return null;
+    const [chip] = this.chips.splice(i, 1);
+    this.persist();
+    return chip;
+  }
+  newest() {
+    var _a2;
+    return (_a2 = this.chips[this.chips.length - 1]) != null ? _a2 : null;
+  }
+  persist() {
+    this.saveFn(this.chips);
+  }
+};
+
+// src/ui/hold-dock.ts
+var HoldDock = class {
+  constructor(deps) {
+    this.deps = deps;
+    this.el = null;
+    this.verbsFor = null;
+  }
+  mount() {
+    if (this.el)
+      return;
+    this.el = document.body.createDiv("jp-hold-dock");
+    this.render();
+  }
+  unmount() {
+    var _a2;
+    (_a2 = this.el) == null ? void 0 : _a2.remove();
+    this.el = null;
+  }
+  render() {
+    const host = this.el;
+    if (!host)
+      return;
+    host.empty();
+    const chips = this.deps.chips();
+    host.toggleClass("jp-hold-dock--empty", chips.length === 0);
+    for (let i = chips.length - 1; i >= 0; i--)
+      this.renderChip(host, chips[i]);
+  }
+  renderChip(host, chip) {
+    const el = host.createDiv("jp-hold-chip");
+    el.createDiv("jp-hold-grip");
+    el.createSpan({ text: chipLabel(chip.text), cls: "jp-hold-label" });
+    if (this.verbsFor === chip.id)
+      this.renderVerbs(el, chip);
+    let x0 = 0, y0 = 0, dx = 0, dy = 0, tracking = false;
+    el.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      tracking = true;
+      x0 = e.clientX;
+      y0 = e.clientY;
+      dx = 0;
+      dy = 0;
+      el.setPointerCapture(e.pointerId);
+      el.addClass("jp-hold-chip--held");
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (!tracking)
+        return;
+      dx = e.clientX - x0;
+      dy = e.clientY - y0;
+      el.style.transform = `translate(${dx}px, ${dy}px) scale(1.04)`;
+    });
+    const settle2 = (e) => {
+      if (!tracking)
+        return;
+      tracking = false;
+      el.releasePointerCapture(e.pointerId);
+      el.removeClass("jp-hold-chip--held");
+      if (isToss(dx, dy, this.deps.knobs().flickPx)) {
+        el.addClass("jp-hold-chip--tossed");
+        el.style.transform = `translate(${dx * 3}px, ${dy * 3 - 40}px) scale(0.6)`;
+        window.setTimeout(() => {
+          this.deps.toTray(chip);
+          this.render();
+        }, 160);
+      } else {
+        el.style.transform = "";
+        this.verbsFor = this.verbsFor === chip.id ? null : chip.id;
+        this.render();
+      }
+    };
+    el.addEventListener("pointerup", settle2);
+    el.addEventListener("pointercancel", settle2);
+  }
+  renderVerbs(chipEl, chip) {
+    const row = chipEl.createDiv("jp-hold-verbs");
+    const verb = (icon, title, run2) => {
+      const b = row.createEl("button", { cls: "jp-hold-verb", attr: { title } });
+      b.setText(icon);
+      b.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.verbsFor = null;
+        run2();
+        this.render();
+      });
+    };
+    verb("\u2935", "\u30C8\u30EC\u30A4\u3078", () => this.deps.toTray(chip));
+    verb("\u26A1", "\u5206\u985E\u3057\u3066\u53F0\u5E33\u3078\uFF08\u5834\u9762\u3064\u304D\uFF09", () => this.deps.classify(chip));
+    verb("\u{1F4D6}", "\u8F9E\u66F8\u3067\u5F15\u304F", () => this.deps.lookup(chip));
+    verb("\u2715", "\u6368\u3066\u308B\uFF08\u30C8\u30EC\u30A4\u306B\u6B8B\u3089\u306A\u3044\uFF09", () => this.deps.discard(chip));
+  }
+};
+
 // src/notes/reach.ts
 var isOpen = (r2) => !r2.filled && !r2.abandonedAt;
 function reachId(want, at) {
@@ -49537,7 +49743,7 @@ var SPEAK_MODES = [
   { id: "jiyu", label: "\u81EA\u7531", hint: "\u5185\u5BB9\u3078\u306E\u30AA\u30FC\u30D7\u30F3\u306A\u5FDC\u7B54" },
   { id: "shunpatsu", label: "\u77AC\u767A", hint: "\u30E9\u30A4\u30C8\u30CB\u30F3\u30B0 \u2014 \u77ED\u304F\u901F\u304F" }
 ];
-function fnv6(s) {
+function fnv7(s) {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) {
     h ^= s.charCodeAt(i);
@@ -49547,7 +49753,7 @@ function fnv6(s) {
 }
 function newSession(opts) {
   return {
-    id: `spk-${fnv6(`${opts.file}|${opts.now}`)}`,
+    id: `spk-${fnv7(`${opts.file}|${opts.now}`)}`,
     file: opts.file,
     mode: opts.mode,
     constraint: opts.constraint,
@@ -49560,7 +49766,7 @@ function newSession(opts) {
 function newMark(opts) {
   var _a2;
   return {
-    id: `smk-${fnv6(`${opts.kind}|${(_a2 = opts.lineIndex) != null ? _a2 : -1}|${opts.now}`)}`,
+    id: `smk-${fnv7(`${opts.kind}|${(_a2 = opts.lineIndex) != null ? _a2 : -1}|${opts.now}`)}`,
     kind: opts.kind,
     tSec: opts.tSec,
     lineIndex: opts.lineIndex,
@@ -53044,6 +53250,30 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
     this.discourseReadings = (_g2 = stored == null ? void 0 : stored._readingsGold) != null ? _g2 : {};
     this.inboxStore = new InboxStore((data) => this.dm.setKey("_inbox", data));
     this.inboxStore.load(stored == null ? void 0 : stored._inbox);
+    this.holdStore = new HoldStore((data) => this.dm.setKey("_hold", data), this.holdKnobs());
+    this.holdStore.load(stored == null ? void 0 : stored._hold);
+    this.holdDock = new HoldDock({
+      chips: () => this.holdStore.all(),
+      knobs: () => this.holdKnobs(),
+      toTray: (chip) => void this.landHeldChip(chip),
+      classify: (chip) => {
+        new CaptureModal(this.app, {
+          text: chip.text,
+          example: chip.sentence,
+          source: {
+            kind: chip.surface === "x" ? "x" : "manual",
+            medium: chip.surface === "x" ? "x" : chip.surface === "dict" ? "dict" : "note",
+            sourceName: `\u63B4\u307F\u30FB${chip.surface}`
+          }
+        }, this.makeCaptureDeps()).open();
+      },
+      lookup: (chip) => void this.openDictionaryView(chip.text),
+      discard: (chip) => {
+        this.holdStore.release(chip.id);
+        this.holdDock.render();
+      }
+    });
+    this.holdDock.mount();
     this.bigDictRoot = await resolveBigDictRoot(
       (p) => this.app.vault.adapter.exists((0, import_obsidian38.normalizePath)(p)),
       ((_h2 = this.settings.bigDict) == null ? void 0 : _h2.root) || "JP Dictionaries"
@@ -53594,6 +53824,33 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       name: "Search",
       hotkeys: [],
       callback: () => new SearchModal(this.app, this.engine).open()
+    });
+    this.addCommand({
+      id: "hold-selection",
+      name: "\u9078\u629E\u3092\u6301\u3064 \u2014 hold the current selection",
+      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "h" }],
+      callback: () => {
+        var _a3, _b3;
+        const text = (_b3 = (_a3 = window.getSelection()) == null ? void 0 : _a3.toString().trim()) != null ? _b3 : "";
+        if (!text) {
+          new import_obsidian38.Notice("\u9078\u629E\u304C\u3042\u308A\u307E\u305B\u3093 \u2014 \u8A9E\u3092\u306A\u305E\u3063\u3066\u304B\u3089", 4e3);
+          return;
+        }
+        this.holdText(text, "editor");
+      }
+    });
+    this.addCommand({
+      id: "hold-toss-newest",
+      name: "\u6301\u3063\u3066\u3044\u308B\u4E00\u756A\u65B0\u3057\u3044\u3082\u306E\u3092\u30C8\u30EC\u30A4\u3078 \u2014 toss newest held chip",
+      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "j" }],
+      callback: () => {
+        const chip = this.holdStore.newest();
+        if (!chip) {
+          new import_obsidian38.Notice("\u4F55\u3082\u6301\u3063\u3066\u3044\u307E\u305B\u3093", 4e3);
+          return;
+        }
+        void this.landHeldChip(chip);
+      }
     });
     this.addCommand({
       id: "add-entry",
@@ -54609,14 +54866,15 @@ ${summary}
     ).open();
   }
   async onunload() {
-    var _a2, _b2;
+    var _a2, _b2, _c2;
     if (this.mirrorTimer) {
       clearTimeout(this.mirrorTimer);
       await this.writeMirror();
     }
     await this.dm.flush();
-    (_a2 = this.scraper) == null ? void 0 : _a2.abort();
-    (_b2 = this.twcScraper) == null ? void 0 : _b2.abort();
+    (_a2 = this.holdDock) == null ? void 0 : _a2.unmount();
+    (_b2 = this.scraper) == null ? void 0 : _b2.abort();
+    (_c2 = this.twcScraper) == null ? void 0 : _c2.abort();
     abortPointerDrag();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(JP_DICTIONARY_VIEW_TYPE);
@@ -56490,8 +56748,41 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       lookUp: (text) => this.lookUpPhrase(text),
       openWord: (hw) => void this.openDictionaryView(hw),
       backPeek: () => this.navPeek(),
-      inVault: (c) => this.resolveVaultPath(c)
+      inVault: (c) => this.resolveVaultPath(c),
+      // Move 1 (掴む): every echo-armed surface grabs identically, wired once.
+      hold: (text, surface, sentence) => this.holdText(text, surface, sentence)
     };
+  }
+  /** Feel knobs for the hold — settings override the defaults, never guessed. */
+  holdKnobs() {
+    return { ...DEFAULT_HOLD_KNOBS, ...this.settings.hold };
+  }
+  /** 掴む: lift a phrase into the dock. An overflowing hold hands its oldest
+   *  chip to gravity — the tray — never to the void. */
+  holdText(text, surface, sentence) {
+    const t = text.trim();
+    if (!t)
+      return;
+    const { evicted } = this.holdStore.hold(t, surface, sentence);
+    if (evicted)
+      void this.landHeldChip(
+        evicted,
+        /*rerender*/
+        false
+      );
+    this.holdDock.render();
+  }
+  /** 置く: a held chip lands in the tray as a scene-labeled card. The object
+   *  visibly leaves the dock and the tray badge ticks — the world is the
+   *  record; no toast chases it. */
+  async landHeldChip(chip, rerender = true) {
+    this.holdStore.release(chip.id);
+    const body2 = chip.sentence && chip.sentence !== chip.text ? `${chip.text}
+${chip.sentence}` : chip.text;
+    await this.inboxStore.add(shapeDrop(body2, Date.now(), `\u63B4\u307F\u30FB${chip.surface}`));
+    this.refreshTrayViews();
+    if (rerender)
+      this.holdDock.render();
   }
   /**
    * A candidate path or link text → the path the vault really holds, or null.

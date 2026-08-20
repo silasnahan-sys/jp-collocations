@@ -7613,3 +7613,77 @@ body.jp-posture-slate .jp-drop-veil {
 .jp-dict-usage-badge--more { border-style: dotted; cursor: default; }
 .jp-dict-usage-book { margin: 10px 0 2px; opacity: 0.9; }
 .jp-capture-layers { font-size: 0.78em; color: var(--text-muted); margin-top: 4px; min-height: 1.2em; }
+
+/* ── PHYSICS Move 1: the hold dock (掴む・運ぶ・置く) ──────────────────────
+   Body-mounted so the carry survives every view switch. Grabbability is
+   visible AT REST (the June rule): grip dots + a lift shadow before any
+   touch. All motion is compositor transform (the floating-rail lesson). */
+.jp-hold-dock {
+  position: fixed;
+  right: calc(6px + env(safe-area-inset-right, 0px));
+  top: 38%;
+  z-index: 60; /* above panes, below modals/notices */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none; /* the dock is air; only chips are solid */
+}
+.jp-hold-dock--empty { display: none; }
+.jp-hold-chip {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 168px;
+  padding: 7px 12px 7px 8px;
+  border-radius: 14px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22); /* the lift — it already floats */
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none; /* the chip owns its gestures; it draws over content, never in flow */
+  transition: transform 140ms ease, opacity 160ms ease, box-shadow 140ms ease;
+}
+.jp-hold-chip--held {
+  cursor: grabbing;
+  transition: none; /* in-flight: the finger is the animation */
+  box-shadow: 0 7px 18px rgba(0, 0, 0, 0.3);
+}
+.jp-hold-chip--tossed { opacity: 0; }
+@media (prefers-reduced-motion: reduce) {
+  .jp-hold-chip { transition: opacity 160ms ease; }
+}
+/* the grip: three dots — the tuggable texture, present before touch */
+.jp-hold-grip {
+  width: 6px;
+  height: 18px;
+  flex-shrink: 0;
+  background-image: radial-gradient(var(--text-faint) 1.2px, transparent 1.3px);
+  background-size: 6px 6px;
+}
+.jp-hold-label {
+  font-size: 0.82em;
+  color: var(--text-normal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.jp-hold-verbs {
+  display: flex;
+  gap: 4px;
+  margin-left: 2px;
+}
+.jp-hold-verb {
+  min-width: 30px;
+  min-height: 30px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  cursor: pointer;
+}
+.jp-hold-verb:hover { background: var(--background-modifier-hover); }
+/* the echo's grab verb sits apart from the act-now verbs */
+.jp-echo-btn--hold { border-left: 1px dashed var(--background-modifier-border); margin-left: 4px; }

@@ -51,6 +51,15 @@ export interface SelectionEchoDeps {
   open?: (headword: string) => void;
 
   /**
+   * Move 1 (PHYSICS 掴む) — lift this phrase into the hold dock instead of
+   * acting on it now. The echo is where the grab lives because the echo is
+   * where the hand already is: the selection, answered, with one more verb —
+   * "not yet." The sentence (the containing line's text) rides along so the
+   * scene arrives wherever the chip lands (S1).
+   */
+  hold?: (text: string, surface: string, sentence?: string) => void;
+
+  /**
    * Turn what a rendered image's DOM knows into a vault path the tray can
    * point at. See `InVault`.
    *
@@ -237,6 +246,24 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
       });
     }
 
+    // Move 1 (掴む) — the "not yet" verb, after the act-now verbs: lift the
+    // phrase into the hold dock and keep reading. Rendered apart from the
+    // intent list on purpose: intents compete for MAX_VERBS slots by surface
+    // relevance, and the grab must exist on every surface unconditionally.
+    if (deps.hold) {
+      const sentence = sentenceAround(sel.rangeCount ? sel.getRangeAt(0) : null, root);
+      const b = verbs.createEl('button', { cls: 'jp-echo-btn jp-echo-btn--hold', attr: { title: '持っておく — 画面端に置いて読み続ける' } });
+      b.createSpan({ cls: 'jp-echo-icon', text: '✊' });
+      b.createSpan({ cls: 'jp-echo-label', text: '持つ' });
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        hide();
+        window.getSelection()?.removeAllRanges();
+        deps.hold!(text, ctx().surface, sentence);
+      });
+    }
+
     place(rect);
   };
 
@@ -276,6 +303,27 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
  *
  * Exported for `golden/selection-images.mjs`.
  */
+/**
+ * The sentence the selection was taken from — the nearest ancestor line/block,
+ * capped so a grab from a long card carries a scene, not a novel. Best-effort:
+ * a null range or a selection spanning containers degrades to undefined, and
+ * the chip simply carries no sentence (S6: absent, not fabricated).
+ */
+function sentenceAround(range: Range | null, root: HTMLElement): string | undefined {
+  if (!range) return undefined;
+  let node: Node | null = range.startContainer;
+  let el: HTMLElement | null = node.nodeType === 1 ? (node as HTMLElement) : node.parentElement;
+  for (let hops = 0; el && el !== root && hops < 5; hops++) {
+    const text = el.textContent?.trim().replace(/\s+/g, ' ') ?? '';
+    // a line-sized container: meaningfully bigger than the selection, smaller
+    // than the whole card
+    if (text.length >= 8 && text.length <= 300) return text;
+    if (text.length > 300) return undefined;
+    el = el.parentElement;
+  }
+  return undefined;
+}
+
 export function imagesIn(range: Range, inVault?: InVault): string[] {
   const out: string[] = [];
   // Every step here is optional on some engine or in the golden's hand-written

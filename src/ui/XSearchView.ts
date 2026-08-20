@@ -81,6 +81,7 @@ export interface XViewDeps {
   openWord?: ViewChrome['openWord'];
   inVault?: ViewChrome['inVault'];
   backPeek?: ViewChrome['backPeek'];
+  hold?: ViewChrome['hold'];
 }
 
 export class XSearchView extends ItemView {

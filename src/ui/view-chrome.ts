@@ -62,6 +62,11 @@ export interface ViewChrome {
    *  highlighted image's vault path before pairing it with the sentence beside
    *  it, wherever in the vault that image is filed. See `InVault`. */
   inVault?: InVault;
+  /** Move 1 (PHYSICS 掴む) — lift the selection into the hold dock: keep
+   *  reading, decide later. Wired once in main.ts's peekChrome so every
+   *  armed surface grabs identically. `sentence` is the containing line —
+   *  the scene rides with the specimen (S1). */
+  hold?: (text: string, surface: string, sentence?: string) => void;
 }
 
 /**
@@ -124,6 +129,7 @@ export function armSelectionEcho(
     ...(chrome.lookUp ? { look: chrome.lookUp } : {}),
     ...(chrome.openWord ? { open: chrome.openWord } : {}),
     ...(chrome.inVault ? { inVault: chrome.inVault } : {}),
+    ...(chrome.hold ? { hold: chrome.hold } : {}),
   });
 }
 

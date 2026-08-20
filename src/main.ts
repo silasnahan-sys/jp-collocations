@@ -130,6 +130,8 @@ import { parsePodcastFeed, podcastNote } from "./notes/podcast-rss";
 import { componentKeyOf, type ComponentVerdict } from "./ui/DiscourseModeView";
 import { ImportModal } from "./ui/ImportModal";
 import { InboxStore, markCard, imageCard, pairedCard, shapeDrop, type MarkRef, type InboxCard } from "./notes/inbox";
+import { HoldStore, DEFAULT_HOLD_KNOBS, type HeldChip, type HoldKnobs } from "./notes/hold";
+import { HoldDock } from "./ui/hold-dock";
 // §29 — the drag road. `drop-intent` decides what arrived; `runDropIntent`
 // below hands it to the same code the equivalent command already calls.
 import { dropIntents, titleFromFilename, type DropIntent } from "./notes/drop-intent";
@@ -275,6 +277,8 @@ export default class JPCollocationsPlugin extends Plugin {
 
   /** 収集トレイ (§22.8) — the drag-drop inbox. */
   private inboxStore!: InboxStore;
+  private holdStore!: HoldStore;
+  private holdDock!: HoldDock;
   /** §27.5 — the converted big dictionaries (vault sidecars, async lookup). */
   private bigDict!: BigDictStore;
   /**
@@ -555,6 +559,34 @@ export default class JPCollocationsPlugin extends Plugin {
     // ── 収集トレイ (§22.8): the drag-drop inbox — quarantine, never loss ──
     this.inboxStore = new InboxStore((data) => this.dm.setKey("_inbox", data));
     this.inboxStore.load(stored?._inbox);
+
+    // ── the hold (PHYSICS Move 1, 掴む・運ぶ・置く): specimens in hand ──
+    // Persisted because NOTHING IS EVER MID-AIR: a chip held when Obsidian
+    // closed is still held when it reopens. Body-mounted dock, so the carry
+    // survives every view switch by construction (the Calendar grammar).
+    this.holdStore = new HoldStore((data) => this.dm.setKey("_hold", data), this.holdKnobs());
+    this.holdStore.load(stored?._hold);
+    this.holdDock = new HoldDock({
+      chips: () => this.holdStore.all(),
+      knobs: () => this.holdKnobs(),
+      toTray: (chip) => void this.landHeldChip(chip),
+      classify: (chip) => {
+        // The chip stays held while the modal is open — a cancelled modal
+        // must not have consumed the specimen (law 1). Toss or ✕ afterwards.
+        new CaptureModal(this.app, {
+          text: chip.text,
+          example: chip.sentence,
+          source: {
+            kind: chip.surface === "x" ? "x" : "manual",
+            medium: chip.surface === "x" ? "x" : chip.surface === "dict" ? "dict" : "note",
+            sourceName: `掴み・${chip.surface}`,
+          },
+        }, this.makeCaptureDeps()).open();
+      },
+      lookup: (chip) => void this.openDictionaryView(chip.text),
+      discard: (chip) => { this.holdStore.release(chip.id); this.holdDock.render(); },
+    });
+    this.holdDock.mount();
 
     // §27.0.2 — the plugin holds what you have caught; this holds what you are
     // still REACHING FOR. Tiny (a sentence and a few offers), so unlike the
@@ -1090,6 +1122,33 @@ export default class JPCollocationsPlugin extends Plugin {
       name: "Search",
       hotkeys: [],
       callback: () => new SearchModal(this.app, this.engine).open(),
+    });
+
+    // ── PHYSICS Move 1: the grab's command twins (invariant 9 — never a ──
+    // gesture without its command) and the FIRST default hotkeys in the
+    // plugin. The mice (Elecom/Logi) ride the hotkey layer per suite-nav.ts;
+    // until these two lines, 74 commands offered them nothing to ride. This
+    // is also the founding trigger's Obsidian-reachable form: capture-at-
+    // attention from wherever the selection is, one hardware chord away.
+    this.addCommand({
+      id: "hold-selection",
+      name: "選択を持つ — hold the current selection",
+      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "h" }],
+      callback: () => {
+        const text = window.getSelection()?.toString().trim() ?? "";
+        if (!text) { new Notice("選択がありません — 語をなぞってから", 4000); return; }
+        this.holdText(text, "editor");
+      },
+    });
+    this.addCommand({
+      id: "hold-toss-newest",
+      name: "持っている一番新しいものをトレイへ — toss newest held chip",
+      hotkeys: [{ modifiers: ["Mod", "Shift"], key: "j" }],
+      callback: () => {
+        const chip = this.holdStore.newest();
+        if (!chip) { new Notice("何も持っていません", 4000); return; }
+        void this.landHeldChip(chip);
+      },
     });
 
     this.addCommand({
@@ -2222,6 +2281,7 @@ export default class JPCollocationsPlugin extends Plugin {
   async onunload(): Promise<void> {
     if (this.mirrorTimer) { clearTimeout(this.mirrorTimer); await this.writeMirror(); }
     await this.dm.flush(); // land any debounced blob write before we die
+    this.holdDock?.unmount(); // body-mounted; chips themselves persist in the blob
     this.scraper?.abort();
     this.twcScraper?.abort();
     // A carry still in flight holds a document-level scroll blocker that would
@@ -3975,13 +4035,43 @@ export default class JPCollocationsPlugin extends Plugin {
    * no edge gesture, which is the one failure mode the invariant cannot
    * survive. Coupling them at one line makes that unforgettable.
    */
-  private peekChrome(): Pick<ViewChrome, "lookUp" | "openWord" | "backPeek" | "inVault"> {
+  private peekChrome(): Pick<ViewChrome, "lookUp" | "openWord" | "backPeek" | "inVault" | "hold"> {
     return {
       lookUp: (text) => this.lookUpPhrase(text),
       openWord: (hw) => void this.openDictionaryView(hw),
       backPeek: () => this.navPeek(),
       inVault: (c) => this.resolveVaultPath(c),
+      // Move 1 (掴む): every echo-armed surface grabs identically, wired once.
+      hold: (text, surface, sentence) => this.holdText(text, surface, sentence),
     };
+  }
+
+  /** Feel knobs for the hold — settings override the defaults, never guessed. */
+  private holdKnobs(): HoldKnobs {
+    return { ...DEFAULT_HOLD_KNOBS, ...this.settings.hold };
+  }
+
+  /** 掴む: lift a phrase into the dock. An overflowing hold hands its oldest
+   *  chip to gravity — the tray — never to the void. */
+  private holdText(text: string, surface: string, sentence?: string): void {
+    const t = text.trim();
+    if (!t) return;
+    const { evicted } = this.holdStore.hold(t, surface, sentence);
+    if (evicted) void this.landHeldChip(evicted, /*rerender*/ false);
+    this.holdDock.render();
+  }
+
+  /** 置く: a held chip lands in the tray as a scene-labeled card. The object
+   *  visibly leaves the dock and the tray badge ticks — the world is the
+   *  record; no toast chases it. */
+  private async landHeldChip(chip: HeldChip, rerender = true): Promise<void> {
+    this.holdStore.release(chip.id);
+    const body = chip.sentence && chip.sentence !== chip.text
+      ? `${chip.text}\n${chip.sentence}`
+      : chip.text;
+    await this.inboxStore.add(shapeDrop(body, Date.now(), `掴み・${chip.surface}`));
+    this.refreshTrayViews();
+    if (rerender) this.holdDock.render();
   }
 
   /**
