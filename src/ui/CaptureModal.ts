@@ -25,7 +25,7 @@ import { derivePattern, type PatternEntry, type Attestation } from '../notes/pat
 import { TokenCanvas } from './TokenCanvas.ts';
 import { bundleFromCanvas, bundleRecords } from '../notes/capture-bundle.ts';
 import type { Bundle } from '../notes/analysis-bundle.ts';
-import { splitPatternParts } from '../notes/pipeline.ts';
+import { splitPatternParts, splitNotationParts, notationCrossesSentence } from '../notes/pipeline.ts';
 import { KNOWN_ACTS, EDGE_KINDS, type GoldExample, type GoldEdge, type GoldSource } from '../notes/discourse-gold.ts';
 import { analyzeCrossTurn } from '../discourse/relational';
 
@@ -226,7 +226,11 @@ export class CaptureModal extends Modal {
     const exampleText = this.ctx.example ?? this.ctx.text;
     if (exampleText && exampleText.length >= 4) {
       const wrap = contentEl.createDiv('jp-capture-canvaswrap');
-      wrap.createSpan({ text: '出典（マークで分類 — タップ=部品 / ドラッグ=範囲 / 長押しドラッグ=スロット / 2回タップ=軸）', cls: 'jp-capture-example-label' });
+      // The legend states what the gestures DO. It used to say 2回タップ=軸 —
+      // a sign left standing after the gesture was repurposed to the 🟢 circle
+      // (TokenCanvas: double-tap = circle the pivot). A label that lies about
+      // its own gesture is worse than no label; 軸 returns when its gesture does.
+      wrap.createSpan({ text: '出典（マークで分類 — タップ=部品 / ドラッグ=範囲 / 長押しドラッグ=スロット / 2回タップ=◯レンマ）', cls: 'jp-capture-example-label' });
       this.canvasText = exampleText;
       this.canvas = new TokenCanvas({
         text: exampleText,
@@ -538,8 +542,16 @@ export class CaptureModal extends Modal {
     this.setButtonsBusy(true);
 
     const payload: PatternEntry['payload'] = {};
-    const parts = this.parts.split(/\s*[〜~,、]\s*/).map((p) => p.trim()).filter((p) => p.length > 0);
-    if ((this.cls === 'skeletal' || this.cls === 'collocation') && parts.length >= 2) payload.parts = parts;
+    // ONE split alphabet, shared with derive (splitNotationParts): 〜 ~ → ⇒ …
+    // and 、/。 all count as joins, and the (。) boundary form is a join that
+    // records itself as crossSentence rather than gluing into a part. The old
+    // private alphabet here ([〜~,、]) dropped → on the way out and minted
+    // unmatchable literals out of (。) — both filmed, IMG_1082/1083.
+    const parts = splitNotationParts(this.parts);
+    if ((this.cls === 'skeletal' || this.cls === 'collocation') && parts.length >= 2) {
+      payload.parts = parts;
+      if (this.cls === 'skeletal' && notationCrossesSentence(this.parts)) payload.crossSentence = true;
+    }
     if (this.cls === 'phrase_schema' && this.frame.trim()) payload.frame = this.frame.trim();
     if (this.cls === 'rhet_collocation') {
       if (this.lemma.trim()) payload.lemma = this.lemma.trim();

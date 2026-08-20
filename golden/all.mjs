@@ -16,7 +16,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const suites = [
   'storage.mjs', 'mirror.mjs', 'context.mjs', 'scaffold.mjs', 'suggester.mjs', 'discovery.mjs', 'scene.mjs', 'canvas.mjs', 'inbox.mjs', 'follow.mjs', 'goho.mjs', 'podcast.mjs', 'components.mjs', 'turns.mjs',
   'run.mjs', 'cards.mjs', 'patternstore.mjs', 'discourse-gold.mjs', 'deinflect.mjs', 'srs.mjs', 'plex.mjs', 'jimaku.mjs', 'srt.mjs',
-  'lexicon.mjs', 'sweep.mjs', 'note-phrases.mjs', 'usage-profile.mjs', 'drop-intent.mjs', 'paradigm.mjs', 'capture-rung.mjs', 'capture-frontmatter.mjs', 'auto-sweep.mjs', 'tray-doors.mjs', 'medium-lines.mjs', 'ratify.mjs',
+  'lexicon.mjs', 'sweep.mjs', 'notation.mjs', 'note-phrases.mjs', 'usage-profile.mjs', 'drop-intent.mjs', 'paradigm.mjs', 'capture-rung.mjs', 'capture-frontmatter.mjs', 'auto-sweep.mjs', 'tray-doors.mjs', 'medium-lines.mjs', 'ratify.mjs',
   'scoreboard.mjs', 'calculus-turns.mjs', 'calculus-corpus.mjs', 'calculus-precision.mjs', 'drill.mjs',
   'anchor.mjs', 'realformat.mjs', 'ocr.mjs',
   'voicesync.mjs', 'transcript.mjs', 'history.mjs', 'audio.mjs',

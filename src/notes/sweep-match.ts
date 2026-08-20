@@ -149,6 +149,8 @@ function quoteAround(hay: string, span: Span, pad = 8): string {
 
 const PUNCT_RE = /[、。！？!?・…‥「」『』()（）\s]/;
 const SENTENCE_BREAK_RE = /[。！？!?]/;
+/** what a declared (。)-crossing still may NOT cross — see matchLink */
+const HARD_BREAK_RE = /[！？!?]/;
 
 /** ── per-class matchers (window text → candidate or null) ─────────────────── */
 
@@ -169,6 +171,21 @@ function matchCollocation(hay: string, e: SweepablePattern): { span: Span; confi
 function matchLink(hay: string, e: SweepablePattern): { span: Span; confidence: number; matchKind: SweepMatchKind } | null {
   const parts = (e.payload.parts ?? []).map(norm).filter((p) => p.length >= 2);
   if (parts.length < 2) return null;
+  // A link that DECLARES sentence-crossing (payload.crossSentence — the user's
+  // own (。) notation, or a bundle minted across a boundary) is allowed to do
+  // the one thing its notation exists to say: cross a 。. Without the guard
+  // relaxed here, a 🟠 whose defining property is the crossing was stored and
+  // could never be confirmed (filmed capture はず(。)〜まずは, inert since
+  // 2026-08-11). The declaration licenses 。 ONLY — ！/？ still block (they
+  // were not what the notation declared), the 30-char gap keeps it
+  // clause-scale, and line breaks can't arise here at all: norm() erases them
+  // and callers match per line. Ordinary links keep the full sentence-break
+  // precision guard unchanged (golden-pinned).
+  if (e.payload.crossSentence) {
+    const span = findOrderedParts(hay, parts, 30, true, HARD_BREAK_RE);
+    if (!span) return null;
+    return { span, confidence: 0.55, matchKind: 'link' };
+  }
   const span = findOrderedParts(hay, parts, 30, true, SENTENCE_BREAK_RE);
   if (!span) return null;
   return { span, confidence: 0.6, matchKind: 'link' };

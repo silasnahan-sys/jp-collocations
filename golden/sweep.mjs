@@ -62,6 +62,19 @@ console.log('══ 🟠 skeletal link ══');
   check('link parts across a clause', h.length === 1 && h[0].matchKind === 'link', JSON.stringify(h));
   const miss = S.sweepEntry(e, lines('行くんだったら早くしよう'));
   check('missing second part → no hit', miss.length === 0);
+
+  // A link whose notation DECLARED the crossing — はず(。)〜まずは, the user's
+  // own boundary form, filmed being typed — may cross the 。 that ordinary
+  // links are forbidden. Without crossSentence the same text stays rejected
+  // (the precision guard is untouched); with it, the filmed capture finally
+  // attests. Hard line breaks still block either way.
+  const crossing = { class: 'skeletal', keyKind: 'link', key: 'はず〜まずは', payload: { parts: ['はず', 'まずは'], crossSentence: true } };
+  const plain = { class: 'skeletal', keyKind: 'link', key: 'はず〜まずは', payload: { parts: ['はず', 'まずは'] } };
+  const across = '遅くないはず。まずは今月から始めよう';
+  check('(。)-declared link crosses the sentence boundary', S.sweepEntry(crossing, lines(across)).length === 1, JSON.stringify(S.sweepEntry(crossing, lines(across))));
+  check('…at reduced confidence (crossing is weaker evidence)', (S.sweepEntry(crossing, lines(across))[0]?.confidence ?? 1) < 0.6);
+  check('the same text WITHOUT the declaration stays rejected', S.sweepEntry(plain, lines(across)).length === 0);
+  check('the declaration licenses 。 only — ！ still blocks', S.sweepEntry(crossing, lines('遅くないはず！まずは今月から')).length === 0);
 }
 
 console.log('══ 💠 phrase schema ══');

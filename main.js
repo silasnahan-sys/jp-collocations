@@ -22579,6 +22579,7 @@ function quoteAround(hay, span, pad4 = 8) {
 }
 var PUNCT_RE = /[、。！？!?・…‥「」『』()（）\s]/;
 var SENTENCE_BREAK_RE = /[。！？!?]/;
+var HARD_BREAK_RE = /[！？!?]/;
 function matchCollocation(hay, e) {
   var _a2;
   const parts = ((_a2 = e.payload.parts) != null ? _a2 : []).map(norm2).filter((p) => p.length >= 2);
@@ -22600,6 +22601,12 @@ function matchLink(hay, e) {
   const parts = ((_a2 = e.payload.parts) != null ? _a2 : []).map(norm2).filter((p) => p.length >= 2);
   if (parts.length < 2)
     return null;
+  if (e.payload.crossSentence) {
+    const span2 = findOrderedParts(hay, parts, 30, true, HARD_BREAK_RE);
+    if (!span2)
+      return null;
+    return { span: span2, confidence: 0.55, matchKind: "link" };
+  }
   const span = findOrderedParts(hay, parts, 30, true, SENTENCE_BREAK_RE);
   if (!span)
     return null;
@@ -23978,6 +23985,14 @@ function splitPatternParts(note) {
   }
   parts = parts.map((p) => p.trim()).filter((p) => p.length >= 2);
   return parts.length >= 2 && parts.length <= 4 ? parts : [note.trim()];
+}
+var NOTATION_JOIN_RE = /\s*(?:（。）|\(。\)|（、）|\(、\)|[〜~→⇒,、。]|…|⋯|・・・)+\s*/;
+var NOTATION_CROSS_RE = /（。）|\(。\)|。/;
+function splitNotationParts(s) {
+  return s.split(NOTATION_JOIN_RE).map((p) => p.trim()).filter((p) => p.length > 0);
+}
+function notationCrossesSentence(s) {
+  return NOTATION_CROSS_RE.test(s);
 }
 function reconcileOne(note, lines, readingOf) {
   var _a2, _b2, _c2, _d2;
@@ -28154,6 +28169,7 @@ var CollocationView = class extends import_obsidian12.ItemView {
     const container = this.containerEl.children[1];
     container.empty();
     container.addClass("jp-collocations-view");
+    armSelectionEcho(container, this.chrome, "lexicon");
     const header = container.createDiv("jp-col-header");
     mountSurfaceBar(container, this.chrome, "lexicon", header);
     header.createEl("h4", { text: "JP \u30B3\u30ED\u30B1\u30FC\u30B7\u30E7\u30F3", cls: "jp-col-title" });
@@ -31544,6 +31560,8 @@ function bundleRecords(bundle) {
           payload.glueParts = l.glue;
         break;
       case "link":
+        if (l.notation.includes("(\u3002)"))
+          payload.crossSentence = true;
         payload.parts = l.notation.replace("(\u3002)", "").split(SLOT_ANY).filter(Boolean);
         break;
       case "lemma":
@@ -31775,7 +31793,7 @@ var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
     const exampleText = (_a2 = this.ctx.example) != null ? _a2 : this.ctx.text;
     if (exampleText && exampleText.length >= 4) {
       const wrap = contentEl.createDiv("jp-capture-canvaswrap");
-      wrap.createSpan({ text: "\u51FA\u5178\uFF08\u30DE\u30FC\u30AF\u3067\u5206\u985E \u2014 \u30BF\u30C3\u30D7=\u90E8\u54C1 / \u30C9\u30E9\u30C3\u30B0=\u7BC4\u56F2 / \u9577\u62BC\u3057\u30C9\u30E9\u30C3\u30B0=\u30B9\u30ED\u30C3\u30C8 / 2\u56DE\u30BF\u30C3\u30D7=\u8EF8\uFF09", cls: "jp-capture-example-label" });
+      wrap.createSpan({ text: "\u51FA\u5178\uFF08\u30DE\u30FC\u30AF\u3067\u5206\u985E \u2014 \u30BF\u30C3\u30D7=\u90E8\u54C1 / \u30C9\u30E9\u30C3\u30B0=\u7BC4\u56F2 / \u9577\u62BC\u3057\u30C9\u30E9\u30C3\u30B0=\u30B9\u30ED\u30C3\u30C8 / 2\u56DE\u30BF\u30C3\u30D7=\u25EF\u30EC\u30F3\u30DE\uFF09", cls: "jp-capture-example-label" });
       this.canvasText = exampleText;
       this.canvas = new TokenCanvas({
         text: exampleText,
@@ -32107,9 +32125,12 @@ var _CaptureModal = class _CaptureModal extends import_obsidian15.Modal {
     }
     this.setButtonsBusy(true);
     const payload = {};
-    const parts = this.parts.split(/\s*[〜~,、]\s*/).map((p) => p.trim()).filter((p) => p.length > 0);
-    if ((this.cls === "skeletal" || this.cls === "collocation") && parts.length >= 2)
+    const parts = splitNotationParts(this.parts);
+    if ((this.cls === "skeletal" || this.cls === "collocation") && parts.length >= 2) {
       payload.parts = parts;
+      if (this.cls === "skeletal" && notationCrossesSentence(this.parts))
+        payload.crossSentence = true;
+    }
     if (this.cls === "phrase_schema" && this.frame.trim())
       payload.frame = this.frame.trim();
     if (this.cls === "rhet_collocation") {
@@ -39148,6 +39169,7 @@ var XSearchView = class extends import_obsidian22.ItemView {
     container.empty();
     container.addClass("jp-x-view");
     armDrops(container, this.deps, "x", { paste: true });
+    armSelectionEcho(container, this.deps, "x");
     const wide = wideDock(container);
     const header = container.createDiv("jp-x-header");
     mountSurfaceBar(container, this.deps, "x", header);
@@ -56495,6 +56517,10 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     v.chrome = {
       openSurface: (s) => void this.openSurface(s),
       dismiss: () => void this.navBack(),
+      // the selection-echo's action half — without onDrop the arming call
+      // returns early and 語彙 stays selection-deaf (it did, until 2026-08-19)
+      onDrop: (intent, files) => void this.runDropIntent(intent, files),
+      dropCan: () => this.dropCapabilities(),
       ...this.peekChrome(),
       surfaceBadge: (s) => this.surfaceBadge(s)
     };
@@ -56506,6 +56532,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     v.onDrop = (intent, files) => void this.runDropIntent(intent, files);
     v.dropCan = () => this.dropCapabilities();
     v.openSurface = (s) => void this.openSurface(s);
+    v.dismiss = () => void this.navBack();
     v.surfaceBadge = (s) => this.surfaceBadge(s);
     Object.assign(v, this.peekChrome());
     v.bigDict = {

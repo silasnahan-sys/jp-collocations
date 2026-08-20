@@ -342,6 +342,36 @@ export function splitPatternParts(note: string): string[] {
   return parts.length >= 2 && parts.length <= 4 ? parts : [note.trim()];
 }
 
+/**
+ * ONE alphabet for splitting a NOTATION FIELD (成分リンク / 型) into parts.
+ *
+ * Derive (`splitPatternParts`, above) and save used to split on two different
+ * alphabets: derive knew 〜 ~ → ⇒ … but not 、。; save knew 〜 ~ , 、 but not
+ * → ⇒ — so a headword built with → was understood on the way in and silently
+ * glued into one part on the way out (filmed, IMG_1082/1083). This is the one
+ * splitter for anything the user writes AS notation. It differs from
+ * `splitPatternParts` on purpose in one way only: 、 and 。 count as joins
+ * here, because in a notation field the user writes them to SAY how the parts
+ * meet — while in free text (derive's input) a comma is just a comma, and
+ * treating it as a join would turn every ordinary sentence into a 🟠 link.
+ *
+ * The parenthesized boundary forms (。)/（。） are the user's own invention
+ * (IMG_1082, typed keystroke by keystroke): "the join crosses a sentence end."
+ * They are joins too — never part material — and `notationCrossesSentence`
+ * reports that they were present so the entry can carry the fact.
+ */
+const NOTATION_JOIN_RE = /\s*(?:（。）|\(。\)|（、）|\(、\)|[〜~→⇒,、。]|…|⋯|・・・)+\s*/;
+const NOTATION_CROSS_RE = /（。）|\(。\)|。/;
+
+export function splitNotationParts(s: string): string[] {
+  return s.split(NOTATION_JOIN_RE).map((p) => p.trim()).filter((p) => p.length > 0);
+}
+
+/** Did the notation declare a sentence-boundary join ((。), （。） or a bare 。)? */
+export function notationCrossesSentence(s: string): boolean {
+  return NOTATION_CROSS_RE.test(s);
+}
+
 export function reconcileOne(note: string, lines: MatcherLine[], readingOf?: ReadingResolver): ReconciledResult {
   const contiguous = match(note, lines, readingOf);
   // AMBIGUITY: a short/generic fragment (また、なきゃ…) scores "perfectly" at

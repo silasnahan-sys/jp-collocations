@@ -31,7 +31,7 @@ import { detectPatterns, CATEGORY_COLORS, CATEGORY_LABELS } from '../discourse/d
 import type { PatternCategory } from '../discourse/discourse-patterns';
 import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
 import { classBadge } from './class-grammar';
-import { armDrops, mountSurfaceBar, wideDock, type ViewChrome } from './view-chrome';
+import { armDrops, armSelectionEcho, mountSurfaceBar, wideDock, type ViewChrome } from './view-chrome';
 import { buildXUsage } from '../x/usage';
 import { renderXUsage } from './x-usage-panel';
 import { makeDraggable } from './drag-out';
@@ -74,6 +74,13 @@ export interface XViewDeps {
   openSurface?: ViewChrome['openSurface'];
   dismiss?: ViewChrome['dismiss'];
   surfaceBadge?: ViewChrome['surfaceBadge'];
+  /** Invariant 13 — the selection-echo's answer half, wired once through the
+   *  plugin's peekChrome (main.ts spreads it into these deps already; these
+   *  declarations make the contract visible instead of accidental). */
+  lookUp?: ViewChrome['lookUp'];
+  openWord?: ViewChrome['openWord'];
+  inVault?: ViewChrome['inVault'];
+  backPeek?: ViewChrome['backPeek'];
 }
 
 export class XSearchView extends ItemView {
@@ -139,6 +146,16 @@ export class XSearchView extends ItemView {
     // becomes the query. Paste too: this view's whole job is "here, look at
     // this", and ⌘V is that sentence on a keyboard.
     armDrops(container, this.deps, 'x', { paste: true });
+    // Invariant 13, finally on the surface where the user lives: a Pencil
+    // selection on a tweet was answered by iOS's Copy/Writing Tools alone —
+    // filmed three separate times (IMG_1067 t≈144, IMG_1082 t≈25 and t≈112,
+    // the まずは selection that resolved to pure silence) — while the plugin's
+    // own verbs required travel to a fixed button. armSelectionEcho was
+    // already on 辞書/鑑賞/トレイ; this view imported everything around it
+    // and never armed. The card buttons' mousedown-preventDefault hack stays
+    // for now: it keeps the 分類-button road alive alongside the echo, and it
+    // retires when that road does (the inspector build).
+    armSelectionEcho(container, this.deps, 'x');
 
     // §26.3 — the query row belongs under the reaching hand and needs WIDTH,
     // so it takes the foot bar; `wide` is null on the desktop, which is what

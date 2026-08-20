@@ -98,6 +98,12 @@ export interface PatternEntry {
   note: string;
   payload: {
     parts?: string[];            // 🟠 components
+    /** 🟠 the link DECLARES it crosses a sentence boundary — the user's own
+     *  (。) notation (IMG_1082, typed by hand) or a bundle minted across a 。.
+     *  matchLink reads this to relax the sentence-break guard for exactly
+     *  these links; ordinary links keep the precision guard (golden-pinned:
+     *  two words sharing a tweet are not a construction). */
+    crossSentence?: boolean;
     frame?: string;              // 💠 frame with ○○ slots
     lemma?: string;              // 🟢 the evocative headword the gesture is keyed on
     halo?: string;               // 🟢 the surrounding rendering around the lemma

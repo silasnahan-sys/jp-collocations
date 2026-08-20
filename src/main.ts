@@ -4006,6 +4006,10 @@ export default class JPCollocationsPlugin extends Plugin {
     v.chrome = {
       openSurface: (s) => void this.openSurface(s),
       dismiss: () => void this.navBack(),
+      // the selection-echo's action half — without onDrop the arming call
+      // returns early and 語彙 stays selection-deaf (it did, until 2026-08-19)
+      onDrop: (intent, files) => void this.runDropIntent(intent, files),
+      dropCan: () => this.dropCapabilities(),
       ...this.peekChrome(),
       surfaceBadge: (s) => this.surfaceBadge(s),
     };
@@ -4018,6 +4022,13 @@ export default class JPCollocationsPlugin extends Plugin {
     v.onDrop = (intent, files) => void this.runDropIntent(intent, files);
     v.dropCan = () => this.dropCapabilities();
     v.openSurface = (s) => void this.openSurface(s);
+    // 辞書 was the one chromed surface never given `dismiss`, and everything
+    // downstream failed SILENTLY: armEdgeBack returns early without it, and
+    // the rendered 「閉じて戻る」 button ran `chrome.dismiss?.()` — an
+    // optional-call on nothing. A dead back button on the most-entered
+    // surface, invisible to every golden because the button existed and the
+    // handler ran. backPeek (its required pair) arrives from peekChrome below.
+    v.dismiss = () => void this.navBack();
     v.surfaceBadge = (s) => this.surfaceBadge(s);
     Object.assign(v, this.peekChrome());
     // §27.5 — the converted dictionaries. Same store the 語彙 panel queries, so

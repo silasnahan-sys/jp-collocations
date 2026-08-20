@@ -84,6 +84,10 @@ export class DictionaryView extends ItemView {
   onDrop: ViewChrome['onDrop'];
   dropCan: ViewChrome['dropCan'];
   openSurface: ViewChrome['openSurface'];
+  /** The way OUT — paired with backPeek (assigned via peekChrome). Late-bound
+   *  by withCatalogHits like everything above; it was the one chrome field
+   *  never assigned, which left this surface's 戻る silently dead. */
+  dismiss: ViewChrome['dismiss'];
   surfaceBadge: ViewChrome['surfaceBadge'];
   /**
    * §27.5 — the CONVERTED dictionaries (vault sidecars), asynchronous.

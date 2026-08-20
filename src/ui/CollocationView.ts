@@ -14,7 +14,7 @@ import { type SentenceRelation, RELATION_COLORS } from "../discourse/sentence-re
 import { heuristicResolver, type RelationsResolver } from "../discourse/relations-resolver";
 import type { ContextEngine, ContextCard, PatternContextCard, UnifiedExample, VaultOccurrence } from "../context/ContextEngine";
 import { LexiconPanel, type LexiconDeps } from "./LexiconPanel";
-import { mountSurfaceBar, type ViewChrome } from "./view-chrome";
+import { armSelectionEcho, mountSurfaceBar, type ViewChrome } from "./view-chrome";
 
 // Module-level resolver, injected from main.ts at onload. Defaults to
 // heuristic-only so tests / direct view construction still work.
@@ -111,6 +111,12 @@ export class CollocationView extends ItemView {
     // takes the view root and resolves both. LexiconPanel docks its own search
     // row separately (it owns one and this view does not) and the two still
     // stack correctly: nav lowest, the box you are typing in directly above it.
+
+    // Invariant 13 — 語彙 was the other surface (with 𝕏) that never armed the
+    // selection layer, so selecting a word inside an entry body here produced
+    // nothing at all. Same one-line arming as トレイ; the chrome's onDrop/
+    // dropCan arrive from withChrome (main.ts).
+    armSelectionEcho(container, this.chrome, 'lexicon');
 
     // Header
     const header = container.createDiv("jp-col-header");

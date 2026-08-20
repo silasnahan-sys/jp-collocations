@@ -115,6 +115,8 @@ export interface BundleRecord {
   cls: NoteClass;
   payload: {
     parts?: string[];
+    /** the link's notation crossed a 。 — recorded, so matchLink may cross it too */
+    crossSentence?: boolean;
     frame?: string;
     lemma?: string;
     halo?: string;
@@ -155,6 +157,10 @@ export function bundleRecords(bundle: Bundle): BundleRecord[] {
         if (l.glue?.length) payload.glueParts = l.glue;
         break;
       case 'link':
+        // the (。) is stripped from the part material but RECORDED: it is the
+        // one fact the notation exists to carry, and the sweep's matchLink
+        // needs it to allow exactly this link across a sentence boundary.
+        if (l.notation.includes('(。)')) payload.crossSentence = true;
         payload.parts = l.notation.replace('(。)', '').split(SLOT_ANY).filter(Boolean);
         break;
       case 'lemma':
