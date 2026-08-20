@@ -74,7 +74,36 @@ console.log('══ 🟠 skeletal link ══');
   check('(。)-declared link crosses the sentence boundary', S.sweepEntry(crossing, lines(across)).length === 1, JSON.stringify(S.sweepEntry(crossing, lines(across))));
   check('…at reduced confidence (crossing is weaker evidence)', (S.sweepEntry(crossing, lines(across))[0]?.confidence ?? 1) < 0.6);
   check('the same text WITHOUT the declaration stays rejected', S.sweepEntry(plain, lines(across)).length === 0);
-  check('the declaration licenses 。 only — ！ still blocks', S.sweepEntry(crossing, lines('遅くないはず！まずは今月から')).length === 0);
+  // The mint (analysis-bundle) marks a crossing for ANY ender — 。．.!?！？ —
+  // and encodes them all as (。). A matcher that blocked ！ made every
+  // ！-minted link stored-and-inert by construction (2026-08-20 review). The
+  // declaration means "one sentence ender between the anchors":
+  check('a declared crossing attests across ！ too (the mint mints them)', S.sweepEntry(crossing, lines('遅くないはず！まずは今月から')).length === 1);
+  // …ONE ender, enforced — not asserted. 30 chars fits 4 short sentences;
+  // "clause-scale" is a per-gap ender budget of 1, so a declared link cannot
+  // free-associate across a paragraph that happens to fit the cap:
+  check('two-plus enders in the gap still reject a declared crossing',
+    S.sweepEntry(crossing, lines('遅くないはず。今日は雨だ。まずは今月から')).length === 0);
+}
+
+console.log('══ untimestamped media keep their sightings (the null-key bug) ══');
+{
+  // The dedup key was `tStartSec ?? null` — every line of a tweet, Kindle
+  // note, or article keyed null, so the second hit in one document collided
+  // with the first and at most ONE candidate ever survived per document,
+  // under a MAX_CANDIDATES_PER_FILE of 3 (2026-08-20 review). Untimestamped
+  // lines now key by index.
+  const e = { class: 'collocation', keyKind: 'surface', key: '気になる', payload: {} };
+  const untimed = [
+    { index: 0, tStartSec: null, text: '最近ずっと気になる話だ' },
+    { index: 1, tStartSec: null, text: 'それも気になるところ' },
+    { index: 2, tStartSec: null, text: 'やっぱり気になるよね' },
+  ];
+  const hits = S.sweepEntry(e, untimed);
+  check('three untimestamped lines → three candidates, not one', hits.length === 3, JSON.stringify(hits.length));
+  check('…each reporting a null tStartSec (reporting stays honest)', hits.every((h) => h.tStartSec === null));
+  const timed = untimed.map((l, i) => ({ ...l, tStartSec: 10 }));
+  check('identical timestamps still dedupe (unchanged)', S.sweepEntry(e, timed).length === 1);
 }
 
 console.log('══ 💠 phrase schema ══');

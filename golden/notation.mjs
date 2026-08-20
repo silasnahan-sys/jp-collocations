@@ -46,9 +46,23 @@ console.log('══ the (。) boundary form: a join that records itself ══')
   check('(。) ASCII-paren splits clean', eq(P.splitNotationParts('はず(。)〜まずは'), ['はず', 'まずは']));
   check('（。） detected as crossing', P.notationCrossesSentence('はず（。）〜まずは'));
   check('(。) detected as crossing', P.notationCrossesSentence('はず(。)〜まずは'));
-  check('bare 。 detected as crossing', P.notationCrossesSentence('はず。まずは'));
+  // The declaration is the PARENTHESIZED form only. A bare 。 splits — it is a
+  // join — but declares nothing: any pasted two-sentence string contains one,
+  // and a gate the user never chose to open is not a declaration (2026-08-20
+  // review: Aです。Bです。 must not silently arm a relaxed matcher).
+  check('bare 。 splits…', eq(P.splitNotationParts('はず。まずは'), ['はず', 'まずは']));
+  check('…but a bare 。 does NOT declare a crossing', !P.notationCrossesSentence('はず。まずは'));
   check('、 is NOT a sentence crossing', !P.notationCrossesSentence('はずで、まずは'));
   check('plain 〜 is NOT a crossing', !P.notationCrossesSentence('はず〜まずは'));
+}
+
+console.log('══ ～ (U+FF5E) — the codebase\'s own canonical slot mark splits too ══');
+{
+  // frames.ts SLOT_ANY is ～, bundle notations are minted with it, and JP IMEs
+  // produce it for "tilde" — a splitter knowing 〜 and ~ but not ～ was a third
+  // alphabet in disguise (2026-08-20 review).
+  check('～ splits in the notation field', eq(P.splitNotationParts('はず～まずは'), ['はず', 'まずは']));
+  check('～ splits in derive', eq(P.splitPatternParts('はず～まずは'), ['はず', 'まずは']));
 }
 
 console.log('══ derive and save can no longer disagree on explicit joins ══');

@@ -7622,7 +7622,11 @@ body.jp-posture-slate .jp-drop-veil {
   position: fixed;
   right: calc(6px + env(safe-area-inset-right, 0px));
   top: 38%;
-  z-index: 60; /* above panes, below modals/notices */
+  /* Obsidian's real layers: modal=50, notice=60, menu=65 — a literal 60 sat
+     ABOVE modals with pressable chips (a chip's ⚡ could stack a second modal
+     over an open one). The popover token keeps the dock over panes and under
+     every modal, by the app's own ordering rather than a borrowed number. */
+  z-index: var(--layer-popover, 40);
   display: flex;
   flex-direction: column;
   gap: 8px;

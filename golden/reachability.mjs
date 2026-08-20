@@ -95,11 +95,11 @@ const LEDGER = {
   // Block D — suite-nav.ts:145-155 states the mice ride the hotkey layer,
   // because buttons above 4 never reach a webview and must be driver-mapped to
   // a keystroke. Zero default hotkeys means that layer is a plan, not a road.
-  // 'D:default-hotkeys' DELETED 2026-08-19: the hold commands (hold-selection,
-  // hold-toss-newest) ship the plugin's first default hotkeys — the ratchet's
-  // own rule: a fixed hole may not sit in the allow-list pretending to be
-  // permission. The wider substrate (a default on every surface command) is
-  // Move 1½ work, tracked there, not here.
+  // 'D:default-hotkeys' (any hotkey at all) was closed 2026-08-19 by the hold
+  // commands — and its deletion let the debt print 7 while the mice still
+  // reached no destination, because the assertion was loose enough to satisfy
+  // from a side door. Restored 2026-08-20 in the narrowed, true form:
+  'D:surface-hotkeys': 'no SURFACE_COMMAND ships a default hotkey — the mice can grab and toss but still cannot GO anywhere',
 };
 const used = new Set();
 /** True when the violation is already on the books; marks the entry live. */
@@ -237,8 +237,51 @@ const commands = (main.match(/addCommand\(/g) ?? []).length;
 const withHotkey = [...main.matchAll(/hotkeys\s*:\s*\[([^\]]*)\]/g)].filter((m) => m[1].trim().length > 0).length;
 check('every surface has a command a keystroke can land on', /SURFACE_COMMANDS/.test(main) && /SURFACE_COMMANDS\.(forEach|map)|for \(const .* of SURFACE_COMMANDS/.test(main),
   'SURFACE_COMMANDS exists but nothing registers it');
-ratchet('D:default-hotkeys', `at least one default hotkey among ${commands} commands`, withHotkey > 0);
-console.log(`    commands: ${commands}   with a default hotkey: ${withHotkey}`);
+// The first form of this ratchet was `withHotkey > 0`, and on 2026-08-19 two
+// hotkeys on two brand-new hold commands flipped it green while no
+// SURFACE_COMMAND had a default — the mice still reached no DESTINATION, but
+// the ledger line was deleted per block E and the debt printed one lower with
+// nothing closed. An assertion loose enough to be satisfied by a side door is
+// how an unfixed hole leaves the allow-list pretending to be fixed
+// (2026-08-20 review). The assertion is now the claim that matters: the
+// surface-navigation commands themselves carry defaults.
+check(`some command carries a default hotkey (currently ${withHotkey}/${commands})`, withHotkey > 0);
+const surfaceCmdBlock = main.match(/SURFACE_COMMANDS[\s\S]{0,2400}/)?.[0] ?? '';
+const surfaceHotkeys = [...surfaceCmdBlock.matchAll(/hotkeys\s*:\s*\[([^\]]*)\]/g)].filter((m) => m[1].trim().length > 0).length;
+ratchet('D:surface-hotkeys', 'every surface-navigation command ships a default hotkey', surfaceHotkeys > 0);
+console.log(`    commands: ${commands}   with a default hotkey: ${withHotkey}   on surface commands: ${surfaceHotkeys}`);
+
+// ── D2. arming is not assignment ─────────────────────────────────────────────
+//
+// The dead-戻る lesson (fixed 2026-08-19, guard added 2026-08-20): armEdgeBack
+// RETURNS EARLY unless chrome.dismiss AND chrome.backPeek are assigned, and the
+// rendered 閉じて戻る button runs `chrome.dismiss?.()` — an optional-call that
+// swallows absence. So a suite that only asks "was the arming function called"
+// certifies a door that does not open. These checks ask the sharper question:
+// does each chrome BUILDER actually assign the pair.
+console.log('\n D2. every chrome builder assigns the dismiss/backPeek pair');
+{
+  const catalogHits = main.match(/withCatalogHits[\s\S]{0,1200}?return v;/)?.[0] ?? '';
+  check('withCatalogHits (辞書) assigns dismiss', /v\.dismiss\s*=/.test(catalogHits));
+  check('withCatalogHits (辞書) gets backPeek (peekChrome)', /peekChrome\(\)/.test(catalogHits));
+  const withChrome = main.match(/private withChrome[\s\S]{0,1200}?return v;/)?.[0] ?? '';
+  check('withChrome (語彙) assigns dismiss', /dismiss\s*:/.test(withChrome));
+  check('withChrome (語彙) assigns the drop road (echo can arm)', /onDrop\s*:/.test(withChrome));
+}
+
+// ── D3. the selection layer is armed where the goldens say it is ────────────
+//
+// Move 0's echo fixes shipped with zero aperture checks (the review's gradient
+// finding: 24 checks on pure functions, 0 on the three aperture bugs). This is
+// the missing third: the surfaces that must answer a selection actually call
+// the arming function in their own source.
+console.log('\n D3. armSelectionEcho present on every answering surface');
+for (const [file, label] of [
+  ['ui/XSearchView.ts', 'x'], ['ui/CollocationView.ts', 'lexicon'],
+  ['ui/DictionaryView.ts', 'dict'], ['ui/TrayView.ts', 'tray'], ['ui/FollowAlongView.ts', 'follow'],
+]) {
+  check(`${label} arms the echo`, /armSelectionEcho\(/.test(read(...file.split('/'))));
+}
 
 // ── the ledger must not rot ───────────────────────────────────────────────────
 //

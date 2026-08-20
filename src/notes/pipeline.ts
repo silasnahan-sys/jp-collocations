@@ -333,7 +333,11 @@ export async function reconcileMultiAsync(
  * note is a single contiguous quote.
  */
 export function splitPatternParts(note: string): string[] {
-  let parts = note.split(/\s*[〜~→⇒]+\s*|\s*(?:…|⋯|・・・)\s*/).filter((p) => p.trim().length > 0);
+  // ～ (U+FF5E) is in this alphabet because it is the codebase's own canonical
+  // slot marker (frames.ts SLOT_ANY) and the one JP IMEs produce for "tilde" —
+  // a splitter that knows 〜 and ~ but not ～ is a third alphabet in disguise
+  // (found in the 2026-08-20 review).
+  let parts = note.split(/\s*[〜~～→⇒]+\s*|\s*(?:…|⋯|・・・)\s*/).filter((p) => p.trim().length > 0);
   // whitespace as connector — but never inside English text
   if (parts.length === 1 && !/[a-zA-Z]/.test(note)) {
     parts = note.split(/[\s　]+/).filter((p) => p.length > 0);
@@ -360,14 +364,21 @@ export function splitPatternParts(note: string): string[] {
  * They are joins too — never part material — and `notationCrossesSentence`
  * reports that they were present so the entry can carry the fact.
  */
-const NOTATION_JOIN_RE = /\s*(?:（。）|\(。\)|（、）|\(、\)|[〜~→⇒,、。]|…|⋯|・・・)+\s*/;
-const NOTATION_CROSS_RE = /（。）|\(。\)|。/;
+const NOTATION_JOIN_RE = /\s*(?:（。）|\(。\)|（、）|\(、\)|[〜~～→⇒,、。]|…|⋯|・・・)+\s*/;
+// The crossing DECLARATION is the parenthesized boundary form ONLY. A bare 。
+// splits (it is a join) but declares nothing: any pasted two-sentence string
+// contains a 。, and a gate the user never chose to open is not a declaration
+// (2026-08-20 review). (。)/（。） is the deliberate form — filmed being typed
+// keystroke by keystroke (IMG_1082) and the form the bundle mint writes.
+const NOTATION_CROSS_RE = /（。）|\(。\)/;
+/** Strip every parenthesized boundary mark (both widths, all occurrences). */
+export const NOTATION_CROSS_MARK_RE = /（。）|\(。\)/g;
 
 export function splitNotationParts(s: string): string[] {
   return s.split(NOTATION_JOIN_RE).map((p) => p.trim()).filter((p) => p.length > 0);
 }
 
-/** Did the notation declare a sentence-boundary join ((。), （。） or a bare 。)? */
+/** Did the notation DECLARE a sentence-boundary join ((。) or （。）)? */
 export function notationCrossesSentence(s: string): boolean {
   return NOTATION_CROSS_RE.test(s);
 }

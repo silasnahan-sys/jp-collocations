@@ -29,6 +29,7 @@ import type { Bundle, CarveMark, LinkMark } from './analysis-bundle.ts';
 import { deriveBundle, withLemma } from './analysis-bundle.ts';
 import type { NoteClass } from './note-types.ts';
 import { SLOT_ANY } from '../dictionary/frames.ts';
+import { notationCrossesSentence, NOTATION_CROSS_MARK_RE } from './pipeline.ts';
 
 /** Contiguous runs over a sorted list of token indexes. */
 const runsOf = (idxs: number[]): Array<[number, number]> => {
@@ -157,11 +158,14 @@ export function bundleRecords(bundle: Bundle): BundleRecord[] {
         if (l.glue?.length) payload.glueParts = l.glue;
         break;
       case 'link':
-        // the (。) is stripped from the part material but RECORDED: it is the
-        // one fact the notation exists to carry, and the sweep's matchLink
-        // needs it to allow exactly this link across a sentence boundary.
-        if (l.notation.includes('(。)')) payload.crossSentence = true;
-        payload.parts = l.notation.replace('(。)', '').split(SLOT_ANY).filter(Boolean);
+        // the boundary mark is stripped from the part material but RECORDED:
+        // it is the one fact the notation exists to carry, and matchLink
+        // needs it to allow exactly this link across a sentence ender. ONE
+        // predicate decides (pipeline.notationCrossesSentence — same gate the
+        // save path uses), and the strip is global + both paren widths, so a
+        // second mark can never survive as unmatchable part material.
+        if (notationCrossesSentence(l.notation)) payload.crossSentence = true;
+        payload.parts = l.notation.replace(NOTATION_CROSS_MARK_RE, '').split(SLOT_ANY).filter(Boolean);
         break;
       case 'lemma':
         payload.lemma = l.notation;

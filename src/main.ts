@@ -578,7 +578,11 @@ export default class JPCollocationsPlugin extends Plugin {
           example: chip.sentence,
           source: {
             kind: chip.surface === "x" ? "x" : "manual",
-            medium: chip.surface === "x" ? "x" : chip.surface === "dict" ? "dict" : "note",
+            // medium only where the surface IS the medium — a grab from a
+            // transcript view filed as 'note' would be fabricated provenance,
+            // the §28 S2 seam (2026-08-20 review). Absent is honest.
+            ...(chip.surface === "x" ? { medium: "x" as const }
+              : chip.surface === "dict" ? { medium: "dict" as const } : {}),
             sourceName: `掴み・${chip.surface}`,
           },
         }, this.makeCaptureDeps()).open();
@@ -1135,7 +1139,13 @@ export default class JPCollocationsPlugin extends Plugin {
       name: "選択を持つ — hold the current selection",
       hotkeys: [{ modifiers: ["Mod", "Shift"], key: "h" }],
       callback: () => {
-        const text = window.getSelection()?.toString().trim() ?? "";
+        // Editor selection FIRST: opening the command palette focuses its
+        // input, which collapses the DOCUMENT selection — so a palette
+        // invocation always saw "" and the command's only working route was
+        // the hotkey (2026-08-20 review). CodeMirror keeps its selection as
+        // editor state, palette or not.
+        const text = (this.app.workspace.activeEditor?.editor?.getSelection()
+          ?? window.getSelection()?.toString() ?? "").trim();
         if (!text) { new Notice("選択がありません — 語をなぞってから", 4000); return; }
         this.holdText(text, "editor");
       },
@@ -4061,15 +4071,23 @@ export default class JPCollocationsPlugin extends Plugin {
     this.holdDock.render();
   }
 
-  /** 置く: a held chip lands in the tray as a scene-labeled card. The object
+  /** 置く: a held chip lands in the tray as a scene-carrying card. The object
    *  visibly leaves the dock and the tray badge ticks — the world is the
-   *  record; no toast chases it. */
+   *  record; no toast chases it.
+   *
+   *  The sentence rides as the card's `said` field — the slot the tray already
+   *  has for "what the sender said this means" — NEVER concatenated into the
+   *  content. The first version did `text\nsentence`, and the 2026-08-20
+   *  review traced where that lands: TrayView's 分類 passes content as
+   *  ctx.text, splitPatternParts' whitespace branch splits on the \n, and the
+   *  modal opens pre-filled as a 🟠 link between the specimen and its own
+   *  sentence — the gravity road minting exactly the unmatchable entry class
+   *  Move 0 was written to kill. Scene is a field, not a suffix. */
   private async landHeldChip(chip: HeldChip, rerender = true): Promise<void> {
     this.holdStore.release(chip.id);
-    const body = chip.sentence && chip.sentence !== chip.text
-      ? `${chip.text}\n${chip.sentence}`
-      : chip.text;
-    await this.inboxStore.add(shapeDrop(body, Date.now(), `掴み・${chip.surface}`));
+    const card = shapeDrop(chip.text, Date.now(), `掴み・${chip.surface}`);
+    if (chip.sentence) card.said = chip.sentence;
+    await this.inboxStore.add(card);
     this.refreshTrayViews();
     if (rerender) this.holdDock.render();
   }

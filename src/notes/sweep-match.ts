@@ -120,7 +120,8 @@ function findExactAll(hay: string, term: string): { span: Span; inflected: boole
  * are clause-scale but must not cross a sentence boundary). Tries each
  * occurrence of the first part as a start. Returns the covering span or null.
  */
-function findOrderedParts(hay: string, parts: string[], maxGap: number, deinflectLast: boolean, gapBlockRe: RegExp): Span | null {
+function findOrderedParts(hay: string, parts: string[], maxGap: number, deinflectLast: boolean, gapOk: RegExp | ((gap: string) => boolean)): Span | null {
+  const admits = typeof gapOk === 'function' ? gapOk : (g: string) => !gapOk.test(g);
   const firsts = findTermAll(hay, parts[0]);
   for (const f of firsts) {
     let cursor = f.span.end;
@@ -130,7 +131,7 @@ function findOrderedParts(hay: string, parts: string[], maxGap: number, deinflec
       const last = pi === parts.length - 1;
       const occ = (last && deinflectLast ? findTermAll(hay, parts[pi]) : findTermAll(hay, parts[pi]).filter((o) => !o.inflected))
         .filter((o) => o.span.start >= cursor && o.span.start - cursor <= maxGap)
-        .filter((o) => !gapBlockRe.test(hay.slice(cursor, o.span.start)));
+        .filter((o) => admits(hay.slice(cursor, o.span.start)));
       if (!occ.length) { ok = false; break; }
       cursor = occ[0].span.end;
       end = occ[0].span.end;
@@ -149,8 +150,6 @@ function quoteAround(hay: string, span: Span, pad = 8): string {
 
 const PUNCT_RE = /[、。！？!?・…‥「」『』()（）\s]/;
 const SENTENCE_BREAK_RE = /[。！？!?]/;
-/** what a declared (。)-crossing still may NOT cross — see matchLink */
-const HARD_BREAK_RE = /[！？!?]/;
 
 /** ── per-class matchers (window text → candidate or null) ─────────────────── */
 
@@ -171,18 +170,23 @@ function matchCollocation(hay: string, e: SweepablePattern): { span: Span; confi
 function matchLink(hay: string, e: SweepablePattern): { span: Span; confidence: number; matchKind: SweepMatchKind } | null {
   const parts = (e.payload.parts ?? []).map(norm).filter((p) => p.length >= 2);
   if (parts.length < 2) return null;
-  // A link that DECLARES sentence-crossing (payload.crossSentence — the user's
-  // own (。) notation, or a bundle minted across a boundary) is allowed to do
-  // the one thing its notation exists to say: cross a 。. Without the guard
-  // relaxed here, a 🟠 whose defining property is the crossing was stored and
-  // could never be confirmed (filmed capture はず(。)〜まずは, inert since
-  // 2026-08-11). The declaration licenses 。 ONLY — ！/？ still block (they
-  // were not what the notation declared), the 30-char gap keeps it
-  // clause-scale, and line breaks can't arise here at all: norm() erases them
-  // and callers match per line. Ordinary links keep the full sentence-break
-  // precision guard unchanged (golden-pinned).
+  // A link that DECLARES sentence-crossing (payload.crossSentence) may do the
+  // one thing its notation exists to say: cross a sentence boundary. Two facts
+  // reviewed 2026-08-20 shape the rule:
+  //  · the MINT (analysis-bundle) marks a crossing for ANY ender — 。．.!?！？ —
+  //    and encodes them all as (。). So the declaration means "one sentence
+  //    ender sits between the anchors", not "a 。 specifically"; a matcher that
+  //    blocked ！？ made every ！-minted link stored-and-inert by construction.
+  //  · "clause-scale" must be enforced, not asserted: the 30-char cap alone
+  //    admits 4–5 short sentences. So each gap may contain AT MOST ONE ender —
+  //    the boundary that was declared, and no more.
+  // Callers hand this a TWO-LINE window (normed[i] + normed[i+1], seam
+  // erased) — so on unpunctuated caption text a declared crossing behaves
+  // like an ordinary link; the declaration only matters where enders exist.
+  // Ordinary links keep the full ender guard unchanged (golden-pinned).
   if (e.payload.crossSentence) {
-    const span = findOrderedParts(hay, parts, 30, true, HARD_BREAK_RE);
+    const oneEnder = (gap: string): boolean => (gap.match(/[。！？!?．.]/g)?.length ?? 0) <= 1;
+    const span = findOrderedParts(hay, parts, 30, true, oneEnder);
     if (!span) return null;
     return { span, confidence: 0.55, matchKind: 'link' };
   }
@@ -283,15 +287,24 @@ export function sweepEntry(e: SweepablePattern, lines: MatcherLine[]): SweepCand
   if (!matcher) return [];
   const normed = lines.map((l) => norm(l.text));
   const out: SweepCandidate[] = [];
-  const seenT = new Set<number | null>();
+  // The dedup key. `tStartSec ?? null` was the whole key until 2026-08-20 —
+  // and every line of an UNTIMESTAMPED medium (tweets, Kindle notes, prose)
+  // keys null, so the second hit in the same document collided with the first
+  // and at most ONE candidate ever survived per tweet/note/article, silently,
+  // under a MAX_CANDIDATES_PER_FILE of 3. (medium-lines.ts even cites this
+  // very expression as proof of medium-agnosticism — reading null is fine for
+  // REPORTING; it was fatal as a dedup KEY.) Untimestamped lines now key by
+  // their own index; timestamped dedup is unchanged.
+  const seenT = new Set<number | string>();
   for (let i = 0; i < lines.length; i++) {
     const hay = normed[i] + (normed[i + 1] ?? '');
     if (!hay) continue;
     const m = matcher(hay, e);
     if (!m || m.span.start >= normed[i].length) continue;
     const t = lines[i].tStartSec ?? null;
-    if (seenT.has(t)) continue;
-    seenT.add(t);
+    const key = t ?? `i${i}`;
+    if (seenT.has(key)) continue;
+    seenT.add(key);
     out.push({ tStartSec: t, quote: quoteAround(hay, m.span), confidence: m.confidence, matchKind: m.matchKind });
   }
   return out.sort((a, b) => b.confidence - a.confidence).slice(0, MAX_CANDIDATES_PER_FILE);

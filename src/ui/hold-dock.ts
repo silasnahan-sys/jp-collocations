@@ -6,11 +6,17 @@
  * property the reference footage (Apple Calendar, IMG_1159) has and no plugin
  * surface had: the object stays in hand while the world navigates underneath.
  *
- * Gesture grammar (each with its command twin — invariant 9):
+ * Gesture grammar:
  *   tap a chip        → its verbs, AT the chip (⤵トレイ / ⚡分類 / 辞書 / ✕)
- *   drag ≥ flickPx    → a TOSS: the chip slides home to the tray. Anywhere is
- *                       a legal landing; gravity decides, the hand just lets go.
+ *   drag ≥ flickPx    → a TOSS: the chip flings out along the drag vector and
+ *                       lands in the tray. Anywhere is a legal landing;
+ *                       gravity decides, the hand just lets go.
  *   drag < flickPx    → treated as a tap (a tremor is not a decision).
+ *
+ * Invariant 9 status, stated honestly (2026-08-20 review): the grab and the
+ * toss have command twins (hold-selection, hold-toss-newest — the plugin's
+ * first default hotkeys). The per-chip verbs (⚡/📖/✕) ride the tap and have
+ * no commands yet; they get them when the film decides the verb set is right.
  *
  * What this deliberately is NOT (yet): a drop target router. Targeted
  * delivery is the verb row; the toss has exactly one destination. Move 2's
@@ -19,9 +25,9 @@
  * Feel notes, honoring the June rule (grabbability visible AT REST): the chip
  * wears a grip texture and a lift shadow before it is ever touched; press
  * scales it slightly under the finger (compositor transform only — invariant
- * 16's stutter lesson); the toss animates the chip toward the tray edge and
- * the ONLY confirmation is the object visibly leaving — the world is the
- * record, not a toast.
+ * 16's stutter lesson); the toss flings the chip along the throw vector and
+ * fades it, and the ONLY confirmation is the object visibly leaving (plus the
+ * tray badge ticking) — the world is the record, not a toast.
  */
 
 import type { HeldChip, HoldKnobs } from '../notes/hold.ts';

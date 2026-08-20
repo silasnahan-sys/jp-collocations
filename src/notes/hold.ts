@@ -21,7 +21,10 @@
  *     always legal. `isToss` decides toss-vs-tap from travel, exposed as a
  *     knob because the threshold is a feel constant, not a truth.
  *  3. SCENE RIDES ALONG. A chip is `{text, sentence, surface}`, never a bare
- *     string — S1: what the surface knew arrives wherever the chip lands.
+ *     string — S1: what the surface knew arrives wherever the chip lands:
+ *     the tray road carries the sentence as the card's `said` field, the
+ *     classify road as the capture's `example`. Never concatenated into the
+ *     text itself — a suffix is not a scene (2026-08-20 review).
  *
  * Zero Obsidian imports — golden/hold.mjs runs this file directly.
  */

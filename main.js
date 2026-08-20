@@ -22551,7 +22551,8 @@ function findExactAll(hay, term) {
   }
   return out;
 }
-function findOrderedParts(hay, parts, maxGap, deinflectLast, gapBlockRe) {
+function findOrderedParts(hay, parts, maxGap, deinflectLast, gapOk) {
+  const admits = typeof gapOk === "function" ? gapOk : (g) => !gapOk.test(g);
   const firsts = findTermAll(hay, parts[0]);
   for (const f of firsts) {
     let cursor = f.span.end;
@@ -22559,7 +22560,7 @@ function findOrderedParts(hay, parts, maxGap, deinflectLast, gapBlockRe) {
     let end = f.span.end;
     for (let pi = 1; pi < parts.length; pi++) {
       const last = pi === parts.length - 1;
-      const occ = (last && deinflectLast ? findTermAll(hay, parts[pi]) : findTermAll(hay, parts[pi]).filter((o) => !o.inflected)).filter((o) => o.span.start >= cursor && o.span.start - cursor <= maxGap).filter((o) => !gapBlockRe.test(hay.slice(cursor, o.span.start)));
+      const occ = (last && deinflectLast ? findTermAll(hay, parts[pi]) : findTermAll(hay, parts[pi]).filter((o) => !o.inflected)).filter((o) => o.span.start >= cursor && o.span.start - cursor <= maxGap).filter((o) => admits(hay.slice(cursor, o.span.start)));
       if (!occ.length) {
         ok = false;
         break;
@@ -22579,7 +22580,6 @@ function quoteAround(hay, span, pad4 = 8) {
 }
 var PUNCT_RE = /[、。！？!?・…‥「」『』()（）\s]/;
 var SENTENCE_BREAK_RE = /[。！？!?]/;
-var HARD_BREAK_RE = /[！？!?]/;
 function matchCollocation(hay, e) {
   var _a2;
   const parts = ((_a2 = e.payload.parts) != null ? _a2 : []).map(norm2).filter((p) => p.length >= 2);
@@ -22602,7 +22602,11 @@ function matchLink(hay, e) {
   if (parts.length < 2)
     return null;
   if (e.payload.crossSentence) {
-    const span2 = findOrderedParts(hay, parts, 30, true, HARD_BREAK_RE);
+    const oneEnder = (gap) => {
+      var _a3, _b2;
+      return ((_b2 = (_a3 = gap.match(/[。！？!?．.]/g)) == null ? void 0 : _a3.length) != null ? _b2 : 0) <= 1;
+    };
+    const span2 = findOrderedParts(hay, parts, 30, true, oneEnder);
     if (!span2)
       return null;
     return { span: span2, confidence: 0.55, matchKind: "link" };
@@ -22697,9 +22701,10 @@ function sweepEntry(e, lines) {
     if (!m || m.span.start >= normed[i].length)
       continue;
     const t = (_b2 = lines[i].tStartSec) != null ? _b2 : null;
-    if (seenT.has(t))
+    const key = t != null ? t : `i${i}`;
+    if (seenT.has(key))
       continue;
-    seenT.add(t);
+    seenT.add(key);
     out.push({ tStartSec: t, quote: quoteAround(hay, m.span), confidence: m.confidence, matchKind: m.matchKind });
   }
   return out.sort((a, b) => b.confidence - a.confidence).slice(0, MAX_CANDIDATES_PER_FILE);
@@ -23979,15 +23984,16 @@ async function reconcileMultiAsync(notes, sources, readingOf, onProgress) {
   return grouped;
 }
 function splitPatternParts(note) {
-  let parts = note.split(/\s*[〜~→⇒]+\s*|\s*(?:…|⋯|・・・)\s*/).filter((p) => p.trim().length > 0);
+  let parts = note.split(/\s*[〜~～→⇒]+\s*|\s*(?:…|⋯|・・・)\s*/).filter((p) => p.trim().length > 0);
   if (parts.length === 1 && !/[a-zA-Z]/.test(note)) {
     parts = note.split(/[\s　]+/).filter((p) => p.length > 0);
   }
   parts = parts.map((p) => p.trim()).filter((p) => p.length >= 2);
   return parts.length >= 2 && parts.length <= 4 ? parts : [note.trim()];
 }
-var NOTATION_JOIN_RE = /\s*(?:（。）|\(。\)|（、）|\(、\)|[〜~→⇒,、。]|…|⋯|・・・)+\s*/;
-var NOTATION_CROSS_RE = /（。）|\(。\)|。/;
+var NOTATION_JOIN_RE = /\s*(?:（。）|\(。\)|（、）|\(、\)|[〜~～→⇒,、。]|…|⋯|・・・)+\s*/;
+var NOTATION_CROSS_RE = /（。）|\(。\)/;
+var NOTATION_CROSS_MARK_RE = /（。）|\(。\)/g;
 function splitNotationParts(s) {
   return s.split(NOTATION_JOIN_RE).map((p) => p.trim()).filter((p) => p.length > 0);
 }
@@ -31591,9 +31597,9 @@ function bundleRecords(bundle) {
           payload.glueParts = l.glue;
         break;
       case "link":
-        if (l.notation.includes("(\u3002)"))
+        if (notationCrossesSentence(l.notation))
           payload.crossSentence = true;
-        payload.parts = l.notation.replace("(\u3002)", "").split(SLOT_ANY).filter(Boolean);
+        payload.parts = l.notation.replace(NOTATION_CROSS_MARK_RE, "").split(SLOT_ANY).filter(Boolean);
         break;
       case "lemma":
         payload.lemma = l.notation;
@@ -49636,6 +49642,8 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
       }
       default:
         body2.createDiv({ text: c.content, cls: "jp-tray-text" });
+        if (c.said)
+          body2.createDiv({ cls: "jp-tray-said", text: c.said });
     }
     if (c.kind === "mark") {
       const act = card.createDiv("jp-tray-card-actions");
@@ -49653,6 +49661,10 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
         }
         this.deps.openCapture(withMarkClip({
           text: c.content,
+          // a text card's scene (`said` — e.g. the sentence a held chip was
+          // grabbed from) enters the capture as the EXAMPLE, the same slot
+          // every other road uses; it must never be part of ctx.text.
+          example: c.said,
           source: { kind: "manual", sourceName: c.origin, medium: m == null ? void 0 : m.medium, file: m == null ? void 0 : m.file, tStartSec: (_a3 = m == null ? void 0 : m.tSec) != null ? _a3 : null }
         }, c.clip));
       };
@@ -53262,7 +53274,10 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
           example: chip.sentence,
           source: {
             kind: chip.surface === "x" ? "x" : "manual",
-            medium: chip.surface === "x" ? "x" : chip.surface === "dict" ? "dict" : "note",
+            // medium only where the surface IS the medium — a grab from a
+            // transcript view filed as 'note' would be fabricated provenance,
+            // the §28 S2 seam (2026-08-20 review). Absent is honest.
+            ...chip.surface === "x" ? { medium: "x" } : chip.surface === "dict" ? { medium: "dict" } : {},
             sourceName: `\u63B4\u307F\u30FB${chip.surface}`
           }
         }, this.makeCaptureDeps()).open();
@@ -53830,8 +53845,8 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       name: "\u9078\u629E\u3092\u6301\u3064 \u2014 hold the current selection",
       hotkeys: [{ modifiers: ["Mod", "Shift"], key: "h" }],
       callback: () => {
-        var _a3, _b3;
-        const text = (_b3 = (_a3 = window.getSelection()) == null ? void 0 : _a3.toString().trim()) != null ? _b3 : "";
+        var _a3, _b3, _c3, _d3, _e3;
+        const text = ((_e3 = (_d3 = (_b3 = (_a3 = this.app.workspace.activeEditor) == null ? void 0 : _a3.editor) == null ? void 0 : _b3.getSelection()) != null ? _d3 : (_c3 = window.getSelection()) == null ? void 0 : _c3.toString()) != null ? _e3 : "").trim();
         if (!text) {
           new import_obsidian38.Notice("\u9078\u629E\u304C\u3042\u308A\u307E\u305B\u3093 \u2014 \u8A9E\u3092\u306A\u305E\u3063\u3066\u304B\u3089", 4e3);
           return;
@@ -56772,14 +56787,24 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       );
     this.holdDock.render();
   }
-  /** 置く: a held chip lands in the tray as a scene-labeled card. The object
+  /** 置く: a held chip lands in the tray as a scene-carrying card. The object
    *  visibly leaves the dock and the tray badge ticks — the world is the
-   *  record; no toast chases it. */
+   *  record; no toast chases it.
+   *
+   *  The sentence rides as the card's `said` field — the slot the tray already
+   *  has for "what the sender said this means" — NEVER concatenated into the
+   *  content. The first version did `text\nsentence`, and the 2026-08-20
+   *  review traced where that lands: TrayView's 分類 passes content as
+   *  ctx.text, splitPatternParts' whitespace branch splits on the \n, and the
+   *  modal opens pre-filled as a 🟠 link between the specimen and its own
+   *  sentence — the gravity road minting exactly the unmatchable entry class
+   *  Move 0 was written to kill. Scene is a field, not a suffix. */
   async landHeldChip(chip, rerender = true) {
     this.holdStore.release(chip.id);
-    const body2 = chip.sentence && chip.sentence !== chip.text ? `${chip.text}
-${chip.sentence}` : chip.text;
-    await this.inboxStore.add(shapeDrop(body2, Date.now(), `\u63B4\u307F\u30FB${chip.surface}`));
+    const card = shapeDrop(chip.text, Date.now(), `\u63B4\u307F\u30FB${chip.surface}`);
+    if (chip.sentence)
+      card.said = chip.sentence;
+    await this.inboxStore.add(card);
     this.refreshTrayViews();
     if (rerender)
       this.holdDock.render();

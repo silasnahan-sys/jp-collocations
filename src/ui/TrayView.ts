@@ -860,6 +860,9 @@ export class TrayView extends ItemView {
       }
       default:
         body.createDiv({ text: c.content, cls: 'jp-tray-text' });
+        // the scene a held chip carried in (掴む) — visible, same style the
+        // image cards use for their `said`
+        if (c.said) body.createDiv({ cls: 'jp-tray-said', text: c.said });
     }
 
     if (c.kind === 'mark') {
@@ -879,6 +882,10 @@ export class TrayView extends ItemView {
         }
         this.deps.openCapture(withMarkClip({
           text: c.content,
+          // a text card's scene (`said` — e.g. the sentence a held chip was
+          // grabbed from) enters the capture as the EXAMPLE, the same slot
+          // every other road uses; it must never be part of ctx.text.
+          example: c.said,
           source: { kind: 'manual', sourceName: c.origin, medium: m?.medium, file: m?.file, tStartSec: m?.tSec ?? null },
         }, c.clip));
       };
