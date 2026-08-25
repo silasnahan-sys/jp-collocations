@@ -92,6 +92,18 @@ export interface PatternEntry {
   classRatified: boolean;        // false = still a suggestion
   /** what the machine suggested at capture time (training signal for the suggester). */
   classSuggested?: NoteClass;
+  /**
+   * A STANDING QUESTION (§27.0.2 / PHYSICS §5): the entry was born BEFORE any
+   * sighting existed — filed as a wondering, attestations empty on arrival.
+   * The existence of the entry is a question put to the incoming stream, not
+   * the record of an encounter. Two consequences, both load-bearing:
+   *   · sweepMuted never retires it — for a question, rejection is the normal
+   *     case (you are fishing), not evidence of coincidence-proneness.
+   *   · the flag is NEVER cleared. When an answer arrives and is ✓'d, the
+   *     entry keeps `standing` — a filled hole stays visible (§27 rule 3);
+   *     born-as-a-question is provenance, and provenance does not expire.
+   */
+  standing?: boolean;
   keyKind: PatternKeyKind;
   key: string;
   /** latest handwriting form of the note. */
@@ -399,6 +411,8 @@ export class PatternStore {
     suggested?: NoteClass;
     payload?: PatternEntry['payload'];
     att: Attestation | null;
+    /** file as a STANDING QUESTION — see PatternEntry.standing. */
+    standing?: boolean;
   }, now = Date.now()): Promise<PatternEntry> {
     const d = deriveClassified(opts.note, opts.cls, opts.payload ?? {});
     let id = patternIdFor(d);
@@ -408,6 +422,11 @@ export class PatternStore {
     }
     const prev = this.entries.get(id);
     const next = upsertEntry(prev, opts.note, opts.att, now);
+    // Standing marks only an entry BORN by this filing. If the key already
+    // exists, the question has an answer in the catalog — the filing is a
+    // re-finding, not a hole, and must not retro-exempt a normal entry from
+    // the mute its own ✕ record earned.
+    if (opts.standing && !prev) next.standing = true;
     next.id = id;
     next.class = opts.cls;
     next.classRatified = true;

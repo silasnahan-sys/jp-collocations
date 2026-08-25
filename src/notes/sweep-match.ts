@@ -260,7 +260,17 @@ export function sweepableClass(cls: PatternEntry['class']): boolean {
  * rejection/ratification history; no flag to maintain, and the pattern
  * un-mutes the moment enough ✓s outweigh the ✕s.
  */
-export function sweepMuted(e: Pick<PatternEntry, 'attestations' | 'rejectedAtts'>): boolean {
+export function sweepMuted(e: Pick<PatternEntry, 'attestations' | 'rejectedAtts' | 'standing'>): boolean {
+  // A STANDING QUESTION (PatternEntry.standing — §27.0.2 / PHYSICS §5) never
+  // mutes. The mute rule reads a ✕ as evidence the ENTRY is coincidence-prone,
+  // which is right for a pattern you attested and wrong for a question you
+  // filed: there, rejection is the normal case — you are fishing, and each ✕
+  // prunes one candidate (isRejected already keeps it from returning) without
+  // saying anything about the question. Muting would convert "no answer yet"
+  // into "never ask again" — the exact inversion of §27 rule 4 (a hole is not
+  // progress toward being closed). MAX_CANDIDATES_PER_FILE still bounds flood,
+  // and abandoning the question is the user's verb, never this function's.
+  if (e.standing) return false;
   const rejected = e.rejectedAtts?.length ?? 0;
   const ratifiedSweeps = e.attestations.filter((a) => a.matchKind && !a.status).length;
   return rejected >= 3 + 5 * ratifiedSweeps;

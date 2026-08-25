@@ -48,6 +48,15 @@ export interface CaptureContext {
   /** aligned with [...contextBefore, utterance, ...contextAfter]. */
   speakers?: (string | null)[];
   source: GoldSource;
+  /**
+   * File as a STANDING QUESTION (§27.0.2 / PHYSICS §5): the shape has not been
+   * sighted — it is a wondering. No attestation is minted (the old path would
+   * fabricate a self-sighting with quote = the note itself), the entry is born
+   * with `attestations: []` and `standing: true`, and the sweep hunts it on
+   * every arrival, exempt from the ✕ mute. The answer arrives through the same
+   * suggested-attestation road every entry already has.
+   */
+  standing?: boolean;
 }
 
 export interface CaptureDeps {
@@ -57,6 +66,8 @@ export interface CaptureDeps {
     suggested?: NoteClass;
     payload?: PatternEntry['payload'];
     att: Attestation | null;
+    /** born as a standing question — see CaptureContext.standing. */
+    standing?: boolean;
   }) => Promise<PatternEntry>;
   addGold?: (g: Omit<GoldExample, 'id'>) => Promise<GoldExample>;
   /** Fired after the entry is in the catalog. Receives the entry so the host
@@ -182,7 +193,16 @@ export class CaptureModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass('jp-capture-modal');
-    contentEl.createEl('h2', { text: '🏷️ 分類して台帳へ' });
+    contentEl.createEl('h2', { text: this.ctx.standing ? '❓ 問いを立てる' : '🏷️ 分類して台帳へ' });
+    if (this.ctx.standing) {
+      // The one place the modal explains itself: a question is a capture with
+      // no sighting, and it must SAY so — an unmarked question would read as
+      // a record of an encounter that never happened (§28 S3).
+      contentEl.createDiv({
+        cls: 'jp-capture-standing',
+        text: 'まだ見ていない形を空の項目として置きます。届くものすべてと照合され続け、候補は✕で削れますが、問い自体は黙りません。',
+      });
+    }
 
     // ── the span (editable notation) ──
     const noteRow = contentEl.createDiv('jp-capture-field');
@@ -560,12 +580,16 @@ export class CaptureModal extends Modal {
     if (this.gloss.trim()) payload.gloss = this.gloss.trim();
 
     try {
+      // A standing question mints NO attestation: nothing was sighted, and the
+      // fallback quote (the note itself) would fabricate a self-sighting —
+      // the entry would arrive looking once-encountered when it never was.
       const entry = await this.deps.recordClassified({
         note,
         cls: this.cls,
         suggested: this.suggested,
         payload,
-        att: this.buildAttestation(this.ctx.example ?? note),
+        att: this.ctx.standing ? null : this.buildAttestation(this.ctx.example ?? note),
+        ...(this.ctx.standing ? { standing: true } : {}),
       });
 
       if (this.cls === 'discourse' && this.deps.addGold) {
@@ -589,7 +613,9 @@ export class CaptureModal extends Modal {
       }
 
       const def = NOTE_TYPES[this.cls];
-      new Notice(`${def.emoji} ${def.label} として台帳に記録: ${entry.key}`);
+      new Notice(this.ctx.standing
+        ? `❓ 問いとして台帳に置きました: ${entry.key} — 届いたものが照合されます`
+        : `${def.emoji} ${def.label} として台帳に記録: ${entry.key}`);
       this.deps.onSaved?.(entry);
       if (closeAfter) this.close();
       else this.markSavedInPlace(this.cls);

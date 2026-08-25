@@ -7691,3 +7691,26 @@ body.jp-posture-slate .jp-drop-veil {
 .jp-hold-verb:hover { background: var(--background-modifier-hover); }
 /* the echo's grab verb sits apart from the act-now verbs */
 .jp-echo-btn--hold { border-left: 1px dashed var(--background-modifier-border); margin-left: 4px; }
+
+/* ── 問い — standing questions (PHYSICS §5 / §27.0.2) ───────────────────────
+   Neutral by rule: class colors are reserved for the taxonomy, and a question
+   has a class guess like any entry — the 問 mark says HOW it was born, not
+   what it is. */
+.jp-lex-row-standing {
+  font-size: 10px;
+  margin-left: 3px;
+  padding: 0 4px;
+  border-radius: 6px;
+  border: 1px dashed var(--background-modifier-border-hover, var(--background-modifier-border));
+  color: var(--text-muted);
+  /* dashed border + muted ink = provisional by convention everywhere else in
+     this stylesheet; a question must LOOK like an opening, not a record. */
+}
+.jp-capture-standing {
+  margin: 2px 0 8px;
+  padding: 6px 10px;
+  border-left: 2px dashed var(--background-modifier-border-hover, var(--background-modifier-border));
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
