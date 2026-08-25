@@ -122,6 +122,21 @@ registerTategaki(this, { getLexiconHost: () => ({ store: this.data.store, engine
   a downward flick dismisses it.
 - **44px controls, safe-area insets, chunked rendering** so a long note does not
   block the main thread on an old phone.
+- **Line length is capped (字詰め), not left to the viewport.** A vertical line
+  runs the full height of the screen, so on a tablet in landscape it becomes an
+  80-character line. `--jp-tg-measure` caps it and `margin-inline: auto` centres
+  the text block; the cap is a CSS variable, so a rotation costs no re-render.
+- **Wheel and trackpad events are claimed.** Browsers map a vertical wheel onto a
+  horizontal-only scroller by *adding* the delta to `scrollLeft`, which in
+  `vertical-rl` reads backwards. `attachWheelScrolling` applies the reading
+  direction instead.
+- **Keyboard navigation** (arrows, space, PageUp/Down, Home/End, ±) for an iPad
+  with a Magic Keyboard and for desktop. Left and down read on, because vertical
+  text advances leftwards.
+
+Breakpoints: ≤620px phone (and a tablet in a narrow split view), ≥621px tablet
+and desktop panes, ≥900px landscape. All three are driven by the pane width, not
+the device, so Obsidian's own split views get the right treatment.
 
 ---
 

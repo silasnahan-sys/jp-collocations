@@ -117,6 +117,23 @@ export function buildTategakiSettings(containerEl: HTMLElement, ctx: SettingsUIC
     );
 
   new Setting(containerEl)
+    .setName("Line length (字詰め)")
+    .setDesc(
+      "Characters per line. A vertical line runs the full height of the screen, " +
+      "which gets long on a tablet in landscape. 0 fills the screen."
+    )
+    .addSlider(slider =>
+      slider
+        .setLimits(0, 80, 2)
+        .setValue(settings.maxCharsPerLine)
+        .setDynamicTooltip()
+        .onChange(value => {
+          settings.maxCharsPerLine = value;
+          commit();
+        })
+    );
+
+  new Setting(containerEl)
     .setName("Paper tint")
     .setDesc("Warmer background behind the text.")
     .addToggle(toggle =>

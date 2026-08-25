@@ -135,6 +135,11 @@ export const TATEGAKI_CSS = `
 }
 
 .jp-tg-canvas::-webkit-scrollbar { display: none; }
+.jp-tg-canvas:focus { outline: none; }
+.jp-tg-canvas:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
 
 /* Paging is driven from JS (ScrollController): CSS scroll-snap would pin the
    scroller to the sentinels, and CSS smooth scrolling would animate the
@@ -150,8 +155,14 @@ export const TATEGAKI_CSS = `
   touch-action: pan-y;
 }
 
-.jp-tg-content { height: 100%; }
-.jp-tg-canvas.jp-tg--horizontal .jp-tg-content { height: auto; }
+/* inline-size is the *reading* axis: the column height in vertical mode, the
+   line width in horizontal mode. Capping it keeps lines readable on a tablet in
+   landscape, and auto inline margins centre the text block in the leftover space. */
+.jp-tg-content {
+  inline-size: 100%;
+  max-inline-size: var(--jp-tg-measure, none);
+  margin-inline: auto;
+}
 
 .jp-tg-sentinel {
   display: inline-block;
@@ -555,8 +566,6 @@ export const TATEGAKI_CSS = `
   touch-action: auto;
 }
 
-.jp-tg-embed.jp-tg--horizontal .jp-tg-content { height: auto; }
-
 /* ── Optional: vertical mode for the markdown editor / reading view ─────── */
 .jp-tg-editor-vertical .markdown-preview-section,
 .jp-tg-editor-vertical .markdown-source-view.mod-cm6 .cm-contentContainer {
@@ -575,11 +584,31 @@ export const TATEGAKI_CSS = `
 }
 
 /* ── Phone-sized screens ────────────────────────────────────────────────── */
+/* Phones, and a tablet in a narrow split view. */
 @media (max-width: 620px) {
   .jp-tategaki-view { --jp-tg-pad: 14px; }
   .jp-tg-sheet { max-height: 70%; }
   .jp-tg-btn { min-height: 44px; }
   .jp-tg-codeblock { width: 84vw; }
+}
+
+/* Tablets (iPad mini portrait and up) and desktop panes. */
+@media (min-width: 621px) {
+  .jp-tategaki-view { --jp-tg-pad: 28px; }
+  .jp-tg-sheet {
+    max-height: 54%;
+    width: min(720px, 94%);
+    margin: 0 auto;
+    border-radius: 14px 14px 0 0;
+  }
+  .jp-tg-sheet-body { padding: 10px 16px 16px; }
+  .jp-tg-toolbar { padding: 8px 12px; }
+  .jp-tg-codeblock { width: min(60vw, 34em); }
+}
+
+/* Tablet in landscape: the extra height is what makes lines run long. */
+@media (min-width: 900px) and (orientation: landscape) {
+  .jp-tategaki-view { --jp-tg-pad: 36px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

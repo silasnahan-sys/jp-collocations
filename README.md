@@ -175,6 +175,14 @@ on a phone. Tap a word to see the collocations it belongs to.
 | Long-press | Copy, look up, edit, or jump back to the start |
 | Flick down on the sheet | Dismisses it |
 | ✎ in the toolbar | Edits the note in a horizontal sheet (mobile IMEs behave there) |
+| Arrows / space / PageUp/Down | Turns pages (iPad keyboard, desktop); Home/End jump to the ends |
+| Trackpad or mouse wheel | Scrolls along the reading direction |
+
+Works on iPhone, iPad and desktop: the layout responds to the *pane* width, so a
+tablet in a split view gets the phone treatment automatically. Because a vertical
+line runs the full height of the screen, line length is capped at 40 characters
+by default (字詰め, adjustable in settings) and the text block is centred —
+without it, an iPad in landscape sets 80-character lines.
 
 The toolbar carries text size, furigana, paged/scrolling, collocation
 highlighting, vertical/horizontal and reload. Reading position is remembered per

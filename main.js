@@ -14962,6 +14962,7 @@ var DEFAULT_TATEGAKI_SETTINGS = {
   fontFamily: "mincho",
   customFontFamily: "",
   padding: 18,
+  maxCharsPerLine: 40,
   paperTexture: false,
   showFurigana: true,
   tateChuYoko: true,
@@ -14997,6 +14998,9 @@ function normaliseSettings(raw) {
   merged.fontSize = clampNumber(merged.fontSize, FONT_SIZE_MIN, FONT_SIZE_MAX, DEFAULT_TATEGAKI_SETTINGS.fontSize);
   merged.lineHeight = clampNumber(merged.lineHeight, LINE_HEIGHT_MIN, LINE_HEIGHT_MAX, DEFAULT_TATEGAKI_SETTINGS.lineHeight);
   merged.padding = clampNumber(merged.padding, 0, 80, DEFAULT_TATEGAKI_SETTINGS.padding);
+  merged.maxCharsPerLine = Math.round(
+    clampNumber(merged.maxCharsPerLine, 0, 120, DEFAULT_TATEGAKI_SETTINGS.maxCharsPerLine)
+  );
   merged.maxHighlightEntries = clampNumber(merged.maxHighlightEntries, 0, 5e4, DEFAULT_TATEGAKI_SETTINGS.maxHighlightEntries);
   merged.chunkSize = clampNumber(merged.chunkSize, 500, 5e4, DEFAULT_TATEGAKI_SETTINGS.chunkSize);
   if (merged.pageMode !== "scroll" && merged.pageMode !== "page") {
@@ -15165,6 +15169,11 @@ var TATEGAKI_CSS = `
 }
 
 .jp-tg-canvas::-webkit-scrollbar { display: none; }
+.jp-tg-canvas:focus { outline: none; }
+.jp-tg-canvas:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: -2px;
+}
 
 /* Paging is driven from JS (ScrollController): CSS scroll-snap would pin the
    scroller to the sentinels, and CSS smooth scrolling would animate the
@@ -15180,8 +15189,14 @@ var TATEGAKI_CSS = `
   touch-action: pan-y;
 }
 
-.jp-tg-content { height: 100%; }
-.jp-tg-canvas.jp-tg--horizontal .jp-tg-content { height: auto; }
+/* inline-size is the *reading* axis: the column height in vertical mode, the
+   line width in horizontal mode. Capping it keeps lines readable on a tablet in
+   landscape, and auto inline margins centre the text block in the leftover space. */
+.jp-tg-content {
+  inline-size: 100%;
+  max-inline-size: var(--jp-tg-measure, none);
+  margin-inline: auto;
+}
 
 .jp-tg-sentinel {
   display: inline-block;
@@ -15585,8 +15600,6 @@ var TATEGAKI_CSS = `
   touch-action: auto;
 }
 
-.jp-tg-embed.jp-tg--horizontal .jp-tg-content { height: auto; }
-
 /* \u2500\u2500 Optional: vertical mode for the markdown editor / reading view \u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 .jp-tg-editor-vertical .markdown-preview-section,
 .jp-tg-editor-vertical .markdown-source-view.mod-cm6 .cm-contentContainer {
@@ -15605,11 +15618,31 @@ var TATEGAKI_CSS = `
 }
 
 /* \u2500\u2500 Phone-sized screens \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+/* Phones, and a tablet in a narrow split view. */
 @media (max-width: 620px) {
   .jp-tategaki-view { --jp-tg-pad: 14px; }
   .jp-tg-sheet { max-height: 70%; }
   .jp-tg-btn { min-height: 44px; }
   .jp-tg-codeblock { width: 84vw; }
+}
+
+/* Tablets (iPad mini portrait and up) and desktop panes. */
+@media (min-width: 621px) {
+  .jp-tategaki-view { --jp-tg-pad: 28px; }
+  .jp-tg-sheet {
+    max-height: 54%;
+    width: min(720px, 94%);
+    margin: 0 auto;
+    border-radius: 14px 14px 0 0;
+  }
+  .jp-tg-sheet-body { padding: 10px 16px 16px; }
+  .jp-tg-toolbar { padding: 8px 12px; }
+  .jp-tg-codeblock { width: min(60vw, 34em); }
+}
+
+/* Tablet in landscape: the extra height is what makes lines run long. */
+@media (min-width: 900px) and (orientation: landscape) {
+  .jp-tategaki-view { --jp-tg-pad: 36px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -16967,6 +17000,61 @@ function attachTapGestures(el, options) {
     el.removeEventListener("contextmenu", onContextMenu);
   };
 }
+function attachWheelScrolling(el, controller, isVertical) {
+  const onWheel = (ev) => {
+    if (!isVertical())
+      return;
+    if (ev.ctrlKey)
+      return;
+    if (Math.abs(ev.deltaY) <= Math.abs(ev.deltaX))
+      return;
+    const unit = ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? el.clientWidth : 1;
+    el.scrollLeft += ev.deltaY * unit * controller.forwardSign();
+    ev.preventDefault();
+  };
+  el.addEventListener("wheel", onWheel, { passive: false });
+  return () => el.removeEventListener("wheel", onWheel);
+}
+function attachKeyboardNavigation(el, options) {
+  const onKeyDown = (ev) => {
+    if (ev.ctrlKey || ev.metaKey || ev.altKey)
+      return;
+    switch (ev.key) {
+      case "ArrowLeft":
+      case "ArrowDown":
+      case "PageDown":
+        options.onPage(1);
+        break;
+      case "ArrowRight":
+      case "ArrowUp":
+      case "PageUp":
+        options.onPage(-1);
+        break;
+      case " ":
+        options.onPage(ev.shiftKey ? -1 : 1);
+        break;
+      case "Home":
+        options.onStart();
+        break;
+      case "End":
+        options.onEnd();
+        break;
+      case "+":
+      case "=":
+        options.onZoom(1);
+        break;
+      case "-":
+      case "_":
+        options.onZoom(-1);
+        break;
+      default:
+        return;
+    }
+    ev.preventDefault();
+  };
+  el.addEventListener("keydown", onKeyDown);
+  return () => el.removeEventListener("keydown", onKeyDown);
+}
 function onScrollSettled(el, delay, callback) {
   let timer = null;
   const onScroll = () => {
@@ -17052,8 +17140,10 @@ var TategakiView = class extends import_obsidian10.ItemView {
   }
   // ── Lifecycle ─────────────────────────────────────────────────────────────
   async onOpen() {
+    var _a;
     this.buildUI();
     this.registerWorkspaceEvents();
+    (_a = this.canvasEl) == null ? void 0 : _a.focus({ preventScroll: true });
     if (this.file) {
       await this.setFile(this.file);
       return;
@@ -17101,15 +17191,18 @@ var TategakiView = class extends import_obsidian10.ItemView {
     this.buildToolbar(this.toolbarEl);
     const stage = root.createDiv("jp-tg-stage");
     this.canvasEl = stage.createDiv("jp-tg-canvas");
+    this.canvasEl.tabIndex = 0;
+    this.canvasEl.setAttribute("role", "document");
+    this.canvasEl.setAttribute("aria-label", "\u7E26\u66F8\u304D reader");
     this.hintEl = stage.createDiv("jp-tg-hint");
     const progress = root.createDiv("jp-tg-progress");
     const track = progress.createDiv("jp-tg-progress-track");
     this.progressFillEl = track.createDiv("jp-tg-progress-fill");
     this.progressLabelEl = progress.createDiv("jp-tg-progress-label");
     this.progressLabelEl.setText("0%");
-    this.sheet = new BottomSheet(stage);
     this.scroller = new ScrollController(this.canvasEl);
-    this.attachCanvasInteractions(this.canvasEl);
+    this.sheet = new BottomSheet(stage);
+    this.attachCanvasInteractions(this.canvasEl, this.scroller);
     this.applySettingsToDom();
   }
   buildToolbar(toolbar) {
@@ -17158,7 +17251,7 @@ var TategakiView = class extends import_obsidian10.ItemView {
     return this.options.settings.pageMode === "page" ? "\u9801" : "\u5DFB";
   }
   // ── Interaction ───────────────────────────────────────────────────────────
-  attachCanvasInteractions(canvas) {
+  attachCanvasInteractions(canvas, scroller) {
     if (this.options.settings.pinchZoom) {
       this.disposers.push(
         attachPinchZoom(canvas, {
@@ -17176,6 +17269,28 @@ var TategakiView = class extends import_obsidian10.ItemView {
         onLongPress: (x, y, target) => this.handleLongPress(x, y, target)
       })
     );
+    this.disposers.push(
+      attachWheelScrolling(canvas, scroller, () => this.options.settings.enabled)
+    );
+    this.disposers.push(
+      attachKeyboardNavigation(canvas, {
+        onPage: (direction) => this.turnPage(direction),
+        onStart: () => {
+          var _a;
+          (_a = this.scroller) == null ? void 0 : _a.scrollToStart();
+          this.updateProgress();
+        },
+        onEnd: () => {
+          var _a;
+          (_a = this.scroller) == null ? void 0 : _a.setProgress(1, true);
+          this.updateProgress();
+        },
+        onZoom: (direction) => this.nudgeFontSize(direction)
+      })
+    );
+    const onPointerDown = () => canvas.focus({ preventScroll: true });
+    canvas.addEventListener("pointerdown", onPointerDown);
+    this.disposers.push(() => canvas.removeEventListener("pointerdown", onPointerDown));
     this.disposers.push(
       onScrollSettled(canvas, 140, () => {
         var _a;
@@ -17573,6 +17688,10 @@ var TategakiView = class extends import_obsidian10.ItemView {
     root.style.setProperty("--jp-tg-fs", `${settings.fontSize}px`);
     root.style.setProperty("--jp-tg-lh", `${settings.lineHeight}`);
     root.style.setProperty("--jp-tg-pad", `${settings.padding}px`);
+    root.style.setProperty(
+      "--jp-tg-measure",
+      settings.maxCharsPerLine > 0 ? `${settings.maxCharsPerLine}em` : "none"
+    );
     if (settings.fontFamily === "custom" && settings.customFontFamily) {
       root.style.setProperty("--jp-tg-ff", settings.customFontFamily);
     } else {
@@ -17718,6 +17837,10 @@ function createTategakiCodeBlockProcessor(getSettings, bridge) {
     host.className = "jp-tg-embed";
     host.style.fontSize = `${settings.fontSize}px`;
     host.style.lineHeight = `${settings.lineHeight}`;
+    host.style.setProperty(
+      "--jp-tg-measure",
+      settings.maxCharsPerLine > 0 ? `${settings.maxCharsPerLine}em` : "none"
+    );
     if (!settings.enabled)
       host.classList.add("jp-tg--horizontal");
     if (settings.fontFamily === "gothic") {
@@ -17816,6 +17939,14 @@ function buildTategakiSettings(containerEl, ctx) {
   new import_obsidian11.Setting(containerEl).setName("Margin").addSlider(
     (slider) => slider.setLimits(0, 60, 2).setValue(settings.padding).setDynamicTooltip().onChange((value) => {
       settings.padding = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Line length (\u5B57\u8A70\u3081)").setDesc(
+    "Characters per line. A vertical line runs the full height of the screen, which gets long on a tablet in landscape. 0 fills the screen."
+  ).addSlider(
+    (slider) => slider.setLimits(0, 80, 2).setValue(settings.maxCharsPerLine).setDynamicTooltip().onChange((value) => {
+      settings.maxCharsPerLine = value;
       commit();
     })
   );

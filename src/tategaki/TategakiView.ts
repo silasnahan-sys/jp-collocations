@@ -14,6 +14,8 @@ import {
   ScrollController,
   attachPinchZoom,
   attachTapGestures,
+  attachWheelScrolling,
+  attachKeyboardNavigation,
   onScrollSettled,
   caretFromPoint,
   runAroundOffset,
@@ -91,6 +93,7 @@ export class TategakiView extends ItemView {
   async onOpen(): Promise<void> {
     this.buildUI();
     this.registerWorkspaceEvents();
+    this.canvasEl?.focus({ preventScroll: true });
 
     // `setState` can arrive before the DOM exists (workspace restore), in which
     // case the file is already set but nothing has been painted yet.
@@ -141,6 +144,10 @@ export class TategakiView extends ItemView {
 
     const stage = root.createDiv("jp-tg-stage");
     this.canvasEl = stage.createDiv("jp-tg-canvas");
+    // Focusable so a keyboard can drive it; a scroller has no focusable child.
+    this.canvasEl.tabIndex = 0;
+    this.canvasEl.setAttribute("role", "document");
+    this.canvasEl.setAttribute("aria-label", "縦書き reader");
     this.hintEl = stage.createDiv("jp-tg-hint");
 
     const progress = root.createDiv("jp-tg-progress");
@@ -149,10 +156,10 @@ export class TategakiView extends ItemView {
     this.progressLabelEl = progress.createDiv("jp-tg-progress-label");
     this.progressLabelEl.setText("0%");
 
-    this.sheet = new BottomSheet(stage);
     this.scroller = new ScrollController(this.canvasEl);
+    this.sheet = new BottomSheet(stage);
 
-    this.attachCanvasInteractions(this.canvasEl);
+    this.attachCanvasInteractions(this.canvasEl, this.scroller);
     this.applySettingsToDom();
   }
 
@@ -212,7 +219,7 @@ export class TategakiView extends ItemView {
 
   // ── Interaction ───────────────────────────────────────────────────────────
 
-  private attachCanvasInteractions(canvas: HTMLElement): void {
+  private attachCanvasInteractions(canvas: HTMLElement, scroller: ScrollController): void {
     if (this.options.settings.pinchZoom) {
       this.disposers.push(
         attachPinchZoom(canvas, {
@@ -231,6 +238,24 @@ export class TategakiView extends ItemView {
         onLongPress: (x, y, target) => this.handleLongPress(x, y, target),
       })
     );
+
+    this.disposers.push(
+      attachWheelScrolling(canvas, scroller, () => this.options.settings.enabled)
+    );
+
+    this.disposers.push(
+      attachKeyboardNavigation(canvas, {
+        onPage: direction => this.turnPage(direction),
+        onStart: () => { this.scroller?.scrollToStart(); this.updateProgress(); },
+        onEnd: () => { this.scroller?.setProgress(1, true); this.updateProgress(); },
+        onZoom: direction => this.nudgeFontSize(direction),
+      })
+    );
+
+    // Clicking or tapping the text hands it the keyboard focus.
+    const onPointerDown = (): void => canvas.focus({ preventScroll: true });
+    canvas.addEventListener("pointerdown", onPointerDown);
+    this.disposers.push(() => canvas.removeEventListener("pointerdown", onPointerDown));
 
     this.disposers.push(
       onScrollSettled(canvas, 140, () => {
@@ -639,6 +664,10 @@ export class TategakiView extends ItemView {
     root.style.setProperty("--jp-tg-fs", `${settings.fontSize}px`);
     root.style.setProperty("--jp-tg-lh", `${settings.lineHeight}`);
     root.style.setProperty("--jp-tg-pad", `${settings.padding}px`);
+    root.style.setProperty(
+      "--jp-tg-measure",
+      settings.maxCharsPerLine > 0 ? `${settings.maxCharsPerLine}em` : "none"
+    );
     if (settings.fontFamily === "custom" && settings.customFontFamily) {
       root.style.setProperty("--jp-tg-ff", settings.customFontFamily);
     } else {

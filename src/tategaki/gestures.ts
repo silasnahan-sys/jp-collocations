@@ -350,6 +350,88 @@ export function attachTapGestures(el: HTMLElement, options: TapOptions): () => v
   };
 }
 
+/**
+ * Map wheel and trackpad gestures onto the reading axis.
+ *
+ * Browsers do map a vertical wheel onto a horizontal-only scroller, but they
+ * add the delta to `scrollLeft` — which in `vertical-rl` moves you *backwards*
+ * through the text. This claims the event and applies the reading direction,
+ * so a trackpad on an iPad or a mouse on the desktop scrolls forward.
+ */
+export function attachWheelScrolling(
+  el: HTMLElement,
+  controller: ScrollController,
+  isVertical: () => boolean
+): () => void {
+  const onWheel = (ev: WheelEvent): void => {
+    if (!isVertical()) return;
+    if (ev.ctrlKey) return; // pinch-zoom on a trackpad arrives as ctrl+wheel
+    if (Math.abs(ev.deltaY) <= Math.abs(ev.deltaX)) return;
+
+    // deltaMode 1 is lines, 2 is pages; normalise both to pixels.
+    const unit = ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? el.clientWidth : 1;
+    el.scrollLeft += ev.deltaY * unit * controller.forwardSign();
+    ev.preventDefault();
+  };
+
+  el.addEventListener("wheel", onWheel, { passive: false });
+  return () => el.removeEventListener("wheel", onWheel);
+}
+
+export interface KeyboardOptions {
+  /** Turn one screen; `+1` reads on, `-1` goes back. */
+  onPage: (direction: 1 | -1) => void;
+  onStart: () => void;
+  onEnd: () => void;
+  onZoom: (direction: 1 | -1) => void;
+}
+
+/**
+ * Keyboard reading controls, for an iPad with a Magic Keyboard and for desktop.
+ * Left/down reads on because vertical text advances leftwards.
+ */
+export function attachKeyboardNavigation(el: HTMLElement, options: KeyboardOptions): () => void {
+  const onKeyDown = (ev: KeyboardEvent): void => {
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+
+    switch (ev.key) {
+      case "ArrowLeft":
+      case "ArrowDown":
+      case "PageDown":
+        options.onPage(1);
+        break;
+      case "ArrowRight":
+      case "ArrowUp":
+      case "PageUp":
+        options.onPage(-1);
+        break;
+      case " ":
+        options.onPage(ev.shiftKey ? -1 : 1);
+        break;
+      case "Home":
+        options.onStart();
+        break;
+      case "End":
+        options.onEnd();
+        break;
+      case "+":
+      case "=":
+        options.onZoom(1);
+        break;
+      case "-":
+      case "_":
+        options.onZoom(-1);
+        break;
+      default:
+        return;
+    }
+    ev.preventDefault();
+  };
+
+  el.addEventListener("keydown", onKeyDown);
+  return () => el.removeEventListener("keydown", onKeyDown);
+}
+
 /** Fire `callback` once scrolling has been quiet for `delay` ms. */
 export function onScrollSettled(el: HTMLElement, delay: number, callback: () => void): () => void {
   let timer: number | null = null;

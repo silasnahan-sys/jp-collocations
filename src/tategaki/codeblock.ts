@@ -41,6 +41,10 @@ export function createTategakiCodeBlockProcessor(
     host.className = "jp-tg-embed";
     host.style.fontSize = `${settings.fontSize}px`;
     host.style.lineHeight = `${settings.lineHeight}`;
+    host.style.setProperty(
+      "--jp-tg-measure",
+      settings.maxCharsPerLine > 0 ? `${settings.maxCharsPerLine}em` : "none"
+    );
     if (!settings.enabled) host.classList.add("jp-tg--horizontal");
     if (settings.fontFamily === "gothic") {
       host.style.fontFamily = '"Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif';

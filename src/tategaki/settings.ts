@@ -22,6 +22,12 @@ export interface TategakiSettings {
   customFontFamily: string;
   /** Padding around the text block, in px. */
   padding: number;
+  /**
+   * Characters per line (the 字詰め). In vertical writing a line runs the full
+   * height of the screen, so on a tablet in landscape it becomes uncomfortably
+   * long; this caps it and centres the text block. 0 = fill the screen.
+   */
+  maxCharsPerLine: number;
   /** Subtle warm paper tint behind the text. */
   paperTexture: boolean;
 
@@ -76,6 +82,7 @@ export const DEFAULT_TATEGAKI_SETTINGS: TategakiSettings = {
   fontFamily: "mincho",
   customFontFamily: "",
   padding: 18,
+  maxCharsPerLine: 40,
   paperTexture: false,
 
   showFurigana: true,
@@ -126,6 +133,9 @@ export function normaliseSettings(raw: unknown): TategakiSettings {
   merged.fontSize = clampNumber(merged.fontSize, FONT_SIZE_MIN, FONT_SIZE_MAX, DEFAULT_TATEGAKI_SETTINGS.fontSize);
   merged.lineHeight = clampNumber(merged.lineHeight, LINE_HEIGHT_MIN, LINE_HEIGHT_MAX, DEFAULT_TATEGAKI_SETTINGS.lineHeight);
   merged.padding = clampNumber(merged.padding, 0, 80, DEFAULT_TATEGAKI_SETTINGS.padding);
+  merged.maxCharsPerLine = Math.round(
+    clampNumber(merged.maxCharsPerLine, 0, 120, DEFAULT_TATEGAKI_SETTINGS.maxCharsPerLine)
+  );
   merged.maxHighlightEntries = clampNumber(merged.maxHighlightEntries, 0, 50000, DEFAULT_TATEGAKI_SETTINGS.maxHighlightEntries);
   merged.chunkSize = clampNumber(merged.chunkSize, 500, 50000, DEFAULT_TATEGAKI_SETTINGS.chunkSize);
   if (merged.pageMode !== "scroll" && merged.pageMode !== "page") {
