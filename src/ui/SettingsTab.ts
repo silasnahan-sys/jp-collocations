@@ -6,6 +6,7 @@ import type { CollocationStore } from "../data/CollocationStore.ts";
 import type { HyogenScraper } from "../scraper/HyogenScraper.ts";
 
 export class SettingsTab extends PluginSettingTab {
+  private hostPlugin: Plugin;
   private settings: PluginSettings;
   private store: CollocationStore;
   private getScraper: () => HyogenScraper | null;
@@ -20,6 +21,7 @@ export class SettingsTab extends PluginSettingTab {
     onSettingsChange: () => Promise<void>
   ) {
     super(app, plugin);
+    this.hostPlugin = plugin;
     this.settings = settings;
     this.store = store;
     this.getScraper = getScraper;
@@ -174,5 +176,12 @@ export class SettingsTab extends PluginSettingTab {
     for (const [src, count] of Object.entries(stats.bySource)) {
       srcList.createEl("li", { text: `${src}: ${count}` });
     }
+
+    // ── 縦書き Tategaki ────────────────────────────────────────────
+    // Duck-typed to avoid importing main.ts (that would be a cycle).
+    const tategaki = (this.hostPlugin as Plugin & {
+      tategaki?: { buildSettings: (el: HTMLElement) => void };
+    }).tategaki;
+    tategaki?.buildSettings(containerEl);
   }
 }

@@ -16,6 +16,10 @@ import { ContextStore } from "./data/ContextStore.ts";
 import { DiscourseAnalyzer } from "./discourse/DiscourseAnalyzer.ts";
 import { DiscourseCardView, DISCOURSE_CARD_VIEW_TYPE } from "./ui/DiscourseCardView.ts";
 import { ContextLexiconView, CONTEXT_LEXICON_VIEW_TYPE } from "./ui/ContextLexiconView.ts";
+// ── 縦書き Tategaki (mobile vertical reader) ────────────────────────────────
+// Self-contained module: see src/tategaki/INTEGRATION.md.
+import { registerTategaki } from "./tategaki/register.ts";
+import type { TategakiHandle } from "./tategaki/register.ts";
 
 export default class JPCollocationsPlugin extends Plugin {
   settings: PluginSettings = { ...DEFAULT_SETTINGS };
@@ -25,6 +29,8 @@ export default class JPCollocationsPlugin extends Plugin {
   discourseStore!: DiscourseStore;
   contextStore!: ContextStore;
   private discourseAnalyzer: DiscourseAnalyzer = new DiscourseAnalyzer();
+  /** Vertical reader. Null until onload() wires it up. */
+  tategaki: TategakiHandle | null = null;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -71,6 +77,21 @@ export default class JPCollocationsPlugin extends Plugin {
       () => this.scraper,
       async () => { await this.saveSettings(); }
     ));
+
+    // ── 縦書き Tategaki ───────────────────────────────────────────────────
+    // One call registers the reader view, its commands, the ```tategaki code
+    // block, the ribbon icon and the file-menu item. Remove this block to drop
+    // the feature; nothing else in the plugin depends on it.
+    this.tategaki = registerTategaki(this, {
+      openLexiconSearch: query => {
+        const modal = new SearchModal(this.app, this.engine);
+        modal.open();
+        if (query) {
+          modal.inputEl.value = query;
+          modal.inputEl.dispatchEvent(new Event("input"));
+        }
+      },
+    });
 
     // Commands
     this.addCommand({
@@ -171,6 +192,7 @@ export default class JPCollocationsPlugin extends Plugin {
 
   async onunload(): Promise<void> {
     this.scraper?.abort();
+    this.tategaki?.unload();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(DICTIONARY_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(DISCOURSE_CARD_VIEW_TYPE);
@@ -226,6 +248,8 @@ export default class JPCollocationsPlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE)) {
       (leaf.view as CollocationView).refresh();
     }
+    // Keep the tategaki reader's collocation highlights in step with the store.
+    this.tategaki?.invalidateLexicon();
   }
 
   private importData(): void {

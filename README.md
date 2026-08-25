@@ -20,6 +20,7 @@ Inspired by and seeded with data from [collocation.hyogen.info](https://collocat
 - **Hyogen scraper** — optionally fetch more collocations from collocation.hyogen.info
 - **Import / Export** — JSON import/export for sharing or backup
 - **Light & dark theme** compatible
+- **縦書き Tategaki reader** — mobile-first vertical Japanese reading with tap-to-look-up ([details](#-縦書き-tategaki--vertical-reading-on-mobile))
 
 ---
 
@@ -150,6 +151,62 @@ npm run dev     # watch mode
 │       ├── japanese.ts
 │       └── grammar.ts
 ```
+
+---
+
+## 📖 縦書き Tategaki — vertical reading on mobile
+
+Read your notes the way Japanese prose is actually set: top-to-bottom, right-to-left,
+on a phone. Tap a word to see the collocations it belongs to.
+
+### Open it
+
+- Ribbon icon **縦書き Tategaki reader**, or
+- Command palette: **Read in Tategaki (縦書きで読む)**, or
+- Long-press a note in the file list → **縦書きで読む**
+
+### Gestures
+
+| Gesture | What happens |
+| --- | --- |
+| Tap a word | Looks it up in the lexicon and opens a bottom sheet |
+| Tap the screen edges | Turns the page (paged mode — right edge goes back) |
+| Pinch | Resizes the text; your place is kept |
+| Long-press | Copy, look up, edit, or jump back to the start |
+| Flick down on the sheet | Dismisses it |
+| ✎ in the toolbar | Edits the note in a horizontal sheet (mobile IMEs behave there) |
+
+The toolbar carries text size, furigana, paged/scrolling, collocation
+highlighting, vertical/horizontal and reload. Reading position is remembered per
+note, and the bar along the bottom shows how far through you are.
+
+### Japanese typesetting
+
+- **Furigana** from `{漢字|かんじ}`, `[漢字]{かんじ}`, `｜漢字《かんじ》` and `漢字《かんじ》`
+- **縦中横** — two-digit numbers stand upright inside the vertical line
+- **圏点** — `**bold**` renders as sesame dots beside the column
+- Code blocks and images become horizontal islands inside the vertical flow
+
+### Vertical text inside an ordinary note
+
+````markdown
+```tategaki
+　風が吹く日は、いつも{海《うみ》}のことを思い出す。
+```
+````
+
+Renders vertically in reading view, on desktop and mobile alike.
+
+### Collocation integration
+
+With the lexicon loaded, phrases it knows are underlined where they occur —
+including conjugated forms, so 風が吹く is found in 風が吹いた. Tapping one opens
+the entry with its pattern, readings and examples, plus **コピー** and **挿入**
+(insert at the cursor of the open editor).
+
+Settings live under **Settings → JP Collocations → 縦書き Tategaki**.
+Implementation notes and the integration checklist are in
+[`src/tategaki/INTEGRATION.md`](src/tategaki/INTEGRATION.md).
 
 ---
 

@@ -2228,8 +2228,8 @@ var init_io = __esm({
       }
     };
     TextReader = class extends BlobReader {
-      constructor(text) {
-        super(new Blob([text], { type: CONTENT_TYPE_TEXT_PLAIN }));
+      constructor(text2) {
+        super(new Blob([text2], { type: CONTENT_TYPE_TEXT_PLAIN }));
       }
     };
     TextWriter = class extends BlobWriter {
@@ -5794,9 +5794,9 @@ var init_zip_fs = __esm({
           reader: null
         });
       }
-      replaceText(text) {
+      replaceText(text2) {
         Object.assign(this, {
-          data: text,
+          data: text2,
           Reader: TextReader,
           Writer: TextWriter,
           reader: null
@@ -5849,13 +5849,13 @@ var init_zip_fs = __esm({
       addDirectory(name, options) {
         return addChild(this, name, { options }, true);
       }
-      addText(name, text, options = {}) {
+      addText(name, text2, options = {}) {
         return addChild(this, name, {
-          data: text,
+          data: text2,
           Reader: TextReader,
           Writer: TextWriter,
           options,
-          uncompressedSize: text.length
+          uncompressedSize: text2.length
         });
       }
       addBlob(name, blob, options = {}) {
@@ -6085,8 +6085,8 @@ var init_zip_fs = __esm({
       addDirectory(name, options) {
         return this.root.addDirectory(name, options);
       }
-      addText(name, text, options) {
-        return this.root.addText(name, text, options);
+      addText(name, text2, options) {
+        return this.root.addText(name, text2, options);
       }
       addBlob(name, blob, options) {
         return this.root.addBlob(name, blob, options);
@@ -7852,7 +7852,7 @@ __export(main_exports, {
   default: () => JPCollocationsPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian10 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 
 // src/types.ts
 var PartOfSpeech = /* @__PURE__ */ ((PartOfSpeech2) => {
@@ -8887,13 +8887,13 @@ var HyogenScraper = class {
       const stripTags = (cell) => {
         if (!cell)
           return "";
-        let text = cell;
+        let text2 = cell;
         let prev = "";
-        while (prev !== text) {
-          prev = text;
-          text = text.replace(/<[^>]*>/g, "");
+        while (prev !== text2) {
+          prev = text2;
+          text2 = text2.replace(/<[^>]*>/g, "");
         }
-        return text.replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").trim();
+        return text2.replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&").trim();
       };
       const collocate = stripTags(cells[0]);
       const example = stripTags(cells[1]);
@@ -9300,6 +9300,7 @@ var import_obsidian5 = require("obsidian");
 var SettingsTab = class extends import_obsidian5.PluginSettingTab {
   constructor(app, plugin, settings, store, getScraper, onSettingsChange) {
     super(app, plugin);
+    this.hostPlugin = plugin;
     this.settings = settings;
     this.store = store;
     this.getScraper = getScraper;
@@ -9370,9 +9371,9 @@ var SettingsTab = class extends import_obsidian5.PluginSettingTab {
         const file = (_a = input.files) == null ? void 0 : _a[0];
         if (!file)
           return;
-        const text = await file.text();
+        const text2 = await file.text();
         try {
-          const parsed = JSON.parse(text);
+          const parsed = JSON.parse(text2);
           const count = this.store.bulkImport(parsed);
           new import_obsidian5.Notice(`Imported ${count} entries.`);
         } catch (e) {
@@ -9400,6 +9401,8 @@ var SettingsTab = class extends import_obsidian5.PluginSettingTab {
     for (const [src, count] of Object.entries(stats.bySource)) {
       srcList.createEl("li", { text: `${src}: ${count}` });
     }
+    const tategaki = this.hostPlugin.tategaki;
+    tategaki == null ? void 0 : tategaki.buildSettings(containerEl);
   }
 };
 
@@ -11431,8 +11434,8 @@ function buildExtractionPatterns() {
 }
 var EXTRACTION_PATTERNS = buildExtractionPatterns();
 var TextClassifier = class {
-  classify(text) {
-    const trimmed = text.trim();
+  classify(text2) {
+    const trimmed = text2.trim();
     const tags = [];
     const notesParts = [];
     let confidence = 50;
@@ -11472,41 +11475,41 @@ var TextClassifier = class {
   // ---------------------------------------------------------------------------
   // Colloquial detection
   // ---------------------------------------------------------------------------
-  detectColloquial(text) {
+  detectColloquial(text2) {
     const found = [];
-    if (/てる/.test(text))
+    if (/てる/.test(text2))
       found.push("\u3066\u308B\u2192\u3066\u3044\u308B");
-    if (/[^出]でる/.test(text) || text.startsWith("\u3067\u308B"))
+    if (/[^出]でる/.test(text2) || text2.startsWith("\u3067\u308B"))
       found.push("\u3067\u308B\u2192\u3067\u3044\u308B");
-    if (/ってた/.test(text))
+    if (/ってた/.test(text2))
       found.push("\u3063\u3066\u305F\u2192\u3068\u8A00\u3063\u3066\u3044\u305F");
-    if (/てた/.test(text) && !/ってた/.test(text))
+    if (/てた/.test(text2) && !/ってた/.test(text2))
       found.push("\u3066\u305F\u2192\u3066\u3044\u305F");
-    if (/じゃ/.test(text))
+    if (/じゃ/.test(text2))
       found.push("\u3058\u3083\u2192\u3067\u306F");
-    if (/んだ/.test(text))
+    if (/んだ/.test(text2))
       found.push("\u3093\u3060\u2192\u306E\u3060");
-    if (/んです/.test(text))
+    if (/んです/.test(text2))
       found.push("\u3093\u3067\u3059\u2192\u306E\u3067\u3059");
-    if (/っぽい/.test(text))
+    if (/っぽい/.test(text2))
       found.push("\u3063\u307D\u3044\u2192\u3089\u3057\u3044");
-    if (/やっぱ/.test(text))
+    if (/やっぱ/.test(text2))
       found.push("\u3084\u3063\u3071\u2192\u3084\u306F\u308A");
     return found;
   }
   // ---------------------------------------------------------------------------
   // Register detection
   // ---------------------------------------------------------------------------
-  detectRegister(text) {
-    if (SLANG_WORDS.some((w) => text.includes(w)))
+  detectRegister(text2) {
+    if (SLANG_WORDS.some((w) => text2.includes(w)))
       return "\u4FD7\u8A9E";
-    if (DIALECT_MARKERS.some((w) => text.includes(w)))
+    if (DIALECT_MARKERS.some((w) => text2.includes(w)))
       return "\u65B9\u8A00";
-    if (HONORIFIC_VERBS.some((w) => text.includes(w)))
+    if (HONORIFIC_VERBS.some((w) => text2.includes(w)))
       return "\u656C\u8A9E";
-    if (text.endsWith("\u3067\u3059") || text.endsWith("\u307E\u3059") || text.endsWith("\u307E\u3057\u305F") || text.endsWith("\u307E\u305B\u3093") || text.endsWith("\u3067\u3057\u305F"))
+    if (text2.endsWith("\u3067\u3059") || text2.endsWith("\u307E\u3059") || text2.endsWith("\u307E\u3057\u305F") || text2.endsWith("\u307E\u305B\u3093") || text2.endsWith("\u3067\u3057\u305F"))
       return "\u4E01\u5BE7\u8A9E";
-    if (/[うくぐすつぬぶむる]$/.test(text) || text.endsWith("\u3060") || /[いかけがきさしたちなにのはひふへほまみめもやゆよらりれろわ]$/.test(text)) {
+    if (/[うくぐすつぬぶむる]$/.test(text2) || text2.endsWith("\u3060") || /[いかけがきさしたちなにのはひふへほまみめもやゆよらりれろわ]$/.test(text2)) {
       return "\u666E\u901A\u4F53";
     }
     return null;
@@ -11514,10 +11517,10 @@ var TextClassifier = class {
   // ---------------------------------------------------------------------------
   // Phrase structure detection
   // ---------------------------------------------------------------------------
-  detectStructure(text) {
+  detectStructure(text2) {
     for (const sv of SURU_VERBS) {
-      if (text.startsWith(sv) && (text === sv + "\u3059\u308B" || text === sv + "\u3057\u305F" || text === sv + "\u3057\u3066" || text === sv + "\u3057\u306A\u3044" || text === sv + "\u3057\u3066\u3044\u308B" || text === sv + "\u3057\u3066\u308B" || text === sv + "\u3057\u305F\u7D50\u679C" || text.startsWith(sv + "\u3059\u308B"))) {
-        const rest = text.slice(sv.length);
+      if (text2.startsWith(sv) && (text2 === sv + "\u3059\u308B" || text2 === sv + "\u3057\u305F" || text2 === sv + "\u3057\u3066" || text2 === sv + "\u3057\u306A\u3044" || text2 === sv + "\u3057\u3066\u3044\u308B" || text2 === sv + "\u3057\u3066\u308B" || text2 === sv + "\u3057\u305F\u7D50\u679C" || text2.startsWith(sv + "\u3059\u308B"))) {
+        const rest = text2.slice(sv.length);
         return {
           headword: sv,
           collocate: "\u3059\u308B" + (rest.startsWith("\u3059\u308B") ? rest.slice(2) : rest),
@@ -11528,7 +11531,7 @@ var TextClassifier = class {
         };
       }
     }
-    const quoteMatch = text.match(/^(.+?)[とって]([思言見考感聞][\S]*)$/);
+    const quoteMatch = text2.match(/^(.+?)[とって]([思言見考感聞][\S]*)$/);
     if (quoteMatch) {
       return {
         headword: quoteMatch[1],
@@ -11539,7 +11542,7 @@ var TextClassifier = class {
         confidence: 20
       };
     }
-    const passiveTeiru = text.match(/^([\s\S]+?)([わかされ]れて[るたいいた]*)$/);
+    const passiveTeiru = text2.match(/^([\s\S]+?)([わかされ]れて[るたいいた]*)$/);
     if (passiveTeiru) {
       const verbBase = this.extractVerbBase(passiveTeiru[1] + "\u308C");
       const suffix = passiveTeiru[2].replace(/^[わかされ]れ/, "");
@@ -11553,10 +11556,10 @@ var TextClassifier = class {
         confidence: 25
       };
     }
-    if (/させられ/.test(text)) {
-      const base = text.replace(/させられ.*$/, "");
+    if (/させられ/.test(text2)) {
+      const base = text2.replace(/させられ.*$/, "");
       return {
-        headword: base || text,
+        headword: base || text2,
         collocate: "\u3055\u305B\u3089\u308C\u308B",
         pattern: "V+causative+passive",
         headwordPOS: "\u52D5\u8A5E" /* Verb */,
@@ -11564,7 +11567,7 @@ var TextClassifier = class {
         confidence: 25
       };
     }
-    const teitaMatch = text.match(/^([\s\S]+?)(て(?:い)?た|で(?:い)?た)$/);
+    const teitaMatch = text2.match(/^([\s\S]+?)(て(?:い)?た|で(?:い)?た)$/);
     if (teitaMatch && teitaMatch[1].length > 0) {
       const verbPart = teitaMatch[1];
       if (/[うくぐすつぬぶむるく]$|んで$|って$|いて$|いで$/.test(verbPart)) {
@@ -11578,7 +11581,7 @@ var TextClassifier = class {
         };
       }
     }
-    const teVMatch = text.match(/^([\s\S]+?)(て(?:い)?(?:[るみあおい]|ある|いる|みる|おく|しまう|くる))/);
+    const teVMatch = text2.match(/^([\s\S]+?)(て(?:い)?(?:[るみあおい]|ある|いる|みる|おく|しまう|くる))/);
     if (teVMatch && teVMatch[1].length > 0) {
       const head = teVMatch[1];
       const tail = teVMatch[2];
@@ -11591,7 +11594,7 @@ var TextClassifier = class {
         confidence: 20
       };
     }
-    const naAdjNiV = text.match(/^([^\s]+?)に([^\s]+)$/);
+    const naAdjNiV = text2.match(/^([^\s]+?)に([^\s]+)$/);
     if (naAdjNiV) {
       const adj = naAdjNiV[1];
       const verb = naAdjNiV[2];
@@ -11606,7 +11609,7 @@ var TextClassifier = class {
         };
       }
     }
-    const nGaAdj = text.match(/^([^\s]+?)が([^\s]+[いなか](?:だ|です|った)?)$/);
+    const nGaAdj = text2.match(/^([^\s]+?)が([^\s]+[いなか](?:だ|です|った)?)$/);
     if (nGaAdj && !nGaAdj[2].match(/[うくぐすつぬぶむる]$/)) {
       const adj = nGaAdj[2];
       const posAdj = this.detectWordPOS(adj);
@@ -11621,7 +11624,7 @@ var TextClassifier = class {
         };
       }
     }
-    const advVMatch = text.match(/^([^\s]+?り|[^\s]+?と)([^\s]+[うくぐすつぬぶむる](?:.*?)?)$/);
+    const advVMatch = text2.match(/^([^\s]+?り|[^\s]+?と)([^\s]+[うくぐすつぬぶむる](?:.*?)?)$/);
     if (advVMatch && advVMatch[1].length >= 2 && advVMatch[2].length >= 1) {
       const adv = advVMatch[1];
       const verb = advVMatch[2];
@@ -11636,7 +11639,7 @@ var TextClassifier = class {
         };
       }
     }
-    const nNoN = text.match(/^([^\s]+?)の([^\s]+)$/);
+    const nNoN = text2.match(/^([^\s]+?)の([^\s]+)$/);
     if (nNoN && nNoN[1].length >= 1 && nNoN[2].length >= 1) {
       return {
         headword: nNoN[1],
@@ -11647,7 +11650,7 @@ var TextClassifier = class {
         confidence: 15
       };
     }
-    const nWoV = text.match(/^([^\s]+?)を([^\s]+)$/);
+    const nWoV = text2.match(/^([^\s]+?)を([^\s]+)$/);
     if (nWoV) {
       return {
         headword: nWoV[1],
@@ -11658,7 +11661,7 @@ var TextClassifier = class {
         confidence: 25
       };
     }
-    const nGaV = text.match(/^([^\s]+?)が([^\s]+)$/);
+    const nGaV = text2.match(/^([^\s]+?)が([^\s]+)$/);
     if (nGaV) {
       return {
         headword: nGaV[1],
@@ -11669,7 +11672,7 @@ var TextClassifier = class {
         confidence: 25
       };
     }
-    const nNiV = text.match(/^([^\s]+?)に([^\s]+)$/);
+    const nNiV = text2.match(/^([^\s]+?)に([^\s]+)$/);
     if (nNiV) {
       return {
         headword: nNiV[1],
@@ -11680,7 +11683,7 @@ var TextClassifier = class {
         confidence: 20
       };
     }
-    const fallback = this.fallbackSplit(text);
+    const fallback = this.fallbackSplit(text2);
     return {
       headword: fallback.headword,
       collocate: fallback.collocate,
@@ -11748,27 +11751,27 @@ var TextClassifier = class {
     return knownAdverbs.some((a) => s.startsWith(a) || s === a);
   }
   /** Fallback: split the phrase into a head noun/word and a verb tail. */
-  fallbackSplit(text) {
-    if (text.length <= 3) {
-      return { headword: text, collocate: "", pattern: "V" };
+  fallbackSplit(text2) {
+    if (text2.length <= 3) {
+      return { headword: text2, collocate: "", pattern: "V" };
     }
-    const m = text.match(/^([\u4e00-\u9fafぁ-ゖァ-ヶ]{1,4})([\s\S]+)$/);
+    const m = text2.match(/^([\u4e00-\u9fafぁ-ゖァ-ヶ]{1,4})([\s\S]+)$/);
     if (m) {
       return { headword: m[1], collocate: m[2], pattern: "N+V" };
     }
-    const mid = Math.floor(text.length / 2);
+    const mid = Math.floor(text2.length / 2);
     return {
-      headword: text.slice(0, mid),
-      collocate: text.slice(mid),
+      headword: text2.slice(0, mid),
+      collocate: text2.slice(mid),
       pattern: "phrase"
     };
   }
   // ---------------------------------------------------------------------------
   // Domain tagging
   // ---------------------------------------------------------------------------
-  detectDomains(text, headword, collocate) {
+  detectDomains(text2, headword, collocate) {
     const tags = [];
-    const combined = text + headword + collocate;
+    const combined = text2 + headword + collocate;
     if (ACADEMIC_WORDS.some((w) => combined.includes(w)))
       tags.push("\u5B66\u8853");
     if (combined.includes("\u8A00\u8A9E") || combined.includes("\u6587\u6CD5") || combined.includes("\u8A9E\u5F59") || combined.includes("\u54C1\u8A5E") || combined.includes("\u30C6\u30F3\u30B9") || combined.includes("\u30A2\u30B9\u30DA\u30AF\u30C8")) {
@@ -11794,8 +11797,8 @@ var TextClassifier = class {
   // ---------------------------------------------------------------------------
   // Normalisation (spoken → written)
   // ---------------------------------------------------------------------------
-  normalise(text) {
-    let result = text;
+  normalise(text2) {
+    let result = text2;
     for (const [pattern, replacement] of COLLOQUIAL_FORMS) {
       result = result.replace(pattern, replacement);
     }
@@ -11804,7 +11807,7 @@ var TextClassifier = class {
   // ---------------------------------------------------------------------------
   // Frequency scoring
   // ---------------------------------------------------------------------------
-  scoreFrequency(text, tags, pattern) {
+  scoreFrequency(text2, tags, pattern) {
     let score = 50;
     if (tags.includes("\u4FD7\u8A9E"))
       score = 45;
@@ -11818,7 +11821,7 @@ var TextClassifier = class {
       score = Math.max(score, 70);
     if (pattern.includes("passive"))
       score = Math.max(score, 60);
-    if (text.length <= 6)
+    if (text2.length <= 6)
       score = Math.min(score + 10, 95);
     return Math.min(Math.max(score, 20), 100);
   }
@@ -12539,9 +12542,9 @@ var YomitanDictionary = class {
       if (!fileEntry.getData)
         continue;
       const name = fileEntry.filename;
-      const text = await fileEntry.getData(new TextWriter2());
+      const text2 = await fileEntry.getData(new TextWriter2());
       try {
-        fileMap.set(name, JSON.parse(text));
+        fileMap.set(name, JSON.parse(text2));
       } catch (e) {
       }
     }
@@ -13124,9 +13127,9 @@ var DictionaryEntryRenderer = class {
       return;
     }
     if (typeof content === "object") {
-      const text = (_a = content.text) != null ? _a : content.data;
-      if (typeof text === "string")
-        el.appendText(text);
+      const text2 = (_a = content.text) != null ? _a : content.data;
+      if (typeof text2 === "string")
+        el.appendText(text2);
     }
   }
 };
@@ -13686,6 +13689,56 @@ var _RelationshipRegistry = class _RelationshipRegistry {
 };
 _RelationshipRegistry.registered = new Set(SEED_RELATIONSHIP_TYPES);
 var RelationshipRegistry = _RelationshipRegistry;
+var PatternRegistry = class {
+  constructor() {
+    this.rules = /* @__PURE__ */ new Map();
+  }
+  register(rule) {
+    this.rules.set(rule.id, rule);
+    RelationshipRegistry.register(rule.relationshipType);
+  }
+  unregister(id) {
+    return this.rules.delete(id);
+  }
+  getByType(type) {
+    return Array.from(this.rules.values()).filter((r) => r.relationshipType === type);
+  }
+  getAll() {
+    return Array.from(this.rules.values()).sort((a, b) => b.priority - a.priority);
+  }
+  getById(id) {
+    return this.rules.get(id);
+  }
+  /** Serialize all rules (excluding the detector function) for persistence. */
+  serialize() {
+    const data = Array.from(this.rules.values()).map((r) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      relationshipType: r.relationshipType,
+      priority: r.priority,
+      examples: r.examples,
+      createdFrom: r.createdFrom,
+      hitCount: r.hitCount
+    }));
+    return JSON.stringify(data, null, 2);
+  }
+  /** Deserialize rule metadata. Detector functions must be re-attached separately. */
+  deserialize(json) {
+    const data = JSON.parse(json);
+    for (const item of data) {
+      const existing = this.rules.get(item.id);
+      if (existing) {
+        existing.name = item.name;
+        existing.description = item.description;
+        existing.priority = item.priority;
+        existing.examples = item.examples;
+        existing.createdFrom = item.createdFrom;
+        existing.hitCount = item.hitCount;
+      }
+    }
+  }
+};
 
 // src/data/ContextStore.ts
 var ContextStore = class {
@@ -13758,11 +13811,637 @@ var ContextStore = class {
   }
 };
 
+// src/discourse/seed-patterns.ts
+function text(bits, index) {
+  var _a, _b;
+  return (_b = (_a = bits[index]) == null ? void 0 : _a.text) != null ? _b : "";
+}
+function prevText(bits, index) {
+  var _a, _b;
+  return (_b = (_a = bits[index - 1]) == null ? void 0 : _a.text) != null ? _b : "";
+}
+function nextText(bits, index) {
+  var _a, _b;
+  return (_b = (_a = bits[index + 1]) == null ? void 0 : _a.text) != null ? _b : "";
+}
+var hedgeStanceSoftening = {
+  id: "seed-hedge-stance-softening",
+  name: "Hedge / Stance Softening",
+  description: "Detects approximation and epistemic-distancing markers that soften the speaker's stance: \u3088\u3046\u306A\u611F\u3058, \u307F\u305F\u3044\u306A, \u3063\u307D\u3044, \u3088\u3046\u3060, \u3089\u3057\u3044, \u304F\u3089\u3044, etc.",
+  relationshipType: "hedge-stance-softening",
+  priority: 80,
+  examples: [
+    "\u3088\u3046\u306A\u611F\u3058",
+    "\u307F\u305F\u3044\u306A\u611F\u3058",
+    "\u3063\u3066\u611F\u3058",
+    "\u3063\u307D\u3044\u611F\u3058",
+    "\u3088\u3046\u306A\u6C17\u304C\u3059\u308B",
+    "\u307F\u305F\u3044\u306A",
+    "\u3063\u307D\u3044",
+    "\u3088\u3046\u3060",
+    "\u3088\u3046\u306B",
+    "\u3089\u3057\u3044",
+    "\u304F\u3089\u3044",
+    "\u3050\u3089\u3044",
+    "\u6C17\u5473",
+    "\u304B\u306E\u3088\u3046\u306A",
+    "\u3063\u3066\u3044\u3046\u304B",
+    "\u307F\u305F\u3044\u306A\u3082\u306E\u304B\u306A",
+    "\u3088\u3046\u306A\u96F0\u56F2\u6C17",
+    "\u307D\u3044",
+    "\u6C17\u304C\u3059\u308B",
+    "\u3088\u3046\u306A\u6C17\u6301\u3061",
+    "\u307F\u305F\u3044\u306A\u611F\u899A"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index) {
+    const t2 = text(bits, index);
+    const match = /ような感じ|みたいな感じ|って感じ|っぽい感じ|ような気がする|みたいな|っぽい|ようだ|ように|らしい|くらい|ぐらい|気味|かのような|気がする/.exec(t2);
+    if (match) {
+      return {
+        confidence: 0.9,
+        evidence: [match[0]],
+        direction: "forward",
+        span: 1,
+        features: { marker: match[0] }
+      };
+    }
+    return null;
+  }
+};
+var splitMorphemeCoConstruction = {
+  id: "seed-split-morpheme-co-construction",
+  name: "Split-Morpheme Co-construction",
+  description: "Detects verb-stem splits across bit boundaries where one speaker completes another's morpheme.",
+  relationshipType: "split-morpheme-co-construction",
+  priority: 30,
+  examples: [
+    "\u8AAD\u307F||\u307E\u3059",
+    "\u98DF\u3079||\u3066",
+    "\u884C\u304D||\u307E\u3057\u305F",
+    "\u3057||\u3066",
+    "\u6765||\u3066",
+    "\u898B||\u307E\u3059",
+    "\u3067\u304D||\u3066",
+    "\u77E5\u308A||\u305F\u304F\u3066",
+    "\u8A00\u3044||\u305F\u3044",
+    "\u3084\u308A||\u305F\u3044"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index) {
+    const t2 = text(bits, index);
+    const prev = prevText(bits, index);
+    if (prev && /[んいきしちにびみり]$/.test(prev.trim()) && /^[でてでても]/.test(t2.trim())) {
+      return {
+        confidence: 0.8,
+        evidence: [`${prev}||${t2}`],
+        direction: "forward",
+        span: 1,
+        features: { splitType: "verb-stem" }
+      };
+    }
+    if (/[いきしちにびみり]$/.test(t2.trim())) {
+      return {
+        confidence: 0.6,
+        evidence: [t2.trim()],
+        direction: "forward",
+        span: 1,
+        features: { splitType: "potential-stem" }
+      };
+    }
+    return null;
+  }
+};
+var perspectiveFraming = {
+  id: "seed-perspective-framing",
+  name: "Perspective Framing",
+  description: "Detects perspective-establishing markers that frame the speaker's viewpoint: \u7684\u306B\u306F, \u304B\u3089\u898B\u308B\u3068, \u3068\u3057\u3066\u306F, \u306B\u3068\u3063\u3066.",
+  relationshipType: "perspective-framing",
+  priority: 70,
+  examples: [
+    "\u7684\u306B\u306F",
+    "\u7684\u306B",
+    "\u304B\u3089\u898B\u308B\u3068",
+    "\u3068\u3057\u3066\u306F",
+    "\u306B\u3068\u3063\u3066",
+    "\u306B\u3068\u3063\u3066\u306F",
+    "\u306E\u7ACB\u5834\u304B\u3089",
+    "\u306E\u89B3\u70B9\u304B\u3089",
+    "\u306E\u8996\u70B9\u3067\u306F",
+    "\u304B\u3089\u3059\u308B\u3068",
+    "\u304B\u3089\u3059\u308C\u3070",
+    "\u304B\u3089\u8A00\u3046\u3068",
+    "\u304B\u3089\u898B\u308C\u3070",
+    "\u3068\u3057\u3066\u306E",
+    "\u3068\u3044\u3046\u7ACB\u5834\u3067",
+    "\u3068\u3044\u3046\u610F\u5473\u3067\u306F"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index) {
+    const t2 = text(bits, index);
+    const match = /的には|的に|から見ると|としては|にとって|にとっては|から見れば|からすると|からすれば|から言うと/.exec(t2);
+    if (match) {
+      return {
+        confidence: 0.85,
+        evidence: [match[0]],
+        direction: "forward",
+        span: 1,
+        features: { frameType: "perspective", marker: match[0] }
+      };
+    }
+    return null;
+  }
+};
+var interactionalPivot = {
+  id: "seed-interactional-pivot",
+  name: "Interactional Pivot",
+  description: "Detects short realisation/backchannelling tokens (\u3042, \u3048, \u3078\u3048, \u3046\u3093, \u305D\u3046, \u306A\u308B\u307B\u3069) that mark a shift in floor.",
+  relationshipType: "interactional-pivot",
+  priority: 100,
+  examples: [
+    "\u3042",
+    "\u3048",
+    "\u3048\u30FC",
+    "\u3078\u3048",
+    "\u3046\u3093",
+    "\u305D\u3046",
+    "\u306A\u308B\u307B\u3069",
+    "\u3075\u30FC\u3093",
+    "\u307B\u3046",
+    "\u304A\u30FC",
+    "\u3042\u3042",
+    "\u3046\u30FC\u3093",
+    "\u306F\u3044",
+    "\u3048\u3048",
+    "\u307E\u3042",
+    "\u3042\u30FC",
+    "\u305D\u3046\u304B",
+    "\u305D\u3046\u306A\u3093\u3060",
+    "\u305D\u3046\u3067\u3059\u304B",
+    "\u3078\u3048\u30FC",
+    "\u307B\u307B\u3046",
+    "\u306A\u3093\u3068",
+    "\u30DE\u30B8\u3067"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index) {
+    const t2 = text(bits, index);
+    const trimmed = t2.trim().replace(/[。、！？…]/g, "");
+    if (/^(あ|え|えー|へえ|うん|そう|なるほど|ふーん|ほう|おー|ああ|うーん|はい|ええ|まあ|あー|そうか|そうなんだ|そうですか|へえー|ほほう|なんと|マジで)$/.test(trimmed)) {
+      return {
+        confidence: 0.95,
+        evidence: [trimmed],
+        direction: "forward",
+        span: 1,
+        features: { marker: trimmed }
+      };
+    }
+    return null;
+  }
+};
+var epistemicContinuationBlend = {
+  id: "seed-epistemic-continuation-blend",
+  name: "Epistemic-Continuation Blend",
+  description: "Detects progressive + epistemic certainty blends: \u3093\u3067\u308B\u3068, \u3066\u308B\u3068\u78BA\u304B\u306B, \u306A\u304C\u3089\u78BA\u304B\u306B, \u3066\u3044\u308B\u306E\u306B.",
+  relationshipType: "epistemic-continuation-blend",
+  priority: 65,
+  examples: [
+    "\u3093\u3067\u308B\u3068",
+    "\u3066\u308B\u3068\u78BA\u304B\u306B",
+    "\u306A\u304C\u3089\u78BA\u304B\u306B",
+    "\u3066\u3044\u308B\u306E\u306B",
+    "\u3066\u308B\u306E\u306B\u78BA\u304B\u306B",
+    "\u3057\u306A\u304C\u3089\u78BA\u304B\u306B",
+    "\u7D9A\u3051\u306A\u304C\u3089",
+    "\u8AAD\u3093\u3067\u308B\u3068\u78BA\u304B\u306B",
+    "\u898B\u3066\u308B\u3068\u78BA\u304B\u306B",
+    "\u3084\u3063\u3066\u308B\u3068\u78BA\u304B\u306B",
+    "\u3059\u308B\u3046\u3061\u306B\u78BA\u304B\u306B",
+    "\u3044\u304F\u3046\u3061\u306B",
+    "\u7D4C\u3064\u306B\u3064\u308C"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index) {
+    const t2 = text(bits, index);
+    const match = /んでると|てると確かに|ながら確かに|ているのに|てるのに確かに/.exec(t2);
+    if (match) {
+      return {
+        confidence: 0.85,
+        evidence: [match[0]],
+        direction: "forward",
+        span: 1,
+        features: { blendType: "progressive-certainty", marker: match[0] }
+      };
+    }
+    return null;
+  }
+};
+var discontinuousParallel = {
+  id: "seed-discontinuous-parallel",
+  name: "Discontinuous Parallel",
+  description: "Detects the \u305F\u308A...\u305F\u308A parallel-enumeration pattern spanning multiple bits.",
+  relationshipType: "discontinuous-parallel",
+  priority: 60,
+  examples: [
+    "\u304C\u3042\u3063\u305F\u308A",
+    "\u3057\u305F\u308A",
+    "\u3057\u305F\u308A\u3057\u3066",
+    "\u3060\u3063\u305F\u308A",
+    "\u884C\u3063\u305F\u308A\u6765\u305F\u308A",
+    "\u98DF\u3079\u305F\u308A\u98F2\u3093\u3060\u308A",
+    "\u8AAD\u3093\u3060\u308A\u66F8\u3044\u305F\u308A",
+    "\u8CB7\u3063\u305F\u308A\u58F2\u3063\u305F\u308A",
+    "\u6765\u305F\u308A\u53BB\u3063\u305F\u308A",
+    "\u5897\u3048\u305F\u308A\u6E1B\u3063\u305F\u308A",
+    "\u5BDD\u305F\u308A\u8D77\u304D\u305F\u308A",
+    "\u7B11\u3063\u305F\u308A\u6CE3\u3044\u305F\u308A"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index, context) {
+    var _a, _b;
+    const t2 = text(bits, index);
+    const tariPattern = /があったり|[でし]たり/;
+    if (tariPattern.test(t2)) {
+      const otherIdx = context.allTexts.findIndex((b, i) => i !== index && tariPattern.test(b));
+      if (otherIdx >= 0) {
+        return {
+          targetIndex: otherIdx,
+          confidence: 0.9,
+          evidence: [(_b = (_a = t2.match(/(があったり|[でし]たり)/)) == null ? void 0 : _a[0]) != null ? _b : t2.trim()],
+          direction: "bidirectional",
+          span: Math.abs(otherIdx - index),
+          features: { pattern: "\u305F\u308A-\u305F\u308A" }
+        };
+      }
+    }
+    return null;
+  }
+};
+var causalConcessive = {
+  id: "seed-causal-concessive-cascade",
+  name: "Causal-Concessive Cascade",
+  description: "Detects \u304B\u3089/\u306E\u3067 \u2192 \u3051\u3069/\u304C concessive chains where a causal reason is immediately qualified.",
+  relationshipType: "causal-concessive-cascade",
+  priority: 75,
+  examples: [
+    "\u304B\u3089",
+    "\u306E\u3067",
+    "\u3060\u304B\u3089",
+    "\u306A\u306E\u3067",
+    "\u305F\u3081\u306B",
+    "\u3051\u3069",
+    "\u304C",
+    "\u306E\u306B",
+    "\u3051\u308C\u3069",
+    "\u3051\u308C\u3069\u3082",
+    "\u3093\u3060\u3051\u3069",
+    "\u306A\u3093\u3060\u3051\u3069",
+    "\u3051\u308C\u3069",
+    "\u3060\u3051\u3069",
+    "\u304B\u3089\u3053\u305D",
+    "\u306E\u3067\u305D\u308C\u3067",
+    "\u3060\u304B\u3089\u3001\u3067\u3082"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index) {
+    const t2 = text(bits, index);
+    const next = nextText(bits, index);
+    if (/から$|ので$/.test(t2.trim()) && /けど|が$|のに$/.test(next.trim())) {
+      return {
+        targetIndex: index + 1,
+        confidence: 0.85,
+        evidence: [t2.trim().slice(-2), next.trim().slice(0, 4)],
+        direction: "forward",
+        span: 1,
+        features: { causalMarker: t2.trim().slice(-2), concedeMarker: next.trim().slice(0, 2) }
+      };
+    }
+    if (/んだけど|なんだけど|けれど/.test(t2)) {
+      const match = t2.match(/んだけど|なんだけど|けれど/);
+      return {
+        confidence: 0.75,
+        evidence: [match[0]],
+        direction: "forward",
+        span: 1,
+        features: { causalMarker: match[0] }
+      };
+    }
+    return null;
+  }
+};
+var assertionDeflation = {
+  id: "seed-assertion-deflation",
+  name: "Assertion Deflation",
+  description: "Detects sequences where a strong assertion (\u3093\u3058\u3083\u306A\u3044, \u3067\u3057\u3087) is progressively softened.",
+  relationshipType: "assertion-deflation",
+  priority: 70,
+  examples: [
+    "\u3093\u3058\u3083\u306A\u3044",
+    "\u3093\u3058\u3083\u306A\u3044\u304B",
+    "\u3067\u3057\u3087",
+    "\u3067\u3057\u3087\u3046",
+    "\u3058\u3083\u306A\u3044\u3067\u3059\u304B",
+    "\u3067\u306F\u306A\u3044\u304B",
+    "\u3058\u3083\u306A\u3044\u304B",
+    "\u3058\u3083\u306A\u3044\uFF1F",
+    "\u3067\u3057\u3087\uFF1F",
+    "\u3058\u3083\u306A\u3044\u304B\u306A",
+    "\u3060\u3068\u601D\u3046",
+    "\u304B\u3082\u306A",
+    "\u304B\u3082\u3057\u308C\u306A\u3044",
+    "\u3060\u308D\u3046"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index) {
+    const t2 = text(bits, index);
+    const prev = prevText(bits, index);
+    if (prev && /んじゃない/.test(prev) && /\?|みたいな|ような/.test(t2)) {
+      return {
+        confidence: 0.9,
+        evidence: [prev.trim(), t2.trim()],
+        direction: "forward",
+        span: 1,
+        features: { deflationStage: "progressive" }
+      };
+    }
+    const match = /んじゃない|んじゃないか|でしょ/.exec(t2);
+    if (match) {
+      return {
+        confidence: 0.8,
+        evidence: [match[0]],
+        direction: "forward",
+        span: 1,
+        features: { deflationStage: "initial", marker: match[0] }
+      };
+    }
+    return null;
+  }
+};
+var connectorCompounding = {
+  id: "seed-connector-compounding",
+  name: "Connector Compounding",
+  description: "Detects stacked filler-connector combinations (\u307E\u3001\u3060\u304B\u3089, \u307E\u3042\u3001\u305D\u3046\u3044\u3048\u3070) that compound discourse structure.",
+  relationshipType: "connector-compounding",
+  priority: 75,
+  examples: [
+    "\u307E\u3001\u3060\u304B\u3089",
+    "\u307E\u3042\u3001\u3060\u304B\u3089",
+    "\u307E\u3042\u305D\u308C\u3067",
+    "\u3060\u304B\u3089\u305D\u308C\u3067",
+    "\u3068\u3053\u308D\u3067",
+    "\u305D\u3046\u3044\u3048\u3070",
+    "\u305D\u308C\u3067\u8A00\u3046\u3068",
+    "\u3066\u3044\u3046\u304B\u3001\u3064\u307E\u308A",
+    "\u307E\u3042\u3001\u305D\u306E",
+    "\u307E\u3042\u3001\u306A\u3093\u304B",
+    "\u3060\u304B\u3089\u3001\u3048\u30FC\u3068",
+    "\u3048\u30FC\u3068\u3001\u3064\u307E\u308A",
+    "\u3042\u306E\u30FC\u3001\u305D\u308C\u3067",
+    "\u307E\u3042\u8A00\u3046\u3066\u307F\u308C\u3070",
+    "\u305D\u308C\u306F\u305D\u3046\u3068",
+    "\u3061\u306A\u307F\u306B",
+    "\u3064\u3044\u3067\u306B\u8A00\u3046\u3068"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index) {
+    const t2 = text(bits, index);
+    const match = /^(ま、?だから|まあ、?だから|まあそれで|だからそれで|ところで|そういえば|それで言うと|ていうか、?つまり|ちなみに|それはそうと|ついでに言うと)/.exec(t2.trim());
+    if (match) {
+      return {
+        confidence: 0.9,
+        evidence: [match[0]],
+        direction: "forward",
+        span: 1,
+        features: { connectorType: "stacked-filler", marker: match[0] }
+      };
+    }
+    return null;
+  }
+};
+var fuzzyReferenceChain = {
+  id: "seed-fuzzy-reference-chain",
+  name: "Fuzzy Reference Chain",
+  description: "Detects approximation-marked referential chains: \u3063\u307D\u3044\u3082\u306E\u3068\u304B, \u305D\u306E\u8FBA\u306E, \u3042\u305F\u308A\u306E, \u307F\u305F\u3044\u306A\u3082\u306E.",
+  relationshipType: "fuzzy-reference-chain",
+  priority: 60,
+  examples: [
+    "\u3063\u307D\u3044\u3082\u306E\u3068\u304B",
+    "\u305D\u306E\u8FBA\u306E",
+    "\u3042\u305F\u308A\u306E",
+    "\u7684\u306A\u3082\u306E",
+    "\u307F\u305F\u3044\u306A\u3082\u306E",
+    "\u305D\u3046\u3044\u3063\u305F",
+    "\u305D\u3046\u3044\u3046\u306E",
+    "\u305D\u3046\u3044\u3046\u3082\u306E",
+    "\u305D\u3093\u306A\u306E",
+    "\u305D\u3093\u306A\u611F\u3058\u306E",
+    "\u3042\u306E\u8FBA",
+    "\u305D\u306E\u624B\u306E",
+    "\u305D\u306E\u3042\u305F\u308A",
+    "\u307F\u305F\u3044\u306A\u306E",
+    "\u3063\u307D\u3044\u3084\u3064",
+    "\u7CFB\u306E\u3082\u306E",
+    "\u3063\u307D\u3044\u3082\u306E",
+    "\u3089\u3057\u3044\u3082\u306E",
+    "\u3068\u3044\u3046\u304B\u7CFB"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index) {
+    const t2 = text(bits, index);
+    const match = /っぽいものとか|その辺の|あたりの|的なもの|みたいなもの|そういった|そういうの|そんな感じ|その手の|そのあたり/.exec(t2);
+    if (match) {
+      return {
+        confidence: 0.85,
+        evidence: [match[0]],
+        direction: "forward",
+        span: 1,
+        features: { fuzzyMarker: match[0] }
+      };
+    }
+    return null;
+  }
+};
+var extendedReasoningStanceCap = {
+  id: "seed-extended-reasoning-stance-cap",
+  name: "Extended Reasoning \u2192 Stance Cap",
+  description: "Detects \u308F\u3051-capping constructions that close an extended reasoning sequence with an evaluative stance.",
+  relationshipType: "extended-reasoning-stance-cap",
+  priority: 80,
+  examples: [
+    "\u308F\u3051\u3060",
+    "\u308F\u3051\u3060\u3051\u3069",
+    "\u308F\u3051\u3067",
+    "\u308F\u3051\u3067\u3059",
+    "\u308F\u3051\u3058\u3083\u306A\u3044",
+    "\u308F\u3051\u3060\u304B\u3089",
+    "\u308F\u3051\u3067\u3059\u306D",
+    "\u308F\u3051\u3067\u3059\u3088",
+    "\u308F\u3051\u3067\u306F\u306A\u3044",
+    "\u3068\u3044\u3046\u308F\u3051\u3060",
+    "\u3068\u3044\u3046\u308F\u3051\u3067",
+    "\u305D\u3046\u3044\u3046\u308F\u3051\u3067",
+    "\u305D\u3046\u3044\u3046\u308F\u3051\u3060",
+    "\u3068\u3044\u3046\u308F\u3051\u3067\u3059",
+    "\u3063\u3066\u308F\u3051",
+    "\u3063\u3066\u308F\u3051\u3060",
+    "\u308F\u3051\u3067\u3082\u306A\u3044"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index) {
+    const t2 = text(bits, index);
+    const match = /わけだ|わけだけど|わけで|わけです|わけじゃない|わけだから|ってわけ/.exec(t2);
+    if (match) {
+      return {
+        confidence: 0.9,
+        evidence: [match[0]],
+        direction: "forward",
+        span: 1,
+        features: { stanceCap: match[0] }
+      };
+    }
+    return null;
+  }
+};
+var epistemicSpeculationCascade = {
+  id: "seed-epistemic-speculation-cascade",
+  name: "Epistemic Speculation Cascade",
+  description: "Detects \u304D\u3063\u3068/\u305F\u3076\u3093/\u3082\u3057\u304B\u3057\u3066 \u2192 \u306E\u304B\u3082\u3057\u308C\u306A\u3044 multi-bit speculation arcs.",
+  relationshipType: "epistemic-speculation-cascade",
+  priority: 75,
+  examples: [
+    "\u304D\u3063\u3068",
+    "\u305F\u3076\u3093",
+    "\u3082\u3057\u304B\u3057\u3066",
+    "\u304A\u305D\u3089\u304F",
+    "\u591A\u5206",
+    "\u306E\u304B\u3082\u3057\u308C\u306A\u3044",
+    "\u304B\u3082\u3057\u308C\u306A\u3044",
+    "\u304B\u3082",
+    "\u304B\u3082\u306A",
+    "\u304D\u3063\u3068\u305D\u3046",
+    "\u305F\u3076\u3093\u305D\u3046",
+    "\u3082\u3057\u304B\u3057\u305F\u3089",
+    "\u3072\u3087\u3063\u3068\u3057\u3066",
+    "\u3072\u3087\u3063\u3068\u3057\u305F\u3089",
+    "\u304B\u3082\u3057\u308C\u306A\u3044\u3051\u3069",
+    "\u304B\u3082\u3057\u308C\u306A\u3044\u306D",
+    "\u304B\u3082\u3057\u308C\u306A\u3044\u3088"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index, context) {
+    var _a, _b;
+    const t2 = text(bits, index);
+    if (/^きっと|^たぶん|^もしかして|^おそらく|^多分|^ひょっとして/.test(t2.trim())) {
+      const closeIdx = context.allTexts.findIndex((b) => /のかもしれない|かもしれない|かも/.test(b));
+      const hasClose = closeIdx >= 0;
+      return {
+        targetIndex: hasClose ? closeIdx : void 0,
+        confidence: hasClose ? 0.9 : 0.65,
+        evidence: [t2.trim()],
+        direction: "forward",
+        span: hasClose ? Math.abs(closeIdx - index) : 1,
+        features: { speculationAnchor: t2.trim(), hasClosure: hasClose }
+      };
+    }
+    if (/のかもしれない|かもしれない$/.test(t2.trim())) {
+      return {
+        confidence: 0.85,
+        evidence: [(_b = (_a = t2.match(/のかもしれない|かもしれない/)) == null ? void 0 : _a[0]) != null ? _b : "\u304B\u3082\u3057\u308C\u306A\u3044"],
+        direction: "forward",
+        span: 1,
+        features: { speculationClose: true }
+      };
+    }
+    return null;
+  }
+};
+var discourseFadeTrailOff = {
+  id: "seed-discourse-fade-trail-off",
+  name: "Discourse Fade / Trail-off",
+  description: "Detects fade-out and trail-off markers: == boundary, \u2026, \u306D\u3002, \u3088\u306D\u3002, \u304B\u306A\u3002, \u3060\u3051\u3069\u3002",
+  relationshipType: "discourse-fade-trail-off",
+  priority: 50,
+  examples: [
+    "==",
+    "\u2026",
+    "\u306D\u3002",
+    "\u3088\u306D\u3002",
+    "\u304B\u306A\u3002",
+    "\u3060\u3051\u3069\u3002",
+    "\u3051\u3069\u306D\u3002",
+    "\u3093\u3060\u3051\u3069\u306D",
+    "\u307F\u305F\u3044\u306A\u3002",
+    "\u3063\u3066\u611F\u3058\u3067\u3002",
+    "\u306A\u3093\u3067\u3059\u3051\u3069\u306D",
+    "\u3067\u3059\u3088\u306D",
+    "\u3067\u3059\u304B\u306D",
+    "\u3060\u3088\u306D",
+    "\u3058\u3083\u306A\u3044\u3067\u3059\u304B",
+    "\u304B\u306A",
+    "\u304B\u306A\u3042",
+    "\u3067\u3059\u304B\u306D\u3048",
+    "\u3067\u3059\u3088\u306D\u3048"
+  ],
+  createdFrom: "seed",
+  hitCount: 0,
+  detector(bits, index) {
+    const t2 = text(bits, index);
+    const match = /==|…$|…。$|ね。$|よね。$|かな。$|だけど。$|けどね。$/.exec(t2.trim());
+    if (match) {
+      return {
+        confidence: 0.95,
+        evidence: [match[0]],
+        direction: "forward",
+        span: 1,
+        features: { fadeMarker: match[0] }
+      };
+    }
+    return null;
+  }
+};
+function getSeedPatterns() {
+  return [
+    hedgeStanceSoftening,
+    splitMorphemeCoConstruction,
+    perspectiveFraming,
+    interactionalPivot,
+    epistemicContinuationBlend,
+    discontinuousParallel,
+    causalConcessive,
+    assertionDeflation,
+    connectorCompounding,
+    fuzzyReferenceChain,
+    extendedReasoningStanceCap,
+    epistemicSpeculationCascade,
+    discourseFadeTrailOff
+  ];
+}
+function buildSeedRegistry() {
+  const registry = new PatternRegistry();
+  for (const rule of getSeedPatterns()) {
+    registry.register(rule);
+  }
+  return registry;
+}
+
 // src/discourse/DiscourseAnalyzer.ts
 var _bitCounter = 0;
 var _edgeCounter = 0;
 var _graphCounter = 0;
 var _chunkCounter = 0;
+var _cascadeCounter = 0;
 function bitId() {
   return `bit_${++_bitCounter}_${Date.now()}`;
 }
@@ -13774,6 +14453,9 @@ function graphId() {
 }
 function chunkId() {
   return `chunk_${++_chunkCounter}_${Date.now()}`;
+}
+function cascadeId() {
+  return `cascade_${++_cascadeCounter}_${Date.now()}`;
 }
 function splitBits(raw) {
   const segments = [];
@@ -13787,125 +14469,13 @@ function splitBits(raw) {
   }
   return segments;
 }
-function tokenize(text) {
-  return text.split(/(?<=[はがをにでもとのへからまでよりか。、！？…])|(?=[はがをにでもとのへからまでよりか。、！？…])/).map((t2) => t2.trim()).filter((t2) => t2.length > 0);
+function tokenize(text2) {
+  return text2.split(/(?<=[はがをにでもとのへからまでよりか。、！？…])|(?=[はがをにでもとのへからまでよりか。、！？…])/).map((t2) => t2.trim()).filter((t2) => t2.length > 0);
 }
-var DETECTORS = {
-  /** 1. Hedge/Stance Softening — "ような感じ", "みたいな", "っぽい", "ようだ" */
-  "hedge-stance-softening": (bit) => {
-    if (/ような感じ|みたいな|っぽい|ようだ|ように|らしい|くらい|ぐらい/.test(bit)) {
-      return { type: "hedge-stance-softening", confidence: 0.9, evidence: bit, features: { marker: "\u3088\u3046\u306A/\u307F\u305F\u3044\u306A/\u3089\u3057\u3044" } };
-    }
-    return null;
-  },
-  /** 2. Split-Morpheme Co-construction — verb stem split across bits */
-  "split-morpheme-co-construction": (bit, prev) => {
-    if (prev && /[んいきしちにびみり]$/.test(prev.trim()) && /^[でてでても]/.test(bit.trim())) {
-      return { type: "split-morpheme-co-construction", confidence: 0.8, evidence: `${prev}||${bit}`, features: { splitType: "verb-stem" } };
-    }
-    if (/[いきしちにびみり]$/.test(bit.trim())) {
-      return { type: "split-morpheme-co-construction", confidence: 0.6, evidence: bit, features: { splitType: "potential-stem" } };
-    }
-    return null;
-  },
-  /** 3. Perspective Framing — "X的には", "的には", "的に" */
-  "perspective-framing": (bit) => {
-    if (/的には|的に|から見ると|としては|にとって|にとっては/.test(bit)) {
-      return { type: "perspective-framing", confidence: 0.85, evidence: bit, features: { frameType: "perspective" } };
-    }
-    return null;
-  },
-  /** 4. Interactional Pivot — single short realisation marker あ, え, へえ, うん, そう */
-  "interactional-pivot": (bit) => {
-    const trimmed = bit.trim().replace(/[。、！？…]/g, "");
-    if (/^(あ|え|えー|へえ|うん|そう|なるほど|ふーん|ほう|おー)$/.test(trimmed)) {
-      return { type: "interactional-pivot", confidence: 0.95, evidence: bit, features: { marker: trimmed } };
-    }
-    return null;
-  },
-  /** 5. Epistemic-Continuation Blend — んでると, ているのに, ながら + certainty */
-  "epistemic-continuation-blend": (bit) => {
-    if (/んでると|てると確かに|ながら確かに|ているのに|てるのに確かに/.test(bit)) {
-      return { type: "epistemic-continuation-blend", confidence: 0.85, evidence: bit, features: { blendType: "progressive-certainty" } };
-    }
-    return null;
-  },
-  /** 6. Discontinuous Parallel — があったり ... たりしてて (たり...たり pattern) */
-  "discontinuous-parallel": (bit, _prev, _next, allBits) => {
-    if (/があったり|[でし]たり/.test(bit)) {
-      const hasPartner = allBits.some((b) => b !== bit && /[でし]たり/.test(b));
-      if (hasPartner) {
-        return { type: "discontinuous-parallel", confidence: 0.9, evidence: bit, features: { pattern: "\u305F\u308A-\u305F\u308A" } };
-      }
-    }
-    return null;
-  },
-  /** 7. Causal-Concessive Cascade — から...んだけど, から...が, ので...が */
-  "causal-concessive-cascade": (bit, _prev, next) => {
-    if (/から$|ので$/.test(bit.trim()) && next && /けど|が$|のに$/.test(next.trim())) {
-      return { type: "causal-concessive-cascade", confidence: 0.85, evidence: `${bit} \u2192 ${next}`, features: { causalMarker: "\u304B\u3089/\u306E\u3067", concedeMarker: "\u3051\u3069/\u304C" } };
-    }
-    if (/んだけど|なんだけど|けれど/.test(bit)) {
-      return { type: "causal-concessive-cascade", confidence: 0.75, evidence: bit, features: { causalMarker: "\u3051\u3069" } };
-    }
-    return null;
-  },
-  /** 8. Assertion-Deflation — sequential modifiers weakening: んじゃない → ? → みたいな */
-  "assertion-deflation": (bit, prev) => {
-    if (/んじゃない|んじゃないか|でしょ/.test(bit)) {
-      return { type: "assertion-deflation", confidence: 0.8, evidence: bit, features: { deflationStage: "initial" } };
-    }
-    if (prev && /んじゃない/.test(prev) && /\?|みたいな|ような/.test(bit)) {
-      return { type: "assertion-deflation", confidence: 0.9, evidence: `${prev}\u2192${bit}`, features: { deflationStage: "progressive" } };
-    }
-    return null;
-  },
-  /** 9. Connector Compounding — ま、だからそれで言うと, そういえば, ところで */
-  "connector-compounding": (bit) => {
-    if (/^(ま、?だから|まあ、?だから|まあそれで|だからそれで|ところで|そういえば|それで言うと|ていうか、?つまり)/.test(bit.trim())) {
-      return { type: "connector-compounding", confidence: 0.9, evidence: bit, features: { connectorType: "stacked-filler" } };
-    }
-    return null;
-  },
-  /** 10. Fuzzy Reference Chain — X + っぽいものとか, あたりの, その辺の */
-  "fuzzy-reference-chain": (bit) => {
-    if (/っぽいものとか|その辺の|あたりの|的なもの|みたいなもの|そういった/.test(bit)) {
-      return { type: "fuzzy-reference-chain", confidence: 0.85, evidence: bit, features: { fuzzyMarker: "\u3063\u307D\u3044/\u305D\u306E\u8FBA/\u3042\u305F\u308A" } };
-    }
-    return null;
-  },
-  /** 11. Extended Reasoning → Stance Cap — わけだ, わけだけど, わけで */
-  "extended-reasoning-stance-cap": (bit) => {
-    if (/わけだ|わけだけど|わけで|わけです|わけじゃない/.test(bit)) {
-      return { type: "extended-reasoning-stance-cap", confidence: 0.9, evidence: bit, features: { stanceCap: "\u308F\u3051" } };
-    }
-    return null;
-  },
-  /** 12. Epistemic Speculation Cascade — きっと...のかもしれない, たぶん...かも */
-  "epistemic-speculation-cascade": (bit, _prev, _next, allBits) => {
-    if (/^きっと|^たぶん|^もしかして/.test(bit.trim())) {
-      const hasClose = allBits.some((b) => /のかもしれない|かもしれない|かも/.test(b));
-      return {
-        type: "epistemic-speculation-cascade",
-        confidence: hasClose ? 0.9 : 0.65,
-        evidence: bit,
-        features: { speculationAnchor: bit.trim(), hasClosure: hasClose }
-      };
-    }
-    if (/のかもしれない|かもしれない$/.test(bit.trim())) {
-      return { type: "epistemic-speculation-cascade", confidence: 0.85, evidence: bit, features: { speculationClose: true } };
-    }
-    return null;
-  },
-  /** 13. Discourse Fade/Trail-off — == marker or sentence-ending …, trail particles */
-  "discourse-fade-trail-off": (bit) => {
-    if (/==|…$|…。$|ね。$|よね。$|かな。$|だけど。$/.test(bit.trim())) {
-      return { type: "discourse-fade-trail-off", confidence: 0.95, evidence: bit, features: { fadeMarker: "==/\u2026/\u306D" } };
-    }
-    return null;
-  }
-};
 var DiscourseAnalyzer = class {
+  constructor(registry) {
+    this.registry = registry != null ? registry : buildSeedRegistry();
+  }
   /**
    * Parse a raw annotated string (with || delimiters) into a DiscourseGraph.
    * Optionally pass a timestamp string (e.g. "[08:15]").
@@ -13913,25 +14483,42 @@ var DiscourseAnalyzer = class {
   analyze(raw, timestamp, source = "manual") {
     const segments = splitBits(raw);
     const texts = segments.map((s) => s.text);
+    const stubBits = segments.map((seg, i) => ({
+      id: `stub_${i}`,
+      text: seg.text,
+      startOffset: seg.start,
+      endOffset: seg.end,
+      timestamp,
+      bitType: "unknown",
+      morphemes: [],
+      features: {}
+    }));
+    const context = {
+      allBits: stubBits,
+      allTexts: texts,
+      graphSoFar: { bits: stubBits, edges: [] }
+    };
     const bits = segments.map((seg, i) => {
-      var _a, _b, _c, _d;
-      const detected = this.detectBitType(seg.text, (_a = texts[i - 1]) != null ? _a : null, (_b = texts[i + 1]) != null ? _b : null, texts);
+      var _a, _b;
+      const best = this.runDetectorsOnContext(stubBits, i, context);
       return {
         id: bitId(),
         text: seg.text,
         startOffset: seg.start,
         endOffset: seg.end,
         timestamp,
-        bitType: (_c = detected == null ? void 0 : detected.type) != null ? _c : "unknown",
+        bitType: (_a = best == null ? void 0 : best.rule.relationshipType) != null ? _a : "unknown",
         morphemes: tokenize(seg.text),
-        features: (_d = detected == null ? void 0 : detected.features) != null ? _d : {}
+        features: (_b = best == null ? void 0 : best.match.features) != null ? _b : {}
       };
     });
     const edges = this.buildEdges(bits, texts);
+    const cascades = this.detectCascades(bits, edges);
     return {
       id: graphId(),
       bits,
       edges,
+      cascades,
       source,
       timestamp,
       createdAt: Date.now()
@@ -13958,47 +14545,91 @@ var DiscourseAnalyzer = class {
     }
     return chunks;
   }
-  detectBitType(text, prev, next, all) {
+  /**
+   * Run all registry rules (priority-sorted) against one bit position.
+   * Returns the highest-confidence result and increments hitCount on winner.
+   */
+  runDetectorsOnContext(bits, index, context) {
+    const rules = this.registry.getAll();
     let best = null;
-    for (const detector of Object.values(DETECTORS)) {
-      const result = detector(text, prev, next, all);
-      if (result && (!best || result.confidence > best.confidence)) {
-        best = result;
+    for (const rule of rules) {
+      const result = rule.detector(bits, index, context);
+      if (result && (!best || result.confidence > best.match.confidence)) {
+        best = { rule, match: result };
       }
+    }
+    if (best) {
+      best.rule.hitCount++;
     }
     return best;
   }
-  buildEdges(bits, _texts) {
+  buildEdges(bits, texts) {
     const edges = [];
+    const context = {
+      allBits: bits,
+      allTexts: texts,
+      graphSoFar: { bits, edges: [] }
+    };
+    const rules = this.registry.getAll();
     for (let i = 0; i < bits.length; i++) {
       const current = bits[i];
       if (i + 1 < bits.length) {
-        const next = bits[i + 1];
-        edges.push(this.makeEdge(current, next, 1, "sequential-adjacency", 0.7, "adjacent bits"));
+        edges.push(this.makeEdge(current, bits[i + 1], 1, "sequential-adjacency", 0.7, ["adjacent bits"]));
       }
-      if (current.bitType === "discontinuous-parallel") {
-        for (let j = i + 2; j < bits.length; j++) {
-          if (bits[j].bitType === "discontinuous-parallel") {
-            edges.push(this.makeEdge(current, bits[j], j - i, "discontinuous-parallel", 0.85, "\u305F\u308A-\u305F\u308A span"));
-            break;
+      for (const rule of rules) {
+        const result = rule.detector(bits, i, context);
+        if (!result)
+          continue;
+        if (result.targetIndex !== void 0 && result.targetIndex !== i && result.targetIndex < bits.length) {
+          const distance = Math.abs(result.targetIndex - i);
+          if (distance > 1) {
+            edges.push(
+              this.makeEdge(bits[i], bits[result.targetIndex], distance, rule.relationshipType, result.confidence, result.evidence)
+            );
           }
-        }
-      }
-      if (/^きっと|^たぶん/.test(current.text.trim())) {
-        for (let j = i + 1; j < bits.length; j++) {
-          if (/のかもしれない|かもしれない/.test(bits[j].text)) {
-            edges.push(this.makeEdge(current, bits[j], j - i, "epistemic-speculation-cascade", 0.9, "speculation span"));
-            break;
-          }
-        }
-      }
-      if (/から$|ので$/.test(current.text.trim())) {
-        if (i + 1 < bits.length && /けど|が$/.test(bits[i + 1].text.trim())) {
-          edges.push(this.makeEdge(current, bits[i + 1], 1, "causal-concessive-cascade", 0.88, "\u304B\u3089\u2192\u3051\u3069"));
         }
       }
     }
     return edges;
+  }
+  /** Find chains of 3+ connected non-adjacency edges and build DiscourseCascade objects. */
+  detectCascades(bits, edges) {
+    const cascades = [];
+    const adjMap = /* @__PURE__ */ new Map();
+    for (const edge of edges) {
+      if (edge.relationshipType === "sequential-adjacency")
+        continue;
+      if (!adjMap.has(edge.sourceId))
+        adjMap.set(edge.sourceId, []);
+      adjMap.get(edge.sourceId).push(edge);
+    }
+    const usedChains = /* @__PURE__ */ new Set();
+    const dfs = (currentBitId, chain) => {
+      var _a;
+      const outEdges = (_a = adjMap.get(currentBitId)) != null ? _a : [];
+      for (const edge of outEdges) {
+        chain.push(edge);
+        if (chain.length >= 3) {
+          const chainKey = chain.map((e) => e.id).join("\0");
+          if (!usedChains.has(chainKey)) {
+            usedChains.add(chainKey);
+            const types = chain.map((e) => e.relationshipType);
+            cascades.push({
+              id: cascadeId(),
+              relationships: chain.map((e) => e.id),
+              cascadeType: determineCascadeType(types),
+              overallFunction: describeCascadeFunction(types)
+            });
+          }
+        }
+        dfs(edge.targetId, chain);
+        chain.pop();
+      }
+    };
+    for (const bit of bits) {
+      dfs(bit.id, []);
+    }
+    return cascades;
   }
   makeEdge(source, target, distance, type, confidence, evidence) {
     return {
@@ -14013,11 +14644,61 @@ var DiscourseAnalyzer = class {
       metadata: {}
     };
   }
-  /** Register a new relationship type at runtime. */
+  /** Register a new relationship type at runtime (keeps RelationshipRegistry in sync). */
   registerType(type) {
     RelationshipRegistry.register(type);
   }
+  /** Register a full PatternRule (and its type) at runtime. */
+  registerRule(rule) {
+    this.registry.register(rule);
+  }
 };
+function determineCascadeType(types) {
+  const typeSet = new Set(types);
+  if (typeSet.has("epistemic-speculation-cascade") && typeSet.has("hedge-stance-softening")) {
+    return "speculation-hedge-cascade";
+  }
+  if (typeSet.has("causal-concessive-cascade") && typeSet.has("connector-compounding")) {
+    return "causal-connector-cascade";
+  }
+  if (typeSet.has("assertion-deflation") && typeSet.has("discourse-fade-trail-off")) {
+    return "deflation-fade-cascade";
+  }
+  if (typeSet.has("extended-reasoning-stance-cap") && typeSet.has("perspective-framing")) {
+    return "reasoning-perspective-cascade";
+  }
+  if (typeSet.has("epistemic-continuation-blend") && typeSet.has("epistemic-speculation-cascade")) {
+    return "epistemic-blend-speculation-cascade";
+  }
+  if (typeSet.has("hedge-stance-softening") && typeSet.has("split-morpheme-co-construction")) {
+    return "hedge-coconstruction-cascade";
+  }
+  const unique = [...new Set(types)];
+  return unique.slice(0, 2).join("-") + "-cascade";
+}
+function describeCascadeFunction(types) {
+  const typeSet = new Set(types);
+  if (typeSet.has("epistemic-speculation-cascade") && typeSet.has("hedge-stance-softening")) {
+    return "Speaker builds layered epistemic hedging through speculation then stance softening";
+  }
+  if (typeSet.has("causal-concessive-cascade") && typeSet.has("connector-compounding")) {
+    return "Stacked connectors navigate a causal-concessive argument while managing face";
+  }
+  if (typeSet.has("assertion-deflation") && typeSet.has("discourse-fade-trail-off")) {
+    return "Confident assertion progressively deflated toward fade/trail-off for social harmony";
+  }
+  if (typeSet.has("extended-reasoning-stance-cap") && typeSet.has("perspective-framing")) {
+    return "Extended reasoning framed by perspective and capped with evaluative stance";
+  }
+  if (typeSet.has("epistemic-continuation-blend") && typeSet.has("epistemic-speculation-cascade")) {
+    return "Progressive epistemic certainty blended into broader speculation arc";
+  }
+  if (typeSet.has("hedge-stance-softening") && typeSet.has("split-morpheme-co-construction")) {
+    return "Tentative stance co-constructed across bit boundaries";
+  }
+  const unique = [...new Set(types)];
+  return `Emergent meaning from chained ${unique.join(", ")} relationships`;
+}
 
 // src/ui/DiscourseCardView.ts
 var import_obsidian8 = require("obsidian");
@@ -14131,10 +14812,10 @@ var DiscourseCardView = class extends import_obsidian8.ItemView {
   }
   runAnalysis() {
     var _a, _b;
-    const text = (_b = (_a = this.textArea) == null ? void 0 : _a.value) != null ? _b : "";
-    if (!text.trim())
+    const text2 = (_b = (_a = this.textArea) == null ? void 0 : _a.value) != null ? _b : "";
+    if (!text2.trim())
       return;
-    this.currentGraph = this.analyzer.analyze(text);
+    this.currentGraph = this.analyzer.analyze(text2);
     this.renderGraph();
   }
   renderGraph() {
@@ -14270,13 +14951,3151 @@ var ContextLexiconView = class extends import_obsidian9.ItemView {
   }
 };
 
+// src/tategaki/register.ts
+var import_obsidian12 = require("obsidian");
+
+// src/tategaki/settings.ts
+var DEFAULT_TATEGAKI_SETTINGS = {
+  enabled: true,
+  fontSize: 19,
+  lineHeight: 1.85,
+  fontFamily: "mincho",
+  customFontFamily: "",
+  padding: 18,
+  paperTexture: false,
+  showFurigana: true,
+  tateChuYoko: true,
+  uprightLatin: false,
+  boutenForBold: true,
+  pageMode: "scroll",
+  showToolbar: true,
+  tapZones: true,
+  pinchZoom: true,
+  followActiveFile: true,
+  rememberPosition: true,
+  hapticFeedback: true,
+  tapToLookup: true,
+  highlightCollocations: true,
+  maxHighlightEntries: 4e3,
+  editorVerticalMode: false,
+  chunkSize: 4e3,
+  positions: {}
+};
+var FONT_SIZE_MIN = 12;
+var FONT_SIZE_MAX = 40;
+var LINE_HEIGHT_MIN = 1.2;
+var LINE_HEIGHT_MAX = 3;
+function clampNumber(value, min, max, fallback) {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n))
+    return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+function normaliseSettings(raw) {
+  const stored = raw && typeof raw === "object" ? raw : {};
+  const merged = { ...DEFAULT_TATEGAKI_SETTINGS, ...stored };
+  merged.fontSize = clampNumber(merged.fontSize, FONT_SIZE_MIN, FONT_SIZE_MAX, DEFAULT_TATEGAKI_SETTINGS.fontSize);
+  merged.lineHeight = clampNumber(merged.lineHeight, LINE_HEIGHT_MIN, LINE_HEIGHT_MAX, DEFAULT_TATEGAKI_SETTINGS.lineHeight);
+  merged.padding = clampNumber(merged.padding, 0, 80, DEFAULT_TATEGAKI_SETTINGS.padding);
+  merged.maxHighlightEntries = clampNumber(merged.maxHighlightEntries, 0, 5e4, DEFAULT_TATEGAKI_SETTINGS.maxHighlightEntries);
+  merged.chunkSize = clampNumber(merged.chunkSize, 500, 5e4, DEFAULT_TATEGAKI_SETTINGS.chunkSize);
+  if (merged.pageMode !== "scroll" && merged.pageMode !== "page") {
+    merged.pageMode = DEFAULT_TATEGAKI_SETTINGS.pageMode;
+  }
+  if (merged.fontFamily !== "mincho" && merged.fontFamily !== "gothic" && merged.fontFamily !== "custom") {
+    merged.fontFamily = DEFAULT_TATEGAKI_SETTINGS.fontFamily;
+  }
+  if (!merged.positions || typeof merged.positions !== "object") {
+    merged.positions = {};
+  }
+  return merged;
+}
+async function loadTategakiSettings(plugin) {
+  var _a;
+  const host = plugin;
+  const inline = (_a = host.settings) == null ? void 0 : _a["tategaki"];
+  if (inline !== void 0)
+    return normaliseSettings(inline);
+  try {
+    const data = await plugin.loadData();
+    return normaliseSettings(data == null ? void 0 : data["tategaki"]);
+  } catch (e) {
+    return { ...DEFAULT_TATEGAKI_SETTINGS };
+  }
+}
+async function saveTategakiSettings(plugin, settings) {
+  var _a;
+  const host = plugin;
+  if (host.settings && typeof host.settings === "object") {
+    host.settings["tategaki"] = settings;
+    if (typeof host.saveSettings === "function") {
+      await host.saveSettings();
+      return;
+    }
+  }
+  try {
+    const data = (_a = await plugin.loadData()) != null ? _a : {};
+    data["tategaki"] = settings;
+    await plugin.saveData(data);
+  } catch (e) {
+  }
+}
+
+// src/tategaki/styles.ts
+var TATEGAKI_STYLE_ID = "jp-tategaki-styles";
+var TATEGAKI_CSS = `
+/* \u2500\u2500 View shell (horizontal \u2014 only .jp-tg-canvas is vertical) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tategaki-view {
+  --jp-tg-fs: 19px;
+  --jp-tg-lh: 1.85;
+  --jp-tg-pad: 18px;
+  --jp-tg-ff: "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP",
+              "Source Han Serif JP", "IPAmjMincho", serif;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  background: var(--background-primary);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.jp-tategaki-view.jp-tg--gothic {
+  --jp-tg-ff: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP",
+              "Source Han Sans JP", sans-serif;
+}
+
+.jp-tategaki-view.jp-tg--paper .jp-tg-canvas {
+  background: var(--background-primary-alt);
+}
+
+/* \u2500\u2500 Toolbar: every control is a 44px touch target \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tg-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  padding-top: max(6px, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  flex: 0 0 auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.jp-tg-toolbar::-webkit-scrollbar { display: none; }
+.jp-tg-toolbar.is-hidden { display: none; }
+
+.jp-tg-btn {
+  min-width: 44px;
+  min-height: 40px;
+  padding: 0 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 6px);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small, 13px);
+  font-family: var(--font-interface);
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.jp-tg-btn:active { background: var(--background-modifier-hover); }
+.jp-tg-btn.is-active {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border-color: var(--interactive-accent);
+}
+.jp-tg-btn.is-disabled { opacity: 0.4; pointer-events: none; }
+
+.jp-tg-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 6px;
+  font-size: var(--font-ui-smaller, 12px);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* \u2500\u2500 Stage + vertical canvas \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tg-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.jp-tg-canvas {
+  writing-mode: vertical-rl;
+  -webkit-writing-mode: vertical-rl;
+  text-orientation: mixed;
+  -webkit-text-orientation: mixed;
+  height: 100%;
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  /* We handle pinch ourselves (it resizes the type, it does not zoom the page),
+     so only horizontal panning is handed to the browser. */
+  touch-action: pan-x;
+  scrollbar-width: none;
+  padding: var(--jp-tg-pad);
+  padding-bottom: max(var(--jp-tg-pad), env(safe-area-inset-bottom));
+  padding-top: max(var(--jp-tg-pad), env(safe-area-inset-top));
+  font-family: var(--jp-tg-ff);
+  font-size: var(--jp-tg-fs);
+  line-height: var(--jp-tg-lh);
+  color: var(--text-normal);
+  font-feature-settings: "vert" 1, "vrt2" 1, "palt" 0;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.jp-tg-canvas::-webkit-scrollbar { display: none; }
+
+/* Paging is driven from JS (ScrollController): CSS scroll-snap would pin the
+   scroller to the sentinels, and CSS smooth scrolling would animate the
+   scrollLeft probes used to measure the scroll range. */
+.jp-tg-canvas.jp-tg--paged { scroll-snap-stop: normal; }
+
+/* Horizontal fallback when the vertical mode is switched off. */
+.jp-tg-canvas.jp-tg--horizontal {
+  writing-mode: horizontal-tb;
+  -webkit-writing-mode: horizontal-tb;
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.jp-tg-content { height: 100%; }
+.jp-tg-canvas.jp-tg--horizontal .jp-tg-content { height: auto; }
+
+.jp-tg-sentinel {
+  display: inline-block;
+  inline-size: 0;
+  block-size: 0;
+}
+
+/* \u2500\u2500 Blocks (logical properties: they follow the writing mode) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tg-para {
+  margin: 0;
+  padding: 0;
+}
+
+.jp-tg-para.jp-tg--indent { text-indent: 1em; }
+
+.jp-tg-h {
+  margin-block: 0.4em;
+  font-weight: 600;
+  color: var(--text-normal);
+  letter-spacing: 0.08em;
+}
+
+.jp-tg-h1 { font-size: 1.5em; }
+.jp-tg-h2 { font-size: 1.32em; }
+.jp-tg-h3 { font-size: 1.18em; }
+.jp-tg-h4, .jp-tg-h5, .jp-tg-h6 { font-size: 1.06em; }
+
+.jp-tg-quote {
+  padding-inline-start: 1.2em;
+  border-inline-start: 2px solid var(--background-modifier-border);
+  color: var(--text-muted);
+}
+
+.jp-tg-li {
+  padding-inline-start: 0.4em;
+  margin: 0;
+}
+
+.jp-tg-li-marker { color: var(--text-muted); }
+
+.jp-tg-rule {
+  inline-size: 100%;
+  block-size: 1px;
+  margin-block: 1em;
+  background: var(--background-modifier-border);
+}
+
+.jp-tg-spacer { block-size: 0.9em; }
+
+/* Code and images become horizontal islands inside the vertical flow. */
+.jp-tg-codeblock {
+  writing-mode: horizontal-tb;
+  -webkit-writing-mode: horizontal-tb;
+  display: block;
+  width: min(78vw, 30em);
+  max-height: 100%;
+  overflow: auto;
+  margin-block: 0.6em;
+  padding: 8px 10px;
+  border-radius: var(--radius-s, 6px);
+  background: var(--background-secondary);
+  font-family: var(--font-monospace);
+  font-size: 0.8em;
+  line-height: 1.5;
+  white-space: pre;
+  -webkit-overflow-scrolling: touch;
+}
+
+.jp-tg-code {
+  writing-mode: horizontal-tb;
+  -webkit-writing-mode: horizontal-tb;
+  display: inline-block;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--background-secondary);
+  font-family: var(--font-monospace);
+  font-size: 0.82em;
+  vertical-align: middle;
+}
+
+.jp-tg-img {
+  display: block;
+  max-height: 100%;
+  max-width: 70vw;
+  margin-block: 0.6em;
+  border-radius: var(--radius-s, 6px);
+}
+
+.jp-tg-img-alt {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: var(--radius-s, 6px);
+  color: var(--text-muted);
+  font-size: 0.8em;
+}
+
+/* \u2500\u2500 Inline typography \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tg-canvas ruby { ruby-position: over; -webkit-ruby-position: before; }
+
+.jp-tg-canvas rt {
+  font-size: 0.5em;
+  line-height: 1.1;
+  letter-spacing: 0;
+  color: inherit;
+  text-emphasis: none;
+  -webkit-text-emphasis: none;
+  font-weight: normal;
+}
+
+.jp-tategaki-view.jp-tg--no-ruby rt { display: none; }
+
+.jp-tg-tcy {
+  text-combine-upright: all;
+  -webkit-text-combine: horizontal;
+  letter-spacing: 0;
+}
+
+.jp-tategaki-view.jp-tg--upright .jp-tg-canvas {
+  text-orientation: upright;
+  -webkit-text-orientation: upright;
+}
+
+.jp-tg-bold { font-weight: 700; }
+
+/* \u570F\u70B9 \u2014 the tategaki convention for emphasis, drawn on the right of the column. */
+.jp-tategaki-view.jp-tg--bouten .jp-tg-bold {
+  font-weight: inherit;
+  text-emphasis: filled sesame currentColor;
+  -webkit-text-emphasis: filled sesame currentColor;
+  text-emphasis-position: over right;
+  -webkit-text-emphasis-position: over right;
+}
+
+.jp-tg-italic { font-style: italic; }
+.jp-tg-strike { text-decoration: line-through; }
+
+.jp-tg-mark {
+  background: var(--text-highlight-bg, rgba(255, 208, 0, 0.35));
+  border-radius: 2px;
+}
+
+.jp-tg-link {
+  color: var(--text-accent);
+  text-decoration: underline;
+  text-underline-position: right;
+  cursor: pointer;
+}
+
+/* \u2500\u2500 Collocation hits from the lexicon \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tg-colloc {
+  text-decoration: underline dotted;
+  text-decoration-color: var(--text-accent);
+  text-underline-position: right;
+  text-decoration-thickness: 1.5px;
+  cursor: pointer;
+}
+
+.jp-tg-colloc.is-active {
+  background: var(--text-selection, rgba(120, 170, 255, 0.28));
+  border-radius: 3px;
+}
+
+.jp-tg-tap-flash {
+  background: var(--text-selection, rgba(120, 170, 255, 0.28));
+  border-radius: 3px;
+}
+
+/* \u2500\u2500 Progress meter \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tg-progress {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  padding-bottom: max(4px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  font-size: var(--font-ui-smaller, 12px);
+  color: var(--text-muted);
+}
+
+.jp-tg-progress-track {
+  flex: 1 1 auto;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--background-modifier-border);
+  overflow: hidden;
+}
+
+.jp-tg-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--interactive-accent);
+  transition: width 0.12s linear;
+}
+
+.jp-tg-progress-label { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+
+/* \u2500\u2500 Bottom sheet (lookup / edit) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tg-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  max-height: 62%;
+  background: var(--background-primary);
+  border-top: 1px solid var(--background-modifier-border);
+  border-radius: 12px 12px 0 0;
+  box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.22);
+  transform: translateY(102%);
+  transition: transform 0.18s ease-out;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.jp-tg-sheet.is-open { transform: translateY(0); }
+.jp-tg-sheet.is-dragging { transition: none; }
+
+.jp-tg-sheet-grip {
+  flex: 0 0 auto;
+  padding: 8px 0 4px;
+  display: flex;
+  justify-content: center;
+  touch-action: none;
+  cursor: grab;
+}
+
+.jp-tg-sheet-grip::after {
+  content: "";
+  width: 38px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--background-modifier-border);
+}
+
+.jp-tg-sheet-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.jp-tg-sheet-term {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jp-tg-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 8px 12px 12px;
+}
+
+.jp-tg-sheet-empty {
+  padding: 18px 4px;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: var(--font-ui-small, 13px);
+}
+
+/* \u2500\u2500 Lookup result cards \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tg-card {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-secondary);
+}
+
+.jp-tg-card-phrase {
+  font-size: 1.08rem;
+  font-weight: 600;
+  color: var(--text-normal);
+  margin-bottom: 2px;
+}
+
+.jp-tg-card-reading {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.jp-tg-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.jp-tg-tag {
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: var(--background-modifier-border);
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.jp-tg-card-example {
+  font-size: 0.86rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin-top: 2px;
+}
+
+.jp-tg-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+/* \u2500\u2500 Edit sheet (horizontal writing \u2014 mobile IME behaves there) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tg-edit-area {
+  width: 100%;
+  min-height: 34vh;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s, 6px);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-text, inherit);
+  font-size: 16px; /* keeps iOS from zooming the webview on focus */
+  line-height: 1.7;
+  resize: vertical;
+}
+
+/* \u2500\u2500 Overlay hints \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tg-hint {
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  z-index: 15;
+  padding: 5px 12px;
+  border-radius: 14px;
+  background: var(--background-secondary-alt, var(--background-secondary));
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller, 12px);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.16s;
+}
+
+.jp-tg-hint.is-visible { opacity: 0.94; }
+
+.jp-tg-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 24px;
+  color: var(--text-muted);
+  text-align: center;
+  font-size: var(--font-ui-small, 13px);
+}
+
+/* \u2500\u2500 Reading-view code block: \`\`\`tategaki \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tg-embed {
+  writing-mode: vertical-rl;
+  -webkit-writing-mode: vertical-rl;
+  text-orientation: mixed;
+  height: 60vh;
+  max-height: 70vh;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  padding: 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m, 8px);
+  background: var(--background-primary-alt);
+  font-family: var(--jp-tg-ff, "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif);
+  line-height: 1.85;
+}
+
+.jp-tg-embed::-webkit-scrollbar { display: none; }
+
+.jp-tg-embed.jp-tg--horizontal {
+  writing-mode: horizontal-tb;
+  -webkit-writing-mode: horizontal-tb;
+  height: auto;
+  max-height: none;
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: auto;
+}
+
+.jp-tg-embed.jp-tg--horizontal .jp-tg-content { height: auto; }
+
+/* \u2500\u2500 Optional: vertical mode for the markdown editor / reading view \u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+.jp-tg-editor-vertical .markdown-preview-section,
+.jp-tg-editor-vertical .markdown-source-view.mod-cm6 .cm-contentContainer {
+  writing-mode: vertical-rl;
+  -webkit-writing-mode: vertical-rl;
+  text-orientation: mixed;
+  height: 100%;
+}
+
+.jp-tg-editor-vertical .markdown-preview-view,
+.jp-tg-editor-vertical .markdown-source-view.mod-cm6 .cm-scroller {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* \u2500\u2500 Phone-sized screens \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
+@media (max-width: 620px) {
+  .jp-tategaki-view { --jp-tg-pad: 14px; }
+  .jp-tg-sheet { max-height: 70%; }
+  .jp-tg-btn { min-height: 44px; }
+  .jp-tg-codeblock { width: 84vw; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jp-tg-sheet { transition: none; }
+  .jp-tg-progress-fill { transition: none; }
+}
+`;
+function injectTategakiStyles(doc = document) {
+  if (doc.getElementById(TATEGAKI_STYLE_ID))
+    return;
+  const style = doc.createElement("style");
+  style.id = TATEGAKI_STYLE_ID;
+  style.textContent = TATEGAKI_CSS;
+  doc.head.appendChild(style);
+}
+function removeTategakiStyles(doc = document) {
+  var _a;
+  (_a = doc.getElementById(TATEGAKI_STYLE_ID)) == null ? void 0 : _a.remove();
+}
+
+// src/tategaki/collocation-bridge.ts
+var KANA_RE = /[ぁ-ゟ゠-ヿー]/;
+var SENTENCE_BREAK_RE = /[。、．，！？!?「」『』（）()\s]/;
+var PhraseMatcher = class {
+  constructor() {
+    this.buckets = /* @__PURE__ */ new Map();
+    this.phraseCount = 0;
+  }
+  /** Register a phrase. Trailing-kana phrases also match conjugated forms. */
+  add(phrase, entryId, minLength = 2) {
+    var _a;
+    const clean = phrase == null ? void 0 : phrase.trim();
+    if (!clean || clean.length < minLength)
+      return;
+    const head = clean[0];
+    const bucket = (_a = this.buckets.get(head)) != null ? _a : [];
+    const existing = bucket.find((b) => b.phrase === clean);
+    if (existing) {
+      if (entryId && !existing.ids.includes(entryId))
+        existing.ids.push(entryId);
+      return;
+    }
+    const conjugable = clean.length >= 3 && KANA_RE.test(clean[clean.length - 1]);
+    bucket.push({ phrase: clean, ids: entryId ? [entryId] : [], conjugable });
+    bucket.sort((a, b) => b.phrase.length - a.phrase.length);
+    this.buckets.set(head, bucket);
+    this.phraseCount++;
+  }
+  size() {
+    return this.phraseCount;
+  }
+  isEmpty() {
+    return this.phraseCount === 0;
+  }
+  /** Non-overlapping, longest-first matches over `text`. */
+  match(text2) {
+    if (this.phraseCount === 0 || !text2)
+      return [];
+    const hits = [];
+    let i = 0;
+    while (i < text2.length) {
+      const bucket = this.buckets.get(text2[i]);
+      if (!bucket) {
+        i++;
+        continue;
+      }
+      let matched = null;
+      for (const candidate of bucket) {
+        const { phrase, conjugable } = candidate;
+        if (text2.startsWith(phrase, i)) {
+          matched = { start: i, end: i + phrase.length, phrase, entryIds: candidate.ids };
+          break;
+        }
+        if (conjugable) {
+          const stem = phrase.slice(0, -1);
+          if (stem.length >= 2 && text2.startsWith(stem, i)) {
+            const end = this.extendOverInflection(text2, i + stem.length);
+            if (end > i + stem.length) {
+              matched = { start: i, end, phrase, entryIds: candidate.ids };
+              break;
+            }
+          }
+        }
+      }
+      if (matched) {
+        hits.push(matched);
+        i = matched.end;
+      } else {
+        i++;
+      }
+    }
+    return hits;
+  }
+  /** Consume the kana tail of a conjugated form (吹い-た, 吹き-ました, …). */
+  extendOverInflection(text2, from) {
+    let end = from;
+    const limit = Math.min(text2.length, from + 5);
+    while (end < limit) {
+      const ch = text2[end];
+      if (!KANA_RE.test(ch) || SENTENCE_BREAK_RE.test(ch))
+        break;
+      end++;
+    }
+    return end;
+  }
+};
+var CollocationBridge = class {
+  constructor(getHost) {
+    this.matcherCache = null;
+    this.matcherStamp = "";
+    this.expandForms = null;
+    this.getHost = getHost;
+  }
+  /** True when a lexicon is reachable — the UI hides lookup affordances otherwise. */
+  isAvailable() {
+    var _a, _b, _c;
+    const host = this.getHost();
+    return Boolean(((_a = host == null ? void 0 : host.store) == null ? void 0 : _a.getAll) || ((_b = host == null ? void 0 : host.engine) == null ? void 0 : _b.quickSearch) || ((_c = host == null ? void 0 : host.engine) == null ? void 0 : _c.search));
+  }
+  /**
+   * Optional hook for `src/utils/grammar.ts`: pass a function that expands a
+   * phrase into its conjugated forms and the matcher will use it instead of the
+   * built-in kana-tail heuristic. Left unset, the heuristic applies.
+   */
+  setFormExpander(expander) {
+    this.expandForms = expander;
+    this.invalidate();
+  }
+  /** Drop the cached matcher — call after the lexicon changes. */
+  invalidate() {
+    this.matcherCache = null;
+    this.matcherStamp = "";
+  }
+  entries() {
+    var _a, _b, _c;
+    const store = (_a = this.getHost()) == null ? void 0 : _a.store;
+    try {
+      return (_c = (_b = store == null ? void 0 : store.getAll) == null ? void 0 : _b.call(store)) != null ? _c : [];
+    } catch (e) {
+      return [];
+    }
+  }
+  /** Build (or reuse) the phrase matcher for the current lexicon contents. */
+  getMatcher(options = {}) {
+    var _a, _b, _c, _d;
+    const maxEntries = (_a = options.maxEntries) != null ? _a : 4e3;
+    const minLength = (_b = options.minPhraseLength) != null ? _b : 2;
+    const entries = this.entries();
+    const stamp = `${entries.length}:${maxEntries}:${minLength}:${this.expandForms ? "x" : "-"}`;
+    if (this.matcherCache && this.matcherStamp === stamp)
+      return this.matcherCache;
+    const matcher = new PhraseMatcher();
+    const capped = entries.length > maxEntries ? entries.slice(0, maxEntries) : entries;
+    for (const entry2 of capped) {
+      const phrase = entry2.fullPhrase || `${(_c = entry2.headword) != null ? _c : ""}${(_d = entry2.collocate) != null ? _d : ""}`;
+      matcher.add(phrase, entry2.id, minLength);
+      if (this.expandForms) {
+        for (const form of this.expandForms(phrase))
+          matcher.add(form, entry2.id, minLength);
+      }
+    }
+    this.matcherCache = matcher;
+    this.matcherStamp = stamp;
+    return matcher;
+  }
+  /** Resolve entry ids recorded on a highlight back to entries. */
+  entriesByIds(ids) {
+    if (ids.length === 0)
+      return [];
+    const wanted = new Set(ids);
+    return this.entries().filter((entry2) => entry2.id && wanted.has(entry2.id));
+  }
+  /**
+   * Look a tapped string up. Tries, in order: exact headword, the search
+   * engine, then a substring sweep of the lexicon.
+   */
+  lookup(term, maxResults = 12) {
+    var _a, _b, _c, _d, _e, _f, _g;
+    const query = term.trim();
+    if (!query)
+      return [];
+    const host = this.getHost();
+    const results = [];
+    const seen = /* @__PURE__ */ new Set();
+    const push = (entry2) => {
+      var _a2, _b2;
+      if (!entry2)
+        return;
+      const key = (_b2 = (_a2 = entry2.id) != null ? _a2 : entry2.fullPhrase) != null ? _b2 : "";
+      if (!key || seen.has(key))
+        return;
+      seen.add(key);
+      results.push(entry2);
+    };
+    try {
+      for (const entry2 of (_c = (_b = (_a = host == null ? void 0 : host.store) == null ? void 0 : _a.getByHeadword) == null ? void 0 : _b.call(_a, query)) != null ? _c : [])
+        push(entry2);
+    } catch (e) {
+    }
+    if (results.length < maxResults) {
+      try {
+        const engine = host == null ? void 0 : host.engine;
+        const found = (engine == null ? void 0 : engine.quickSearch) ? engine.quickSearch(query, maxResults) : (_e = (_d = engine == null ? void 0 : engine.search) == null ? void 0 : _d.call(engine, { query, maxResults })) != null ? _e : [];
+        for (const result of found)
+          push(result == null ? void 0 : result.entry);
+      } catch (e) {
+      }
+    }
+    if (results.length === 0) {
+      for (const entry2 of this.entries()) {
+        const phrase = (_f = entry2.fullPhrase) != null ? _f : "";
+        if (phrase.includes(query) || ((_g = entry2.headword) != null ? _g : "").includes(query)) {
+          push(entry2);
+          if (results.length >= maxResults)
+            break;
+        }
+      }
+    }
+    return results.slice(0, maxResults);
+  }
+  /** Longest lexicon phrase starting at `text[0]` — used for tap-to-lookup. */
+  longestPhraseAt(text2, options = {}) {
+    const matcher = this.getMatcher(options);
+    const hits = matcher.match(text2.slice(0, 24));
+    const first = hits[0];
+    return first && first.start === 0 ? first : null;
+  }
+  /** Total lexicon size, for the empty-state copy. */
+  size() {
+    var _a, _b, _c, _d, _e;
+    const store = (_a = this.getHost()) == null ? void 0 : _a.store;
+    try {
+      return (_e = (_d = (_b = store == null ? void 0 : store.size) == null ? void 0 : _b.call(store)) != null ? _d : (_c = store == null ? void 0 : store.getAll) == null ? void 0 : _c.call(store).length) != null ? _e : 0;
+    } catch (e) {
+      return 0;
+    }
+  }
+};
+function entryPhrase(entry2) {
+  var _a, _b;
+  return entry2.fullPhrase || `${(_a = entry2.headword) != null ? _a : ""}${(_b = entry2.collocate) != null ? _b : ""}` || entry2.headword || "";
+}
+
+// src/tategaki/TategakiView.ts
+var import_obsidian10 = require("obsidian");
+
+// src/tategaki/text.ts
+var DEFAULT_PARSE_OPTIONS = { furigana: true, tateChuYoko: true };
+var KANJI = /[一-鿿々〆ヶ]/;
+var KANA = /[ぁ-ゟ゠-ヿ]/;
+function isKanji(ch) {
+  return KANJI.test(ch);
+}
+function isKana(ch) {
+  return KANA.test(ch);
+}
+function isJapanese2(ch) {
+  return isKanji(ch) || isKana(ch);
+}
+function stripFrontmatter(source) {
+  if (!source.startsWith("---"))
+    return { frontmatter: "", body: source };
+  const lines = source.split("\n");
+  if (lines[0].trim() !== "---")
+    return { frontmatter: "", body: source };
+  for (let i = 1; i < lines.length; i++) {
+    if (lines[i].trim() === "---") {
+      return {
+        frontmatter: lines.slice(1, i).join("\n"),
+        body: lines.slice(i + 1).join("\n")
+      };
+    }
+  }
+  return { frontmatter: "", body: source };
+}
+var TCY_PUNCT = /* @__PURE__ */ new Set(["!!", "!?", "?!", "??", "\u203C", "\u2049"]);
+function pushText(out, text2, opts) {
+  if (!text2)
+    return;
+  if (!opts.tateChuYoko) {
+    out.push({ kind: "text", text: text2 });
+    return;
+  }
+  let buf = "";
+  let i = 0;
+  while (i < text2.length) {
+    const two = text2.slice(i, i + 2);
+    if (TCY_PUNCT.has(two)) {
+      if (buf) {
+        out.push({ kind: "text", text: buf });
+        buf = "";
+      }
+      out.push({ kind: "tcy", text: two });
+      i += 2;
+      continue;
+    }
+    if (text2[i] >= "0" && text2[i] <= "9") {
+      let j = i;
+      while (j < text2.length && text2[j] >= "0" && text2[j] <= "9")
+        j++;
+      const run = text2.slice(i, j);
+      if (run.length === 2) {
+        if (buf) {
+          out.push({ kind: "text", text: buf });
+          buf = "";
+        }
+        out.push({ kind: "tcy", text: run });
+      } else {
+        buf += run;
+      }
+      i = j;
+      continue;
+    }
+    buf += text2[i];
+    i++;
+  }
+  if (buf)
+    out.push({ kind: "text", text: buf });
+}
+function findClose(src, from, close) {
+  const idx = src.indexOf(close, from);
+  if (idx === -1)
+    return -1;
+  const nl = src.indexOf("\n", from);
+  if (nl !== -1 && nl < idx)
+    return -1;
+  return idx;
+}
+function splitRubyBase(buf) {
+  let i = buf.length;
+  const wantKanji = i > 0 && isKanji(buf[i - 1]);
+  while (i > 0) {
+    const ch = buf[i - 1];
+    const ok = wantKanji ? isKanji(ch) : isJapanese2(ch);
+    if (!ok)
+      break;
+    i--;
+    if (buf.length - i >= 12)
+      break;
+  }
+  return { head: buf.slice(0, i), base: buf.slice(i) };
+}
+function parseInline(src, opts = DEFAULT_PARSE_OPTIONS) {
+  const out = [];
+  let buf = "";
+  let i = 0;
+  const flush = () => {
+    if (buf) {
+      pushText(out, buf, opts);
+      buf = "";
+    }
+  };
+  while (i < src.length) {
+    const ch = src[i];
+    const rest = src.slice(i);
+    if (ch === "[") {
+      if (rest.startsWith("[[")) {
+        const end = findClose(src, i + 2, "]]");
+        if (end !== -1) {
+          const inner = src.slice(i + 2, end);
+          const [target, alias] = inner.split("|");
+          flush();
+          out.push({
+            kind: "link",
+            children: parseInline(alias != null ? alias : target, opts),
+            href: target,
+            internal: true
+          });
+          i = end + 2;
+          continue;
+        }
+      }
+      const closeBracket = findClose(src, i + 1, "]");
+      if (closeBracket !== -1) {
+        const label = src.slice(i + 1, closeBracket);
+        const after = src[closeBracket + 1];
+        if (after === "{" && opts.furigana) {
+          const closeBrace = findClose(src, closeBracket + 2, "}");
+          if (closeBrace !== -1) {
+            flush();
+            out.push({ kind: "ruby", base: label, ruby: src.slice(closeBracket + 2, closeBrace) });
+            i = closeBrace + 1;
+            continue;
+          }
+        }
+        if (after === "(") {
+          const closeParen = findClose(src, closeBracket + 2, ")");
+          if (closeParen !== -1) {
+            flush();
+            out.push({
+              kind: "link",
+              children: parseInline(label, opts),
+              href: src.slice(closeBracket + 2, closeParen),
+              internal: false
+            });
+            i = closeParen + 1;
+            continue;
+          }
+        }
+      }
+    }
+    if (ch === "{" && opts.furigana) {
+      const end = findClose(src, i + 1, "}");
+      if (end !== -1) {
+        const inner = src.slice(i + 1, end);
+        const bar = inner.indexOf("|");
+        if (bar > 0 && bar < inner.length - 1) {
+          flush();
+          out.push({ kind: "ruby", base: inner.slice(0, bar), ruby: inner.slice(bar + 1) });
+          i = end + 1;
+          continue;
+        }
+      }
+    }
+    if ((ch === "\uFF5C" || ch === "|") && opts.furigana) {
+      const open = src.indexOf("\u300A", i + 1);
+      const nl = src.indexOf("\n", i + 1);
+      if (open !== -1 && (nl === -1 || open < nl)) {
+        const close = findClose(src, open + 1, "\u300B");
+        if (close !== -1) {
+          flush();
+          out.push({ kind: "ruby", base: src.slice(i + 1, open), ruby: src.slice(open + 1, close) });
+          i = close + 1;
+          continue;
+        }
+      }
+    }
+    if (ch === "\u300A" && opts.furigana) {
+      const close = findClose(src, i + 1, "\u300B");
+      if (close !== -1) {
+        const { head, base } = splitRubyBase(buf);
+        if (base) {
+          buf = head;
+          flush();
+          out.push({ kind: "ruby", base, ruby: src.slice(i + 1, close) });
+          i = close + 1;
+          continue;
+        }
+      }
+    }
+    const wrapped = (open, close, kind) => {
+      if (!rest.startsWith(open))
+        return false;
+      const end = findClose(src, i + open.length, close);
+      if (end === -1 || end === i + open.length)
+        return false;
+      flush();
+      out.push({ kind, children: parseInline(src.slice(i + open.length, end), opts) });
+      i = end + close.length;
+      return true;
+    };
+    if (wrapped("**", "**", "bold"))
+      continue;
+    if (wrapped("__", "__", "bold"))
+      continue;
+    if (wrapped("~~", "~~", "strike"))
+      continue;
+    if (wrapped("==", "==", "mark"))
+      continue;
+    if (ch === "*" && !rest.startsWith("**") && wrapped("*", "*", "italic"))
+      continue;
+    if (ch === "`") {
+      const end = findClose(src, i + 1, "`");
+      if (end !== -1) {
+        flush();
+        out.push({ kind: "code", text: src.slice(i + 1, end) });
+        i = end + 1;
+        continue;
+      }
+    }
+    buf += ch;
+    i++;
+  }
+  flush();
+  return out;
+}
+var RULE_RE = /^\s*([-*_])\s*(\1\s*){2,}$/;
+var HEADING_RE = /^(#{1,6})\s+(.*)$/;
+var QUOTE_RE = /^\s*((?:>\s*)+)(.*)$/;
+var UL_RE = /^(\s*)[-*+]\s+(.*)$/;
+var OL_RE = /^(\s*)(\d+)[.)]\s+(.*)$/;
+var IMAGE_RE = /^\s*!\[([^\]]*)\]\(([^)]+)\)\s*$/;
+var EMBED_RE = /^\s*!\[\[([^\]]+)\]\]\s*$/;
+function parseBlocks(source, opts = DEFAULT_PARSE_OPTIONS) {
+  var _a;
+  const lines = source.split("\n");
+  const blocks = [];
+  let previousWasText = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const fence = /^\s*(```|~~~)(.*)$/.exec(line);
+    if (fence) {
+      const marker = fence[1];
+      const lang = fence[2].trim();
+      const body = [];
+      i++;
+      while (i < lines.length && !lines[i].trimStart().startsWith(marker)) {
+        body.push(lines[i]);
+        i++;
+      }
+      blocks.push({ kind: "code-block", lang, text: body.join("\n") });
+      previousWasText = false;
+      continue;
+    }
+    if (!line.trim()) {
+      if (previousWasText)
+        blocks.push({ kind: "spacer" });
+      previousWasText = false;
+      continue;
+    }
+    if (RULE_RE.test(line)) {
+      blocks.push({ kind: "rule" });
+      previousWasText = false;
+      continue;
+    }
+    const image = IMAGE_RE.exec(line);
+    if (image) {
+      blocks.push({ kind: "image", alt: image[1], src: image[2] });
+      previousWasText = false;
+      continue;
+    }
+    const embed = EMBED_RE.exec(line);
+    if (embed) {
+      blocks.push({ kind: "image", alt: embed[1], src: embed[1] });
+      previousWasText = false;
+      continue;
+    }
+    const heading = HEADING_RE.exec(line);
+    if (heading) {
+      blocks.push({ kind: "heading", level: heading[1].length, inlines: parseInline(heading[2], opts) });
+      previousWasText = false;
+      continue;
+    }
+    const quote = QUOTE_RE.exec(line);
+    if (quote) {
+      const depth = ((_a = quote[1].match(/>/g)) != null ? _a : []).length;
+      blocks.push({ kind: "quote", depth, inlines: parseInline(quote[2], opts) });
+      previousWasText = true;
+      continue;
+    }
+    const ordered = OL_RE.exec(line);
+    if (ordered) {
+      blocks.push({
+        kind: "list-item",
+        marker: `${ordered[2]}.`,
+        depth: Math.floor(ordered[1].length / 2),
+        inlines: parseInline(ordered[3], opts)
+      });
+      previousWasText = true;
+      continue;
+    }
+    const unordered = UL_RE.exec(line);
+    if (unordered) {
+      blocks.push({
+        kind: "list-item",
+        marker: "\u30FB",
+        depth: Math.floor(unordered[1].length / 2),
+        inlines: parseInline(unordered[2], opts)
+      });
+      previousWasText = true;
+      continue;
+    }
+    const text2 = line.replace(/\s+$/, "");
+    blocks.push({
+      kind: "paragraph",
+      inlines: parseInline(text2, opts),
+      // 字下げ: indent the first line of each paragraph group, unless the
+      // author already opened it with an ideographic space.
+      indent: !previousWasText && !text2.startsWith("\u3000")
+    });
+    previousWasText = true;
+  }
+  return blocks;
+}
+function blocksToPlainText(blocks) {
+  const parts = [];
+  const walk = (nodes) => {
+    for (const node of nodes) {
+      switch (node.kind) {
+        case "text":
+        case "tcy":
+        case "code":
+          parts.push(node.text);
+          break;
+        case "ruby":
+          parts.push(node.base);
+          break;
+        default:
+          walk(node.children);
+      }
+    }
+  };
+  for (const block of blocks) {
+    switch (block.kind) {
+      case "paragraph":
+      case "heading":
+      case "quote":
+      case "list-item":
+        walk(block.inlines);
+        parts.push("\n");
+        break;
+      case "code-block":
+        parts.push(block.text, "\n");
+        break;
+      default:
+        break;
+    }
+  }
+  return parts.join("");
+}
+function countCharacters(blocks) {
+  return blocksToPlainText(blocks).replace(/\s/g, "").length;
+}
+
+// src/tategaki/TategakiRenderer.ts
+var DEFAULT_RENDER_OPTIONS = {
+  highlight: false,
+  matcher: null,
+  chunkSize: 4e3
+};
+var SENTINEL_START = "start";
+var SENTINEL_END = "end";
+var TategakiRenderer = class {
+  constructor() {
+    /** Bumped on every render so a superseded chunk loop stops on its next frame. */
+    this.generation = 0;
+    this.frameHandle = null;
+  }
+  /** Abandon an in-flight chunked render. */
+  cancel() {
+    this.generation++;
+    if (this.frameHandle !== null) {
+      cancelAnimationFrame(this.frameHandle);
+      this.frameHandle = null;
+    }
+  }
+  /**
+   * Render `blocks` into `container`, replacing its contents.
+   * Returns the content element that holds the rendered blocks.
+   */
+  render(container, blocks, options = {}) {
+    const opts = { ...DEFAULT_RENDER_OPTIONS, ...options };
+    this.cancel();
+    const generation = this.generation;
+    container.textContent = "";
+    const doc = container.ownerDocument;
+    const content = doc.createElement("div");
+    content.className = "jp-tg-content";
+    content.appendChild(this.makeSentinel(doc, SENTINEL_START));
+    container.appendChild(content);
+    const endSentinel = this.makeSentinel(doc, SENTINEL_END);
+    let index = 0;
+    const renderChunk = () => {
+      var _a;
+      if (generation !== this.generation)
+        return;
+      let budget = opts.chunkSize;
+      while (index < blocks.length && budget > 0) {
+        const block = blocks[index++];
+        const el = this.renderBlock(doc, block, opts);
+        if (el)
+          content.appendChild(el);
+        budget -= blockWeight(block);
+      }
+      if (index < blocks.length) {
+        this.frameHandle = requestAnimationFrame(renderChunk);
+        return;
+      }
+      this.frameHandle = null;
+      content.appendChild(endSentinel);
+      (_a = opts.onComplete) == null ? void 0 : _a.call(opts);
+    };
+    renderChunk();
+    return content;
+  }
+  makeSentinel(doc, which) {
+    const el = doc.createElement("span");
+    el.className = "jp-tg-sentinel";
+    el.dataset.jpTgSentinel = which;
+    return el;
+  }
+  renderBlock(doc, block, opts) {
+    var _a, _b;
+    switch (block.kind) {
+      case "paragraph": {
+        const el = doc.createElement("p");
+        el.className = block.indent ? "jp-tg-para jp-tg--indent" : "jp-tg-para";
+        this.renderInlines(doc, el, block.inlines, opts);
+        return el;
+      }
+      case "heading": {
+        const el = doc.createElement("div");
+        el.className = `jp-tg-h jp-tg-h${block.level}`;
+        this.renderInlines(doc, el, block.inlines, opts);
+        return el;
+      }
+      case "quote": {
+        const el = doc.createElement("div");
+        el.className = "jp-tg-quote";
+        if (block.depth > 1)
+          el.style.paddingInlineStart = `${block.depth * 1.2}em`;
+        this.renderInlines(doc, el, block.inlines, opts);
+        return el;
+      }
+      case "list-item": {
+        const el = doc.createElement("div");
+        el.className = "jp-tg-li";
+        if (block.depth > 0)
+          el.style.paddingInlineStart = `${0.4 + block.depth * 1.1}em`;
+        const marker = doc.createElement("span");
+        marker.className = "jp-tg-li-marker";
+        marker.textContent = block.marker;
+        el.appendChild(marker);
+        this.renderInlines(doc, el, block.inlines, opts);
+        return el;
+      }
+      case "code-block": {
+        const el = doc.createElement("pre");
+        el.className = "jp-tg-codeblock";
+        el.textContent = block.text;
+        if (block.lang)
+          el.dataset.lang = block.lang;
+        return el;
+      }
+      case "image": {
+        const url = (_b = (_a = opts.resolveImage) == null ? void 0 : _a.call(opts, block.src)) != null ? _b : null;
+        if (url) {
+          const img = doc.createElement("img");
+          img.className = "jp-tg-img";
+          img.src = url;
+          img.alt = block.alt;
+          img.loading = "lazy";
+          return img;
+        }
+        const chip = doc.createElement("div");
+        chip.className = "jp-tg-img-alt";
+        chip.textContent = block.alt || block.src;
+        return chip;
+      }
+      case "rule": {
+        const el = doc.createElement("div");
+        el.className = "jp-tg-rule";
+        return el;
+      }
+      case "spacer": {
+        const el = doc.createElement("div");
+        el.className = "jp-tg-spacer";
+        return el;
+      }
+      default:
+        return null;
+    }
+  }
+  renderInlines(doc, parent, nodes, opts) {
+    for (const node of nodes) {
+      switch (node.kind) {
+        case "text":
+          this.renderText(doc, parent, node.text, opts);
+          break;
+        case "tcy": {
+          const el = doc.createElement("span");
+          el.className = "jp-tg-tcy";
+          el.textContent = node.text;
+          parent.appendChild(el);
+          break;
+        }
+        case "ruby": {
+          const ruby = doc.createElement("ruby");
+          this.renderText(doc, ruby, node.base, opts);
+          const rpOpen = doc.createElement("rp");
+          rpOpen.textContent = "(";
+          const rt = doc.createElement("rt");
+          rt.textContent = node.ruby;
+          const rpClose = doc.createElement("rp");
+          rpClose.textContent = ")";
+          ruby.append(rpOpen, rt, rpClose);
+          parent.appendChild(ruby);
+          break;
+        }
+        case "code": {
+          const el = doc.createElement("code");
+          el.className = "jp-tg-code";
+          el.textContent = node.text;
+          parent.appendChild(el);
+          break;
+        }
+        case "link": {
+          const el = doc.createElement("span");
+          el.className = "jp-tg-link";
+          el.dataset.jpTgHref = node.href;
+          if (node.internal)
+            el.dataset.jpTgInternal = "1";
+          this.renderInlines(doc, el, node.children, opts);
+          parent.appendChild(el);
+          break;
+        }
+        case "bold":
+        case "italic":
+        case "strike":
+        case "mark": {
+          const el = doc.createElement("span");
+          el.className = `jp-tg-${node.kind}`;
+          this.renderInlines(doc, el, node.children, opts);
+          parent.appendChild(el);
+          break;
+        }
+      }
+    }
+  }
+  /** Plain text, split into highlight spans where lexicon phrases occur. */
+  renderText(doc, parent, text2, opts) {
+    if (!text2)
+      return;
+    if (!opts.highlight || !opts.matcher || opts.matcher.isEmpty()) {
+      parent.appendChild(doc.createTextNode(text2));
+      return;
+    }
+    const hits = opts.matcher.match(text2);
+    if (hits.length === 0) {
+      parent.appendChild(doc.createTextNode(text2));
+      return;
+    }
+    let cursor = 0;
+    for (const hit of hits) {
+      if (hit.start > cursor) {
+        parent.appendChild(doc.createTextNode(text2.slice(cursor, hit.start)));
+      }
+      const span = doc.createElement("span");
+      span.className = "jp-tg-colloc";
+      span.dataset.jpTgPhrase = hit.phrase;
+      if (hit.entryIds.length)
+        span.dataset.jpTgIds = hit.entryIds.join(",");
+      span.textContent = text2.slice(hit.start, hit.end);
+      parent.appendChild(span);
+      cursor = hit.end;
+    }
+    if (cursor < text2.length) {
+      parent.appendChild(doc.createTextNode(text2.slice(cursor)));
+    }
+  }
+};
+function blockWeight(block) {
+  switch (block.kind) {
+    case "paragraph":
+    case "heading":
+    case "quote":
+    case "list-item":
+      return Math.max(8, inlineWeight(block.inlines));
+    case "code-block":
+      return Math.max(8, block.text.length);
+    default:
+      return 4;
+  }
+}
+function inlineWeight(nodes) {
+  let total = 0;
+  for (const node of nodes) {
+    switch (node.kind) {
+      case "text":
+      case "tcy":
+      case "code":
+        total += node.text.length;
+        break;
+      case "ruby":
+        total += node.base.length + node.ruby.length;
+        break;
+      default:
+        total += inlineWeight(node.children);
+    }
+  }
+  return total;
+}
+
+// src/tategaki/Sheet.ts
+var BottomSheet = class {
+  constructor(parent) {
+    this.open = false;
+    this.disposers = [];
+    this.onCloseCallback = null;
+    const doc = parent.ownerDocument;
+    this.root = doc.createElement("div");
+    this.root.className = "jp-tg-sheet";
+    this.grip = doc.createElement("div");
+    this.grip.className = "jp-tg-sheet-grip";
+    this.grip.setAttribute("aria-label", "Drag down to close");
+    this.headerEl = doc.createElement("div");
+    this.headerEl.className = "jp-tg-sheet-header";
+    this.titleEl = doc.createElement("div");
+    this.titleEl.className = "jp-tg-sheet-term";
+    this.headerEl.appendChild(this.titleEl);
+    const closeBtn = doc.createElement("button");
+    closeBtn.className = "jp-tg-btn";
+    closeBtn.textContent = "\u2715";
+    closeBtn.setAttribute("aria-label", "Close");
+    closeBtn.addEventListener("click", () => this.close());
+    this.headerEl.appendChild(closeBtn);
+    this.bodyEl = doc.createElement("div");
+    this.bodyEl.className = "jp-tg-sheet-body";
+    this.root.append(this.grip, this.headerEl, this.bodyEl);
+    parent.appendChild(this.root);
+    this.attachDragToDismiss();
+  }
+  /** Show the sheet, clearing whatever it held before. */
+  show(title, onClose) {
+    this.titleEl.textContent = title;
+    this.bodyEl.textContent = "";
+    this.bodyEl.scrollTop = 0;
+    this.onCloseCallback = onClose != null ? onClose : null;
+    this.root.classList.add("is-open");
+    this.open = true;
+    return { body: this.bodyEl, header: this.headerEl };
+  }
+  /** Swap the title without rebuilding the body. */
+  setTitle(title) {
+    this.titleEl.textContent = title;
+  }
+  close() {
+    if (!this.open)
+      return;
+    this.open = false;
+    this.root.classList.remove("is-open");
+    this.root.style.transform = "";
+    const callback = this.onCloseCallback;
+    this.onCloseCallback = null;
+    callback == null ? void 0 : callback();
+  }
+  isOpen() {
+    return this.open;
+  }
+  /** Add a button to the header, left of the close button. */
+  addHeaderButton(label, onClick, ariaLabel) {
+    const button = this.root.ownerDocument.createElement("button");
+    button.className = "jp-tg-btn";
+    button.textContent = label;
+    if (ariaLabel)
+      button.setAttribute("aria-label", ariaLabel);
+    button.addEventListener("click", onClick);
+    this.headerEl.insertBefore(button, this.headerEl.lastElementChild);
+    return button;
+  }
+  destroy() {
+    for (const dispose of this.disposers)
+      dispose();
+    this.disposers = [];
+    this.root.remove();
+  }
+  /** Flick the grip downward to dismiss. */
+  attachDragToDismiss() {
+    let startY = 0;
+    let offset = 0;
+    let dragging = false;
+    const begin = (y) => {
+      startY = y;
+      offset = 0;
+      dragging = true;
+      this.root.classList.add("is-dragging");
+    };
+    const move = (y) => {
+      if (!dragging)
+        return;
+      offset = Math.max(0, y - startY);
+      this.root.style.transform = `translateY(${offset}px)`;
+    };
+    const end = () => {
+      if (!dragging)
+        return;
+      dragging = false;
+      this.root.classList.remove("is-dragging");
+      this.root.style.transform = "";
+      if (offset > 70)
+        this.close();
+    };
+    const onTouchStart = (ev) => begin(ev.touches[0].clientY);
+    const onTouchMove = (ev) => {
+      move(ev.touches[0].clientY);
+      if (dragging)
+        ev.preventDefault();
+    };
+    const onMouseDown = (ev) => {
+      begin(ev.clientY);
+      const onMouseMove = (moveEv) => move(moveEv.clientY);
+      const onMouseUp = () => {
+        end();
+        window.removeEventListener("mousemove", onMouseMove);
+        window.removeEventListener("mouseup", onMouseUp);
+      };
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+    };
+    this.grip.addEventListener("touchstart", onTouchStart, { passive: true });
+    this.grip.addEventListener("touchmove", onTouchMove, { passive: false });
+    this.grip.addEventListener("touchend", end, { passive: true });
+    this.grip.addEventListener("touchcancel", end, { passive: true });
+    this.grip.addEventListener("mousedown", onMouseDown);
+    this.disposers.push(() => {
+      this.grip.removeEventListener("touchstart", onTouchStart);
+      this.grip.removeEventListener("touchmove", onTouchMove);
+      this.grip.removeEventListener("touchend", end);
+      this.grip.removeEventListener("touchcancel", end);
+      this.grip.removeEventListener("mousedown", onMouseDown);
+    });
+  }
+};
+
+// src/tategaki/entry-card.ts
+function renderEntryCard(parent, entry2, actions = []) {
+  var _a, _b;
+  const doc = parent.ownerDocument;
+  const card = doc.createElement("div");
+  card.className = "jp-tg-card";
+  const phrase = doc.createElement("div");
+  phrase.className = "jp-tg-card-phrase";
+  phrase.textContent = entryPhrase(entry2);
+  card.appendChild(phrase);
+  if (entry2.headwordReading) {
+    const reading = doc.createElement("div");
+    reading.className = "jp-tg-card-reading";
+    reading.textContent = entry2.headwordReading;
+    card.appendChild(reading);
+  }
+  const meta = [];
+  if (entry2.pattern)
+    meta.push(entry2.pattern);
+  if (entry2.headwordPOS)
+    meta.push(entry2.headwordPOS);
+  if (entry2.collocatePOS && entry2.collocatePOS !== entry2.headwordPOS)
+    meta.push(entry2.collocatePOS);
+  for (const tag of (_a = entry2.tags) != null ? _a : [])
+    meta.push(`#${tag}`);
+  if (meta.length) {
+    const metaRow = doc.createElement("div");
+    metaRow.className = "jp-tg-card-meta";
+    for (const item of meta) {
+      const chip = doc.createElement("span");
+      chip.className = "jp-tg-tag";
+      chip.textContent = item;
+      metaRow.appendChild(chip);
+    }
+    card.appendChild(metaRow);
+  }
+  for (const example of ((_b = entry2.exampleSentences) != null ? _b : []).slice(0, 3)) {
+    const line = doc.createElement("div");
+    line.className = "jp-tg-card-example";
+    line.textContent = example;
+    card.appendChild(line);
+  }
+  if (entry2.notes) {
+    const notes = doc.createElement("div");
+    notes.className = "jp-tg-card-example";
+    notes.textContent = entry2.notes;
+    card.appendChild(notes);
+  }
+  if (actions.length) {
+    const row = doc.createElement("div");
+    row.className = "jp-tg-card-actions";
+    for (const action of actions) {
+      const button = doc.createElement("button");
+      button.className = "jp-tg-btn";
+      button.textContent = action.label;
+      if (action.ariaLabel)
+        button.setAttribute("aria-label", action.ariaLabel);
+      button.addEventListener("click", () => action.onClick(entry2));
+      row.appendChild(button);
+    }
+    card.appendChild(row);
+  }
+  parent.appendChild(card);
+  return card;
+}
+function renderEmptyState(parent, message) {
+  const el = parent.ownerDocument.createElement("div");
+  el.className = "jp-tg-sheet-empty";
+  el.textContent = message;
+  parent.appendChild(el);
+  return el;
+}
+
+// src/tategaki/gestures.ts
+function haptic(pattern = 8) {
+  var _a;
+  try {
+    const nav = navigator;
+    (_a = nav.vibrate) == null ? void 0 : _a.call(nav, pattern);
+  } catch (e) {
+  }
+}
+var ScrollController = class {
+  constructor(el) {
+    this.min = 0;
+    this.max = 0;
+    this.startAtMax = true;
+    this.calibrated = false;
+    this.el = el;
+  }
+  /** Re-probe after a render or a resize. */
+  invalidate() {
+    this.calibrated = false;
+  }
+  /** Probe the scroll range and work out which end holds the start of the text. */
+  calibrate() {
+    const el = this.el;
+    const original = el.scrollLeft;
+    const previousBehavior = el.style.scrollBehavior;
+    el.style.scrollBehavior = "auto";
+    el.scrollLeft = -1e7;
+    this.min = el.scrollLeft;
+    el.scrollLeft = 1e7;
+    this.max = el.scrollLeft;
+    el.scrollLeft = original;
+    const sentinel = el.querySelector('[data-jp-tg-sentinel="start"]');
+    if (sentinel && this.max !== this.min) {
+      const target = this.scrollValueForInlineStart(sentinel);
+      this.startAtMax = Math.abs(target - this.max) <= Math.abs(target - this.min);
+    } else {
+      this.startAtMax = true;
+    }
+    el.style.scrollBehavior = previousBehavior;
+    this.calibrated = true;
+  }
+  ensure() {
+    if (!this.calibrated)
+      this.calibrate();
+  }
+  /** scrollLeft value that would put `el`'s right edge at the reading start. */
+  scrollValueForInlineStart(target) {
+    const style = getComputedStyle(this.el);
+    const padRight = parseFloat(style.paddingRight) || 0;
+    const hostRect = this.el.getBoundingClientRect();
+    const rect = target.getBoundingClientRect();
+    return this.el.scrollLeft + (rect.right - (hostRect.right - padRight));
+  }
+  clamp(value) {
+    return Math.min(Math.max(value, this.min), this.max);
+  }
+  /** Where the text begins, in scrollLeft terms. */
+  startValue() {
+    this.ensure();
+    return this.startAtMax ? this.max : this.min;
+  }
+  /** Where the text ends. */
+  endValue() {
+    this.ensure();
+    return this.startAtMax ? this.min : this.max;
+  }
+  /** +1 when reading forward means increasing scrollLeft, -1 otherwise. */
+  forwardSign() {
+    this.ensure();
+    return this.startAtMax ? -1 : 1;
+  }
+  /** True when there is nothing to scroll (the note fits on one screen). */
+  isSingleScreen() {
+    this.ensure();
+    return this.max - this.min <= 1;
+  }
+  /** Reading progress, 0 at the first character and 1 at the last. */
+  getProgress() {
+    this.ensure();
+    const span = this.endValue() - this.startValue();
+    if (Math.abs(span) < 1)
+      return 0;
+    const progress = (this.el.scrollLeft - this.startValue()) / span;
+    return Math.min(1, Math.max(0, progress));
+  }
+  /** Jump to a normalised reading position. */
+  setProgress(progress, smooth = false) {
+    this.ensure();
+    const span = this.endValue() - this.startValue();
+    const target = this.clamp(this.startValue() + span * Math.min(1, Math.max(0, progress)));
+    this.scrollTo(target, smooth);
+  }
+  /** Park the reader on the first character. */
+  scrollToStart() {
+    this.ensure();
+    this.scrollTo(this.startValue(), false);
+  }
+  /** Move one screen forward (`+1`) or back (`-1`). Returns false at the edge. */
+  turnPage(direction, smooth = true) {
+    this.ensure();
+    const step = this.pageStep() * this.forwardSign() * direction;
+    const before = this.el.scrollLeft;
+    const target = this.clamp(before + step);
+    if (Math.abs(target - before) < 1)
+      return false;
+    this.scrollTo(target, smooth);
+    return true;
+  }
+  /** Align the current position to the nearest whole screen. */
+  snapToPage(smooth = true) {
+    this.ensure();
+    const step = this.pageStep();
+    if (step <= 0)
+      return;
+    const offset = this.el.scrollLeft - this.startValue();
+    const snapped = Math.round(offset / step) * step;
+    this.scrollTo(this.clamp(this.startValue() + snapped), smooth);
+  }
+  /** One screen, minus a sliver so the last column is not cut mid-glyph. */
+  pageStep() {
+    return Math.max(40, this.el.clientWidth - 8);
+  }
+  scrollTo(left, smooth) {
+    if (smooth && typeof this.el.scrollTo === "function") {
+      this.el.scrollTo({ left, behavior: "smooth" });
+    } else {
+      this.el.scrollLeft = left;
+    }
+  }
+};
+function attachPinchZoom(el, options) {
+  var _a;
+  const threshold = (_a = options.threshold) != null ? _a : 0.02;
+  let startDistance = 0;
+  let pinching = false;
+  let lastFactor = 1;
+  const distance = (touches) => {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.hypot(dx, dy);
+  };
+  const onTouchStart = (ev) => {
+    if (ev.touches.length !== 2)
+      return;
+    startDistance = distance(ev.touches);
+    pinching = startDistance > 0;
+    lastFactor = 1;
+  };
+  const onTouchMove = (ev) => {
+    if (!pinching || ev.touches.length !== 2)
+      return;
+    ev.preventDefault();
+    const factor = distance(ev.touches) / startDistance;
+    if (!Number.isFinite(factor) || Math.abs(factor - lastFactor) < threshold)
+      return;
+    lastFactor = factor;
+    options.onScale(factor);
+  };
+  const onTouchEnd = (ev) => {
+    var _a2;
+    if (!pinching || ev.touches.length >= 2)
+      return;
+    pinching = false;
+    (_a2 = options.onEnd) == null ? void 0 : _a2.call(options);
+  };
+  el.addEventListener("touchstart", onTouchStart, { passive: true });
+  el.addEventListener("touchmove", onTouchMove, { passive: false });
+  el.addEventListener("touchend", onTouchEnd, { passive: true });
+  el.addEventListener("touchcancel", onTouchEnd, { passive: true });
+  return () => {
+    el.removeEventListener("touchstart", onTouchStart);
+    el.removeEventListener("touchmove", onTouchMove);
+    el.removeEventListener("touchend", onTouchEnd);
+    el.removeEventListener("touchcancel", onTouchEnd);
+  };
+}
+function attachTapGestures(el, options) {
+  var _a, _b;
+  const tolerance = (_a = options.moveTolerance) != null ? _a : 10;
+  const longPressDelay = (_b = options.longPressDelay) != null ? _b : 500;
+  let startX = 0;
+  let startY = 0;
+  let startScroll = 0;
+  let startTime = 0;
+  let moved = false;
+  let target = null;
+  let longPressTimer = null;
+  let longPressFired = false;
+  let lastTouchAt = 0;
+  const clearTimer = () => {
+    if (longPressTimer !== null) {
+      window.clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  };
+  const onTouchStart = (ev) => {
+    if (ev.touches.length !== 1) {
+      clearTimer();
+      moved = true;
+      return;
+    }
+    const touch = ev.touches[0];
+    startX = touch.clientX;
+    startY = touch.clientY;
+    startScroll = el.scrollLeft;
+    startTime = Date.now();
+    moved = false;
+    longPressFired = false;
+    target = ev.target;
+    if (options.onLongPress) {
+      clearTimer();
+      longPressTimer = window.setTimeout(() => {
+        var _a2;
+        if (moved)
+          return;
+        longPressFired = true;
+        (_a2 = options.onLongPress) == null ? void 0 : _a2.call(options, startX, startY, target);
+      }, longPressDelay);
+    }
+  };
+  const onTouchMove = (ev) => {
+    if (moved || ev.touches.length !== 1)
+      return;
+    const touch = ev.touches[0];
+    if (Math.abs(touch.clientX - startX) > tolerance || Math.abs(touch.clientY - startY) > tolerance) {
+      moved = true;
+      clearTimer();
+    }
+  };
+  const onTouchEnd = (ev) => {
+    clearTimer();
+    lastTouchAt = Date.now();
+    if (longPressFired || moved)
+      return;
+    if (Math.abs(el.scrollLeft - startScroll) > 2)
+      return;
+    if (Date.now() - startTime > 700)
+      return;
+    const touch = ev.changedTouches[0];
+    if (!touch)
+      return;
+    options.onTap(touch.clientX, touch.clientY, target);
+  };
+  const onTouchCancel = () => {
+    clearTimer();
+    lastTouchAt = Date.now();
+    moved = true;
+  };
+  const onClick = (ev) => {
+    if (ev.detail === 0)
+      return;
+    if (Date.now() - lastTouchAt < 900)
+      return;
+    options.onTap(ev.clientX, ev.clientY, ev.target);
+  };
+  const onContextMenu = (ev) => {
+    if (!options.onLongPress)
+      return;
+    if (Date.now() - lastTouchAt < 900)
+      return;
+    ev.preventDefault();
+    options.onLongPress(ev.clientX, ev.clientY, ev.target);
+  };
+  el.addEventListener("touchstart", onTouchStart, { passive: true });
+  el.addEventListener("touchmove", onTouchMove, { passive: true });
+  el.addEventListener("touchend", onTouchEnd, { passive: true });
+  el.addEventListener("touchcancel", onTouchCancel, { passive: true });
+  el.addEventListener("click", onClick);
+  el.addEventListener("contextmenu", onContextMenu);
+  return () => {
+    clearTimer();
+    el.removeEventListener("touchstart", onTouchStart);
+    el.removeEventListener("touchmove", onTouchMove);
+    el.removeEventListener("touchend", onTouchEnd);
+    el.removeEventListener("touchcancel", onTouchCancel);
+    el.removeEventListener("click", onClick);
+    el.removeEventListener("contextmenu", onContextMenu);
+  };
+}
+function onScrollSettled(el, delay, callback) {
+  let timer = null;
+  const onScroll = () => {
+    if (timer !== null)
+      window.clearTimeout(timer);
+    timer = window.setTimeout(callback, delay);
+  };
+  el.addEventListener("scroll", onScroll, { passive: true });
+  return () => {
+    if (timer !== null)
+      window.clearTimeout(timer);
+    el.removeEventListener("scroll", onScroll);
+  };
+}
+function caretFromPoint(doc, x, y) {
+  const caretDoc = doc;
+  if (typeof caretDoc.caretRangeFromPoint === "function") {
+    const range = caretDoc.caretRangeFromPoint(x, y);
+    if (range && range.startContainer.nodeType === Node.TEXT_NODE) {
+      return { node: range.startContainer, offset: range.startOffset };
+    }
+  }
+  if (typeof caretDoc.caretPositionFromPoint === "function") {
+    const position = caretDoc.caretPositionFromPoint(x, y);
+    if (position && position.offsetNode.nodeType === Node.TEXT_NODE) {
+      return { node: position.offsetNode, offset: position.offset };
+    }
+  }
+  return null;
+}
+var BOUNDARY_RE = /[\s。、，．・！？!?「」『』（）()\[\]【】〈〉《》…—―ー～〜:;：；"'`|｜]/;
+function runAroundOffset(text2, offset, options = {}) {
+  var _a, _b;
+  const maxBack = (_a = options.back) != null ? _a : 8;
+  const maxForward = (_b = options.forward) != null ? _b : 16;
+  const clamped = Math.min(Math.max(offset, 0), Math.max(0, text2.length - 1));
+  let start = clamped;
+  while (start > 0 && clamped - start < maxBack && !BOUNDARY_RE.test(text2[start - 1])) {
+    start--;
+  }
+  let end = clamped;
+  while (end < text2.length && end - start < maxBack + maxForward && !BOUNDARY_RE.test(text2[end])) {
+    end++;
+  }
+  return { run: text2.slice(start, end), start, offsetInRun: clamped - start };
+}
+
+// src/tategaki/TategakiView.ts
+var TATEGAKI_VIEW_TYPE = "jp-tategaki-view";
+var TategakiView = class extends import_obsidian10.ItemView {
+  constructor(leaf, options) {
+    super(leaf);
+    this.renderer = new TategakiRenderer();
+    this.scroller = null;
+    this.sheet = null;
+    this.toolbarEl = null;
+    this.canvasEl = null;
+    this.titleEl = null;
+    this.hintEl = null;
+    this.progressFillEl = null;
+    this.progressLabelEl = null;
+    this.file = null;
+    this.blocks = [];
+    this.sourceSnapshot = "";
+    this.charCount = 0;
+    this.disposers = [];
+    this.resizeObserver = null;
+    this.hintTimer = null;
+    this.pinchBaseSize = 0;
+    this.restoreProgress = null;
+    this.activeHighlight = null;
+    this.lastPositionWrite = 0;
+    this.options = options;
+  }
+  getViewType() {
+    return TATEGAKI_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return this.file ? `\u7E26\u66F8\u304D \u2014 ${this.file.basename}` : "\u7E26\u66F8\u304D Tategaki";
+  }
+  getIcon() {
+    return "book-open";
+  }
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+  async onOpen() {
+    this.buildUI();
+    this.registerWorkspaceEvents();
+    if (this.file) {
+      await this.setFile(this.file);
+      return;
+    }
+    const active = this.app.workspace.getActiveFile();
+    if (active)
+      await this.setFile(active);
+    else
+      this.showEmptyState("Open a note, then run \u201CRead in Tategaki\u201D.");
+  }
+  async onClose() {
+    var _a, _b;
+    this.renderer.cancel();
+    this.persistPosition(true);
+    for (const dispose of this.disposers)
+      dispose();
+    this.disposers = [];
+    (_a = this.resizeObserver) == null ? void 0 : _a.disconnect();
+    this.resizeObserver = null;
+    (_b = this.sheet) == null ? void 0 : _b.destroy();
+    this.sheet = null;
+    if (this.hintTimer !== null)
+      window.clearTimeout(this.hintTimer);
+  }
+  getState() {
+    var _a;
+    return { file: (_a = this.file) == null ? void 0 : _a.path };
+  }
+  async setState(state, result) {
+    var _a;
+    const incoming = state != null ? state : {};
+    if (incoming.file && incoming.file !== ((_a = this.file) == null ? void 0 : _a.path)) {
+      const file = this.app.vault.getAbstractFileByPath(incoming.file);
+      if (file instanceof import_obsidian10.TFile)
+        await this.setFile(file);
+    }
+    await super.setState(state, result);
+  }
+  // ── UI ────────────────────────────────────────────────────────────────────
+  buildUI() {
+    const root = this.containerEl.children[1];
+    root.empty();
+    root.addClass("jp-tategaki-view");
+    this.toolbarEl = root.createDiv("jp-tg-toolbar");
+    this.buildToolbar(this.toolbarEl);
+    const stage = root.createDiv("jp-tg-stage");
+    this.canvasEl = stage.createDiv("jp-tg-canvas");
+    this.hintEl = stage.createDiv("jp-tg-hint");
+    const progress = root.createDiv("jp-tg-progress");
+    const track = progress.createDiv("jp-tg-progress-track");
+    this.progressFillEl = track.createDiv("jp-tg-progress-fill");
+    this.progressLabelEl = progress.createDiv("jp-tg-progress-label");
+    this.progressLabelEl.setText("0%");
+    this.sheet = new BottomSheet(stage);
+    this.scroller = new ScrollController(this.canvasEl);
+    this.attachCanvasInteractions(this.canvasEl);
+    this.applySettingsToDom();
+  }
+  buildToolbar(toolbar) {
+    const button = (label, aria, onClick) => {
+      const el = toolbar.createEl("button", { text: label, cls: "jp-tg-btn" });
+      el.setAttribute("aria-label", aria);
+      el.addEventListener("click", onClick);
+      return el;
+    };
+    button("A\u2212", "Smaller text", () => this.nudgeFontSize(-1));
+    button("A\uFF0B", "Larger text", () => this.nudgeFontSize(1));
+    const rubyBtn = button("\u3075", "Toggle furigana", () => {
+      this.updateSettings({ showFurigana: !this.options.settings.showFurigana });
+      rubyBtn.toggleClass("is-active", this.options.settings.showFurigana);
+      this.renderCurrent();
+    });
+    rubyBtn.toggleClass("is-active", this.options.settings.showFurigana);
+    const pageBtn = button(this.pageModeLabel(), "Toggle paging mode", () => {
+      const next = this.options.settings.pageMode === "page" ? "scroll" : "page";
+      this.updateSettings({ pageMode: next });
+      pageBtn.setText(this.pageModeLabel());
+      pageBtn.toggleClass("is-active", next === "page");
+      this.applySettingsToDom();
+      this.showHint(next === "page" ? "\u30DA\u30FC\u30B8\u9001\u308A: tap the edges" : "\u30B9\u30AF\u30ED\u30FC\u30EB");
+    });
+    pageBtn.toggleClass("is-active", this.options.settings.pageMode === "page");
+    const lexBtn = button("\u8F9E", "Toggle collocation highlighting", () => {
+      this.updateSettings({ highlightCollocations: !this.options.settings.highlightCollocations });
+      lexBtn.toggleClass("is-active", this.options.settings.highlightCollocations);
+      this.renderCurrent();
+    });
+    lexBtn.toggleClass("is-active", this.options.settings.highlightCollocations);
+    const verticalBtn = button("\u7E26", "Toggle vertical writing", () => {
+      this.updateSettings({ enabled: !this.options.settings.enabled });
+      verticalBtn.setText(this.options.settings.enabled ? "\u7E26" : "\u6A2A");
+      this.applySettingsToDom();
+      this.renderCurrent();
+    });
+    verticalBtn.setText(this.options.settings.enabled ? "\u7E26" : "\u6A2A");
+    button("\u270E", "Edit this note", () => this.openEditSheet());
+    button("\u27F3", "Reload from disk", () => void this.reload());
+    this.titleEl = toolbar.createDiv("jp-tg-title");
+    this.titleEl.setText("\u2014");
+  }
+  pageModeLabel() {
+    return this.options.settings.pageMode === "page" ? "\u9801" : "\u5DFB";
+  }
+  // ── Interaction ───────────────────────────────────────────────────────────
+  attachCanvasInteractions(canvas) {
+    if (this.options.settings.pinchZoom) {
+      this.disposers.push(
+        attachPinchZoom(canvas, {
+          onScale: (factor) => this.applyPinch(factor),
+          onEnd: () => {
+            this.pinchBaseSize = 0;
+            void this.options.saveSettings(this.options.settings);
+          }
+        })
+      );
+    }
+    this.disposers.push(
+      attachTapGestures(canvas, {
+        onTap: (x, y, target) => this.handleTap(x, y, target),
+        onLongPress: (x, y, target) => this.handleLongPress(x, y, target)
+      })
+    );
+    this.disposers.push(
+      onScrollSettled(canvas, 140, () => {
+        var _a;
+        this.updateProgress();
+        this.persistPosition();
+        if (this.options.settings.pageMode === "page")
+          (_a = this.scroller) == null ? void 0 : _a.snapToPage();
+      })
+    );
+    const onScroll = () => this.updateProgress();
+    canvas.addEventListener("scroll", onScroll, { passive: true });
+    this.disposers.push(() => canvas.removeEventListener("scroll", onScroll));
+    if (typeof ResizeObserver !== "undefined") {
+      this.resizeObserver = new ResizeObserver(() => {
+        var _a, _b, _c;
+        const progress = (_b = (_a = this.scroller) == null ? void 0 : _a.getProgress()) != null ? _b : 0;
+        (_c = this.scroller) == null ? void 0 : _c.invalidate();
+        window.setTimeout(() => {
+          var _a2;
+          return (_a2 = this.scroller) == null ? void 0 : _a2.setProgress(progress);
+        }, 60);
+      });
+      this.resizeObserver.observe(canvas);
+    }
+  }
+  handleTap(x, y, target) {
+    var _a, _b, _c;
+    const el = target instanceof HTMLElement ? target : null;
+    const link = el == null ? void 0 : el.closest(".jp-tg-link");
+    if (link) {
+      this.openLink(link);
+      return;
+    }
+    if (this.options.settings.pageMode === "page" && this.options.settings.tapZones && this.canvasEl) {
+      const rect = this.canvasEl.getBoundingClientRect();
+      const zone = (x - rect.left) / rect.width;
+      if (zone > 0.72) {
+        this.turnPage(-1);
+        return;
+      }
+      if (zone < 0.28) {
+        this.turnPage(1);
+        return;
+      }
+    }
+    if (!this.options.settings.tapToLookup)
+      return;
+    const highlight = el == null ? void 0 : el.closest(".jp-tg-colloc");
+    if (highlight) {
+      const ids = ((_a = highlight.dataset.jpTgIds) != null ? _a : "").split(",").filter(Boolean);
+      const phrase = (_c = (_b = highlight.dataset.jpTgPhrase) != null ? _b : highlight.textContent) != null ? _c : "";
+      this.setActiveHighlight(highlight);
+      this.showLookup(phrase, this.options.bridge.entriesByIds(ids));
+      return;
+    }
+    this.lookupAtPoint(x, y);
+  }
+  handleLongPress(x, y, target) {
+    var _a, _b;
+    const el = target instanceof HTMLElement ? target : null;
+    const highlight = el == null ? void 0 : el.closest(".jp-tg-colloc");
+    const term = (_b = (_a = highlight == null ? void 0 : highlight.dataset.jpTgPhrase) != null ? _a : this.termAtPoint(x, y)) != null ? _b : "";
+    const menu = new import_obsidian10.Menu();
+    if (term) {
+      menu.addItem(
+        (item) => item.setTitle(`\u300C${term}\u300D\u3092\u8ABF\u3079\u308B`).setIcon("search").onClick(() => {
+          this.showLookup(term, this.options.bridge.lookup(term));
+        })
+      );
+      menu.addItem(
+        (item) => item.setTitle("\u30B3\u30D4\u30FC Copy").setIcon("copy").onClick(() => {
+          var _a2;
+          void ((_a2 = navigator.clipboard) == null ? void 0 : _a2.writeText(term));
+          new import_obsidian10.Notice(`Copied \u300C${term}\u300D`);
+        })
+      );
+      if (this.options.openLexiconSearch) {
+        menu.addItem(
+          (item) => item.setTitle("Search the lexicon").setIcon("list").onClick(() => {
+            var _a2, _b2;
+            (_b2 = (_a2 = this.options).openLexiconSearch) == null ? void 0 : _b2.call(_a2, term);
+          })
+        );
+      }
+    }
+    menu.addItem(
+      (item) => item.setTitle("\u7DE8\u96C6 Edit note").setIcon("pencil").onClick(() => this.openEditSheet())
+    );
+    menu.addItem(
+      (item) => item.setTitle("\u5148\u982D\u3078 Back to start").setIcon("arrow-up").onClick(() => {
+        var _a2;
+        (_a2 = this.scroller) == null ? void 0 : _a2.scrollToStart();
+        this.updateProgress();
+      })
+    );
+    haptic(12);
+    menu.showAtPosition({ x, y });
+  }
+  /** Text under a point, expanded to a lookup-sized run. */
+  termAtPoint(x, y) {
+    const hit = caretFromPoint(this.containerEl.ownerDocument, x, y);
+    if (!(hit == null ? void 0 : hit.node.textContent))
+      return null;
+    const { run } = runAroundOffset(hit.node.textContent, hit.offset);
+    return run || null;
+  }
+  /**
+   * Dictionary-style lookup: take the longest lexicon phrase starting at the
+   * tapped character, then fall back to progressively shorter prefixes.
+   */
+  lookupAtPoint(x, y) {
+    const hit = caretFromPoint(this.containerEl.ownerDocument, x, y);
+    if (!(hit == null ? void 0 : hit.node.textContent))
+      return;
+    const { run, offsetInRun } = runAroundOffset(hit.node.textContent, hit.offset);
+    if (!run)
+      return;
+    const forward = run.slice(offsetInRun);
+    const bridge = this.options.bridge;
+    const phraseHit = bridge.longestPhraseAt(forward, {
+      maxEntries: this.options.settings.maxHighlightEntries
+    });
+    if (phraseHit) {
+      const entries = bridge.entriesByIds(phraseHit.entryIds);
+      this.flashRange(hit.node, hit.offset, phraseHit.end - phraseHit.start);
+      this.showLookup(phraseHit.phrase, entries.length ? entries : bridge.lookup(phraseHit.phrase));
+      return;
+    }
+    for (let length = Math.min(forward.length, 10); length >= 1; length--) {
+      const candidate = forward.slice(0, length);
+      const entries = bridge.lookup(candidate, 12);
+      if (entries.length) {
+        this.flashRange(hit.node, hit.offset, length);
+        this.showLookup(candidate, entries);
+        return;
+      }
+    }
+    this.showLookup(run, []);
+  }
+  /** Briefly tint the looked-up characters so the tap has feedback. */
+  flashRange(node, offset, length) {
+    try {
+      const range = node.ownerDocument.createRange();
+      range.setStart(node, Math.min(offset, node.length));
+      range.setEnd(node, Math.min(offset + length, node.length));
+      const mark = node.ownerDocument.createElement("span");
+      mark.className = "jp-tg-tap-flash";
+      range.surroundContents(mark);
+      window.setTimeout(() => {
+        const parent = mark.parentNode;
+        if (!parent)
+          return;
+        while (mark.firstChild)
+          parent.insertBefore(mark.firstChild, mark);
+        parent.removeChild(mark);
+        parent.normalize();
+      }, 900);
+    } catch (e) {
+    }
+  }
+  setActiveHighlight(el) {
+    var _a;
+    (_a = this.activeHighlight) == null ? void 0 : _a.removeClass("is-active");
+    this.activeHighlight = el;
+    el == null ? void 0 : el.addClass("is-active");
+  }
+  openLink(link) {
+    var _a, _b;
+    const href = link.dataset.jpTgHref;
+    if (!href)
+      return;
+    if (link.dataset.jpTgInternal) {
+      void this.app.workspace.openLinkText(href, (_b = (_a = this.file) == null ? void 0 : _a.path) != null ? _b : "", false);
+    } else {
+      window.open(href, "_blank");
+    }
+  }
+  turnPage(direction) {
+    var _a, _b;
+    const moved = (_b = (_a = this.scroller) == null ? void 0 : _a.turnPage(direction)) != null ? _b : false;
+    if (moved && this.options.settings.hapticFeedback)
+      haptic(6);
+    if (!moved)
+      this.showHint(direction > 0 ? "\u7D42\u308F\u308A" : "\u5148\u982D");
+    this.updateProgress();
+  }
+  // ── Lookup sheet ──────────────────────────────────────────────────────────
+  showLookup(term, entries) {
+    if (!this.sheet)
+      return;
+    if (this.options.settings.hapticFeedback)
+      haptic(6);
+    const { body } = this.sheet.show(term, () => this.setActiveHighlight(null));
+    if (entries.length === 0) {
+      const known = this.options.bridge.isAvailable();
+      renderEmptyState(
+        body,
+        known ? `\u300C${term}\u300D is not in the lexicon yet. Long-press to copy it, or add it from the lexicon view.` : "The collocation lexicon is not loaded in this session."
+      );
+      if (this.options.openLexiconSearch) {
+        const search = body.createEl("button", { text: "Search the lexicon", cls: "jp-tg-btn" });
+        search.addEventListener("click", () => {
+          var _a, _b;
+          return (_b = (_a = this.options).openLexiconSearch) == null ? void 0 : _b.call(_a, term);
+        });
+      }
+      return;
+    }
+    for (const entry2 of entries) {
+      renderEntryCard(body, entry2, [
+        {
+          label: "\u30B3\u30D4\u30FC",
+          ariaLabel: "Copy phrase",
+          onClick: (item) => {
+            var _a;
+            void ((_a = navigator.clipboard) == null ? void 0 : _a.writeText(entryPhrase(item)));
+            new import_obsidian10.Notice(`Copied \u300C${entryPhrase(item)}\u300D`);
+          }
+        },
+        {
+          label: "\u633F\u5165",
+          ariaLabel: "Insert into the open editor",
+          onClick: (item) => this.insertIntoEditor(entryPhrase(item))
+        }
+      ]);
+    }
+  }
+  /** Drop a phrase at the cursor of whichever markdown editor is open. */
+  insertIntoEditor(text2) {
+    var _a;
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      const view = leaf.view;
+      if (view instanceof import_obsidian10.MarkdownView) {
+        view.editor.replaceSelection(text2);
+        new import_obsidian10.Notice(`Inserted \u300C${text2}\u300D`);
+        return;
+      }
+    }
+    void ((_a = navigator.clipboard) == null ? void 0 : _a.writeText(text2));
+    new import_obsidian10.Notice("No open editor \u2014 copied to the clipboard instead.");
+  }
+  // ── Edit sheet ────────────────────────────────────────────────────────────
+  /**
+   * Editing happens in a horizontal textarea on purpose: mobile IMEs place
+   * their candidate window relative to a horizontal caret, and vertical
+   * contenteditable regions put it in the wrong place on both iOS and Android.
+   */
+  openEditSheet() {
+    if (!this.sheet)
+      return;
+    if (!this.file) {
+      new import_obsidian10.Notice("No note is open in the reader.");
+      return;
+    }
+    const file = this.file;
+    const snapshot = this.sourceSnapshot;
+    const { body } = this.sheet.show(`\u7DE8\u96C6 \u2014 ${file.basename}`);
+    const textarea = body.createEl("textarea", { cls: "jp-tg-edit-area" });
+    textarea.value = snapshot;
+    textarea.spellcheck = false;
+    const actions = body.createDiv("jp-tg-card-actions");
+    const save = actions.createEl("button", { text: "\u4FDD\u5B58 Save", cls: "jp-tg-btn is-active" });
+    const cancel = actions.createEl("button", { text: "\u53D6\u6D88 Cancel", cls: "jp-tg-btn" });
+    cancel.addEventListener("click", () => {
+      var _a;
+      return (_a = this.sheet) == null ? void 0 : _a.close();
+    });
+    save.addEventListener("click", () => {
+      void (async () => {
+        var _a;
+        try {
+          const current = await this.app.vault.read(file);
+          if (current !== snapshot) {
+            new import_obsidian10.Notice("This note changed elsewhere \u2014 reload (\u27F3) before saving.");
+            return;
+          }
+          await this.app.vault.modify(file, textarea.value);
+          (_a = this.sheet) == null ? void 0 : _a.close();
+          new import_obsidian10.Notice("\u4FDD\u5B58\u3057\u307E\u3057\u305F");
+        } catch (error) {
+          new import_obsidian10.Notice(`Could not save: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      })();
+    });
+  }
+  // ── Content ───────────────────────────────────────────────────────────────
+  /** Point the reader at a file and render it. */
+  async setFile(file) {
+    var _a, _b, _c, _d;
+    this.persistPosition(true);
+    this.file = file;
+    this.setActiveHighlight(null);
+    (_a = this.titleEl) == null ? void 0 : _a.setText(file ? file.basename : "\u2014");
+    if (!file) {
+      this.showEmptyState("Open a note, then run \u201CRead in Tategaki\u201D.");
+      return;
+    }
+    try {
+      this.sourceSnapshot = await this.app.vault.cachedRead(file);
+    } catch (e) {
+      this.showEmptyState("Could not read this note.");
+      return;
+    }
+    this.restoreProgress = this.options.settings.rememberPosition ? (_b = this.options.settings.positions[file.path]) != null ? _b : 0 : 0;
+    this.parseAndRender();
+    (_d = (_c = this.leaf).updateHeader) == null ? void 0 : _d.call(_c);
+  }
+  /** Re-read from disk and re-render, keeping the reading position. */
+  async reload() {
+    var _a, _b;
+    if (!this.file)
+      return;
+    const progress = (_b = (_a = this.scroller) == null ? void 0 : _a.getProgress()) != null ? _b : 0;
+    this.sourceSnapshot = await this.app.vault.read(this.file);
+    this.restoreProgress = progress;
+    this.parseAndRender();
+  }
+  /** Re-render from the text already in memory (after a settings change). */
+  renderCurrent() {
+    var _a, _b, _c;
+    if (!this.file)
+      return;
+    this.restoreProgress = (_c = (_b = (_a = this.scroller) == null ? void 0 : _a.getProgress()) != null ? _b : this.restoreProgress) != null ? _c : 0;
+    this.parseAndRender();
+  }
+  parseAndRender() {
+    if (!this.canvasEl)
+      return;
+    const settings = this.options.settings;
+    const { body } = stripFrontmatter(this.sourceSnapshot);
+    this.blocks = parseBlocks(body, {
+      furigana: settings.showFurigana,
+      tateChuYoko: settings.tateChuYoko
+    });
+    this.charCount = countCharacters(this.blocks);
+    const matcher = settings.highlightCollocations && this.options.bridge.isAvailable() ? this.options.bridge.getMatcher({ maxEntries: settings.maxHighlightEntries }) : null;
+    this.renderer.render(this.canvasEl, this.blocks, {
+      highlight: Boolean(matcher),
+      matcher,
+      chunkSize: settings.chunkSize,
+      resolveImage: (src) => this.resolveImage(src),
+      onComplete: () => this.afterRender()
+    });
+  }
+  afterRender() {
+    var _a;
+    (_a = this.scroller) == null ? void 0 : _a.invalidate();
+    window.requestAnimationFrame(() => {
+      var _a2;
+      if (!this.scroller)
+        return;
+      this.scroller.calibrate();
+      const progress = (_a2 = this.restoreProgress) != null ? _a2 : 0;
+      if (progress > 1e-3)
+        this.scroller.setProgress(progress);
+      else
+        this.scroller.scrollToStart();
+      this.restoreProgress = null;
+      this.updateProgress();
+    });
+  }
+  resolveImage(src) {
+    var _a, _b;
+    try {
+      if (/^https?:\/\//.test(src))
+        return src;
+      const target = this.app.metadataCache.getFirstLinkpathDest(src, (_b = (_a = this.file) == null ? void 0 : _a.path) != null ? _b : "");
+      if (target instanceof import_obsidian10.TFile)
+        return this.app.vault.getResourcePath(target);
+    } catch (e) {
+    }
+    return null;
+  }
+  showEmptyState(message) {
+    this.renderer.cancel();
+    if (!this.canvasEl)
+      return;
+    this.canvasEl.empty();
+    this.canvasEl.createDiv({ cls: "jp-tg-empty", text: message });
+    this.updateProgress();
+  }
+  // ── Settings plumbing ─────────────────────────────────────────────────────
+  /** Merge a settings patch, persist it, and reflect it in the DOM. */
+  updateSettings(patch) {
+    Object.assign(this.options.settings, patch);
+    void this.options.saveSettings(this.options.settings);
+  }
+  /** Apply the current settings to an already-built view (no re-render). */
+  applySettingsToDom() {
+    var _a, _b;
+    const root = this.containerEl.children[1];
+    if (!root || !this.canvasEl)
+      return;
+    const settings = this.options.settings;
+    root.style.setProperty("--jp-tg-fs", `${settings.fontSize}px`);
+    root.style.setProperty("--jp-tg-lh", `${settings.lineHeight}`);
+    root.style.setProperty("--jp-tg-pad", `${settings.padding}px`);
+    if (settings.fontFamily === "custom" && settings.customFontFamily) {
+      root.style.setProperty("--jp-tg-ff", settings.customFontFamily);
+    } else {
+      root.style.removeProperty("--jp-tg-ff");
+    }
+    root.toggleClass("jp-tg--gothic", settings.fontFamily === "gothic");
+    root.toggleClass("jp-tg--paper", settings.paperTexture);
+    root.toggleClass("jp-tg--bouten", settings.boutenForBold);
+    root.toggleClass("jp-tg--upright", settings.uprightLatin);
+    root.toggleClass("jp-tg--no-ruby", !settings.showFurigana);
+    this.canvasEl.toggleClass("jp-tg--horizontal", !settings.enabled);
+    this.canvasEl.toggleClass("jp-tg--paged", settings.enabled && settings.pageMode === "page");
+    (_a = this.toolbarEl) == null ? void 0 : _a.toggleClass("is-hidden", !settings.showToolbar);
+    (_b = this.scroller) == null ? void 0 : _b.invalidate();
+  }
+  /** Called by the plugin when settings change outside the view. */
+  refreshFromSettings() {
+    this.applySettingsToDom();
+    this.renderCurrent();
+  }
+  nudgeFontSize(direction) {
+    var _a, _b;
+    const next = Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, this.options.settings.fontSize + direction));
+    if (next === this.options.settings.fontSize)
+      return;
+    const progress = (_b = (_a = this.scroller) == null ? void 0 : _a.getProgress()) != null ? _b : 0;
+    this.updateSettings({ fontSize: next });
+    this.applySettingsToDom();
+    this.showHint(`${next}px`);
+    this.reanchor(progress);
+  }
+  applyPinch(factor) {
+    var _a, _b;
+    if (!this.pinchBaseSize)
+      this.pinchBaseSize = this.options.settings.fontSize;
+    const next = Math.round(
+      Math.min(FONT_SIZE_MAX, Math.max(FONT_SIZE_MIN, this.pinchBaseSize * factor))
+    );
+    if (next === this.options.settings.fontSize)
+      return;
+    const progress = (_b = (_a = this.scroller) == null ? void 0 : _a.getProgress()) != null ? _b : 0;
+    this.options.settings.fontSize = next;
+    this.applySettingsToDom();
+    this.showHint(`${next}px`);
+    this.reanchor(progress);
+  }
+  /** Resizing the type reflows every column — put the reader back where they were. */
+  reanchor(progress) {
+    window.requestAnimationFrame(() => {
+      var _a, _b;
+      (_a = this.scroller) == null ? void 0 : _a.calibrate();
+      (_b = this.scroller) == null ? void 0 : _b.setProgress(progress);
+      this.updateProgress();
+    });
+  }
+  // ── Progress + hints ──────────────────────────────────────────────────────
+  updateProgress() {
+    var _a, _b;
+    if (!this.progressFillEl || !this.progressLabelEl)
+      return;
+    const progress = (_b = (_a = this.scroller) == null ? void 0 : _a.getProgress()) != null ? _b : 0;
+    this.progressFillEl.style.width = `${Math.round(progress * 100)}%`;
+    const characters = this.charCount ? `${this.charCount.toLocaleString()}\u5B57` : "";
+    this.progressLabelEl.setText(`${Math.round(progress * 100)}% ${characters}`.trim());
+  }
+  persistPosition(force = false) {
+    if (!this.options.settings.rememberPosition || !this.file || !this.scroller)
+      return;
+    const progress = this.scroller.getProgress();
+    const positions = this.options.settings.positions;
+    const stored = positions[this.file.path];
+    if (stored !== void 0 && Math.abs(stored - progress) < 5e-3)
+      return;
+    positions[this.file.path] = Number(progress.toFixed(4));
+    const now = Date.now();
+    if (!force && now - this.lastPositionWrite < 2e3)
+      return;
+    this.lastPositionWrite = now;
+    const paths = Object.keys(positions);
+    if (paths.length > 200) {
+      for (const path of paths.slice(0, paths.length - 200))
+        delete positions[path];
+    }
+    void this.options.saveSettings(this.options.settings);
+  }
+  showHint(text2) {
+    if (!this.hintEl)
+      return;
+    this.hintEl.setText(text2);
+    this.hintEl.addClass("is-visible");
+    if (this.hintTimer !== null)
+      window.clearTimeout(this.hintTimer);
+    this.hintTimer = window.setTimeout(() => {
+      var _a;
+      return (_a = this.hintEl) == null ? void 0 : _a.removeClass("is-visible");
+    }, 900);
+  }
+  // ── Workspace wiring ──────────────────────────────────────────────────────
+  registerWorkspaceEvents() {
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", () => {
+        var _a;
+        if (!this.options.settings.followActiveFile)
+          return;
+        const active = this.app.workspace.getActiveFile();
+        if (active && active.path !== ((_a = this.file) == null ? void 0 : _a.path))
+          void this.setFile(active);
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on("modify", (file) => {
+        var _a;
+        if (file instanceof import_obsidian10.TFile && file.path === ((_a = this.file) == null ? void 0 : _a.path))
+          void this.reload();
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        var _a, _b;
+        if (file instanceof import_obsidian10.TFile && oldPath === ((_a = this.file) == null ? void 0 : _a.path)) {
+          this.file = file;
+          (_b = this.titleEl) == null ? void 0 : _b.setText(file.basename);
+        }
+      })
+    );
+    if (import_obsidian10.Platform.isMobile) {
+      const introTimer = window.setTimeout(
+        () => this.showHint("\u30BF\u30C3\u30D7\u3067\u8F9E\u66F8 \u30FB \u30D4\u30F3\u30C1\u3067\u6587\u5B57\u30B5\u30A4\u30BA"),
+        600
+      );
+      this.disposers.push(() => window.clearTimeout(introTimer));
+    }
+  }
+};
+
+// src/tategaki/codeblock.ts
+var TATEGAKI_CODE_BLOCK_LANGS = ["tategaki", "\u7E26\u66F8\u304D"];
+function createTategakiCodeBlockProcessor(getSettings, bridge) {
+  return (source, el) => {
+    const settings = getSettings();
+    const renderer = new TategakiRenderer();
+    const host = el.ownerDocument.createElement("div");
+    host.className = "jp-tg-embed";
+    host.style.fontSize = `${settings.fontSize}px`;
+    host.style.lineHeight = `${settings.lineHeight}`;
+    if (!settings.enabled)
+      host.classList.add("jp-tg--horizontal");
+    if (settings.fontFamily === "gothic") {
+      host.style.fontFamily = '"Hiragino Kaku Gothic ProN", "Yu Gothic", "Noto Sans JP", sans-serif';
+    } else if (settings.fontFamily === "custom" && settings.customFontFamily) {
+      host.style.fontFamily = settings.customFontFamily;
+    }
+    el.appendChild(host);
+    const blocks = parseBlocks(source, {
+      furigana: settings.showFurigana,
+      tateChuYoko: settings.tateChuYoko
+    });
+    const matcher = settings.highlightCollocations && (bridge == null ? void 0 : bridge.isAvailable()) ? bridge.getMatcher({ maxEntries: settings.maxHighlightEntries }) : null;
+    renderer.render(host, blocks, {
+      highlight: Boolean(matcher),
+      matcher,
+      chunkSize: settings.chunkSize,
+      onComplete: () => {
+        const scroller = new ScrollController(host);
+        window.requestAnimationFrame(() => {
+          scroller.calibrate();
+          scroller.scrollToStart();
+        });
+      }
+    });
+  };
+}
+
+// src/tategaki/editor-mode.ts
+var BODY_CLASS = "jp-tg-editor-vertical";
+var EditorVerticalMode = class {
+  constructor(doc = document) {
+    this.active = false;
+    this.doc = doc;
+  }
+  isActive() {
+    return this.active;
+  }
+  /** Turn the editor-wide vertical mode on or off. */
+  set(enabled) {
+    this.active = enabled;
+    this.doc.body.classList.toggle(BODY_CLASS, enabled);
+  }
+  toggle() {
+    this.set(!this.active);
+    return this.active;
+  }
+  /** Always call on unload — the class outlives the plugin otherwise. */
+  dispose() {
+    this.doc.body.classList.remove(BODY_CLASS);
+    this.active = false;
+  }
+};
+
+// src/tategaki/settings-ui.ts
+var import_obsidian11 = require("obsidian");
+function buildTategakiSettings(containerEl, ctx) {
+  const { settings } = ctx;
+  const commit = () => {
+    var _a;
+    void ctx.save(settings);
+    (_a = ctx.onChange) == null ? void 0 : _a.call(ctx);
+  };
+  new import_obsidian11.Setting(containerEl).setName("\u7E26\u66F8\u304D Tategaki").setHeading();
+  new import_obsidian11.Setting(containerEl).setName("Vertical writing").setDesc("Render the reader right-to-left in vertical columns. Off falls back to horizontal.").addToggle(
+    (toggle) => toggle.setValue(settings.enabled).onChange((value) => {
+      settings.enabled = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Typography").setHeading();
+  new import_obsidian11.Setting(containerEl).setName("Typeface").setDesc("Mincho (\u660E\u671D) is the conventional face for vertical Japanese prose.").addDropdown(
+    (dropdown) => dropdown.addOption("mincho", "\u660E\u671D Mincho").addOption("gothic", "\u30B4\u30B7\u30C3\u30AF Gothic").addOption("custom", "Custom").setValue(settings.fontFamily).onChange((value) => {
+      settings.fontFamily = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Custom font stack").setDesc("CSS font-family list, used when Typeface is set to Custom.").addText(
+    (text2) => text2.setPlaceholder('"Yu Mincho", serif').setValue(settings.customFontFamily).onChange((value) => {
+      settings.customFontFamily = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Text size").setDesc("Pinch inside the reader to change this on a phone.").addSlider(
+    (slider) => slider.setLimits(FONT_SIZE_MIN, FONT_SIZE_MAX, 1).setValue(settings.fontSize).setDynamicTooltip().onChange((value) => {
+      settings.fontSize = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Column spacing").setDesc("Line height \u2014 the gap between columns in vertical mode.").addSlider(
+    (slider) => slider.setLimits(LINE_HEIGHT_MIN, LINE_HEIGHT_MAX, 0.05).setValue(settings.lineHeight).setDynamicTooltip().onChange((value) => {
+      settings.lineHeight = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Margin").addSlider(
+    (slider) => slider.setLimits(0, 60, 2).setValue(settings.padding).setDynamicTooltip().onChange((value) => {
+      settings.padding = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Paper tint").setDesc("Warmer background behind the text.").addToggle(
+    (toggle) => toggle.setValue(settings.paperTexture).onChange((value) => {
+      settings.paperTexture = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Japanese typesetting").setHeading();
+  new import_obsidian11.Setting(containerEl).setName("Furigana").setDesc("Render ruby from {\u6F22\u5B57|\u304B\u3093\u3058}, [\u6F22\u5B57]{\u304B\u3093\u3058}, \uFF5C\u6F22\u5B57\u300A\u304B\u3093\u3058\u300B and \u6F22\u5B57\u300A\u304B\u3093\u3058\u300B.").addToggle(
+    (toggle) => toggle.setValue(settings.showFurigana).onChange((value) => {
+      settings.showFurigana = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("\u7E26\u4E2D\u6A2A (tate-chu-yoko)").setDesc("Set two-digit numbers and !? upright inside the vertical line.").addToggle(
+    (toggle) => toggle.setValue(settings.tateChuYoko).onChange((value) => {
+      settings.tateChuYoko = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Upright Latin").setDesc("Stand Latin letters upright instead of rotating them 90\xB0.").addToggle(
+    (toggle) => toggle.setValue(settings.uprightLatin).onChange((value) => {
+      settings.uprightLatin = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("\u570F\u70B9 for bold").setDesc("Show **bold** as sesame dots beside the column, the vertical convention.").addToggle(
+    (toggle) => toggle.setValue(settings.boutenForBold).onChange((value) => {
+      settings.boutenForBold = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Reading").setHeading();
+  new import_obsidian11.Setting(containerEl).setName("Page turning").setDesc("Paged snaps one screen at a time; scrolling flicks freely.").addDropdown(
+    (dropdown) => dropdown.addOption("scroll", "\u5DFB Scroll").addOption("page", "\u9801 Paged").setValue(settings.pageMode).onChange((value) => {
+      settings.pageMode = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Edge tap zones").setDesc("In paged mode, tap the right edge to go back and the left edge to go on.").addToggle(
+    (toggle) => toggle.setValue(settings.tapZones).onChange((value) => {
+      settings.tapZones = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Pinch to resize").addToggle(
+    (toggle) => toggle.setValue(settings.pinchZoom).onChange((value) => {
+      settings.pinchZoom = value;
+      new import_obsidian11.Notice("Reopen the reader for this to take effect.");
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Show toolbar").addToggle(
+    (toggle) => toggle.setValue(settings.showToolbar).onChange((value) => {
+      settings.showToolbar = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Follow the active note").addToggle(
+    (toggle) => toggle.setValue(settings.followActiveFile).onChange((value) => {
+      settings.followActiveFile = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Remember reading position").addToggle(
+    (toggle) => toggle.setValue(settings.rememberPosition).onChange((value) => {
+      settings.rememberPosition = value;
+      commit();
+    })
+  ).addButton(
+    (button) => button.setButtonText("Clear").setTooltip("Forget every stored position").onClick(() => {
+      settings.positions = {};
+      commit();
+      new import_obsidian11.Notice("Reading positions cleared.");
+    })
+  );
+  if (import_obsidian11.Platform.isMobile) {
+    new import_obsidian11.Setting(containerEl).setName("Haptic feedback").setDesc("A short buzz on page turns and lookups.").addToggle(
+      (toggle) => toggle.setValue(settings.hapticFeedback).onChange((value) => {
+        settings.hapticFeedback = value;
+        commit();
+      })
+    );
+  }
+  new import_obsidian11.Setting(containerEl).setName("Collocation lexicon").setHeading();
+  new import_obsidian11.Setting(containerEl).setName("Tap to look up").setDesc("Tap a word to see the collocations it belongs to.").addToggle(
+    (toggle) => toggle.setValue(settings.tapToLookup).onChange((value) => {
+      settings.tapToLookup = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Underline known collocations").setDesc("Mark phrases from the lexicon where they occur in the text.").addToggle(
+    (toggle) => toggle.setValue(settings.highlightCollocations).onChange((value) => {
+      settings.highlightCollocations = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Highlight budget").setDesc("Lexicon entries scanned per render. Lower this if a long note feels slow.").addSlider(
+    (slider) => slider.setLimits(200, 1e4, 200).setValue(settings.maxHighlightEntries).setDynamicTooltip().onChange((value) => {
+      settings.maxHighlightEntries = value;
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Advanced").setHeading();
+  new import_obsidian11.Setting(containerEl).setName("Vertical markdown editor").setDesc(
+    import_obsidian11.Platform.isMobile ? "Experimental. Turns Obsidian's own editor and reading view vertical. On a phone the caret and IME candidate window stay horizontal \u2014 use the reader's \u270E edit sheet instead." : "Experimental. Turns Obsidian's own editor and reading view vertical."
+  ).addToggle(
+    (toggle) => toggle.setValue(settings.editorVerticalMode).onChange((value) => {
+      var _a;
+      settings.editorVerticalMode = value;
+      (_a = ctx.setEditorVerticalMode) == null ? void 0 : _a.call(ctx, value);
+      commit();
+    })
+  );
+  new import_obsidian11.Setting(containerEl).setName("Render chunk size").setDesc("Characters painted per frame. Lower is smoother on old phones.").addSlider(
+    (slider) => slider.setLimits(500, 12e3, 500).setValue(settings.chunkSize).setDynamicTooltip().onChange((value) => {
+      settings.chunkSize = value;
+      commit();
+    })
+  );
+}
+
+// src/tategaki/register.ts
+function registerTategaki(plugin, options = {}) {
+  var _a, _b, _c;
+  const settings = { ...DEFAULT_TATEGAKI_SETTINGS };
+  const doc = (_b = (_a = plugin.app.workspace.containerEl) == null ? void 0 : _a.ownerDocument) != null ? _b : document;
+  const editorMode = new EditorVerticalMode(doc);
+  injectTategakiStyles(doc);
+  plugin.register(() => removeTategakiStyles(doc));
+  plugin.register(() => editorMode.dispose());
+  plugin.registerEvent(
+    plugin.app.workspace.on("window-open", (win) => injectTategakiStyles(win.doc))
+  );
+  const bridge = new CollocationBridge(
+    (_c = options.getLexiconHost) != null ? _c : () => plugin
+  );
+  const save = (next) => {
+    void saveTategakiSettings(plugin, next);
+  };
+  const views = () => plugin.app.workspace.getLeavesOfType(TATEGAKI_VIEW_TYPE).map((leaf) => leaf.view).filter((view) => view instanceof TategakiView);
+  const refreshViews = () => {
+    for (const view of views())
+      view.refreshFromSettings();
+  };
+  void loadTategakiSettings(plugin).then((loaded) => {
+    Object.assign(settings, loaded);
+    if (settings.editorVerticalMode)
+      editorMode.set(true);
+    for (const view of views())
+      view.refreshFromSettings();
+  });
+  plugin.registerView(
+    TATEGAKI_VIEW_TYPE,
+    (leaf) => new TategakiView(leaf, {
+      settings,
+      saveSettings: save,
+      bridge,
+      openLexiconSearch: options.openLexiconSearch
+    })
+  );
+  for (const language of TATEGAKI_CODE_BLOCK_LANGS) {
+    plugin.registerMarkdownCodeBlockProcessor(
+      language,
+      createTategakiCodeBlockProcessor(() => settings, bridge)
+    );
+  }
+  const openReader = async (file) => {
+    const workspace = plugin.app.workspace;
+    const target = file != null ? file : workspace.getActiveFile();
+    const existing = workspace.getLeavesOfType(TATEGAKI_VIEW_TYPE)[0];
+    if (existing) {
+      await workspace.revealLeaf(existing);
+      const view = existing.view;
+      if (view instanceof TategakiView && target)
+        await view.setFile(target);
+      return;
+    }
+    const leaf = workspace.getLeaf("tab");
+    await leaf.setViewState({
+      type: TATEGAKI_VIEW_TYPE,
+      active: true,
+      state: target ? { file: target.path } : {}
+    });
+    await workspace.revealLeaf(leaf);
+  };
+  plugin.addCommand({
+    id: "tategaki-open-reader",
+    name: "Read in Tategaki (\u7E26\u66F8\u304D\u3067\u8AAD\u3080)",
+    callback: () => void openReader()
+  });
+  plugin.addCommand({
+    id: "tategaki-toggle-page-mode",
+    name: "Tategaki: toggle paged / scrolling",
+    callback: () => {
+      settings.pageMode = settings.pageMode === "page" ? "scroll" : "page";
+      save(settings);
+      for (const view of views())
+        view.applySettingsToDom();
+      new import_obsidian12.Notice(settings.pageMode === "page" ? "\u9801 Paged" : "\u5DFB Scrolling");
+    }
+  });
+  plugin.addCommand({
+    id: "tategaki-toggle-furigana",
+    name: "Tategaki: toggle furigana",
+    callback: () => {
+      settings.showFurigana = !settings.showFurigana;
+      save(settings);
+      refreshViews();
+      new import_obsidian12.Notice(settings.showFurigana ? "\u3075\u308A\u304C\u306A on" : "\u3075\u308A\u304C\u306A off");
+    }
+  });
+  plugin.addCommand({
+    id: "tategaki-toggle-editor-vertical",
+    name: "Tategaki: toggle vertical markdown editor (experimental)",
+    callback: () => {
+      const active = editorMode.toggle();
+      settings.editorVerticalMode = active;
+      save(settings);
+      new import_obsidian12.Notice(active ? "\u7E26\u66F8\u304D\u30A8\u30C7\u30A3\u30BF on" : "\u7E26\u66F8\u304D\u30A8\u30C7\u30A3\u30BF off");
+    }
+  });
+  plugin.addCommand({
+    id: "tategaki-wrap-selection",
+    name: "Tategaki: wrap selection in a vertical block",
+    editorCallback: (editor) => {
+      const selection = editor.getSelection() || editor.getLine(editor.getCursor().line);
+      editor.replaceSelection(`\`\`\`tategaki
+${selection}
+\`\`\`
+`);
+    }
+  });
+  plugin.registerEvent(
+    plugin.app.workspace.on("file-menu", (menu, file) => {
+      if (!(file instanceof import_obsidian12.TFile) || file.extension !== "md")
+        return;
+      menu.addItem(
+        (item) => item.setTitle("\u7E26\u66F8\u304D\u3067\u8AAD\u3080 Read in Tategaki").setIcon("book-open").onClick(() => void openReader(file))
+      );
+    })
+  );
+  if (options.ribbon !== false) {
+    plugin.addRibbonIcon("book-open", "\u7E26\u66F8\u304D Tategaki reader", () => void openReader());
+  }
+  const settingsContext = {
+    settings,
+    save,
+    onChange: refreshViews,
+    setEditorVerticalMode: (enabled) => editorMode.set(enabled)
+  };
+  return {
+    settings,
+    bridge,
+    buildSettings: (containerEl) => buildTategakiSettings(containerEl, settingsContext),
+    openReader,
+    refreshViews,
+    invalidateLexicon: () => {
+      bridge.invalidate();
+      refreshViews();
+    },
+    unload: () => {
+      editorMode.dispose();
+      removeTategakiStyles(doc);
+      plugin.app.workspace.detachLeavesOfType(TATEGAKI_VIEW_TYPE);
+    }
+  };
+}
+
 // src/main.ts
-var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
+var JPCollocationsPlugin = class extends import_obsidian13.Plugin {
   constructor() {
     super(...arguments);
     this.settings = { ...DEFAULT_SETTINGS };
     this.scraper = null;
     this.discourseAnalyzer = new DiscourseAnalyzer();
+    /** Vertical reader. Null until onload() wires it up. */
+    this.tategaki = null;
   }
   async onload() {
     await this.loadSettings();
@@ -14314,6 +18133,16 @@ var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
         await this.saveSettings();
       }
     ));
+    this.tategaki = registerTategaki(this, {
+      openLexiconSearch: (query) => {
+        const modal = new SearchModal(this.app, this.engine);
+        modal.open();
+        if (query) {
+          modal.inputEl.value = query;
+          modal.inputEl.dispatchEvent(new Event("input"));
+        }
+      }
+    });
     this.addCommand({
       id: "open-lexicon",
       name: "Open Lexicon",
@@ -14336,7 +18165,7 @@ var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
       editorCallback: (editor) => {
         const selected = editor.getSelection();
         if (!selected || selected.trim().length === 0) {
-          new import_obsidian10.Notice("Select some Japanese text first!");
+          new import_obsidian13.Notice("Select some Japanese text first!");
           return;
         }
         const classifier = new TextClassifier();
@@ -14375,12 +18204,12 @@ var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
       editorCallback: (editor) => {
         const selected = editor.getSelection();
         if (!selected || !selected.trim()) {
-          new import_obsidian10.Notice("Select annotated text with || boundaries first!");
+          new import_obsidian13.Notice("Select annotated text with || boundaries first!");
           return;
         }
         const graph = this.discourseAnalyzer.analyze(selected.trim());
         this.contextStore.ingestGraph(graph, "editor-selection");
-        new import_obsidian10.Notice(`Analysed ${graph.bits.length} discourse bits.`);
+        new import_obsidian13.Notice(`Analysed ${graph.bits.length} discourse bits.`);
         this.refreshContextViews();
       }
     });
@@ -14397,8 +18226,9 @@ var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
     this.addRibbonIcon("languages", "JP Collocations", () => this.openLexiconView());
   }
   async onunload() {
-    var _a;
+    var _a, _b;
     (_a = this.scraper) == null ? void 0 : _a.abort();
+    (_b = this.tategaki) == null ? void 0 : _b.unload();
     this.app.workspace.detachLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(DICTIONARY_VIEW_TYPE);
     this.app.workspace.detachLeavesOfType(DISCOURSE_CARD_VIEW_TYPE);
@@ -14445,9 +18275,11 @@ var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
     }
   }
   refreshViews() {
+    var _a;
     for (const leaf of this.app.workspace.getLeavesOfType(JP_COLLOCATIONS_VIEW_TYPE)) {
       leaf.view.refresh();
     }
+    (_a = this.tategaki) == null ? void 0 : _a.invalidateLexicon();
   }
   importData() {
     const input = document.createElement("input");
@@ -14458,14 +18290,14 @@ var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
       const file = (_a = input.files) == null ? void 0 : _a[0];
       if (!file)
         return;
-      const text = await file.text();
+      const text2 = await file.text();
       try {
-        const parsed = JSON.parse(text);
+        const parsed = JSON.parse(text2);
         const count = this.store.bulkImport(parsed);
-        new import_obsidian10.Notice(`Imported ${count} entries.`);
+        new import_obsidian13.Notice(`Imported ${count} entries.`);
         this.refreshViews();
       } catch (e) {
-        new import_obsidian10.Notice("Failed to parse JSON file.");
+        new import_obsidian13.Notice("Failed to parse JSON file.");
       }
     };
     input.click();
@@ -14479,31 +18311,31 @@ var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
     a.download = "jp-collocations-export.json";
     a.click();
     URL.revokeObjectURL(url);
-    new import_obsidian10.Notice("Exported collocations.");
+    new import_obsidian13.Notice("Exported collocations.");
   }
   async fetchFromHyogen() {
     var _a;
     if (!this.settings.hyogenEnabled) {
-      new import_obsidian10.Notice("Hyogen scraping is disabled. Enable it in settings first.");
+      new import_obsidian13.Notice("Hyogen scraping is disabled. Enable it in settings first.");
       return;
     }
     if (this.settings.hyogenWordList.length === 0) {
-      new import_obsidian10.Notice("No words configured. Add words to the scrape list in settings.");
+      new import_obsidian13.Notice("No words configured. Add words to the scrape list in settings.");
       return;
     }
     if ((_a = this.scraper) == null ? void 0 : _a.isRunning()) {
-      new import_obsidian10.Notice("Scraper is already running.");
+      new import_obsidian13.Notice("Scraper is already running.");
       return;
     }
     this.scraper = new HyogenScraper(this.app, this.store, {
       rateLimit: this.settings.hyogenRateLimit,
-      onProgress: (msg) => new import_obsidian10.Notice(msg, 3e3),
+      onProgress: (msg) => new import_obsidian13.Notice(msg, 3e3),
       onEntry: () => this.refreshViews()
     });
     this.scraper.enqueue(this.settings.hyogenWordList);
-    new import_obsidian10.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
+    new import_obsidian13.Notice(`Starting Hyogen scrape for ${this.settings.hyogenWordList.length} words...`);
     const count = await this.scraper.run();
-    new import_obsidian10.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
+    new import_obsidian13.Notice(`Hyogen scrape complete. Added ${count} new entries.`);
     this.refreshViews();
   }
   async openDiscourseCardView() {
@@ -14549,8 +18381,8 @@ var JPCollocationsPlugin = class extends import_obsidian10.Plugin {
     return this.discourseStore.exportAll();
   }
   /** Analyse raw annotated text and ingest into context store. */
-  analyseDiscourseText(text, source) {
-    const graph = this.discourseAnalyzer.analyze(text, void 0, source);
+  analyseDiscourseText(text2, source) {
+    const graph = this.discourseAnalyzer.analyze(text2, void 0, source);
     this.contextStore.ingestGraph(graph, source != null ? source : "bridge");
     return graph;
   }
