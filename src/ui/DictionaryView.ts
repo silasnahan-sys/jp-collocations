@@ -47,7 +47,7 @@ import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
 import { classBadge } from './class-grammar';
 import { armDrops, armSelectionEcho, mountSurfaceBar, wideDock, type ViewChrome } from './view-chrome';
 import { makeDraggable } from './drag-out';
-import { historyDays, searchNotation, panVerdict, type DictHistoryStore } from '../dictionary/dict-nav';
+import { historyDays, searchNotation, panVerdict, foldForFind, type DictHistoryStore } from '../dictionary/dict-nav';
 
 export const JP_DICTIONARY_VIEW_TYPE = 'jp-dictionary-view';
 
@@ -875,13 +875,17 @@ export class DictionaryView extends ItemView {
     // the walker. Latin matches case-insensitively; Japanese matches exactly.
     const walker = document.createTreeWalker(this.resultsEl, NodeFilter.SHOW_TEXT);
     const plan: Array<{ node: Text; idx: number }> = [];
-    const lower = q.toLowerCase();
+    // foldForFind is length-preserving BY CONTRACT (dict-nav.ts), which is
+    // what lets an index into the folded haystack address the real text
+    // node below. NFKC here would silently shift every offset after the
+    // first half-width katakana and highlight the wrong characters.
+    const lower = foldForFind(q);
     let n: Text | null;
     while ((n = walker.nextNode() as Text | null)) {
       const hay = n.data;
       let from = 0;
       for (;;) {
-        const i = hay.toLowerCase().indexOf(lower, from);
+        const i = foldForFind(hay).indexOf(lower, from);
         if (i < 0) break;
         plan.push({ node: n, idx: i });
         from = i + q.length;

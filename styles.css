@@ -4763,6 +4763,32 @@ mark.jp-dict-find-hit--current {
   min-height: 1.2em;
 }
 /* the suggestion's stated reason — an offer carries its why (§21) */
+/* 二重写し — the two registers. Deliberately quiet: it is a READ of the
+   distance between what the catalog holds and what this hand would file,
+   sitting where the eye lands last before the thumb commits. */
+.jp-capture-registers {
+  margin: 6px 0 2px;
+  padding: 7px 10px;
+  border-left: 2px solid var(--background-modifier-border);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.jp-capture-reg-head {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.jp-capture-reg-row {
+  font-size: 0.76rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+/* the three ways a field can move, each readable at a glance and none of
+   them borrowing a taxonomy hue (those are RESERVED, CLAUDE.md §1) */
+.jp-capture-reg-row--changed { color: var(--text-normal); }
+.jp-capture-reg-row--added { color: var(--text-success, var(--text-normal)); }
+.jp-capture-reg-row--removed { color: var(--text-muted); text-decoration-color: var(--text-faint); }
 .jp-capture-whyrow {
   font-size: 0.72rem;
   color: var(--text-faint);

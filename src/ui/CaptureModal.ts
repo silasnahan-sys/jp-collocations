@@ -21,6 +21,10 @@ import type { App } from 'obsidian';
 import { NOTE_TYPES, NOTE_CLASSES, type NoteClass } from '../notes/note-types.ts';
 import type { ClassEvidence, ClassSignal } from '../notes/class-suggester.ts';
 import { chooseSuggested } from '../notes/class-suggester.ts';
+import {
+  snapshotOf, diffRegisters, changedOnly, registerLine, registerSummary,
+  type RegisterSnapshot, type StoredLike,
+} from '../notes/registers.ts';
 import { classChips, CLASS_HINTS } from './class-grammar.ts';
 import { derivePattern, type PatternEntry, type Attestation } from '../notes/pattern-store.ts';
 import { TokenCanvas } from './TokenCanvas.ts';
@@ -82,6 +86,13 @@ export interface CaptureDeps {
    *  Ranked; [0] is preselected. Absent → notation-only derivePattern
    *  fallback. */
   suggestClass?: (ev: ClassEvidence) => ClassSignal[];
+  /**
+   * 二重写し (CALENDAR-PHYSICS §2 law 1) — what the catalog ALREADY holds
+   * for this note, so the panel can show STORED and CANDIDATE as two
+   * registers instead of silently replacing one. Absent → no strip, which
+   * is the honest rendering of a capture that has only one truth.
+   */
+  storedFor?: (note: string) => StoredLike | null;
   /** §22.4 TokenCanvas: dictionary probe for token validation. */
   canvasProbe?: (s: string) => boolean;
   /** §22.4 pentimento: faint span suggestions over the example text. */
@@ -129,6 +140,12 @@ export class CaptureModal extends Modal {
   private ranking: ClassSignal[] = [];
   private suggestWhy = '';
   private whyEl: HTMLElement | null = null;
+
+  // 二重写し: the LEFT register. What the catalog holds right now, and goes
+  // on holding until the hand commits. Re-read whenever the note changes,
+  // because the note is the address — a different note is a different row.
+  private storedSnap: RegisterSnapshot | null = null;
+  private registersEl: HTMLElement | null = null;
 
   constructor(app: App, private ctx: CaptureContext, private deps: CaptureDeps) {
     super(app);
@@ -220,7 +237,13 @@ export class CaptureModal extends Modal {
     });
     this.noteInput.value = this.ctx.text;
     // typed by the hand ⇒ owned by the hand (see noteEdited)
-    this.noteInput.addEventListener('input', () => { this.noteEdited = true; });
+    this.noteInput.addEventListener('input', () => {
+      this.noteEdited = true;
+      // The note is the address. Retyping it does not edit the stored row —
+      // it points at a different one (or at none), so the left register is
+      // re-read rather than diffed against a record that is not this one.
+      this.refreshStored();
+    });
 
     // ── class chips + the suggestion's WHY, ABOVE the canvas ──
     // Two reasons for the placement, both filmed (IMG_1067): the class choice
@@ -306,6 +329,10 @@ export class CaptureModal extends Modal {
 
     // ── per-class payload ──
     this.payloadEl = contentEl.createDiv('jp-capture-payload');
+    // The strip sits UNDER the fields and ABOVE the save row: the last thing
+    // read before the thumb commits is what the commit would move.
+    this.registersEl = contentEl.createDiv('jp-capture-registers');
+    this.refreshStored();
     this.renderPayload();
 
     // ── buttons ──
@@ -351,6 +378,7 @@ export class CaptureModal extends Modal {
     if (this.cls !== 'discourse') {
       this.field(el, 'この表現がすること（任意）', this.gloss, '例: 反実仮想へ視点を移す', (v) => { this.gloss = v; });
     }
+    this.renderRegisters();
   }
 
   /** 🔴: the responsivity skeleton — turns, act, edge — pre-filled by the parser. */
@@ -473,6 +501,54 @@ export class CaptureModal extends Modal {
     layers.addEventListener('click', () => void this.saveBundle());
     const save = row.createEl('button', { text: '保存', cls: 'jp-capture-btn jp-capture-btn--cta' });
     save.addEventListener('click', () => void this.save(true));
+  }
+
+  /** Re-read the LEFT register for whatever note is currently addressed. */
+  private refreshStored(): void {
+    const note = (this.noteInput?.value ?? this.ctx.text).trim();
+    this.storedSnap = note ? snapshotOf(this.deps.storedFor?.(note) ?? null) : null;
+    this.renderRegisters();
+  }
+
+  /**
+   * The RIGHT register — built exactly as `save()` builds its payload, so
+   * the strip promises what the commit will actually write and not a
+   * prettier neighbour of it.
+   */
+  private currentSnapshot(): RegisterSnapshot {
+    const parts = splitNotationParts(this.parts);
+    const snap: RegisterSnapshot = {
+      note: (this.noteInput?.value ?? this.ctx.text).trim(),
+      cls: this.cls,
+    };
+    if ((this.cls === 'skeletal' || this.cls === 'collocation') && parts.length >= 2) snap.parts = parts;
+    if (this.cls === 'phrase_schema' && this.frame.trim()) snap.frame = this.frame.trim();
+    if (this.cls === 'rhet_collocation') {
+      if (this.lemma.trim()) snap.lemma = this.lemma.trim();
+      if (this.halo.trim()) snap.halo = this.halo.trim();
+    }
+    if (this.gloss.trim()) snap.gloss = this.gloss.trim();
+    return snap;
+  }
+
+  /**
+   * Two registers, co-visible — the film’s exact finding (IMG_1213: the
+   * panel keeps the stored address while the candidate rides the block, and
+   * only release rewrites it). Nothing here writes: the strip is a read of
+   * the distance between what is filed and what this hand would file.
+   */
+  private renderRegisters(): void {
+    const el = this.registersEl;
+    if (!el) return;
+    el.empty();
+    const fields = diffRegisters(this.storedSnap, this.currentSnapshot());
+    const moved = changedOnly(fields);
+    if (!moved.length) { el.hide(); return; }
+    el.show();
+    el.createDiv({ cls: 'jp-capture-reg-head', text: `⿻ ${registerSummary(fields)}` });
+    for (const f of moved) {
+      el.createDiv({ cls: `jp-capture-reg-row jp-capture-reg-row--${f.kind}`, text: registerLine(f) });
+    }
   }
 
   /**
@@ -653,7 +729,14 @@ export class CaptureModal extends Modal {
         : `${def.emoji} ${def.label} として台帳に記録: ${entry.key}`);
       this.deps.onSaved?.(entry);
       if (closeAfter) this.close();
-      else this.markSavedInPlace(this.cls);
+      else {
+        // 小さな確定 (law 6): the commit happened, so the LEFT register
+        // becomes what was just written — the panel rewrites itself where
+        // the eye already is, and the next lens diffs against the truth.
+        this.storedSnap = snapshotOf(entry);
+        this.renderRegisters();
+        this.markSavedInPlace(this.cls);
+      }
     } catch (e) {
       new Notice(`保存に失敗: ${(e as Error).message}`, 6000);
     } finally {

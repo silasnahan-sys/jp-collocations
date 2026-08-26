@@ -25754,7 +25754,7 @@ function attachSelectionEcho(root, deps) {
       deps.open(hw);
     });
   };
-  const show = () => {
+  const show2 = () => {
     var _a2, _b2;
     const sel = window.getSelection();
     const text = (_a2 = sel == null ? void 0 : sel.toString().trim()) != null ? _a2 : "";
@@ -25863,7 +25863,7 @@ function attachSelectionEcho(root, deps) {
   const onChange = () => {
     if (timer)
       window.clearTimeout(timer);
-    timer = window.setTimeout(show, 160);
+    timer = window.setTimeout(show2, 160);
   };
   const onEsc = (e) => {
     if (e.key === "Escape")
@@ -26046,7 +26046,7 @@ function attachEdgeBack(host, deps, cfg2 = DEFAULT_EDGE) {
     tab == null ? void 0 : tab.remove();
     tab = null;
   };
-  const show = (label, y) => {
+  const show2 = (label, y) => {
     tab = host.createDiv("jp-edgeback");
     tab.createSpan({ cls: "jp-edgeback-arrow", text: "\u2039" });
     tab.createSpan({ cls: "jp-edgeback-label", text: label });
@@ -26088,7 +26088,7 @@ function attachEdgeBack(host, deps, cfg2 = DEFAULT_EDGE) {
         clear();
         return;
       }
-      show(label, e.clientY - host.getBoundingClientRect().top);
+      show2(label, e.clientY - host.getBoundingClientRect().top);
     }
     e.preventDefault();
     const pull = pullFor(dx, cfg2);
@@ -29777,10 +29777,10 @@ function pickPlexSession(sessions, note) {
     if (byEpisode)
       return byEpisode;
   }
-  const show = (_b2 = note == null ? void 0 : note.show) == null ? void 0 : _b2.trim();
-  if (show) {
+  const show2 = (_b2 = note == null ? void 0 : note.show) == null ? void 0 : _b2.trim();
+  if (show2) {
     const withShow = sessions.filter((s) => s.show).map((s) => ({ title: s.show, s }));
-    const byShow = matchEpisodeNote(show, withShow);
+    const byShow = matchEpisodeNote(show2, withShow);
     if (byShow)
       return byShow.s;
   }
@@ -29985,11 +29985,11 @@ function titleSim(query, candidate) {
   }
   return dice(a, b) * 0.85;
 }
-function entryScore(entry2, show, season) {
+function entryScore(entry2, show2, season) {
   const forms = [entry2.name, entry2.englishName, entry2.japaneseName].filter(Boolean);
   let best = 0;
   for (const f of forms)
-    best = Math.max(best, titleSim(show, f));
+    best = Math.max(best, titleSim(show2, f));
   const entrySeason = forms.map((f) => seasonOf(f)).find((s) => s != null);
   if (season != null && season > 1) {
     if (entrySeason === season)
@@ -30003,8 +30003,8 @@ function entryScore(entry2, show, season) {
   }
   return Math.max(0, Math.min(1.2, best));
 }
-function pickJimakuEntry(entries, show, season) {
-  const ranked = entries.map((entry2) => ({ entry: entry2, score: entryScore(entry2, show, season) })).sort((a, b) => b.score - a.score);
+function pickJimakuEntry(entries, show2, season) {
+  const ranked = entries.map((entry2) => ({ entry: entry2, score: entryScore(entry2, show2, season) })).sort((a, b) => b.score - a.score);
   const top = ranked[0];
   if (!top)
     return { entry: null, score: 0, confident: false, ranked };
@@ -30114,9 +30114,9 @@ function describeJimakuEntry(e) {
 }
 function jimakuQueryFor(ep) {
   var _a2, _b2;
-  const show = (_a2 = ep.show) == null ? void 0 : _a2.trim();
-  if (show)
-    return show;
+  const show2 = (_a2 = ep.show) == null ? void 0 : _a2.trim();
+  if (show2)
+    return show2;
   const t = ((_b2 = ep.title) != null ? _b2 : "").trim();
   return t.replace(/\bS\d{1,2}[\s._-]*E\d{1,3}\b/i, " ").replace(/第\s*\d{1,3}\s*話/, " ").replace(/[-–—]\s*\d{1,3}\s*$/, " ").replace(/\s+/g, " ").trim();
 }
@@ -31254,6 +31254,84 @@ function chooseSuggested(ranking, classHint, derived) {
   return { cls: derived, from: "derivation" };
 }
 
+// src/notes/registers.ts
+function snapshotOf(e) {
+  var _a2, _b2;
+  if (!e)
+    return null;
+  const p = (_a2 = e.payload) != null ? _a2 : {};
+  return {
+    // The NOTE, not the key: the key is derived (a 🟠 key is its parts
+    // joined), so comparing a typed headword against it would report a
+    // change on every capture that never edited anything.
+    note: (_b2 = e.note) != null ? _b2 : e.key,
+    cls: e.class,
+    parts: p.parts,
+    frame: p.frame,
+    lemma: p.lemma,
+    halo: p.halo,
+    gloss: p.gloss
+  };
+}
+var LABELS = {
+  note: "\u898B\u51FA\u3057",
+  cls: "\u5206\u985E",
+  parts: "\u6210\u5206\u30EA\u30F3\u30AF",
+  frame: "\u578B",
+  lemma: "\u30EC\u30F3\u30DE",
+  halo: "\u30CF\u30ED\u30FC",
+  gloss: "\u8A9E\u91C8"
+};
+var ORDER = ["note", "cls", "parts", "frame", "lemma", "halo", "gloss"];
+var show = (v) => {
+  if (v == null)
+    return "";
+  const s = Array.isArray(v) ? v.filter(Boolean).join(" \u301C ") : v;
+  return s.trim();
+};
+function diffRegisters(stored, candidate) {
+  if (!stored)
+    return [];
+  const out = [];
+  for (const field of ORDER) {
+    const a = show(stored[field]);
+    const b = show(candidate[field]);
+    let kind;
+    if (a === b)
+      kind = "same";
+    else if (!a)
+      kind = "added";
+    else if (!b)
+      kind = "removed";
+    else
+      kind = "changed";
+    out.push({ field, label: LABELS[field], stored: a || void 0, candidate: b || void 0, kind });
+  }
+  return out;
+}
+function changedOnly(fields) {
+  return fields.filter((f) => f.kind !== "same");
+}
+function registerLine(f) {
+  var _a2;
+  switch (f.kind) {
+    case "added":
+      return `${f.label}: \u2014 \u2192 ${f.candidate}`;
+    case "removed":
+      return `${f.label}: ${f.stored} \u2192 \u2014`;
+    case "changed":
+      return `${f.label}: ${f.stored} \u2192 ${f.candidate}`;
+    default:
+      return `${f.label}: ${(_a2 = f.stored) != null ? _a2 : "\u2014"}`;
+  }
+}
+function registerSummary(fields) {
+  const moved = changedOnly(fields);
+  if (!moved.length)
+    return "\u53F0\u5E33\u306E\u8A18\u9332\u3068\u540C\u3058";
+  return `\u53F0\u5E33\u306E\u8A18\u9332\u304B\u3089 ${moved.length}\u70B9\u304C\u5909\u308F\u308A\u307E\u3059`;
+}
+
 // src/notes/token-canvas.ts
 var PUNCT_RE2 = /[、。！？!?・…‥「」『』()（）\s]/;
 var KANJI = /[㐀-䶿一-鿿々]/;
@@ -32008,6 +32086,11 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
     this.ranking = [];
     this.suggestWhy = "";
     this.whyEl = null;
+    // 二重写し: the LEFT register. What the catalog holds right now, and goes
+    // on holding until the hand commits. Re-read whenever the note changes,
+    // because the note is the address — a different note is a different row.
+    this.storedSnap = null;
+    this.registersEl = null;
     const d = derivePattern(ctx.text);
     this.ranking = (_d2 = (_c2 = deps.suggestClass) == null ? void 0 : _c2.call(deps, {
       note: ctx.text,
@@ -32082,6 +32165,7 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
     this.noteInput.value = this.ctx.text;
     this.noteInput.addEventListener("input", () => {
       this.noteEdited = true;
+      this.refreshStored();
     });
     let chipHandle = null;
     const selectClass = (c) => {
@@ -32149,6 +32233,8 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
       }
     });
     this.payloadEl = contentEl.createDiv("jp-capture-payload");
+    this.registersEl = contentEl.createDiv("jp-capture-registers");
+    this.refreshStored();
     this.renderPayload();
     this.saveRowEl = contentEl.createDiv("jp-capture-btnrow");
     this.renderButtons();
@@ -32203,6 +32289,7 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
         this.gloss = v;
       });
     }
+    this.renderRegisters();
   }
   /** 🔴: the responsivity skeleton — turns, act, edge — pre-filled by the parser. */
   renderSkeleton(el) {
@@ -32331,6 +32418,62 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
     layers.addEventListener("click", () => void this.saveBundle());
     const save = row.createEl("button", { text: "\u4FDD\u5B58", cls: "jp-capture-btn jp-capture-btn--cta" });
     save.addEventListener("click", () => void this.save(true));
+  }
+  /** Re-read the LEFT register for whatever note is currently addressed. */
+  refreshStored() {
+    var _a2, _b2, _c2, _d2, _e2;
+    const note = ((_b2 = (_a2 = this.noteInput) == null ? void 0 : _a2.value) != null ? _b2 : this.ctx.text).trim();
+    this.storedSnap = note ? snapshotOf((_e2 = (_d2 = (_c2 = this.deps).storedFor) == null ? void 0 : _d2.call(_c2, note)) != null ? _e2 : null) : null;
+    this.renderRegisters();
+  }
+  /**
+   * The RIGHT register — built exactly as `save()` builds its payload, so
+   * the strip promises what the commit will actually write and not a
+   * prettier neighbour of it.
+   */
+  currentSnapshot() {
+    var _a2, _b2;
+    const parts = splitNotationParts(this.parts);
+    const snap2 = {
+      note: ((_b2 = (_a2 = this.noteInput) == null ? void 0 : _a2.value) != null ? _b2 : this.ctx.text).trim(),
+      cls: this.cls
+    };
+    if ((this.cls === "skeletal" || this.cls === "collocation") && parts.length >= 2)
+      snap2.parts = parts;
+    if (this.cls === "phrase_schema" && this.frame.trim())
+      snap2.frame = this.frame.trim();
+    if (this.cls === "rhet_collocation") {
+      if (this.lemma.trim())
+        snap2.lemma = this.lemma.trim();
+      if (this.halo.trim())
+        snap2.halo = this.halo.trim();
+    }
+    if (this.gloss.trim())
+      snap2.gloss = this.gloss.trim();
+    return snap2;
+  }
+  /**
+   * Two registers, co-visible — the film’s exact finding (IMG_1213: the
+   * panel keeps the stored address while the candidate rides the block, and
+   * only release rewrites it). Nothing here writes: the strip is a read of
+   * the distance between what is filed and what this hand would file.
+   */
+  renderRegisters() {
+    const el = this.registersEl;
+    if (!el)
+      return;
+    el.empty();
+    const fields = diffRegisters(this.storedSnap, this.currentSnapshot());
+    const moved = changedOnly(fields);
+    if (!moved.length) {
+      el.hide();
+      return;
+    }
+    el.show();
+    el.createDiv({ cls: "jp-capture-reg-head", text: `\u2FFB ${registerSummary(fields)}` });
+    for (const f of moved) {
+      el.createDiv({ cls: `jp-capture-reg-row jp-capture-reg-row--${f.kind}`, text: registerLine(f) });
+    }
   }
   /**
    * The reason row, for whatever class is CHOSEN — not for whatever was
@@ -32505,8 +32648,11 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
       (_f2 = (_e2 = this.deps).onSaved) == null ? void 0 : _f2.call(_e2, entry2);
       if (closeAfter)
         this.close();
-      else
+      else {
+        this.storedSnap = snapshotOf(entry2);
+        this.renderRegisters();
         this.markSavedInPlace(this.cls);
+      }
     } catch (e) {
       new import_obsidian14.Notice(`\u4FDD\u5B58\u306B\u5931\u6557: ${e.message}`, 6e3);
     } finally {
@@ -33510,8 +33656,8 @@ var ReviewView = class extends import_obsidian15.ItemView {
       void this.playClip(card.att, playBtn, true);
     }
     if (!this.revealed) {
-      const show = cardEl.createEl("button", { text: "\u7B54\u3048\u3092\u8868\u793A (Space)", cls: "jp-srs-btn jp-srs-reveal" });
-      show.onclick = () => {
+      const show2 = cardEl.createEl("button", { text: "\u7B54\u3048\u3092\u8868\u793A (Space)", cls: "jp-srs-btn jp-srs-reveal" });
+      show2.onclick = () => {
         this.revealed = true;
         this.render();
       };
@@ -33802,6 +33948,12 @@ function searchNotation(q) {
   if (starts)
     return { mode: "starts", term: starts[1].trim() };
   return null;
+}
+function foldForFind(s) {
+  let out = s.toLowerCase();
+  out = out.replace(/[\uff01-\uff5e]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 65248));
+  out = out.replace(/\u3000/g, " ");
+  return out.toLowerCase();
 }
 function panVerdict(dxAbs, dtMs, paneWidth, hasTarget) {
   if (!hasTarget)
@@ -37670,13 +37822,13 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     }
     const walker = document.createTreeWalker(this.resultsEl, NodeFilter.SHOW_TEXT);
     const plan = [];
-    const lower = q.toLowerCase();
+    const lower = foldForFind(q);
     let n;
     while (n = walker.nextNode()) {
       const hay = n.data;
       let from = 0;
       for (; ; ) {
-        const i = hay.toLowerCase().indexOf(lower, from);
+        const i = foldForFind(hay).indexOf(lower, from);
         if (i < 0)
           break;
         plan.push({ node: n, idx: i });
@@ -49794,7 +49946,7 @@ function parseDuration(raw) {
 }
 function parsePodcastFeed(xml) {
   var _a2, _b2, _c2;
-  const show = tag((_a2 = xml.split(/<item[\s>]/i)[0]) != null ? _a2 : "", "title") || "Podcast";
+  const show2 = tag((_a2 = xml.split(/<item[\s>]/i)[0]) != null ? _a2 : "", "title") || "Podcast";
   const episodes = [];
   const items = xml.split(/<item[\s>]/i).slice(1);
   for (const item of items) {
@@ -49813,13 +49965,13 @@ function parsePodcastFeed(xml) {
       link: tag(item, "link") || void 0
     });
   }
-  return { show, episodes };
+  return { show: show2, episodes };
 }
-function podcastNote(show, ep, audioVaultPath) {
+function podcastNote(show2, ep, audioVaultPath) {
   return [
     "---",
     "source: podcast",
-    `show: "${show.replace(/"/g, "'")}"`,
+    `show: "${show2.replace(/"/g, "'")}"`,
     `title: "${ep.title.replace(/"/g, "'")}"`,
     ...ep.link ? [`url: "${ep.link}"`] : [],
     `audio: "${audioVaultPath}"`,
@@ -56282,10 +56434,10 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
         var _a3, _b3, _c3, _d3, _e3, _f3, _g3, _h3;
         const f = this.app.workspace.getActiveFile();
         const fm = f ? (_a3 = this.app.metadataCache.getFileCache(f)) == null ? void 0 : _a3.frontmatter : void 0;
-        const show = (_d3 = (_c3 = (_b3 = fm == null ? void 0 : fm.show) != null ? _b3 : fm == null ? void 0 : fm.title) != null ? _c3 : f == null ? void 0 : f.basename) != null ? _d3 : "";
+        const show2 = (_d3 = (_c3 = (_b3 = fm == null ? void 0 : fm.show) != null ? _b3 : fm == null ? void 0 : fm.title) != null ? _c3 : f == null ? void 0 : f.basename) != null ? _d3 : "";
         const ep = episodeNumberFrom(String((_f3 = (_e3 = fm == null ? void 0 : fm.title) != null ? _e3 : f == null ? void 0 : f.basename) != null ? _f3 : ""));
         this.openJimakuPicker({
-          query: jimakuQueryFor({ show: fm == null ? void 0 : fm.show, title: show }),
+          query: jimakuQueryFor({ show: fm == null ? void 0 : fm.show, title: show2 }),
           episode: (_g3 = fm == null ? void 0 : fm.episode) != null ? _g3 : ep.episode,
           season: (_h3 = fm == null ? void 0 : fm.season) != null ? _h3 : ep.season
         }, {
@@ -56900,6 +57052,14 @@ ${summary}
     return {
       recordClassified: (opts) => this.patternStore.recordClassified(opts),
       addGold: (g) => this.goldStore.add(g),
+      // 二重写し (CALENDAR-PHYSICS §2 law 1) — the LEFT register. Addressed
+      // exactly the way recordClassified addresses it, so the strip is
+      // reading the row the save would actually overwrite and not a
+      // lookalike: same normalization, same derive, same id.
+      storedFor: (note) => {
+        var _a2;
+        return (_a2 = this.patternStore.byId(patternIdFor(derivePattern(normalizeJapanese(note).trim())))) != null ? _a2 : null;
+      },
       // The classify gesture is also the moment to go looking: one entry against
       // every transcript costs ~100ms warm, and it turns "I flicked a phrase in"
       // into "here are the other places you have already heard it."

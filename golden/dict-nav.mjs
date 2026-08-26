@@ -144,5 +144,32 @@ console.log('══ the page-turn verdict: carried over the hill, or thrown ═�
   check('no page to turn to always snaps', N.panVerdict(300, 100, W, false) === 'snap');
 }
 
+console.log('\u2550\u2550 foldForFind \u2014 the length-preserving contract \u2550\u2550');
+{
+  // The find splits real text nodes at match offsets, so an index into the
+  // folded string MUST be the same index in the original. That is the whole
+  // reason the fold is hand-rolled instead of NFKC.
+  const cases = ['abc', 'ABC', '\uff21\uff22\uff23', '\u3000', '\u30c7\u30fc\u30bf', '\uff77\uff9e', '\u9ad8\u3044\u5c71', 'a\uff21\u3000\u3042', ''];
+  let allSame = true;
+  for (const c of cases) if (N.foldForFind(c).length !== c.length) allSame = false;
+  check('every fold preserves length \u2014 the offset contract holds', allSame);
+
+  check('full-width ASCII folds to half-width', N.foldForFind('\uff21\uff22\uff23') === 'abc');
+  check('and case folds with it', N.foldForFind('ABC') === 'abc');
+  check('the ideographic space folds to a plain one', N.foldForFind('\u3000') === ' ');
+  // Deliberately NOT folded: half-width katakana is 2 codepoints where the
+  // full-width form is 1, so folding it would shift every later offset.
+  check('half-width katakana is left alone, on purpose', N.foldForFind('\uff77\uff9e').length === 2);
+  check('kanji and kana pass through untouched', N.foldForFind('\u9ad8\u3044\u5c71') === '\u9ad8\u3044\u5c71');
+
+  // The property the highlight actually depends on: an index found in the
+  // folded haystack addresses the same characters in the raw one.
+  const rawText = '\u3053\u308c\u306f\uff21\uff22\uff23\u3067\u3059';
+  const i = N.foldForFind(rawText).indexOf(N.foldForFind('abc'));
+  check('a full-width hit is found at the raw index', i === 3, String(i));
+  check('and slicing the RAW text there returns the real characters',
+    rawText.slice(i, i + 3) === '\uff21\uff22\uff23', rawText.slice(i, i + 3));
+}
+
 console.log(`\n${fail ? '✗' : '✓'} dict-nav: ${pass}/${pass + fail} checks passed`);
 if (fail) process.exit(1);

@@ -2465,6 +2465,12 @@ export default class JPCollocationsPlugin extends Plugin {
     return {
       recordClassified: (opts) => this.patternStore.recordClassified(opts),
       addGold: (g) => this.goldStore.add(g),
+      // 二重写し (CALENDAR-PHYSICS §2 law 1) — the LEFT register. Addressed
+      // exactly the way recordClassified addresses it, so the strip is
+      // reading the row the save would actually overwrite and not a
+      // lookalike: same normalization, same derive, same id.
+      storedFor: (note) =>
+        this.patternStore.byId(patternIdFor(derivePattern(normalizeJapanese(note).trim()))) ?? null,
       // The classify gesture is also the moment to go looking: one entry against
       // every transcript costs ~100ms warm, and it turns "I flicked a phrase in"
       // into "here are the other places you have already heard it."

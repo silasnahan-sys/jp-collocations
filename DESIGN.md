@@ -2881,3 +2881,53 @@ Perf, same date: the 𝕏 pane ran `detectPatterns` (the 126-operator engine) on
 up to 100 frozen tweets per keystroke and re-walked the whole 1.18M-char
 corpus for single-term KWIC. Both memoized (`patternCache` by tweet id;
 `usageCache` by term+size) — the felt typing lag in that pane was this.
+
+### 30.3 二重写し — the Move-2 inspector’s two registers (2026-08-26, SHIPPED)
+
+CALENDAR-PHYSICS §2 law 1, and specifically the sharpening the 30fps read
+added to it: in IMG_1213 the Edit panel’s header keeps reading the event’s
+STORED address while the :15/:30 chips riding the block show the CANDIDATE,
+and only release rewrites the header. Two truths on screen, one commit, at
+release, no intermediate half-state written.
+
+The plugin had one register and replaced it silently. Every TokenCanvas
+gesture overwrote `parts` / `frame` / `lemma` / `halo`, and whatever the
+catalog already held for that span left the screen with no trace — costliest
+on exactly the move the doctrine calls primary, 保存して別分類も, where you re-mark
+a span you have ALREADY filed and the one thing you need is what the last
+filing recorded.
+
+- `notes/registers.ts` — PURE. `snapshotOf` reads a catalog entry into the
+  comparable shape (the NOTE, not the derived key — a 🟠 key is its parts
+  joined, so diffing a typed headword against it would report a change on
+  every untouched capture). `diffRegisters` returns [] when nothing is
+  stored: a first capture has one truth, and a strip of blank left-hand
+  columns is chrome pretending to be information. `changedOnly` means the
+  strip names what MOVES, never the inventory. 24 checks, `golden/registers.mjs`.
+- The aperture: `CaptureDeps.storedFor` addressed exactly as `recordClassified` addresses it (same normalization, same derive, same id — so the strip reads
+  the row the save would actually overwrite); the note is the ADDRESS, so
+  retyping it re-reads the left register rather than diffing against a row
+  that is not this one; the candidate is built with the save path’s own
+  `splitNotationParts`, so the strip promises what the commit will write.
+- 小さな確定 (law 6): a stay-open save folds the entry into the left register and
+  re-renders — the panel rewrites itself where the eye already is, and the
+  next lens diffs against the truth instead of against a stale record.
+- Aperture checks in `golden/reachability.mjs` D6 (supplied / read / rendered /
+  rewritten-on-commit), because the gradient this project keeps paying for is
+  goldens accreting on pure cores while the wiring ships untested.
+
+**Also this pass — the in-entry Find’s one real gap.** The Find itself has
+shipped since §30.1 (`toggleFind`, command `dict-find`); what it could not do
+was match ＡＢＣ or 　, which a JP IME produces without being asked. Fixed with
+`foldForFind` — case + full-width-ASCII + ideographic space, and STRICTLY
+length-preserving by contract, because the find wraps hits by splitting real
+text nodes at match offsets. NFKC is the obvious call and is exactly wrong:
+ｷﾞ (2 chars) folds to ガ (1), every later offset shifts, and the highlight
+lands on the wrong characters. Half-width katakana is therefore left
+unfolded on purpose rather than corrupting the mapping to catch it. The
+offset property is pinned directly in `golden/dict-nav.mjs`: a hit found in
+the folded haystack, sliced out of the RAW string, returns the real
+characters.
+
+Suite after this pass: 94 suites, reachability 79 checks, debt 8 (unchanged
+and still true — nothing here touches the Elecom substrate).

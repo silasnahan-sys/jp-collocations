@@ -352,6 +352,39 @@ console.log('\n D5. 宛名札 — pill renders, router answers, toss is named');
   check('the hold toss names its landing', /収集トレイ/.test(dock) && /jp-atena--hold/.test(dock));
 }
 
+// ── D6. the Move-2 inspector actually has two registers ────────────────────
+//
+// 二重写し (CALENDAR-PHYSICS §2 law 1): the panel keeps the STORED value
+// while the candidate rides, and the commit rewrites it visibly. The pure
+// diff is golden/registers.mjs; these are the apertures that decide whether
+// a second register EXISTS at all — a diff with nothing to compare against
+// is the "12 checks, zero consumers" shape this suite was built to catch.
+console.log('\n D6. two registers: supplied, read, rendered, and rewritten on commit');
+{
+  const modal = read('ui', 'CaptureModal.ts');
+  // ASSIGNED, not merely declared — the D2 lesson. An unassigned optional
+  // dep leaves the strip permanently empty and nothing anywhere errors.
+  const deps = main.match(/makeCaptureDeps\(\): CaptureDeps[\s\S]{0,4000}?^  \}/m)?.[0] ?? '';
+  check('makeCaptureDeps ASSIGNS storedFor', /storedFor\s*:/.test(deps));
+  check('and addresses it the way the save addresses it',
+    /patternIdFor\(derivePattern\(normalizeJapanese\(/.test(deps));
+  check('the modal reads the left register', /snapshotOf\(this\.deps\.storedFor/.test(modal));
+  check('and re-reads it when the note (the address) changes',
+    /this\.refreshStored\(\)/.test(modal) && /noteEdited = true/.test(modal));
+  check('the strip is rendered from the payload path',
+    /this\.renderRegisters\(\)/.test(modal));
+  // The candidate must be what the COMMIT would write, not a prettier
+  // neighbour of it: same splitter the save path uses.
+  const snap = modal.match(/private currentSnapshot[\s\S]{0,1200}?^  \}/m)?.[0] ?? '';
+  check('the candidate is built with the save path\u2019s own splitter',
+    /splitNotationParts\(this\.parts\)/.test(snap));
+  // 小さな確定 (law 6): the commit is what rewrites the panel.
+  check('a stay-open save rewrites the left register',
+    /this\.storedSnap = snapshotOf\(entry\)/.test(modal));
+  check('nothing moved \u2192 no strip (a first capture has one truth)',
+    /if \(!moved\.length\) \{ el\.hide\(\); return; \}/.test(modal));
+}
+
 // ── the ledger must not rot ───────────────────────────────────────────────────
 //
 // An allow-list nobody prunes becomes permission. Every entry above is asserted

@@ -216,6 +216,29 @@ export function searchNotation(q: string): { mode: 'ends' | 'starts'; term: stri
  *   • no target: nothing to turn to — always snap back (the rubber band
  *     already told the hand during the drag).
  */
+/**
+ * Case- and width-folding for the in-screen find, and STRICTLY
+ * length-preserving.
+ *
+ * That constraint is the whole design. The find wraps hits by splitting the
+ * real text nodes at match offsets, so an index into the folded string must
+ * be the same index in the original. NFKC would be the obvious call and is
+ * exactly wrong here: ﾃﾞ (2 chars) folds to デ (1), every later offset
+ * shifts, and the highlight lands on the wrong characters. So this folds
+ * only the 1:1 cases — ASCII case, full-width ASCII, and the ideographic
+ * space — and leaves half-width katakana alone rather than corrupting the
+ * mapping to catch it.
+ *
+ * The gap this closes is real and small: ＡＢＣ and 　 (U+3000) are what a
+ * JP IME produces without asking, and before this they matched nothing.
+ */
+export function foldForFind(s: string): string {
+  let out = s.toLowerCase();
+  out = out.replace(/[\uff01-\uff5e]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0xfee0));
+  out = out.replace(/\u3000/g, ' ');
+  return out.toLowerCase();
+}
+
 export function panVerdict(
   dxAbs: number, dtMs: number, paneWidth: number, hasTarget: boolean,
 ): 'commit' | 'snap' {
