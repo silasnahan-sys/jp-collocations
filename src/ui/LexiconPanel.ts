@@ -815,6 +815,17 @@ export class LexiconPanel {
         attr: { title: '一致したのは語法プロフィール（コーパス）— あなたの記録ではありません' },
       });
     }
+    // PHYSICS §5 — a STANDING QUESTION: born before any sighting existed.
+    // The row must say it is a question, not a record of an encounter (§28
+    // S3) — and the mark never leaves, because a filled hole stays visible
+    // (§27 rule 3): the ×N count says it found answers, 問 says it was born
+    // asking.
+    if (e.pattern?.standing) {
+      top.createSpan({
+        text: '問', cls: 'jp-lex-row-standing',
+        attr: { title: '問い — まだ見ていない形として置かれました。走査が答えを運ぶまで（そして運んだ後も）開いたままです' },
+      });
+    }
     if (e.gloss) main.createDiv({ text: e.gloss, cls: 'jp-lex-row-gloss' });
     // the embedded entry: ONE real usage line — just enough context, no more
     if (e.example) {

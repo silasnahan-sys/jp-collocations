@@ -1744,6 +1744,23 @@ export default class JPCollocationsPlugin extends Plugin {
       }).open(),
     });
 
+    // PHYSICS §5 — the reach's sister door, for a SHAPE instead of a meaning:
+    // a wondering filed as a catalog entry with attestations: [] and
+    // standing: true. The 願い holds a want in your own words and waits for
+    // co-presence; a 問い holds a Japanese shape (もし〜たなら) and gets the
+    // full class-aware sweep — anchors, gaps, confidence — on every arrival,
+    // exempt from the ✕ mute (sweep-match.ts). onSaved already runs the
+    // auto-sweep, so filing the question IS asking it, immediately.
+    this.addCommand({
+      id: "file-standing-question",
+      name: "問い: File a Standing Question (a shape you haven't seen yet)",
+      callback: () => new CaptureModal(this.app, {
+        text: "",
+        source: { kind: "manual" },
+        standing: true,
+      }, this.makeCaptureDeps()).open(),
+    });
+
     this.addCommand({
       id: "open-srs-review",
       name: "復習: Open SRS Review (catalog deck)",

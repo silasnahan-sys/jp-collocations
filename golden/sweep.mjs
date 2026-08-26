@@ -177,6 +177,19 @@ console.log('══ sweepMuted: the ✓✕ record steers the sweep ══');
   check('8 rejections overwhelm 1 ratification (3+5)', S.sweepMuted({ attestations: [att(true)], rejectedAtts: 'abcdefgh'.split('') }));
 }
 
+console.log('══ standing questions never mute (PHYSICS §5) ══');
+{
+  // For a question, rejection is the NORMAL case — fishing. The ✕ prunes one
+  // candidate; it is not evidence the question is coincidence-prone. Muting
+  // would convert "no answer yet" into "never ask again".
+  check('standing + 3 rejections → NOT muted',
+    !S.sweepMuted({ standing: true, attestations: [], rejectedAtts: ['a', 'b', 'c'] }));
+  check('standing + 12 rejections → still not muted',
+    !S.sweepMuted({ standing: true, attestations: [], rejectedAtts: 'abcdefghijkl'.split('') }));
+  check('the same record WITHOUT standing still mutes (ordinary rule intact)',
+    S.sweepMuted({ attestations: [], rejectedAtts: ['a', 'b', 'c'] }));
+}
+
 console.log('══ store: suggested/ratify/reject rules ══');
 {
   const att = (status) => ({ source: 'yt', file: 'T/v.md', tStartSec: 30, quote: '気になってた', addedAt: 1, ...(status ? { status: 'suggested', matchKind: 'surface-inflected', confidence: 0.7 } : {}) });

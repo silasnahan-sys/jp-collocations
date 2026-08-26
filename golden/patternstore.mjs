@@ -140,5 +140,40 @@ console.log('══ AUDIT-PARTS §3 — a ✕ written under the OLD key still bl
     !store.byId(id).attestations.some((a) => a.quote === 'これは違う'));
 }
 
+console.log('══ PHYSICS §5 — a question is a capture with attestations: [] ══');
+{
+  const store = new P.PatternStore(async () => {});
+  // Born as a wondering: no sighting exists, so none may be minted.
+  const q = await store.recordClassified({
+    note: 'もし〜たなら', cls: 'skeletal', payload: { parts: ['もし', 'たなら'] }, att: null, standing: true,
+  }, 1);
+  check('standing entry born with attestations: []', q.standing === true && q.attestations.length === 0);
+  // The answer arrives through the ordinary suggested road, and the mark stays:
+  // a filled hole stays visible (§27 rule 3).
+  await store.addAttestations([{ id: q.id, att: {
+    source: 'yt', file: 'T.md', tStartSec: 5, quote: 'もし行けたなら', addedAt: 2,
+    status: 'suggested', matchKind: 'link', confidence: 0.6,
+  } }], 2);
+  check('an answer lands as suggested; standing survives',
+    store.byId(q.id).attestations.length === 1 && store.byId(q.id).standing === true);
+  // Standing marks only an entry BORN by the filing — an existing entry keeps
+  // the mute record its own ✕s earned.
+  const normal = await store.recordClassified({
+    note: '気を抜く', cls: 'collocation', payload: {}, att: { source: 'yt', file: 'U.md', tStartSec: 1, quote: '気を抜いた', addedAt: 3 },
+  }, 3);
+  const again = await store.recordClassified({
+    note: '気を抜く', cls: 'collocation', payload: {}, att: null, standing: true,
+  }, 4);
+  check('re-filing an existing key does not retro-mark it standing',
+    again.id === normal.id && !store.byId(normal.id).standing);
+  // Round-trip: the flag is data, not session state.
+  let saved = null;
+  const store2 = new P.PatternStore(async (d) => { saved = d; });
+  await store2.recordClassified({ note: 'まさか〜とは', cls: 'skeletal', payload: {}, att: null, standing: true }, 5);
+  const fresh = new P.PatternStore(async () => {});
+  fresh.load(saved);
+  check('standing round-trips through load()', fresh.all()[0]?.standing === true);
+}
+
 console.log(`\n${fail === 0 ? '✓' : '✗'} patternstore: ${pass}/${pass + fail} checks passed`);
 process.exitCode = fail === 0 ? 0 : 1;

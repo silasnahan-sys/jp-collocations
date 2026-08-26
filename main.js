@@ -22674,6 +22674,8 @@ function sweepableClass(cls) {
 }
 function sweepMuted(e) {
   var _a2, _b2;
+  if (e.standing)
+    return false;
   const rejected = (_b2 = (_a2 = e.rejectedAtts) == null ? void 0 : _a2.length) != null ? _b2 : 0;
   const ratifiedSweeps = e.attestations.filter((a) => a.matchKind && !a.status).length;
   return rejected >= 3 + 5 * ratifiedSweeps;
@@ -24211,6 +24213,8 @@ var PatternStore = class {
     }
     const prev = this.entries.get(id);
     const next = upsertEntry(prev, opts.note, opts.att, now);
+    if (opts.standing && !prev)
+      next.standing = true;
     next.id = id;
     next.class = opts.cls;
     next.classRatified = true;
@@ -27214,6 +27218,7 @@ var LexiconPanel = class {
       this.renderRow(kids, m);
   }
   renderRow(body2, e) {
+    var _a2;
     const row = body2.createDiv("jp-lex-row");
     row.setAttribute("data-kana", this.kanaGroup(e.headword));
     const rail = row.createSpan({ cls: "jp-lex-row-rail" });
@@ -27232,6 +27237,13 @@ var LexiconPanel = class {
         text: "\u{1F4CA}",
         cls: "jp-lex-row-corpus",
         attr: { title: "\u4E00\u81F4\u3057\u305F\u306E\u306F\u8A9E\u6CD5\u30D7\u30ED\u30D5\u30A3\u30FC\u30EB\uFF08\u30B3\u30FC\u30D1\u30B9\uFF09\u2014 \u3042\u306A\u305F\u306E\u8A18\u9332\u3067\u306F\u3042\u308A\u307E\u305B\u3093" }
+      });
+    }
+    if ((_a2 = e.pattern) == null ? void 0 : _a2.standing) {
+      top.createSpan({
+        text: "\u554F",
+        cls: "jp-lex-row-standing",
+        attr: { title: "\u554F\u3044 \u2014 \u307E\u3060\u898B\u3066\u3044\u306A\u3044\u5F62\u3068\u3057\u3066\u7F6E\u304B\u308C\u307E\u3057\u305F\u3002\u8D70\u67FB\u304C\u7B54\u3048\u3092\u904B\u3076\u307E\u3067\uFF08\u305D\u3057\u3066\u904B\u3093\u3060\u5F8C\u3082\uFF09\u958B\u3044\u305F\u307E\u307E\u3067\u3059" }
       });
     }
     if (e.gloss)
@@ -27257,13 +27269,13 @@ var LexiconPanel = class {
         this.renderCollocationDetail(e.collocation);
     });
     makeDraggable(row, () => {
-      var _a2;
+      var _a3;
       return {
         kind: "entry",
         text: e.example ? `${e.headword}
 \u300C${e.example}\u300D` : e.headword,
         label: e.headword,
-        sub: (_a2 = e.reading) != null ? _a2 : e.gloss,
+        sub: (_a3 = e.reading) != null ? _a3 : e.gloss,
         html: `<b>${e.headword}</b>${e.reading ? `\uFF08${e.reading}\uFF09` : ""}${e.gloss ? ` \u2014 ${e.gloss}` : ""}` + (e.example ? `<blockquote>${e.example}</blockquote>` : ""),
         meta: { patternId: e.kind === "pattern" ? e.id : void 0, cls: e.cls }
       };
@@ -31989,7 +32001,13 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
     const { contentEl } = this;
     contentEl.empty();
     contentEl.addClass("jp-capture-modal");
-    contentEl.createEl("h2", { text: "\u{1F3F7}\uFE0F \u5206\u985E\u3057\u3066\u53F0\u5E33\u3078" });
+    contentEl.createEl("h2", { text: this.ctx.standing ? "\u2753 \u554F\u3044\u3092\u7ACB\u3066\u308B" : "\u{1F3F7}\uFE0F \u5206\u985E\u3057\u3066\u53F0\u5E33\u3078" });
+    if (this.ctx.standing) {
+      contentEl.createDiv({
+        cls: "jp-capture-standing",
+        text: "\u307E\u3060\u898B\u3066\u3044\u306A\u3044\u5F62\u3092\u7A7A\u306E\u9805\u76EE\u3068\u3057\u3066\u7F6E\u304D\u307E\u3059\u3002\u5C4A\u304F\u3082\u306E\u3059\u3079\u3066\u3068\u7167\u5408\u3055\u308C\u7D9A\u3051\u3001\u5019\u88DC\u306F\u2715\u3067\u524A\u308C\u307E\u3059\u304C\u3001\u554F\u3044\u81EA\u4F53\u306F\u9ED9\u308A\u307E\u305B\u3093\u3002"
+      });
+    }
     const noteRow = contentEl.createDiv("jp-capture-field");
     noteRow.createSpan({ text: "\u898B\u51FA\u3057\u30FB\u8A18\u6CD5", cls: "jp-capture-label" });
     this.noteInput = noteRow.createEl("input", {
@@ -32398,7 +32416,8 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
         cls: this.cls,
         suggested: this.suggested,
         payload,
-        att: this.buildAttestation((_a2 = this.ctx.example) != null ? _a2 : note)
+        att: this.ctx.standing ? null : this.buildAttestation((_a2 = this.ctx.example) != null ? _a2 : note),
+        ...this.ctx.standing ? { standing: true } : {}
       });
       if (this.cls === "discourse" && this.deps.addGold) {
         const edge = this.edgeKind ? { kind: this.edgeKind, toOffset: this.edgeTarget } : null;
@@ -32418,7 +32437,7 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
         });
       }
       const def = NOTE_TYPES[this.cls];
-      new import_obsidian14.Notice(`${def.emoji} ${def.label} \u3068\u3057\u3066\u53F0\u5E33\u306B\u8A18\u9332: ${entry2.key}`);
+      new import_obsidian14.Notice(this.ctx.standing ? `\u2753 \u554F\u3044\u3068\u3057\u3066\u53F0\u5E33\u306B\u7F6E\u304D\u307E\u3057\u305F: ${entry2.key} \u2014 \u5C4A\u3044\u305F\u3082\u306E\u304C\u7167\u5408\u3055\u308C\u307E\u3059` : `${def.emoji} ${def.label} \u3068\u3057\u3066\u53F0\u5E33\u306B\u8A18\u9332: ${entry2.key}`);
       (_f2 = (_e2 = this.deps).onSaved) == null ? void 0 : _f2.call(_e2, entry2);
       if (closeAfter)
         this.close();
@@ -54873,6 +54892,15 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
         new import_obsidian37.Notice(`\u9858\u3044\u300C${r2.want}\u300D\u3092\u4FDD\u6301\u3057\u307E\u3057\u305F \u2014 \u5C4A\u3044\u305F\u3082\u306E\u304C\u4E26\u3079\u3089\u308C\u307E\u3059`, 6e3);
         this.refreshTrayViews();
       }).open()
+    });
+    this.addCommand({
+      id: "file-standing-question",
+      name: "\u554F\u3044: File a Standing Question (a shape you haven't seen yet)",
+      callback: () => new CaptureModal(this.app, {
+        text: "",
+        source: { kind: "manual" },
+        standing: true
+      }, this.makeCaptureDeps()).open()
     });
     this.addCommand({
       id: "open-srs-review",
