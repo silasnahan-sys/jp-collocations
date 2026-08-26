@@ -39552,6 +39552,104 @@ function partialLabel(r2) {
   const rest = r2.swallowers.length > 3 ? `\u30FB\u307B\u304B${r2.swallowers.length - 3}\u8A9E` : "";
   return `\u90E8\u5206\u4E00\u81F4 ${r2.partial.length}\u4EF6\uFF08${named}${rest}\uFF09`;
 }
+var DEFAULT_LINK_WINDOW = 30;
+function frameFixed(frame) {
+  return frame.split(/[○〇]{2,}/).map((p) => p.trim()).filter((p) => p.length >= 2);
+}
+function orderedGap(text, parts) {
+  let cursor = 0;
+  let gap = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const at = text.indexOf(parts[i], cursor);
+    if (at === -1)
+      return { found: false, gap: 0 };
+    if (i > 0)
+      gap += at - cursor;
+    cursor = at + parts[i].length;
+  }
+  return { found: true, gap };
+}
+function scoreFor(text, probe, window2 = DEFAULT_LINK_WINDOW) {
+  var _a2, _b2, _c2, _d2, _e2, _f2;
+  const p = (_a2 = probe.payload) != null ? _a2 : {};
+  switch (probe.cls) {
+    case "serifu": {
+      if (probe.key && text.includes(probe.key))
+        return { score: 10, why: "\u9010\u8A9E\u306E\u3053\u3060\u307E" };
+      const half = probe.key.slice(0, Math.max(4, Math.floor(probe.key.length / 2)));
+      if (half.length >= 4 && text.includes(half))
+        return { score: 4, why: "\u524D\u534A\u304C\u4E00\u81F4" };
+      return { score: 1, why: "\u7D20\u6750\u306E\u4E00\u90E8\u3060\u3051" };
+    }
+    case "collocation": {
+      const parts = ((_b2 = p.parts) == null ? void 0 : _b2.length) ? p.parts : [probe.key];
+      if (parts.length < 2) {
+        return text.includes(probe.key) ? { score: 6, why: "\u9023\u8A9E\u305D\u306E\u3082\u306E" } : { score: 0, why: "\u4E0D\u4E00\u81F4" };
+      }
+      const o = orderedGap(text, parts);
+      if (!o.found)
+        return { score: 0, why: "\u6210\u5206\u304C\u305D\u308D\u308F\u306A\u3044" };
+      if (o.gap === 0)
+        return { score: 10, why: "\u6210\u5206\u304C\u96A3\u63A5" };
+      if (o.gap <= 4)
+        return { score: 7, why: `\u6210\u5206\u9593 ${o.gap}\u5B57` };
+      return { score: 3, why: `\u6210\u5206\u306F\u96E2\u308C\u3066\u3044\u308B\uFF08${o.gap}\u5B57\uFF09` };
+    }
+    case "rhet_collocation": {
+      const lemma = (_c2 = p.lemma) != null ? _c2 : probe.key;
+      const halo = (_d2 = p.halo) != null ? _d2 : "";
+      const hasLemma = !!lemma && text.includes(lemma);
+      const hasHalo = halo.length >= 2 && text.includes(halo);
+      if (hasLemma && hasHalo)
+        return { score: 10, why: "\u30EC\u30F3\u30DE\uFF0B\u30CF\u30ED\u30FC" };
+      if (hasHalo)
+        return { score: 7, why: "\u30CF\u30ED\u30FC\u306E\u6587\u8108" };
+      if (hasLemma)
+        return { score: 3, why: "\u30EC\u30F3\u30DE\u306E\u307F\uFF08\u559A\u8D77\u306F\u672A\u78BA\u8A8D\uFF09" };
+      return { score: 0, why: "\u4E0D\u4E00\u81F4" };
+    }
+    case "skeletal": {
+      const parts = ((_e2 = p.parts) != null ? _e2 : []).filter((x) => x.length >= 1);
+      if (parts.length < 2)
+        return { score: 0, why: "\u6210\u5206\u304C\u8DB3\u308A\u306A\u3044" };
+      const o = orderedGap(text, parts);
+      if (!o.found)
+        return { score: 0, why: "\u9806\u5E8F\u3069\u304A\u308A\u306B\u73FE\u308C\u306A\u3044" };
+      if (o.gap > window2)
+        return { score: 2, why: `\u96E2\u308C\u3059\u304E\uFF08${o.gap}\u5B57\uFF09` };
+      if (o.gap <= 6)
+        return { score: 10, why: `\u5BC6\u306A\u30EA\u30F3\u30AF\uFF08\u4ECB\u5728 ${o.gap}\u5B57\uFF09` };
+      return { score: 6, why: `\u30EA\u30F3\u30AF\u6210\u7ACB\uFF08\u4ECB\u5728 ${o.gap}\u5B57\uFF09` };
+    }
+    case "phrase_schema": {
+      const fixed = frameFixed((_f2 = p.frame) != null ? _f2 : probe.key);
+      if (!fixed.length)
+        return { score: 0, why: "\u56FA\u5B9A\u90E8\u304C\u306A\u3044" };
+      const o = orderedGap(text, fixed);
+      if (!o.found)
+        return { score: 0, why: "\u56FA\u5B9A\u90E8\u304C\u305D\u308D\u308F\u306A\u3044" };
+      return o.gap <= window2 ? { score: 9, why: `\u578B\u304C\u6210\u7ACB\uFF08\u7A74 ${o.gap}\u5B57\uFF09` } : { score: 3, why: `\u56FA\u5B9A\u90E8\u306F\u96E2\u308C\u3066\u3044\u308B\uFF08${o.gap}\u5B57\uFF09` };
+    }
+    case "discourse": {
+      const at = text.indexOf(probe.key);
+      if (at === -1)
+        return { score: 0, why: "\u4E0D\u4E00\u81F4" };
+      if (at === 0)
+        return { score: 8, why: "\u767A\u8A71\u306E\u5192\u982D" };
+      if (at <= 6)
+        return { score: 5, why: "\u5192\u982D\u8FD1\u304F" };
+      return { score: 2, why: "\u7BC0\u4E2D\uFF08\u8AC7\u8A71\u6A5F\u80FD\u306F\u672A\u78BA\u8A8D\uFF09" };
+    }
+    default:
+      return text.includes(probe.key) ? { score: 5, why: "\u4E00\u81F4" } : { score: 0, why: "\u4E0D\u4E00\u81F4" };
+  }
+}
+function rankByClass(items, probe, tie = () => 0, window2 = DEFAULT_LINK_WINDOW) {
+  return items.map((item) => {
+    const { score, why } = scoreFor(item.text, probe, window2);
+    return { item, score, why };
+  }).sort((a, b) => b.score - a.score || tie(a.item, b.item));
+}
 
 // src/ui/XSearchView.ts
 var JP_X_VIEW_TYPE = "jp-x-search-view";
@@ -39846,6 +39944,7 @@ var XSearchView = class extends import_obsidian21.ItemView {
     return sorted;
   }
   renderLocal() {
+    var _a2, _b2;
     if (!this.resultsEl || !this.statusEl)
       return;
     const total = this.deps.corpus.size();
@@ -39874,10 +39973,18 @@ var XSearchView = class extends import_obsidian21.ItemView {
         tailLabel = partialLabel(judged);
       }
     }
+    const probe = single ? (_b2 = (_a2 = this.deps).probeFor) == null ? void 0 : _b2.call(_a2, single) : void 0;
+    const whyById = /* @__PURE__ */ new Map();
+    if (probe && shown.length) {
+      const ranked = rankByClass(shown, probe, (a, b) => this.sortValue(b) - this.sortValue(a));
+      shown = ranked.map((r2) => r2.item);
+      for (const r2 of ranked)
+        whyById.set(r2.item.id, r2.why);
+    }
     const live2 = this.deps.client.isConfigured();
     this.statusEl.empty();
     this.statusEl.createSpan({
-      text: `\u30ED\u30FC\u30AB\u30EB ${shown.length}\u4EF6` + (demoted.length ? `\uFF08+ \u90E8\u5206\u4E00\u81F4 ${demoted.length}\u4EF6\uFF09` : "") + ` / \u30B3\u30FC\u30D1\u30B9 ${total}\u4EF6` + (live2 ? "" : "\u30FB\u30E9\u30A4\u30D6\u53D6\u5F97\u30AA\u30D5\uFF08\u{1F511}\u3067\u8A2D\u5B9A\uFF09"),
+      text: `\u30ED\u30FC\u30AB\u30EB ${shown.length}\u4EF6` + (demoted.length ? `\uFF08+ \u90E8\u5206\u4E00\u81F4 ${demoted.length}\u4EF6\uFF09` : "") + ` / \u30B3\u30FC\u30D1\u30B9 ${total}\u4EF6` + (probe ? `\u30FB${probe.cls} \u3068\u3057\u3066\u95A2\u9023\u9806\uFF08\u4E26\u3073\u66FF\u3048\u306F\u540C\u70B9\u6642\u306E\u307F\uFF09` : "") + (live2 ? "" : "\u30FB\u30E9\u30A4\u30D6\u53D6\u5F97\u30AA\u30D5\uFF08\u{1F511}\u3067\u8A2D\u5B9A\uFF09"),
       cls: "jp-x-status-text"
     });
     this.resultsEl.empty();
@@ -39904,7 +40011,7 @@ var XSearchView = class extends import_obsidian21.ItemView {
     }
     const terms = highlightTerms(this.query);
     for (const t of shown)
-      this.renderTweetCard(this.resultsEl, t, terms);
+      this.renderTweetCard(this.resultsEl, t, terms, whyById.get(t.id));
     if (demoted.length) {
       const tail3 = this.resultsEl.createDiv("jp-x-partial");
       const head = tail3.createEl("button", { cls: "jp-x-partial-head" });
@@ -40081,9 +40188,22 @@ var XSearchView = class extends import_obsidian21.ItemView {
     this.containerEl.toggleClass("jp-x-loading", on);
   }
   // ── Tweet card ─────────────────────────────────────────────
-  renderTweetCard(parent, t, terms) {
+  /**
+   * What the sort chips measure, as a number — so rung 1 can use the hand’s
+   * chosen sort as its TIEBREAK instead of discarding it.
+   */
+  sortValue(t) {
+    if (this.sortMode === "likes")
+      return t.favoriteCount;
+    if (this.sortMode === "retweets")
+      return t.retweetCount;
+    return t.createdAt;
+  }
+  renderTweetCard(parent, t, terms, why) {
     var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2;
     const card = parent.createDiv("jp-x-card");
+    if (why)
+      card.createDiv({ cls: "jp-x-card-why", text: "\u25C2 " + why });
     const head = card.createDiv("jp-x-card-head");
     makeDraggable(head, () => ({
       kind: "tweet",
@@ -55500,6 +55620,14 @@ ${summary}
       client: this.xClient,
       getSettings: () => this.settings.x,
       saveSettings: () => this.saveSettings(),
+      // §29 rung 1 — the query IS a catalog entry, or it is not. When it is,
+      // that entry’s class decides what "relevant" means for this list; when
+      // it is not, no ordering claim is made and the list is left alone.
+      probeFor: (q) => {
+        const key = q.trim();
+        const e = this.patternStore.all().find((p) => p.key === key);
+        return e ? { cls: e.class, key: e.key, payload: e.payload } : void 0;
+      },
       // §29 rung 0 — rebuilt per deps call, so importing a dictionary
       // arms the boundary test without a reload.
       oracle: this.xOracle(),

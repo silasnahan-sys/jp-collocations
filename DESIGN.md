@@ -2467,14 +2467,19 @@ contract that `pattern-store.ts` already encodes (`Attestation`, `SceneRef`,
 partially honor. When the two disagree, **the contract in `pattern-store.ts`
 wins and the pipeline is the bug.**
 
-## 29. The 𝕏検索辞書 as an interrogated corpus — one build from three angles (2026-08-25, RUNG 0 SHIPPED)
+## 29. The 𝕏検索辞書 as an interrogated corpus — one build from three angles (2026-08-25, RUNGS 0-1 SHIPPED)
 
 **Status 2026-08-25:** rung 0 is built, wired and deployed — `src/x/relevance.ts`,
-`golden/x-relevance.mjs` (15 checks), the oracle seam cut in `makeXDeps`, the
+`golden/x-relevance.mjs` (30 checks across both rungs), the oracle seam cut in `makeXDeps`, the
 demoted tail rendering in `XSearchView.renderLocal`. Verified against the live
 corpus, not only fixtures: 足して → 23 raw occurrences → **0 true hits, 23
 demoted**, labelled 「部分一致 23件（満足する×15・不足する×7・補足する×1）」.
-Rungs 1–6 remain as specified below.
+Rung 1 followed the same day: one comparator per class in `rankByClass`, each
+returning a score AND its stated reason, rendered on the row — a ranked list
+that cannot explain its order is a verdict, and the machine does not issue
+verdicts. The sort chips survive as the TIEBREAK they always honestly were.
+No catalog entry for the query means no class to rank by and the list is left
+alone. Rungs 2–6 remain as specified below.
 
 This is the DESIGN section `claude/PHYSICS-2026-08-19.md §5` adjudicated and
 every prior pass promised without writing. It consolidates the Aug-19 governing
@@ -2543,7 +2548,7 @@ deinflector.*
   from a compound that CONTAINS it (第一印象 ⊃ 印象). Both are demoted, both
   are named, and the tail is a tail precisely so the hand can overrule it.
   `reach` is a knob (default 4), not a guess.
-- **Rung 1 — class-conditional ranking.** The comparator is a function of the
+- **Rung 1 — class-conditional ranking. SHIPPED 2026-08-25.** The comparator is a function of the
   probing entry's class: 🟡 verbatim echo first; 🔵 collocate adjacency; 🟢 the
   gesture's halo context, not the string; 🟠 parts-in-order with the intervener
   profile (介在プロフィール — the material between anchors is a RESULT,

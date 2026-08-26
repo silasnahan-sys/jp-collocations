@@ -2580,6 +2580,14 @@ export default class JPCollocationsPlugin extends Plugin {
       client: this.xClient,
       getSettings: () => this.settings.x,
       saveSettings: () => this.saveSettings(),
+      // §29 rung 1 — the query IS a catalog entry, or it is not. When it is,
+      // that entry’s class decides what "relevant" means for this list; when
+      // it is not, no ordering claim is made and the list is left alone.
+      probeFor: (q) => {
+        const key = q.trim();
+        const e = this.patternStore.all().find((p) => p.key === key);
+        return e ? { cls: e.class, key: e.key, payload: e.payload } : undefined;
+      },
       // §29 rung 0 — rebuilt per deps call, so importing a dictionary
       // arms the boundary test without a reload.
       oracle: this.xOracle(),

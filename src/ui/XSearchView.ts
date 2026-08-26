@@ -41,7 +41,7 @@ type SortMode = 'latest' | 'likes' | 'retweets';
 export const JP_X_VIEW_TYPE = 'jp-x-search-view';
 
 /** Callbacks the view needs from the plugin. */
-import { occurrences, trueHits, partialLabel, type Oracle } from '../x/relevance.ts';
+import { occurrences, trueHits, partialLabel, rankByClass, type Oracle, type Probe } from '../x/relevance.ts';
 
 export interface XViewDeps {
   corpus: XCorpusStore;
@@ -75,6 +75,13 @@ export interface XViewDeps {
    * renders without a converted dictionary — the test simply does not run.
    */
   oracle?: Oracle;
+  /**
+   * §29 rung 1 — the catalog entry the query is ASKING ABOUT, when there is
+   * one. Relevance is a function of class (a 🟡 wants a verbatim echo; a 🟢
+   * wants its halo, not its string), so without knowing which class is being
+   * probed there is no better order than the one this view already had.
+   */
+  probeFor?: (query: string) => Probe | undefined;
   /** §29.2 — capture one concordance line (not the whole tweet) as a 用例.
    *  `hit` = the matched surface, so the capture arrives already about it. */
   onCaptureLine?: (quote: string, url: string, handle: string, hit?: string) => void;
@@ -445,12 +452,32 @@ export class XSearchView extends ItemView {
       }
     }
 
+    /**
+     * §29 RUNG 1 — relevance is a function of CLASS.
+     *
+     * The old sort was one formula for everything: newest first, which is the
+     * one axis that says nothing about language. There is no single better
+     * formula either — that IS the finding. Each note-type has its own notion
+     * of what a relevant hit is, so the comparator is chosen by the class of
+     * the entry being probed, and the sort chips survive as the TIEBREAK they
+     * always honestly were. No catalog entry for this query means no class to
+     * rank by, and the list stays exactly as it was.
+     */
+    const probe = single ? this.deps.probeFor?.(single) : undefined;
+    const whyById = new Map<string, string>();
+    if (probe && shown.length) {
+      const ranked = rankByClass(shown, probe, (a, b) => this.sortValue(b) - this.sortValue(a));
+      shown = ranked.map((r) => r.item);
+      for (const r of ranked) whyById.set(r.item.id, r.why);
+    }
+
     const live = this.deps.client.isConfigured();
     this.statusEl.empty();
     this.statusEl.createSpan({
       text: `ローカル ${shown.length}件` +
         (demoted.length ? `（+ 部分一致 ${demoted.length}件）` : '') +
         ` / コーパス ${total}件` +
+        (probe ? `・${probe.cls} として関連順（並び替えは同点時のみ）` : '') +
         (live ? '' : '・ライブ取得オフ（🔑で設定）'),
       cls: 'jp-x-status-text',
     });
@@ -505,7 +532,7 @@ export class XSearchView extends ItemView {
     }
 
     const terms = highlightTerms(this.query);
-    for (const t of shown) this.renderTweetCard(this.resultsEl, t, terms);
+    for (const t of shown) this.renderTweetCard(this.resultsEl, t, terms, whyById.get(t.id));
 
     // The demoted tail: collapsed, counted, and NAMING what swallowed each
     // hit. Built lazily — the cards only exist if the hand opens it.
@@ -684,8 +711,23 @@ export class XSearchView extends ItemView {
 
   // ── Tweet card ─────────────────────────────────────────────
 
-  private renderTweetCard(parent: HTMLElement, t: XTweet, terms: string[]): void {
+  /**
+   * What the sort chips measure, as a number — so rung 1 can use the hand’s
+   * chosen sort as its TIEBREAK instead of discarding it.
+   */
+  private sortValue(t: XTweet): number {
+    if (this.sortMode === 'likes') return t.favoriteCount;
+    if (this.sortMode === 'retweets') return t.retweetCount;
+    return t.createdAt;
+  }
+
+  private renderTweetCard(parent: HTMLElement, t: XTweet, terms: string[], why?: string): void {
     const card = parent.createDiv('jp-x-card');
+
+    // Every offer carries its own reason (§21 / HOLE rule 1). A ranked list
+    // that cannot explain its order is a verdict, and the machine does not
+    // get to issue verdicts — only skeletal reasons the hand can overrule.
+    if (why) card.createDiv({ cls: 'jp-x-card-why', text: '◂ ' + why });
 
     // Header: author + handle + date — and the drag handle.
     //

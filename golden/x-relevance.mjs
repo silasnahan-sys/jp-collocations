@@ -90,5 +90,79 @@ console.log('══ the honest-empty rule ══');
   ok(R.partialLabel(r) === '', 'and no tail label is invented for an empty tail');
 }
 
+console.log('══ rung 1 — relevance is a FUNCTION OF CLASS ══');
+{
+  const t = (id, text) => ({ id, text });
+
+  // 🟡 セリフ: only a verbatim echo is a strong hit.
+  const serifu = { cls: 'serifu', key: 'こんな人間になる予定ではなかった' };
+  const sr = R.rankByClass([
+    t('a', '前半だけ こんな人間に なるとはね'),
+    t('b', '正直、こんな人間になる予定ではなかったよ'),
+  ], serifu);
+  ok(sr[0].item.id === 'b', 'verbatim echo outranks shared material', sr[0].item.id);
+  ok(sr[0].why.includes('逐語'), 'and says why', sr[0].why);
+
+  // 🔵 連語: adjacency IS the claim.
+  const colloc = { cls: 'collocation', key: '風が吹く', payload: { parts: ['風', '吹く'] } };
+  const cr = R.rankByClass([
+    t('far', '風はやんだが、夕方になってようやく涼しい風が街路樹の間を吹く'),
+    t('near', '強い風が吹くらしい'),
+  ], colloc);
+  ok(cr[0].item.id === 'near', 'tight components outrank scattered ones', cr[0].item.id);
+
+  // 🟢 修辞連語: the halo is the hit; the bare lemma is the WEAK case —
+  // which is exactly backwards from how substring search treats it.
+  const rhet = { cls: 'rhet_collocation', key: '程々に', payload: { lemma: '程々に', halo: '程々にという感じ' } };
+  const rr = R.rankByClass([
+    t('bare', '程々に。'),
+    t('halo', 'まあ程々にという感じでやってます'),
+  ], rhet);
+  ok(rr[0].item.id === 'halo', 'halo context outranks a bare lemma', rr[0].item.id);
+  ok(rr[1].why.includes('喚起は未確認'), 'and the bare lemma states its own weakness', rr[1].why);
+
+  // 🟠 骨格構文: parts in ORDER, with the intervener profile reported.
+  const skel = { cls: 'skeletal', key: 'はず〜まずは', payload: { parts: ['はず', 'まずは'] } };
+  const kr = R.rankByClass([
+    t('rev', 'まずは確認、そのはずです'),
+    t('tight', '遅くないはず。まずは今月中に'),
+  ], skel);
+  ok(kr[0].item.id === 'tight', 'ordered anchors outrank reversed ones', kr[0].item.id);
+  ok(kr[0].why.includes('介在'), 'the intervener count is REPORTED, not hidden', kr[0].why);
+  ok(kr.find((x) => x.item.id === 'rev').score === 0, 'wrong order scores zero');
+
+  // 💠 慣用構文: the fixed material is the criterion; the filler is the finding.
+  const frame = { cls: 'phrase_schema', key: '表面に○○', payload: { frame: '表面に○○' } };
+  const fr = R.rankByClass([
+    t('yes', '表面に何も帯びていない'),
+    t('no', '裏面については触れない'),
+  ], frame);
+  ok(fr[0].item.id === 'yes' && fr[0].score >= 9, 'the frame matches on its fixed part');
+  ok(fr[1].score === 0, 'and a text without it scores zero');
+
+  // 🔴 談話: position is the only witness an isolated post can offer.
+  const disc = { cls: 'discourse', key: 'というか' };
+  const dr = R.rankByClass([
+    t('mid', 'それはそうなんだけど、というか話が逸れた'),
+    t('head', 'というか、そもそも前提が違う'),
+  ], disc);
+  ok(dr[0].item.id === 'head', 'utterance-initial outranks mid-clause', dr[0].item.id);
+  ok(dr[1].why.includes('未確認'), 'and the weak case admits it', dr[1].why);
+
+  // THE headline property: one candidate set, two classes, two orders.
+  const shared = [t('lemmaOnly', '程々に。'), t('withHalo', '程々にという感じ')];
+  const asRhet = R.rankByClass(shared, rhet)[0].item.id;
+  const asSerifu = R.rankByClass(shared, { cls: 'serifu', key: '程々に。' })[0].item.id;
+  ok(asRhet === 'withHalo' && asSerifu === 'lemmaOnly',
+    'the SAME hits rank differently for different classes', asRhet + ' vs ' + asSerifu);
+
+  // Recency/likes may only break ties between linguistically equal hits.
+  const eq = [t('older', 'まずは確認'), t('newer', 'まずは確認')];
+  const byTie = R.rankByClass(eq, { cls: 'serifu', key: 'まずは確認' },
+    (a, b) => (b.id === 'newer' ? 1 : 0) - (a.id === 'newer' ? 1 : 0));
+  ok(byTie[0].item.id === 'newer', 'a tiebreak decides only equal scores', byTie[0].item.id);
+  ok(byTie[0].score === byTie[1].score, 'and the scores really were equal');
+}
+
 console.log(`\n${fail ? '✗' : '✓'} x-relevance: ${n - fail}/${n} checks passed`);
 process.exit(fail ? 1 : 0);
