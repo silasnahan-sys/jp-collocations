@@ -4041,6 +4041,65 @@ body.jp-posture-thumb .jp-dismiss { order: 99; }
 }
 
 /* ── Empty / home states ────────────────────────────────────── */
+/* §29 rung 3 — the descent ladder. Shown INSTEAD of an empty state, because
+   at this corpus size silence is the modal answer and the useful fact is
+   which piece of the question could not be carried. */
+.jp-x-descent {
+  padding: 18px 14px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.jp-x-descent-verdict {
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--text-normal);
+  border-left: 3px solid var(--text-accent);
+  padding-left: 10px;
+}
+.jp-x-descent-ladder {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.jp-x-descent-rung {
+  display: grid;
+  grid-template-columns: 5.5em 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  box-shadow: none;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: var(--text-faint);
+}
+/* an attested rung is a DOOR — tap it to re-ask the corpus that question */
+.jp-x-descent-rung--door {
+  cursor: pointer;
+  color: var(--text-normal);
+}
+.jp-x-descent-rung--door:hover { background: var(--background-modifier-hover); }
+.jp-x-descent-drop {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.jp-x-descent-span { font-weight: 500; }
+.jp-x-descent-count {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.jp-x-descent-stop {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  padding-left: 10px;
+}
+
 /* §29 rung 1 — why this row ranked where it did. Faint by design: it is a
    skeletal reason the hand can overrule, not a claim about meaning. */
 .jp-x-card-why {

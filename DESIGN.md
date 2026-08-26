@@ -2467,7 +2467,7 @@ contract that `pattern-store.ts` already encodes (`Attestation`, `SceneRef`,
 partially honor. When the two disagree, **the contract in `pattern-store.ts`
 wins and the pipeline is the bug.**
 
-## 29. The 𝕏検索辞書 as an interrogated corpus — one build from three angles (2026-08-25, RUNGS 0-1 SHIPPED)
+## 29. The 𝕏検索辞書 as an interrogated corpus — one build from three angles (2026-08-25, RUNGS 0-1-3 SHIPPED)
 
 **Status 2026-08-25:** rung 0 is built, wired and deployed — `src/x/relevance.ts`,
 `golden/x-relevance.mjs` (30 checks across both rungs), the oracle seam cut in `makeXDeps`, the
@@ -2479,7 +2479,28 @@ returning a score AND its stated reason, rendered on the row — a ranked list
 that cannot explain its order is a verdict, and the machine does not issue
 verdicts. The sort chips survive as the TIEBREAK they always honestly were.
 No catalog entry for the query means no class to rank by and the list is left
-alone. Rungs 2–6 remain as specified below.
+alone.
+
+Rung 3 shipped 2026-08-26: `src/x/probe.ts` (the ladder, six verdicts, three
+stop rules), `golden/x-probe.mjs` (30 checks), rendered in place of the empty
+state whenever a single-term search is silent. Pieces come from
+`tokenizeForCanvas` with the dictionary probe — no new segmenter. Verified on the
+live corpus: 僕は印象として持っている → 0 → 印象として持っている 0 → 印象として 1 →
+印象 70/47/46, verdict 沈黙・有意, and the why names 僕は・持っている as the
+over-specification. Every attested rung is a DOOR: tapping it re-asks the
+corpus that question, so the ladder is a way to move, not a report to read.
+
+Two refinements the build added. The result exposes BOTH `nearest` (the
+smallest edit the corpus can answer — the actionable finding) and `surviving`
+(the best-attested rung — where the distribution lives); reporting only the
+latter would have answered a question nobody asked. And the 逸 rule needs a
+core: it is the token with the highest KANJI DENSITY, ties to the longer,
+because a pure-kanji token is content while kana-heavy tokens are grammar.
+Longest-token would have made 持っている the core of 僕は印象として持っている and
+blocked the one drop that pays. Stated as the heuristic and knob it is —
+rung 4 supersedes it for constructions, where the fixed material can be kana.
+
+Rungs 2, 4, 5 and 6 remain as specified below.
 
 This is the DESIGN section `claude/PHYSICS-2026-08-19.md §5` adjudicated and
 every prior pass promised without writing. It consolidates the Aug-19 governing
@@ -2563,7 +2584,7 @@ deinflector.*
   **label-ness** — the fraction of a string's occurrences that are
   line-initial / standalone / hashtag vs mid-clause. "がっつり is real but
   reads as commentary, not a calendar entry" has a computable correlate.
-- **Rung 3 — the descent ladder + verdicts.** On silence, attack the query's
+- **Rung 3 — the descent ladder + verdicts. SHIPPED 2026-08-26.** On silence, attack the query's
   own 過剰指定: leave-one-out over the probe's pieces, reporting what the
   corpus DOES hold at every rung (印象として持っている → 印象として=1 →
   印象=47 with environments). Every probe returns one of six verdicts —

@@ -5124,7 +5124,7 @@ function mask(s) {
   out = out.replace(I_ADJ_RE, "\u2591A\u2591");
   out = out.replace(/[一-龥々]{1,4}(?=(?:する|します|した|して|させ|され|られ))/g, "\u2591V\u2591");
   out = out.replace(KATA_RE, "\u2591K\u2591");
-  out = out.replace(KANJI_RE2, "\u2591N\u2591");
+  out = out.replace(KANJI_RE3, "\u2591N\u2591");
   out = out.replace(/░(?![NVAKEQ#])░/g, "\u2591");
   return out;
 }
@@ -5152,7 +5152,7 @@ function skeletonOf(text) {
     frame: detectFrame(skel)
   };
 }
-var QUOTE_RE, NUMERIC_RE, KATA_RE, ASCII_RE, I_ADJ_RE, KANJI_RE2, FRAME_TEMPLATES;
+var QUOTE_RE, NUMERIC_RE, KATA_RE, ASCII_RE, I_ADJ_RE, KANJI_RE3, FRAME_TEMPLATES;
 var init_skeleton = __esm({
   "src/discourse/engine/skeleton.mjs"() {
     QUOTE_RE = /[「『][^「『」』]*[」』]/g;
@@ -5160,7 +5160,7 @@ var init_skeleton = __esm({
     KATA_RE = /[ァ-ヴー]+/g;
     ASCII_RE = /[A-Za-z][A-Za-z\-]*/g;
     I_ADJ_RE = /[一-龥々]+(?:しい|い)(?=[ぁ-んをにがはもでとへやか、。！？\s]|$)/g;
-    KANJI_RE2 = /[一-龥々〆ヵヶ]+/g;
+    KANJI_RE3 = /[一-龥々〆ヵヶ]+/g;
     FRAME_TEMPLATES = [
       { id: "DEFINITION-NP-COPULA", re: /░N░?(?:というのは|って).*ということ(?:です|だ)/ },
       { id: "TOPIC-IS-NP", re: /░N░?は.*░N░?(?:です|だ)[。．！？]?$/ },
@@ -39651,12 +39651,123 @@ function rankByClass(items, probe, tie = () => 0, window2 = DEFAULT_LINK_WINDOW)
   }).sort((a, b) => b.score - a.score || tie(a.item, b.item));
 }
 
+// src/x/probe.ts
+var KANJI_RE2 = /[㐀-䶿一-鿿々]/;
+function density(tok) {
+  if (!tok.length)
+    return 0;
+  let k = 0;
+  for (const c of tok)
+    if (KANJI_RE2.test(c))
+      k++;
+  return k / tok.length;
+}
+function coreOf(pieces) {
+  let best = "";
+  let bestD = -1;
+  for (const p of pieces) {
+    const d = density(p);
+    if (d > bestD || d === bestD && p.length > best.length) {
+      best = p;
+      bestD = d;
+    }
+  }
+  return best;
+}
+var EMPTY2 = { occ: 0, docs: 0, authors: 0 };
+function descend(probe, pieces, count, opts = {}) {
+  var _a2, _b2, _c2, _d2, _e2;
+  const floorLen = (_a2 = opts.floorLen) != null ? _a2 : 2;
+  const plateau = (_b2 = opts.plateau) != null ? _b2 : 2;
+  const manifest = (_c2 = opts.manifest) != null ? _c2 : 3;
+  const core = coreOf(pieces);
+  const rungs = [{ span: probe, count: count(probe) }];
+  let cur = [...pieces];
+  let stoppedBy = null;
+  while (cur.length > 1) {
+    const prev = rungs[rungs.length - 1];
+    const leftPieces = cur.slice(1);
+    const rightPieces = cur.slice(0, -1);
+    const leftLegal = cur[0] !== core && leftPieces.join("").length >= floorLen;
+    const rightLegal = cur[cur.length - 1] !== core && rightPieces.join("").length >= floorLen;
+    if (!leftLegal && !rightLegal) {
+      const coreAtAnEnd = cur[0] === core || cur[cur.length - 1] === core;
+      stoppedBy = coreAtAnEnd ? "\u9038" : "\u5E8A";
+      break;
+    }
+    const leftSpan = leftPieces.join("");
+    const rightSpan = rightPieces.join("");
+    const cl = leftLegal ? count(leftSpan) : EMPTY2;
+    const cr = rightLegal ? count(rightSpan) : EMPTY2;
+    const takeLeft = leftLegal && (!rightLegal || cl.occ >= cr.occ);
+    const span = takeLeft ? leftSpan : rightSpan;
+    const c = takeLeft ? cl : cr;
+    const dropped = takeLeft ? { text: cur[0], side: "left" } : { text: cur[cur.length - 1], side: "right" };
+    if (prev.count.occ > 0 && c.occ < prev.count.occ * plateau) {
+      stoppedBy = "\u5E73";
+      break;
+    }
+    rungs.push({ span, count: c, dropped });
+    cur = takeLeft ? leftPieces : rightPieces;
+  }
+  if (!stoppedBy && cur.length <= 1)
+    stoppedBy = "\u5E8A";
+  const nearest = (_d2 = rungs.find((r2) => r2.count.occ > 0)) != null ? _d2 : null;
+  const surviving = (_e2 = [...rungs].reverse().find((r2) => r2.count.occ > 0)) != null ? _e2 : null;
+  const { verdict, why } = judge(rungs, nearest, surviving, pieces, { manifest, ...opts });
+  return { probe, rungs, nearest, surviving, verdict, why, stoppedBy };
+}
+function judge(rungs, nearest, surviving, pieces, opts) {
+  var _a2;
+  const full = rungs[0].count;
+  if (full.occ > 0) {
+    const rival = ((_a2 = opts.variants) != null ? _a2 : []).filter((v) => v.count.occ >= full.occ * 3).sort((a, b) => b.count.occ - a.count.occ)[0];
+    if (rival) {
+      return {
+        verdict: "\u7AF6\u5408",
+        why: `${full.occ}\u4EF6\u3042\u308B\u304C\u3001${rival.span} \u304C ${rival.count.occ}\u4EF6 \u2014 \u540C\u3058\u4F4D\u7F6E\u3067\u3088\u308A\u4E00\u822C\u7684`
+      };
+    }
+    if (full.authors <= 1 || full.docs <= 1) {
+      return {
+        verdict: "\u504F\u5728",
+        why: `${full.occ}\u4EF6\u3042\u308B\u304C ${full.authors}\u4EBA\u30FB${full.docs}\u4EF6\u306B\u504F\u308B \u2014 \u4E00\u822C\u6027\u306F\u672A\u78BA\u8A8D`
+      };
+    }
+    if (full.occ >= opts.manifest) {
+      return { verdict: "\u9855\u5728", why: `${full.occ}\u4EF6\u30FB${full.authors}\u4EBA\u306B\u5206\u5E03` };
+    }
+    return { verdict: "\u504F\u5728", why: `${full.occ}\u4EF6\u306E\u307F\uFF08${full.authors}\u4EBA\uFF09\u2014 \u5C11\u6570\u306E\u5B9F\u4F8B` };
+  }
+  if (nearest) {
+    const upTo = rungs.indexOf(nearest);
+    const dropped = rungs.slice(1, upTo + 1).map((r2) => {
+      var _a3;
+      return (_a3 = r2.dropped) == null ? void 0 : _a3.text;
+    }).filter(Boolean).join("\u30FB");
+    const deeper = surviving && surviving !== nearest ? `\uFF0F ${surviving.span} \u306A\u3089 ${surviving.count.occ}\u4EF6` : "";
+    return {
+      verdict: "\u6C88\u9ED9\u30FB\u6709\u610F",
+      why: dropped ? `\u3053\u306E\u5F62\u306F0\u4EF6\u3002${dropped} \u3092\u5916\u3059\u3068 ${nearest.span} \u304C ${nearest.count.occ}\u4EF6 \u2014 \u904E\u5270\u6307\u5B9A\u306F\u305D\u3053 ${deeper}`.trim() : `\u3053\u306E\u5F62\u306F0\u4EF6\u3002${nearest.span} \u306A\u3089 ${nearest.count.occ}\u4EF6`
+    };
+  }
+  const known = opts.isWord ? pieces.some((p) => opts.isWord(p)) : false;
+  return known ? { verdict: "\u6C88\u9ED9\u30FB\u7121\u529B", why: "\u8A9E\u3068\u3057\u3066\u306F\u5B9F\u5728\u3059\u308B\u304C\u3001\u3053\u306E\u30B3\u30FC\u30D1\u30B9\u306F\u4E00\u5EA6\u3082\u6301\u3063\u3066\u3044\u306A\u3044" } : { verdict: "\u570F\u5916", why: "\u69CB\u6210\u8981\u7D20\u304C\u8F9E\u66F8\u306B\u3082\u30B3\u30FC\u30D1\u30B9\u306B\u3082\u306A\u3044 \u2014 \u3053\u306E\u8A9E\u5F59\u570F\u306E\u5916" };
+}
+function verdictLine(r2) {
+  return `${r2.verdict} \u2014 ${r2.why}`;
+}
+
 // src/ui/XSearchView.ts
 var JP_X_VIEW_TYPE = "jp-x-search-view";
-var XSearchView = class extends import_obsidian21.ItemView {
+var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
   constructor(leaf, deps) {
     super(leaf);
     this.mainInput = null;
+    /** §29 rung 3 — the ladder walks the whole corpus per rung, so it is
+     *  memoised the same way the KWIC panel is. The corpus is append-only,
+     *  so (term, size) misses only when the answer would really differ. */
+    this.descentCache = null;
     this.chipsEl = null;
     this.advancedEl = null;
     this.advancedOpen = false;
@@ -39991,6 +40102,10 @@ var XSearchView = class extends import_obsidian21.ItemView {
     if (this.loadMoreEl)
       this.loadMoreEl.empty();
     if (results.length === 0) {
+      if (single && this.deps.oracle && total > 0) {
+        this.renderDescent(single);
+        return;
+      }
       const empty = this.resultsEl.createDiv("jp-x-empty");
       empty.createDiv({ cls: "jp-x-empty-icon", text: "\u{1F50D}" });
       empty.createDiv({
@@ -40031,6 +40146,74 @@ var XSearchView = class extends import_obsidian21.ItemView {
           body2.hide();
         paint(open);
       };
+    }
+  }
+  /**
+   * §29 rung 3 on screen. Every attested rung is a DOOR: tapping it re-asks
+   * the corpus that question, so the ladder is a way to move rather than a
+   * report to read. Unattested rungs stay flat — a door onto nothing is the
+   * seam this whole section exists to remove.
+   */
+  renderDescent(term) {
+    var _a2;
+    if (!this.resultsEl || !this.deps.oracle)
+      return;
+    const oracle = this.deps.oracle;
+    const all = this.deps.corpus.getAll();
+    let result;
+    const cached = this.descentCache;
+    if (cached && cached.term === term && cached.size === all.length) {
+      result = cached.result;
+    } else {
+      const count = (span) => {
+        let occ = 0, docs = 0;
+        const voices = /* @__PURE__ */ new Set();
+        for (const t of all) {
+          let k = 0;
+          let i = t.text.indexOf(span);
+          while (i !== -1) {
+            k++;
+            i = t.text.indexOf(span, i + 1);
+          }
+          if (k) {
+            occ += k;
+            docs++;
+            voices.add(t.authorHandle);
+          }
+        }
+        return { occ, docs, authors: voices.size };
+      };
+      const pieces = tokenizeForCanvas(term, oracle.isWord).map((t) => t.text);
+      result = descend(term, pieces, count, { isWord: oracle.isWord });
+      this.descentCache = { term, size: all.length, result };
+    }
+    const box = this.resultsEl.createDiv("jp-x-descent");
+    box.createDiv({ cls: "jp-x-descent-verdict", text: verdictLine(result) });
+    const ladder = box.createDiv("jp-x-descent-ladder");
+    for (const rung of result.rungs) {
+      const attested = rung.count.occ > 0;
+      const row = ladder.createEl(attested ? "button" : "div", {
+        cls: "jp-x-descent-rung" + (attested ? " jp-x-descent-rung--door" : "")
+      });
+      row.createSpan({
+        cls: "jp-x-descent-drop",
+        text: rung.dropped ? `\u2212${rung.dropped.text}` : ""
+      });
+      row.createSpan({ cls: "jp-x-descent-span", text: rung.span });
+      row.createSpan({
+        cls: "jp-x-descent-count",
+        text: attested ? `${rung.count.occ}\u4EF6 / ${rung.count.authors}\u4EBA` : "0\u4EF6"
+      });
+      if (attested) {
+        row.onclick = () => this.searchFor(rung.span, false);
+        row.setAttr("title", `${rung.span} \u3067\u5F15\u304D\u76F4\u3059`);
+      }
+    }
+    if (result.stoppedBy) {
+      box.createDiv({
+        cls: "jp-x-descent-stop",
+        text: `\u505C\u6B62: ${result.stoppedBy} \u2014 ${(_a2 = _XSearchView.STOP_WHY[result.stoppedBy]) != null ? _a2 : ""}`
+      });
     }
   }
   renderCooccurrence() {
@@ -40389,6 +40572,13 @@ var XSearchView = class extends import_obsidian21.ItemView {
     }).open();
   }
 };
+/** What each stop rule means, said in the open rather than logged. */
+_XSearchView.STOP_WHY = {
+  \u5E8A: "\u3053\u308C\u4EE5\u4E0A\u306F\u77ED\u3059\u304E\u3066\u554F\u3044\u306B\u306A\u3089\u306A\u3044",
+  \u9038: "\u3053\u308C\u4EE5\u4E0A\u5916\u3059\u3068\u5225\u306E\u554F\u3044\u306B\u306A\u308B",
+  \u5E73: "\u5916\u3057\u3066\u3082\u4EF6\u6570\u304C\u5897\u3048\u306A\u3044 \u2014 \u3053\u3053\u304C\u7B54\u3048"
+};
+var XSearchView = _XSearchView;
 function highlightInto(el, text, terms) {
   const needles = terms.filter(Boolean);
   if (needles.length === 0) {
