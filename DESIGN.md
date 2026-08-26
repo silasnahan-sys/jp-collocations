@@ -2481,6 +2481,16 @@ verdicts. The sort chips survive as the TIEBREAK they always honestly were.
 No catalog entry for the query means no class to rank by and the list is left
 alone. Rungs 2–6 remain as specified below.
 
+**Status 2026-08-26 (merge):** rung 6's catalog-side substrate exists — built
+the same night on a parallel branch neither session could see, merged here.
+問い: File a Standing Question files a PatternEntry born with
+`attestations: []` and `standing: true`; `sweepMuted` never retires it (a
+wondering's rejections are normal fishing, §27 rule 4); no fabricated
+self-sighting; the 問 mark is provenance and never leaves (goldens: sweep
+54/54, patternstore 37/37). Still open from rung 6's own spec: filing in ONE
+GESTURE from a silent probe in the 𝕏 pane (today it is a command, not a hand
+act on the silence itself), and verdicts accreting as a HISTORY.
+
 This is the DESIGN section `claude/PHYSICS-2026-08-19.md §5` adjudicated and
 every prior pass promised without writing. It consolidates the Aug-19 governing
 directive (Axis 2: X relevance per note-type), the 印象として brief, the
@@ -2721,6 +2731,17 @@ also PREVENT repair 4's mismatch case), §2.3 鋳造 (long-press mint, lane
 landing), §2.5 現在線, §2.1/2.6 stored-vs-candidate registers in the Move 2
 inspector. §29 is a separate build with its own rungs; it shares repair 2's
 oracle (`deinflect` + sync `lookup`) and nothing else — do not entangle them.
+
+Two 答え合わせ items shipped NOWHERE and had fallen off every ledger until
+this line (found by the 2026-08-26 audit): **in-entry Find** (the 31-second
+refusal was the user trying to re-find a passage INSIDE an entry already
+open — space-AND fixed the list, not the entry; Monokakido has Find… in its
+≡ menu) and **the descend/flip tempo** (word-tap is a hard cut, then the
+sidecar silently repaints the answer 0.23s later — コマ送り law 3: descend
+animated 100–270ms with the landing lit, flip instant; whether a webview can
+hit "instant" is unmeasured, so this item starts with a measurement, not a
+build). Neither is covered by any shipped repair; they queue behind 宛名札
+only because a mis-addressed carry corrupts data while these cost a trip.
 
 Perf, same date: the 𝕏 pane ran `detectPatterns` (the 126-operator engine) on
 up to 100 frozen tweets per keystroke and re-walked the whole 1.18M-char
