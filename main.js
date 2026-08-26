@@ -33803,6 +33803,15 @@ function searchNotation(q) {
     return { mode: "starts", term: starts[1].trim() };
   return null;
 }
+function panVerdict(dxAbs, dtMs, paneWidth, hasTarget) {
+  if (!hasTarget)
+    return "snap";
+  if (dxAbs > paneWidth * 0.28)
+    return "commit";
+  if (dtMs > 0 && dxAbs >= 48 && dxAbs / dtMs >= 0.5)
+    return "commit";
+  return "snap";
+}
 
 // src/dictionary/DictionaryStore.ts
 var _DictionaryStore = class _DictionaryStore {
@@ -36904,6 +36913,15 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
      */
     this.mediaMisses = /* @__PURE__ */ new Set();
     /**
+     * Neighbours for the current query, arming THROUGH inflection: 食べていた
+     * has no place of its own in the walkable order, but its first hit 食べる
+     * does — the walk arms on any word the imported shelf can NAME, not only
+     * exact keys. Cached per query because the pan asks on every pointermove.
+     * (Sidecar-only words still have no place: the 6.1M-term walkable order
+     * needs shard-level support and is its own queued build — STATE §8.)
+     */
+    this.nbCache = null;
+    /**
      * ≡ — the current screen's own table of contents (item 9): one row per
      * entry card, tap → the card scrolls into view with its header tinted.
      * Opens ABOVE the bar it came from — off-hand, where the popover is
@@ -37093,7 +37111,10 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     this.lookupWord(word, { tempo: "descend" });
     this.renderBreadcrumbs();
   }
-  /** Navigate back, landing exactly where you left. */
+  /** Navigate back, landing exactly where you left. Backing out is a POP —
+   *  the page you return to arrives from the LEFT, the mirror of descend's
+   *  push from the right, so the tempo tells the hand which way it moved
+   *  through the stack (the iOS grammar the films breathe throughout). */
   goBack() {
     const prev = this.lookupHistory.pop();
     if (!prev)
@@ -37101,6 +37122,14 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     this.lookupWord(prev.word);
     this.restoreScroll(prev.scroll);
     this.renderBreadcrumbs();
+    if (this.resultsEl && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const el = this.resultsEl;
+      el.removeClass("jp-dict-flick-left");
+      el.removeClass("jp-dict-flick-right");
+      void el.offsetWidth;
+      el.addClass("jp-dict-flick-right");
+      window.setTimeout(() => el.removeClass("jp-dict-flick-right"), 220);
+    }
   }
   /**
    * Put the scroll position back after the results have actually been painted.
@@ -37284,12 +37313,28 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       }
     return el === root ? null : el;
   }
+  currentNeighbors() {
+    var _a2, _b2;
+    const q = this.currentQuery;
+    if (!q || this.historyMode)
+      return null;
+    if (((_a2 = this.nbCache) == null ? void 0 : _a2.q) === q)
+      return this.nbCache.nb;
+    let nb = this.dictStore.neighbors(q);
+    if (!nb) {
+      const first = (_b2 = this.dictStore.lookup(q)[0]) == null ? void 0 : _b2.term.expression;
+      if (first && first !== q)
+        nb = this.dictStore.neighbors(first);
+    }
+    this.nbCache = { q, nb };
+    return nb;
+  }
   /** The bottom-corner chips: who stands beside the current word. */
   renderNavBar() {
     var _a2, _b2;
     if (!this.navBarEl || !this.nbPrevEl || !this.nbNextEl)
       return;
-    const nb = this.currentQuery && !this.historyMode ? this.dictStore.neighbors(this.currentQuery) : null;
+    const nb = this.currentNeighbors();
     const set = (btn, h, arrow) => {
       if (!h) {
         btn.addClass("jp-dict-nb--void");
@@ -37306,20 +37351,14 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     this.navBarEl.toggleClass("jp-dict-navbar--bare", !nb);
   }
   /**
-   * FLIP to a neighbour — instant, 0 frames (filmed: f11732→11733, the swap
-   * happens between two frames). Sideways moves replace the current place:
-   * the breadcrumb trail neither grows nor pops, exactly like turning a page.
-   * `slide` adds the 140ms settle that makes a FLICK feel like the quick
-   * scrolly page-turn the hand asked for; chip taps stay hard cuts.
+   * FLIP to a neighbour — sideways moves replace the current place: the
+   * breadcrumb trail neither grows nor pops, exactly like turning a page.
+   * A chip tap is a hard cut (filmed: f11732→11733, the swap happens between
+   * two frames); a pan or flick passes `slide`, and the new page finishes
+   * the turn from the direction the hand was already moving.
    */
-  flipStep(dir, slide) {
-    if (this.historyMode || !this.currentQuery)
-      return;
-    const nb = this.dictStore.neighbors(this.currentQuery);
-    const target = dir > 0 ? nb == null ? void 0 : nb.next : nb == null ? void 0 : nb.prev;
-    if (!target)
-      return;
-    this.lookupWord(target.expression);
+  flipTo(word, slide) {
+    this.lookupWord(word);
     this.renderBreadcrumbs();
     if (slide && this.resultsEl && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       const el = this.resultsEl;
@@ -37328,19 +37367,64 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       el.removeClass("jp-dict-flick-right");
       void el.offsetWidth;
       el.addClass(cls);
-      window.setTimeout(() => el.removeClass(cls), 200);
+      window.setTimeout(() => el.removeClass(cls), 220);
     }
   }
+  flipStep(dir, slide) {
+    if (this.historyMode || !this.currentQuery)
+      return;
+    const nb = this.currentNeighbors();
+    const target = dir > 0 ? nb == null ? void 0 : nb.next : nb == null ? void 0 : nb.prev;
+    if (!target)
+      return;
+    this.flipTo(target.expression, slide);
+  }
   /**
-   * A fast horizontal FLICK pages to the neighbour. Gated three ways so
-   * nothing else ever misfires into a page turn: velocity (≥0.45 px/ms —
-   * a reading drag or selection is slower), axis dominance (|dx| ≥ 1.5|dy|),
-   * and an armed selection wins outright. Mouse excluded (a mouse drag IS
-   * selection); the 28px edge zones belong to edge-back (touch-nav.ts).
-   * Passive listeners only — this must never cost the scroller a frame.
+   * The kindle-quick page turn, CORRECTED (2026-08-26). The first build was
+   * a release-time flick — a discrete swap the hand never felt, the exact
+   * mistake the Aug-25 review warned about: a "scrolly" correction answered
+   * with a more discrete model. Now the page RIDES THE FINGER:
+   *
+   *   • TOUCH: axis-lock engages the pan at 14px of horizontal dominance;
+   *     the stack follows the finger (compositor transform only), rubber-
+   *     bands ×0.35 toward a page that does not exist, and the release asks
+   *     `panVerdict` — carried past 28% of the pane, or thrown ≥0.5px/ms,
+   *     the turn completes from the direction the hand was moving; anything
+   *     less snaps back. `touch-action: pan-y` on the results (styles.css)
+   *     is what lets a horizontal touch reach us without fighting the
+   *     vertical scroller.
+   *   • PEN never pans: on iPadOS a Pencil drag across text IS the
+   *     selection gesture, and the films' law 2 says the Pencil points and
+   *     selects while the finger scrolls and turns. A pen page-turn stays
+   *     the release-time fast flick, which cannot collide with selection
+   *     because a non-collapsed selection wins outright.
+   *   • Mouse excluded entirely; the 28px edge zones belong to edge-back.
    */
-  armNeighborFlick(el) {
-    let id = -1, x0 = 0, y0 = 0, t0 = 0, fromEdge = false;
+  armEntryPan(el) {
+    let id = -1, x0 = 0, y0 = 0, t0 = 0, fromEdge = false, engaged = false, raf = 0, dx = 0;
+    const paint = () => {
+      raf = 0;
+      el.style.transform = dx ? `translateX(${dx}px)` : "";
+    };
+    const reset = (animate2) => {
+      engaged = false;
+      id = -1;
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      if (animate2 && el.style.transform) {
+        el.style.transition = "transform 130ms ease-out";
+        el.style.transform = "";
+        window.setTimeout(() => {
+          el.style.transition = "";
+        }, 160);
+      } else {
+        el.style.transition = "";
+        el.style.transform = "";
+      }
+      dx = 0;
+    };
     el.addEventListener("pointerdown", (e) => {
       if (e.pointerType === "mouse")
         return;
@@ -37348,30 +37432,76 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       x0 = e.clientX;
       y0 = e.clientY;
       t0 = e.timeStamp;
+      engaged = false;
+      dx = 0;
       const w = window.innerWidth;
       fromEdge = x0 < 28 || x0 > w - 28;
+    }, { passive: true });
+    el.addEventListener("pointermove", (e) => {
+      var _a2;
+      if (e.pointerId !== id || fromEdge)
+        return;
+      const mx = e.clientX - x0, my = e.clientY - y0;
+      if (!engaged) {
+        if (e.pointerType !== "touch")
+          return;
+        if (Math.abs(mx) < 14 || Math.abs(mx) < Math.abs(my) * 1.2)
+          return;
+        const sel = (_a2 = window.getSelection) == null ? void 0 : _a2.call(window);
+        if (sel && !sel.isCollapsed && sel.toString().trim())
+          return;
+        if (this.historyMode || !this.currentQuery)
+          return;
+        engaged = true;
+        try {
+          el.setPointerCapture(id);
+        } catch (e2) {
+        }
+      }
+      const nb = this.currentNeighbors();
+      const target = mx < 0 ? nb == null ? void 0 : nb.next : nb == null ? void 0 : nb.prev;
+      dx = target ? mx : mx * 0.35;
+      if (!raf)
+        raf = requestAnimationFrame(paint);
     }, { passive: true });
     el.addEventListener("pointerup", (e) => {
       var _a2;
       if (e.pointerId !== id)
         return;
-      id = -1;
+      const mx = e.clientX - x0, my = e.clientY - y0, dt = e.timeStamp - t0;
+      if (engaged) {
+        const swallow = (c) => {
+          c.preventDefault();
+          c.stopPropagation();
+        };
+        window.addEventListener("click", swallow, { capture: true, once: true });
+        window.setTimeout(() => window.removeEventListener("click", swallow, true), 300);
+        const nb = this.currentNeighbors();
+        const target = mx < 0 ? nb == null ? void 0 : nb.next : nb == null ? void 0 : nb.prev;
+        const verdict = panVerdict(Math.abs(mx), dt, el.clientWidth || window.innerWidth, !!target);
+        reset(verdict === "snap");
+        if (verdict === "commit" && target)
+          this.flipTo(target.expression, mx < 0 ? "left" : "right");
+        return;
+      }
+      reset(false);
       if (fromEdge)
         return;
       const sel = (_a2 = window.getSelection) == null ? void 0 : _a2.call(window);
       if (sel && !sel.isCollapsed && sel.toString().trim())
         return;
-      const dx = e.clientX - x0, dy = e.clientY - y0, dt = e.timeStamp - t0;
       if (dt <= 0 || dt > 350)
         return;
-      if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.5)
+      if (Math.abs(mx) < 64 || Math.abs(mx) < Math.abs(my) * 1.5)
         return;
-      if (Math.abs(dx) / dt < 0.45)
+      if (Math.abs(mx) / dt < 0.45)
         return;
-      this.flipStep(dx < 0 ? 1 : -1, dx < 0 ? "left" : "right");
+      this.flipStep(mx < 0 ? 1 : -1, mx < 0 ? "left" : "right");
     }, { passive: true });
-    el.addEventListener("pointercancel", () => {
-      id = -1;
+    el.addEventListener("pointercancel", (e) => {
+      if (e.pointerId !== id)
+        return;
+      reset(true);
     }, { passive: true });
   }
   /** Pinch-in on the results = collapse to the outline. Two pointers,
@@ -37438,7 +37568,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       row.createSpan({ text: dict, cls: "jp-dict-outline-dict" });
       row.addEventListener("click", () => {
         this.toggleOutline();
-        card.scrollIntoView({ block: "start" });
+        card.scrollIntoView({ block: "start", behavior: "smooth" });
         card.addClass("jp-dict-arrive-flash");
         window.setTimeout(() => card.removeClass("jp-dict-arrive-flash"), 1400);
       });
@@ -37789,7 +37919,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     });
     this.nbNextEl.addEventListener("click", () => this.flipStep(1));
     this.renderNavBar();
-    this.armNeighborFlick(this.resultsEl);
+    this.armEntryPan(this.resultsEl);
     this.armPinchOutline(this.resultsEl);
   }
   // ── Search flow ────────────────────────────────────────────

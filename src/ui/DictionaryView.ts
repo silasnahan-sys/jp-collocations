@@ -47,7 +47,7 @@ import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
 import { classBadge } from './class-grammar';
 import { armDrops, armSelectionEcho, mountSurfaceBar, wideDock, type ViewChrome } from './view-chrome';
 import { makeDraggable } from './drag-out';
-import { historyDays, searchNotation, type DictHistoryStore } from '../dictionary/dict-nav';
+import { historyDays, searchNotation, panVerdict, type DictHistoryStore } from '../dictionary/dict-nav';
 
 export const JP_DICTIONARY_VIEW_TYPE = 'jp-dictionary-view';
 
@@ -358,13 +358,23 @@ export class DictionaryView extends ItemView {
   /** The edge that brought us to the CURRENT word. */
   private lastVia: SaveRelation | undefined;
 
-  /** Navigate back, landing exactly where you left. */
+  /** Navigate back, landing exactly where you left. Backing out is a POP —
+   *  the page you return to arrives from the LEFT, the mirror of descend's
+   *  push from the right, so the tempo tells the hand which way it moved
+   *  through the stack (the iOS grammar the films breathe throughout). */
   private goBack(): void {
     const prev = this.lookupHistory.pop();
     if (!prev) return;
     this.lookupWord(prev.word);
     this.restoreScroll(prev.scroll);
     this.renderBreadcrumbs();
+    if (this.resultsEl && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const el = this.resultsEl;
+      el.removeClass('jp-dict-flick-left'); el.removeClass('jp-dict-flick-right');
+      void el.offsetWidth;
+      el.addClass('jp-dict-flick-right');
+      window.setTimeout(() => el.removeClass('jp-dict-flick-right'), 220);
+    }
   }
 
   /**
@@ -566,11 +576,32 @@ export class DictionaryView extends ItemView {
     return el === root ? null : el;
   }
 
+  /**
+   * Neighbours for the current query, arming THROUGH inflection: 食べていた
+   * has no place of its own in the walkable order, but its first hit 食べる
+   * does — the walk arms on any word the imported shelf can NAME, not only
+   * exact keys. Cached per query because the pan asks on every pointermove.
+   * (Sidecar-only words still have no place: the 6.1M-term walkable order
+   * needs shard-level support and is its own queued build — STATE §8.)
+   */
+  private nbCache: { q: string; nb: ReturnType<DictionaryStore['neighbors']> } | null = null;
+  private currentNeighbors(): ReturnType<DictionaryStore['neighbors']> {
+    const q = this.currentQuery;
+    if (!q || this.historyMode) return null;
+    if (this.nbCache?.q === q) return this.nbCache.nb;
+    let nb = this.dictStore.neighbors(q);
+    if (!nb) {
+      const first = this.dictStore.lookup(q)[0]?.term.expression;
+      if (first && first !== q) nb = this.dictStore.neighbors(first);
+    }
+    this.nbCache = { q, nb };
+    return nb;
+  }
+
   /** The bottom-corner chips: who stands beside the current word. */
   private renderNavBar(): void {
     if (!this.navBarEl || !this.nbPrevEl || !this.nbNextEl) return;
-    const nb = this.currentQuery && !this.historyMode
-      ? this.dictStore.neighbors(this.currentQuery) : null;
+    const nb = this.currentNeighbors();
     const set = (btn: HTMLButtonElement, h: { expression: string } | null, arrow: 'prev' | 'next'): void => {
       if (!h) { btn.addClass('jp-dict-nb--void'); btn.disabled = true; btn.setText(''); return; }
       btn.removeClass('jp-dict-nb--void');
@@ -583,18 +614,14 @@ export class DictionaryView extends ItemView {
   }
 
   /**
-   * FLIP to a neighbour — instant, 0 frames (filmed: f11732→11733, the swap
-   * happens between two frames). Sideways moves replace the current place:
-   * the breadcrumb trail neither grows nor pops, exactly like turning a page.
-   * `slide` adds the 140ms settle that makes a FLICK feel like the quick
-   * scrolly page-turn the hand asked for; chip taps stay hard cuts.
+   * FLIP to a neighbour — sideways moves replace the current place: the
+   * breadcrumb trail neither grows nor pops, exactly like turning a page.
+   * A chip tap is a hard cut (filmed: f11732→11733, the swap happens between
+   * two frames); a pan or flick passes `slide`, and the new page finishes
+   * the turn from the direction the hand was already moving.
    */
-  flipStep(dir: 1 | -1, slide?: 'left' | 'right'): void {
-    if (this.historyMode || !this.currentQuery) return;
-    const nb = this.dictStore.neighbors(this.currentQuery);
-    const target = dir > 0 ? nb?.next : nb?.prev;
-    if (!target) return;
-    this.lookupWord(target.expression);
+  flipTo(word: string, slide?: 'left' | 'right'): void {
+    this.lookupWord(word);
     this.renderBreadcrumbs();
     if (slide && this.resultsEl
       && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -603,40 +630,113 @@ export class DictionaryView extends ItemView {
       el.removeClass('jp-dict-flick-left'); el.removeClass('jp-dict-flick-right');
       void el.offsetWidth;
       el.addClass(cls);
-      window.setTimeout(() => el.removeClass(cls), 200);
+      window.setTimeout(() => el.removeClass(cls), 220);
     }
   }
 
+  flipStep(dir: 1 | -1, slide?: 'left' | 'right'): void {
+    if (this.historyMode || !this.currentQuery) return;
+    const nb = this.currentNeighbors();
+    const target = dir > 0 ? nb?.next : nb?.prev;
+    if (!target) return;
+    this.flipTo(target.expression, slide);
+  }
+
   /**
-   * A fast horizontal FLICK pages to the neighbour. Gated three ways so
-   * nothing else ever misfires into a page turn: velocity (≥0.45 px/ms —
-   * a reading drag or selection is slower), axis dominance (|dx| ≥ 1.5|dy|),
-   * and an armed selection wins outright. Mouse excluded (a mouse drag IS
-   * selection); the 28px edge zones belong to edge-back (touch-nav.ts).
-   * Passive listeners only — this must never cost the scroller a frame.
+   * The kindle-quick page turn, CORRECTED (2026-08-26). The first build was
+   * a release-time flick — a discrete swap the hand never felt, the exact
+   * mistake the Aug-25 review warned about: a "scrolly" correction answered
+   * with a more discrete model. Now the page RIDES THE FINGER:
+   *
+   *   • TOUCH: axis-lock engages the pan at 14px of horizontal dominance;
+   *     the stack follows the finger (compositor transform only), rubber-
+   *     bands ×0.35 toward a page that does not exist, and the release asks
+   *     `panVerdict` — carried past 28% of the pane, or thrown ≥0.5px/ms,
+   *     the turn completes from the direction the hand was moving; anything
+   *     less snaps back. `touch-action: pan-y` on the results (styles.css)
+   *     is what lets a horizontal touch reach us without fighting the
+   *     vertical scroller.
+   *   • PEN never pans: on iPadOS a Pencil drag across text IS the
+   *     selection gesture, and the films' law 2 says the Pencil points and
+   *     selects while the finger scrolls and turns. A pen page-turn stays
+   *     the release-time fast flick, which cannot collide with selection
+   *     because a non-collapsed selection wins outright.
+   *   • Mouse excluded entirely; the 28px edge zones belong to edge-back.
    */
-  private armNeighborFlick(el: HTMLElement): void {
-    let id = -1, x0 = 0, y0 = 0, t0 = 0, fromEdge = false;
+  private armEntryPan(el: HTMLElement): void {
+    let id = -1, x0 = 0, y0 = 0, t0 = 0, fromEdge = false, engaged = false, raf = 0, dx = 0;
+    const paint = (): void => {
+      raf = 0;
+      el.style.transform = dx ? `translateX(${dx}px)` : '';
+    };
+    const reset = (animate: boolean): void => {
+      engaged = false;
+      id = -1;
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (animate && el.style.transform) {
+        el.style.transition = 'transform 130ms ease-out';
+        el.style.transform = '';
+        window.setTimeout(() => { el.style.transition = ''; }, 160);
+      } else {
+        el.style.transition = '';
+        el.style.transform = '';
+      }
+      dx = 0;
+    };
     el.addEventListener('pointerdown', (e: PointerEvent) => {
       if (e.pointerType === 'mouse') return;
       id = e.pointerId; x0 = e.clientX; y0 = e.clientY; t0 = e.timeStamp;
+      engaged = false; dx = 0;
       const w = window.innerWidth;
       fromEdge = x0 < 28 || x0 > w - 28;
     }, { passive: true });
+    el.addEventListener('pointermove', (e: PointerEvent) => {
+      if (e.pointerId !== id || fromEdge) return;
+      const mx = e.clientX - x0, my = e.clientY - y0;
+      if (!engaged) {
+        if (e.pointerType !== 'touch') return;
+        if (Math.abs(mx) < 14 || Math.abs(mx) < Math.abs(my) * 1.2) return;
+        const sel = window.getSelection?.();
+        if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+        if (this.historyMode || !this.currentQuery) return;
+        engaged = true;
+        try { el.setPointerCapture(id); } catch { /* older webview */ }
+      }
+      const nb = this.currentNeighbors();
+      const target = mx < 0 ? nb?.next : nb?.prev;
+      dx = target ? mx : mx * 0.35;
+      if (!raf) raf = requestAnimationFrame(paint);
+    }, { passive: true });
     el.addEventListener('pointerup', (e: PointerEvent) => {
       if (e.pointerId !== id) return;
-      id = -1;
+      const mx = e.clientX - x0, my = e.clientY - y0, dt = e.timeStamp - t0;
+      if (engaged) {
+        // An engaged pan consumed the gesture — the click that follows it is
+        // not a second instruction (the pointer-drag lesson).
+        const swallow = (c: Event): void => { c.preventDefault(); c.stopPropagation(); };
+        window.addEventListener('click', swallow, { capture: true, once: true });
+        window.setTimeout(() => window.removeEventListener('click', swallow, true), 300);
+        const nb = this.currentNeighbors();
+        const target = mx < 0 ? nb?.next : nb?.prev;
+        const verdict = panVerdict(Math.abs(mx), dt, el.clientWidth || window.innerWidth, !!target);
+        reset(verdict === 'snap');
+        if (verdict === 'commit' && target) this.flipTo(target.expression, mx < 0 ? 'left' : 'right');
+        return;
+      }
+      reset(false);
       if (fromEdge) return;
       const sel = window.getSelection?.();
       if (sel && !sel.isCollapsed && sel.toString().trim()) return;
-      const dx = e.clientX - x0, dy = e.clientY - y0, dt = e.timeStamp - t0;
       if (dt <= 0 || dt > 350) return;
-      if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
-      if (Math.abs(dx) / dt < 0.45) return;
+      if (Math.abs(mx) < 64 || Math.abs(mx) < Math.abs(my) * 1.5) return;
+      if (Math.abs(mx) / dt < 0.45) return;
       // Reading direction: flick left = the page turns forward.
-      this.flipStep(dx < 0 ? 1 : -1, dx < 0 ? 'left' : 'right');
+      this.flipStep(mx < 0 ? 1 : -1, mx < 0 ? 'left' : 'right');
     }, { passive: true });
-    el.addEventListener('pointercancel', () => { id = -1; }, { passive: true });
+    el.addEventListener('pointercancel', (e: PointerEvent) => {
+      if (e.pointerId !== id) return;
+      reset(true);
+    }, { passive: true });
   }
 
   /** Pinch-in on the results = collapse to the outline. Two pointers,
@@ -696,7 +796,9 @@ export class DictionaryView extends ItemView {
       row.createSpan({ text: dict, cls: 'jp-dict-outline-dict' });
       row.addEventListener('click', () => {
         this.toggleOutline();
-        card.scrollIntoView({ block: 'start' });
+        // Monokakido's ≡ scrolls TO its target over ~200ms with the target
+        // tinted — the eye rides the motion to the landing.
+        card.scrollIntoView({ block: 'start', behavior: 'smooth' });
         card.addClass('jp-dict-arrive-flash');
         window.setTimeout(() => card.removeClass('jp-dict-arrive-flash'), 1400);
       });
@@ -1066,10 +1168,9 @@ export class DictionaryView extends ItemView {
     this.renderNavBar();
 
     // Kindle-quick sideways paging: the axis tells the hand its stratum —
-    // ↕ scrolls within this entry stack, a fast ↔ FLICK moves to the
-    // neighbour. Velocity-gated so a slow drag (selection, a hesitant
-    // scroll) never pages; touch/pen only (a mouse drag is selection).
-    this.armNeighborFlick(this.resultsEl);
+    // ↕ scrolls within this entry stack, ↔ RIDES THE FINGER to the
+    // neighbour (touch pan; pen keeps the fast flick — see armEntryPan).
+    this.armEntryPan(this.resultsEl);
     // The pinch reflex, answered: pinch-in = collapse to the outline (the
     // splayed-fingers gesture Monokakido left unanswered at 1184 f4602).
     this.armPinchOutline(this.resultsEl);

@@ -134,5 +134,15 @@ console.log('══ the tilde search grammar: one alphabet, three modes ══')
   check('a lone tilde asks nothing', N.searchNotation('〜') === null);
 }
 
+console.log('══ the page-turn verdict: carried over the hill, or thrown ══');
+{
+  const W = 400; // pane width
+  check('carried past 28% commits', N.panVerdict(120, 600, W, true) === 'commit');
+  check('a slow half-hearted drag snaps back', N.panVerdict(80, 600, W, true) === 'snap');
+  check('a quick throw commits from little distance', N.panVerdict(60, 100, W, true) === 'commit');
+  check('a fast but tiny twitch does not', N.panVerdict(30, 40, W, true) === 'snap');
+  check('no page to turn to always snaps', N.panVerdict(300, 100, W, false) === 'snap');
+}
+
 console.log(`\n${fail ? '✗' : '✓'} dict-nav: ${pass}/${pass + fail} checks passed`);
 if (fail) process.exit(1);

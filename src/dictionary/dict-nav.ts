@@ -199,3 +199,28 @@ export function searchNotation(q: string): { mode: 'ends' | 'starts'; term: stri
   if (starts) return { mode: 'starts', term: starts[1].trim() };
   return null;
 }
+
+// ── The page-turn verdict: does a released pan COMMIT to the neighbour? ──
+
+/**
+ * The kindle-quick page turn, as a decision the goldens can hold still.
+ * The first build answered "scrolly-like but much quicker" with a discrete
+ * release-time flick — the exact mistake the 2026-08-25 review warned about
+ * (a scrolly correction answered with a more discrete model). The pan now
+ * FOLLOWS the finger; this decides what the release means:
+ *
+ *   • distance: past ~28% of the pane width, the page is committed — the
+ *     hand has carried it over the hill and letting go finishes the turn.
+ *   • velocity: a quick throw commits from much less distance (≥0.5 px/ms
+ *     over ≥48px) — that is the flick.
+ *   • no target: nothing to turn to — always snap back (the rubber band
+ *     already told the hand during the drag).
+ */
+export function panVerdict(
+  dxAbs: number, dtMs: number, paneWidth: number, hasTarget: boolean,
+): 'commit' | 'snap' {
+  if (!hasTarget) return 'snap';
+  if (dxAbs > paneWidth * 0.28) return 'commit';
+  if (dtMs > 0 && dxAbs >= 48 && dxAbs / dtMs >= 0.5) return 'commit';
+  return 'snap';
+}

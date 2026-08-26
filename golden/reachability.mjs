@@ -298,7 +298,17 @@ for (const [file, label] of [
 console.log('\n D4. the 辞書 nav grammar: armed, twinned, and lit on both halves');
 {
   const dict = read('ui', 'DictionaryView.ts');
-  check('the neighbour flick is armed', /this\.armNeighborFlick\(/.test(dict));
+  check('the page RIDES THE FINGER (pan armed, not a release-time flick)',
+    /this\.armEntryPan\(/.test(dict) && /panVerdict\(/.test(dict));
+  // Without pan-y the vertical scroller eats every horizontal touch and the
+  // whole page-turn is structurally unfeelable — the exact "not really felt"
+  // report of 2026-08-26. The style is the aperture.
+  check('touch-action: pan-y hands horizontal touch to the pan',
+    /jp-dict-results \{[^}]*touch-action: pan-y/s.test(readFileSync(join(HERE, '..', 'styles.css'), 'utf8')));
+  check('descend is a horizontal PUSH, not a vertical fade',
+    /jp-dict-descend \{[\s\S]{0,200}?translateX/.test(readFileSync(join(HERE, '..', 'styles.css'), 'utf8')));
+  check('neighbours arm THROUGH inflection (deinflect fallback)',
+    /currentNeighbors\(/.test(dict) && /lookup\(q\)\[0\]/.test(dict));
   check('the pinch→outline reflex is armed', /this\.armPinchOutline\(/.test(dict));
   const afterCalls = (dict.match(/this\.afterRender\(\)/g) ?? []).length;
   check('afterRender covers live + committed + sidecar renders',

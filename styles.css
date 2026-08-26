@@ -3556,21 +3556,24 @@ body.jp-posture-thumb .jp-dismiss { order: 99; }
    kills all three.
    ═══════════════════════════════════════════════════════════ */
 
+/* DESCEND is the iOS PUSH the films breathe: the new entry arrives from
+   the RIGHT (drilling deeper), and BACK pops in from the left — corrected
+   2026-08-26 from a vertical fade that told the hand nothing. */
 .jp-dict-descend {
-  animation: jp-dict-descend 0.16s ease-out;
+  animation: jp-dict-descend 0.18s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 @keyframes jp-dict-descend {
-  from { opacity: 0.4; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0.5; transform: translateX(9%); }
+  to { opacity: 1; transform: translateX(0); }
 }
-.jp-dict-flick-left { animation: jp-dict-flick-l 0.14s ease-out; }
-.jp-dict-flick-right { animation: jp-dict-flick-r 0.14s ease-out; }
+.jp-dict-flick-left { animation: jp-dict-flick-l 0.19s cubic-bezier(0.2, 0.8, 0.3, 1); }
+.jp-dict-flick-right { animation: jp-dict-flick-r 0.19s cubic-bezier(0.2, 0.8, 0.3, 1); }
 @keyframes jp-dict-flick-l {
-  from { opacity: 0.55; transform: translateX(18px); }
+  from { opacity: 0.6; transform: translateX(14%); }
   to { opacity: 1; transform: translateX(0); }
 }
 @keyframes jp-dict-flick-r {
-  from { opacity: 0.55; transform: translateX(-18px); }
+  from { opacity: 0.6; transform: translateX(-14%); }
   to { opacity: 1; transform: translateX(0); }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -3636,8 +3639,11 @@ body.jp-posture-thumb .jp-dismiss { order: 99; }
 }
 .jp-dict-nb-mid:hover, .jp-dict-nb:hover { color: var(--text-normal); }
 
-/* room so the last card's tail is never parked under the bar */
-.jp-dict-results { padding-bottom: 76px; }
+/* room so the last card's tail is never parked under the bar — and the
+   load-bearing line of the whole page-turn: pan-y hands HORIZONTAL touch
+   travel to armEntryPan while the browser keeps vertical scrolling native.
+   Without it the scroller eats the pan and the turn can never be felt. */
+.jp-dict-results { padding-bottom: 76px; touch-action: pan-y; }
 
 /* ── Land lit (item 7): the tan band on whatever carried you here ── */
 .jp-dict-arrive-band {

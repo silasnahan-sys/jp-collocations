@@ -2772,23 +2772,37 @@ pinned in reachability D4; every gesture has its command twin
   row's word. The cause lands in a tan band (`.jp-dict-arrive-band`),
   applied after BOTH render halves — the async sidecar half too, which is
   where the aperture-bug class would have eaten it.
-- **Tempo (law 3, the recovered item).** DESCEND (entering) animates 160ms
-  container-level with the landing lit; FLIP (sideways) is a hard cut. The
-  old always-on stagger — 200ms staggered slide-in on every KEYSTROKE's
-  re-filter — is dead, and reachability D4 pins that it stays dead
-  (re-filter renders with no motion, コマ送り item 5).
+- **Tempo (law 3, the recovered item — CORRECTED 2026-08-26 evening).** The
+  first build shipped descend as a vertical 8px fade; on glass it told the
+  hand nothing (「not really felt」— the correction's own film review, live).
+  Now DESCEND is the iOS PUSH the films breathe: the new entry arrives from
+  the RIGHT (180ms, landing lit), BACK pops in from the LEFT, FLIP by chip
+  is a hard cut. The old per-keystroke stagger stays dead and reachability
+  D4 pins all three: push not fade, no re-filter motion, pan not flick.
 - **Neighbours (item 8).** The dictionary as a walkable order: reading-sorted
   unique headwords (the filmed 病人→病毒→廟堂 walk is the golden), chips at
   the BOTTOM CORNERS (law 5: controls where the hand rests; new content
   where it isn't), instant swap. `DictionaryStore.neighbors()` — index built
-  lazily, keyed on the enabled set, milliseconds at the blob cap.
-- **Kindle-quick paging + the axis grammar.** ↕ scrolls within; a fast ↔
-  FLICK (velocity ≥0.45px/ms, axis-dominant, selection wins outright, mouse
-  excluded, 28px edge zones left to edge-back) flips to the neighbour with a
-  140ms directional settle — the scrolly page-turn, distinct from the chip's
-  hard cut. True drag-past-END overscroll is NOT built (hijacking the
-  scroller's physics in a webview is jank on principle); the flick is the
-  honest form of that intent.
+  lazily, keyed on the enabled set, milliseconds at the blob cap. Arming
+  reaches THROUGH inflection (食べていた arms on 食べる's place —
+  `currentNeighbors`, cached per query). Named limit: the order covers the
+  IMPORTED store only; sidecar-only words (the 6.1M) have no place yet —
+  the shard-level walkable order is its own queued build, and until it
+  lands the chips hiding on a sidecar word is honest, not broken.
+- **Kindle-quick paging + the axis grammar (CORRECTED 2026-08-26 evening).**
+  The first build was a release-time flick — a discrete swap, the precise
+  mistake the Aug-25 review warned about (a "scrolly" correction answered
+  with a more discrete model), and on glass it was not felt. Now the page
+  RIDES THE FINGER: `touch-action: pan-y` on the results hands horizontal
+  touch travel to `armEntryPan`; axis-lock engages at 14px of horizontal
+  dominance; the stack follows the finger (compositor transform), rubber-
+  bands ×0.35 toward a page that does not exist; release asks `panVerdict`
+  (past 28% of the pane, or thrown ≥0.5px/ms over ≥48px → the turn
+  completes from the hand's own direction; else snap back, 130ms). PEN
+  never pans — a Pencil drag across text IS selection on iPadOS, and law 2
+  says the Pencil points while the finger turns — the pen keeps the
+  release-time fast flick, which a non-collapsed selection always beats.
+  True at-END vertical overscroll remains a refusal (scroller physics).
 - **Pinch-in = collapse to outline.** The splayed-finger reflex Monokakido
   left unanswered (1184 f4602) now opens the ≡ — this screen's own table of
   contents, one row per entry card, tap → scroll with the header tinted.
