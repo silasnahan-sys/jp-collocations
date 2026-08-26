@@ -28222,6 +28222,7 @@ var CollocationView = class extends import_obsidian11.ItemView {
     this.currentPOSFilter = [];
     this.currentTagFilter = [];
     this.searchInput = null;
+    this.searchDebounce = null;
     this.resultContainer = null;
     this.statsEl = null;
     this.tabBar = null;
@@ -28275,6 +28276,8 @@ var CollocationView = class extends import_obsidian11.ItemView {
   }
   async onClose() {
     var _a2;
+    if (this.searchDebounce)
+      clearTimeout(this.searchDebounce);
     (_a2 = this.lexiconPanel) == null ? void 0 : _a2.dispose();
   }
   // ══════════════════════════════════════════════════════════
@@ -28317,7 +28320,11 @@ var CollocationView = class extends import_obsidian11.ItemView {
       cls: "jp-col-search-input",
       attr: { autocomplete: "off", autocapitalize: "off", spellcheck: "false" }
     });
-    this.searchInput.addEventListener("input", () => this.refresh());
+    this.searchInput.addEventListener("input", () => {
+      if (this.searchDebounce)
+        clearTimeout(this.searchDebounce);
+      this.searchDebounce = setTimeout(() => this.refresh(), 90);
+    });
     this.searchInput.addEventListener("keydown", (e) => {
       var _a2;
       if (e.key === "Enter") {
@@ -33632,11 +33639,120 @@ var DEFAULT_DICTIONARY_SETTINGS = {
   compactMode: false
 };
 
+// src/dictionary/dict-nav.ts
+var HISTORY_CAP = 500;
+var REFINE_MS = 2 * 60 * 1e3;
+var DWELL_MS2 = 5 * 60 * 1e3;
+function recordLookup(rows, word, now, cap = HISTORY_CAP) {
+  const w = word.trim();
+  if (!w)
+    return rows;
+  const head = rows[0];
+  if (head) {
+    const age = now - head.at;
+    if (head.word === w && age < DWELL_MS2)
+      return rows;
+    const refines = age < REFINE_MS && (w.startsWith(head.word) || head.word.startsWith(w));
+    if (refines)
+      return [{ word: w, at: now }, ...rows.slice(1)].slice(0, cap);
+  }
+  return [{ word: w, at: now }, ...rows].slice(0, cap);
+}
+function historyDays(rows, now) {
+  const dayKey = (t) => {
+    const d = new Date(t);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  };
+  const today = dayKey(now);
+  const yesterday = dayKey(now - 24 * 60 * 60 * 1e3);
+  const out = [];
+  let cur = null;
+  let curKey = "";
+  for (const r2 of rows) {
+    const k = dayKey(r2.at);
+    if (!cur || k !== curKey) {
+      const d = new Date(r2.at);
+      const label = k === today ? "\u4ECA\u65E5" : k === yesterday ? "\u6628\u65E5" : `${d.getMonth() + 1}\u6708${d.getDate()}\u65E5`;
+      cur = { label, rows: [] };
+      curKey = k;
+      out.push(cur);
+    }
+    cur.rows.push(r2);
+  }
+  return out;
+}
+var DictHistoryStore = class {
+  constructor(persist) {
+    this.rowsArr = [];
+    this.persist = persist;
+  }
+  load(data) {
+    if (!Array.isArray(data))
+      return;
+    this.rowsArr = data.filter(
+      (r2) => !!r2 && typeof r2.word === "string" && typeof r2.at === "number"
+    );
+  }
+  rows() {
+    return this.rowsArr;
+  }
+  record(word, now = Date.now()) {
+    const next = recordLookup(this.rowsArr, word, now);
+    if (next === this.rowsArr)
+      return;
+    this.rowsArr = next;
+    void this.persist(this.rowsArr);
+  }
+};
+var kata2hira = (s) => s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 96));
+function buildNeighborIndex(entries) {
+  const byExpr = /* @__PURE__ */ new Map();
+  for (const e of entries) {
+    if (!e.expression)
+      continue;
+    const key = kata2hira(e.reading || e.expression) + "" + e.expression;
+    const prev = byExpr.get(e.expression);
+    if (!prev)
+      byExpr.set(e.expression, { h: { expression: e.expression, reading: e.reading || e.expression }, key });
+  }
+  const rows = [...byExpr.values()];
+  rows.sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+  const order = rows.map((r2) => r2.h);
+  const pos = /* @__PURE__ */ new Map();
+  order.forEach((h, i) => pos.set(h.expression, i));
+  return { order, pos };
+}
+function neighborsOf(index, query) {
+  let i = index.pos.get(query);
+  if (i === void 0) {
+    const q = kata2hira(query);
+    i = index.order.findIndex((h) => kata2hira(h.reading) === q);
+    if (i < 0)
+      return null;
+  }
+  return {
+    prev: i > 0 ? index.order[i - 1] : null,
+    here: index.order[i],
+    next: i < index.order.length - 1 ? index.order[i + 1] : null
+  };
+}
+
 // src/dictionary/DictionaryStore.ts
 var _DictionaryStore = class _DictionaryStore {
   constructor(app, persistFn) {
     this.dictionaries = /* @__PURE__ */ new Map();
     this.settings = { ...DEFAULT_DICTIONARY_SETTINGS };
+    // ── Neighbours (dict-nav.ts) ───────────────────────────────
+    //
+    // The dictionary as a walkable order: every headword has a left and a right
+    // neighbour in reading (gojūon) order, like a page in a physical book —
+    // Monokakido's bottom-corner chips (コマ送り item 8). The index is built
+    // lazily and keyed on (enabled set × installed set), so importing, removing
+    // or toggling a dictionary self-invalidates without any hook wiring; term
+    // data inside a dictionary never mutates after install, so the key is
+    // sufficient. Cost: one flatten + sort per mutation, milliseconds at the
+    // blob cap (120k terms), never per lookup.
+    this.navCache = null;
     this.app = app;
     this.persistFn = persistFn;
   }
@@ -33719,6 +33835,25 @@ var _DictionaryStore = class _DictionaryStore {
       total += d.terms.length;
     return total;
   }
+  neighbors(query) {
+    const q = normalizeJapanese(query.trim());
+    if (!q)
+      return null;
+    const enabled = this.settings.enabledDictionaries.filter((t) => this.dictionaries.has(t));
+    const key = [...enabled].sort().join("");
+    if (!this.navCache || this.navCache.key !== key) {
+      const entries = [];
+      for (const title of enabled) {
+        const dict = this.dictionaries.get(title);
+        if (!dict)
+          continue;
+        for (const t of dict.terms)
+          entries.push({ expression: t.expression, reading: t.reading });
+      }
+      this.navCache = { key, index: buildNeighborIndex(entries) };
+    }
+    return neighborsOf(this.navCache.index, q);
+  }
   // ── Lookup ─────────────────────────────────────────────────
   /**
    * Look up a term across all enabled dictionaries.
@@ -33748,6 +33883,33 @@ var _DictionaryStore = class _DictionaryStore {
         break;
     }
     return results.slice(0, this.settings.maxResults);
+  }
+  /**
+   * Exact-surface EXISTENCE test — no result assembly, no deinflection
+   * fallback. §29 rung 0's oracle asks this thousands of times per keystroke
+   * (every extension probe of every occurrence), and almost every probe is a
+   * miss; `lookup()` answers a miss by running the whole deinflection
+   * fallback, which is pure waste when the question is only "is this surface
+   * a headword". Same truth as `lookup(s).some(r => !r.deinflection)`,
+   * measured severalfold cheaper on misses.
+   */
+  hasExactSurface(query) {
+    const normalized = normalizeJapanese(query.trim());
+    if (!normalized)
+      return false;
+    const hiragana = toHiragana(normalized);
+    for (const title of this.settings.enabledDictionaries) {
+      const dict = this.dictionaries.get(title);
+      if (!dict)
+        continue;
+      if (dict.expressionIndex.has(normalized))
+        return true;
+      if (dict.readingIndex.has(normalized))
+        return true;
+      if (hiragana !== normalized && dict.readingIndex.has(hiragana))
+        return true;
+    }
+    return false;
   }
   /** Exact expression/reading lookup for one surface (no deinflection). */
   lookupSurface(normalized, hiragana) {
@@ -36549,6 +36711,22 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
      * the late result must then be dropped rather than painted over the new one.
      */
     this.searchGen = 0;
+    // ── the navigation grammar (dict-nav.ts; コマ送り items 7/8/16, §30) ──
+    /** Persistent dated lookup history — wired by main.ts (withCatalogHits). */
+    this.historyStore = null;
+    this.navBarEl = null;
+    this.nbPrevEl = null;
+    this.nbNextEl = null;
+    this.outlinePop = null;
+    this.findBarEl = null;
+    this.findInput = null;
+    this.findCountEl = null;
+    this.findHits = [];
+    this.findAt = -1;
+    this.findTimer = null;
+    /** Set by lookupWord, consumed after render: what to light, how to move. */
+    this.pendingArrive = null;
+    this.historyMode = false;
     /** Installed sidecars, cached after the first look so the home screen is sync. */
     this.bigInstalled = [];
     /**
@@ -36560,6 +36738,13 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
      * the renderer treats as "draw nothing" rather than a broken image.
      */
     this.mediaMisses = /* @__PURE__ */ new Set();
+    /**
+     * ≡ — the current screen's own table of contents (item 9): one row per
+     * entry card, tap → the card scrolls into view with its header tinted.
+     * Opens ABOVE the bar it came from — off-hand, where the popover is
+     * readable without the sweep the films measured (170ms per menu).
+     */
+    this.outlineAway = null;
     this.dictStore = dictStore;
     this.onImport = onImport;
     this.onSaveEntry = onSaveEntry != null ? onSaveEntry : () => {
@@ -36692,6 +36877,12 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     var _a2;
     if (this.debounceTimer)
       clearTimeout(this.debounceTimer);
+    if (this.findTimer)
+      clearTimeout(this.findTimer);
+    if (this.outlineAway) {
+      document.removeEventListener("pointerdown", this.outlineAway, true);
+      this.outlineAway = null;
+    }
     (_a2 = this.peek) == null ? void 0 : _a2.cancel();
   }
   refresh() {
@@ -36700,8 +36891,20 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     else
       this.renderHome();
   }
-  /** Public method for programmatic lookup (e.g. from editor selection command) */
-  lookupWord(word) {
+  /**
+   * Public method for programmatic lookup (e.g. from editor selection command).
+   *
+   * `arrive` is the navigation tempo contract (コマ送り law 3 / DESIGN §30):
+   * DESCEND (entering an entry from somewhere else) animates briefly so the
+   * hand knows it went DOWN a level; FLIP (moving sideways — neighbour chips,
+   * back) is instant, 0 frames, because the hand stayed at the same depth.
+   * No `arrive` means flip. `light` is the arrival's cause — the sentence or
+   * word that carried you here — and it lands lit in a tan band (item 7:
+   * every arrival lights what brought it, not only typed queries).
+   */
+  lookupWord(word, arrive) {
+    this.historyMode = false;
+    this.pendingArrive = arrive != null ? arrive : null;
     if (this.searchInput)
       this.searchInput.value = word;
     this.currentQuery = word;
@@ -36722,7 +36925,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       });
     }
     this.lastVia = via;
-    this.lookupWord(word);
+    this.lookupWord(word, { tempo: "descend" });
     this.renderBreadcrumbs();
   }
   /** Navigate back, landing exactly where you left. */
@@ -36853,6 +37056,420 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       (_b2 = textNode.parentNode) == null ? void 0 : _b2.replaceChild(frag, textNode);
     }
   }
+  // ── The navigation grammar (§30 / コマ送り items 7, 8, 16 + the two
+  //    recovered items: in-screen find and the descend/flip tempo) ────────
+  /**
+   * Runs after every render of the results — the sync store half AND the
+   * async sidecar half. Consumes the pending tempo once, then does the three
+   * jobs that must never miss a render: light the arrival's cause, refresh
+   * the neighbour chips, re-apply an open find.
+   */
+  afterRender() {
+    const a = this.pendingArrive;
+    if ((a == null ? void 0 : a.tempo) === "descend" && this.resultsEl && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const el = this.resultsEl;
+      el.removeClass("jp-dict-descend");
+      void el.offsetWidth;
+      el.addClass("jp-dict-descend");
+      window.setTimeout(() => el.removeClass("jp-dict-descend"), 240);
+    }
+    if (a)
+      a.tempo = void 0;
+    this.applyArrival();
+    this.renderNavBar();
+    this.rerunFind();
+  }
+  /**
+   * Land lit from the first frame (item 7): the sentence or word that carried
+   * you here sits in a tan band when the screen settles — filmed at 1175
+   * f0406 and f10384, the single strongest Monokakido habit. The band goes on
+   * the DEEPEST element containing the cause (the sense row, the example
+   * line), found by linear descent — cheap, no full-tree scan. Stays pending
+   * until some render can satisfy it (the cause may be in a sidecar card that
+   * has not answered yet); cleared by the next lookup.
+   */
+  applyArrival() {
+    var _a2, _b2, _c2;
+    const light = (_b2 = (_a2 = this.pendingArrive) == null ? void 0 : _a2.light) == null ? void 0 : _b2.trim();
+    if (!light || !this.resultsEl)
+      return;
+    const target = (_c2 = this.deepestWith(this.resultsEl, light)) != null ? _c2 : this.deepestWith(this.resultsEl, light.slice(0, 20));
+    if (!target)
+      return;
+    this.pendingArrive = null;
+    this.resultsEl.querySelectorAll(".jp-dict-arrive-band").forEach((el) => el.removeClass("jp-dict-arrive-band"));
+    target.addClass("jp-dict-arrive-band");
+    target.scrollIntoView({ block: "center" });
+  }
+  deepestWith(root, text) {
+    var _a2, _b2;
+    if (!text || !((_a2 = root.textContent) != null ? _a2 : "").includes(text))
+      return null;
+    let el = root;
+    descend:
+      for (; ; ) {
+        for (const child of Array.from(el.children)) {
+          if (((_b2 = child.textContent) != null ? _b2 : "").includes(text)) {
+            el = child;
+            continue descend;
+          }
+        }
+        break;
+      }
+    return el === root ? null : el;
+  }
+  /** The bottom-corner chips: who stands beside the current word. */
+  renderNavBar() {
+    var _a2, _b2;
+    if (!this.navBarEl || !this.nbPrevEl || !this.nbNextEl)
+      return;
+    const nb = this.currentQuery && !this.historyMode ? this.dictStore.neighbors(this.currentQuery) : null;
+    const set = (btn, h, arrow) => {
+      if (!h) {
+        btn.addClass("jp-dict-nb--void");
+        btn.disabled = true;
+        btn.setText("");
+        return;
+      }
+      btn.removeClass("jp-dict-nb--void");
+      btn.disabled = false;
+      btn.setText(arrow === "prev" ? `\u3008 ${h.expression}` : `${h.expression} \u3009`);
+    };
+    set(this.nbPrevEl, (_a2 = nb == null ? void 0 : nb.prev) != null ? _a2 : null, "prev");
+    set(this.nbNextEl, (_b2 = nb == null ? void 0 : nb.next) != null ? _b2 : null, "next");
+    this.navBarEl.toggleClass("jp-dict-navbar--bare", !nb);
+  }
+  /**
+   * FLIP to a neighbour — instant, 0 frames (filmed: f11732→11733, the swap
+   * happens between two frames). Sideways moves replace the current place:
+   * the breadcrumb trail neither grows nor pops, exactly like turning a page.
+   * `slide` adds the 140ms settle that makes a FLICK feel like the quick
+   * scrolly page-turn the hand asked for; chip taps stay hard cuts.
+   */
+  flipStep(dir, slide) {
+    if (this.historyMode || !this.currentQuery)
+      return;
+    const nb = this.dictStore.neighbors(this.currentQuery);
+    const target = dir > 0 ? nb == null ? void 0 : nb.next : nb == null ? void 0 : nb.prev;
+    if (!target)
+      return;
+    this.lookupWord(target.expression);
+    this.renderBreadcrumbs();
+    if (slide && this.resultsEl && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const el = this.resultsEl;
+      const cls = slide === "left" ? "jp-dict-flick-left" : "jp-dict-flick-right";
+      el.removeClass("jp-dict-flick-left");
+      el.removeClass("jp-dict-flick-right");
+      void el.offsetWidth;
+      el.addClass(cls);
+      window.setTimeout(() => el.removeClass(cls), 200);
+    }
+  }
+  /**
+   * A fast horizontal FLICK pages to the neighbour. Gated three ways so
+   * nothing else ever misfires into a page turn: velocity (≥0.45 px/ms —
+   * a reading drag or selection is slower), axis dominance (|dx| ≥ 1.5|dy|),
+   * and an armed selection wins outright. Mouse excluded (a mouse drag IS
+   * selection); the 28px edge zones belong to edge-back (touch-nav.ts).
+   * Passive listeners only — this must never cost the scroller a frame.
+   */
+  armNeighborFlick(el) {
+    let id = -1, x0 = 0, y0 = 0, t0 = 0, fromEdge = false;
+    el.addEventListener("pointerdown", (e) => {
+      if (e.pointerType === "mouse")
+        return;
+      id = e.pointerId;
+      x0 = e.clientX;
+      y0 = e.clientY;
+      t0 = e.timeStamp;
+      const w = window.innerWidth;
+      fromEdge = x0 < 28 || x0 > w - 28;
+    }, { passive: true });
+    el.addEventListener("pointerup", (e) => {
+      var _a2;
+      if (e.pointerId !== id)
+        return;
+      id = -1;
+      if (fromEdge)
+        return;
+      const sel = (_a2 = window.getSelection) == null ? void 0 : _a2.call(window);
+      if (sel && !sel.isCollapsed && sel.toString().trim())
+        return;
+      const dx = e.clientX - x0, dy = e.clientY - y0, dt = e.timeStamp - t0;
+      if (dt <= 0 || dt > 350)
+        return;
+      if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.5)
+        return;
+      if (Math.abs(dx) / dt < 0.45)
+        return;
+      this.flipStep(dx < 0 ? 1 : -1, dx < 0 ? "left" : "right");
+    }, { passive: true });
+    el.addEventListener("pointercancel", () => {
+      id = -1;
+    }, { passive: true });
+  }
+  /** Pinch-in on the results = collapse to the outline. Two pointers,
+   *  distance shrinks past 72%, fires once per touch; all passive. */
+  armPinchOutline(el) {
+    const pts = /* @__PURE__ */ new Map();
+    let d0 = 0, fired = false;
+    const dist = () => {
+      const [a, b] = [...pts.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
+    el.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "touch")
+        return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) {
+        d0 = dist();
+        fired = false;
+      }
+    }, { passive: true });
+    el.addEventListener("pointermove", (e) => {
+      if (!pts.has(e.pointerId) || pts.size !== 2 || fired || !d0)
+        return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (dist() < d0 * 0.72) {
+        fired = true;
+        this.toggleOutline();
+      }
+    }, { passive: true });
+    const drop2 = (e) => {
+      pts.delete(e.pointerId);
+      if (pts.size < 2)
+        d0 = 0;
+    };
+    el.addEventListener("pointerup", drop2, { passive: true });
+    el.addEventListener("pointercancel", drop2, { passive: true });
+  }
+  toggleOutline() {
+    var _a2, _b2, _c2, _d2, _e2, _f2;
+    if (this.outlinePop) {
+      this.outlinePop.remove();
+      this.outlinePop = null;
+      if (this.outlineAway) {
+        document.removeEventListener("pointerdown", this.outlineAway, true);
+        this.outlineAway = null;
+      }
+      return;
+    }
+    if (!this.resultsEl || !this.navBarEl)
+      return;
+    const cards = Array.from(this.resultsEl.querySelectorAll(".jp-dict-card"));
+    if (!cards.length)
+      return;
+    const pop = this.navBarEl.parentElement.createDiv("jp-dict-outline-pop");
+    this.outlinePop = pop;
+    for (const card of cards) {
+      const expr = (_b2 = (_a2 = card.querySelector(".jp-dict-card-expression")) == null ? void 0 : _a2.textContent) != null ? _b2 : "";
+      const reading = (_d2 = (_c2 = card.querySelector(".jp-dict-card-reading")) == null ? void 0 : _c2.textContent) != null ? _d2 : "";
+      const dict = (_f2 = (_e2 = card.querySelector(".jp-dict-dict-badge")) == null ? void 0 : _e2.textContent) != null ? _f2 : "";
+      const row = pop.createDiv("jp-dict-outline-row");
+      row.createSpan({ text: expr, cls: "jp-dict-outline-expr" });
+      if (reading)
+        row.createSpan({ text: reading, cls: "jp-dict-outline-reading" });
+      row.createSpan({ text: dict, cls: "jp-dict-outline-dict" });
+      row.addEventListener("click", () => {
+        this.toggleOutline();
+        card.scrollIntoView({ block: "start" });
+        card.addClass("jp-dict-arrive-flash");
+        window.setTimeout(() => card.removeClass("jp-dict-arrive-flash"), 1400);
+      });
+    }
+    this.outlineAway = (e) => {
+      if (this.outlinePop && !this.outlinePop.contains(e.target))
+        this.toggleOutline();
+    };
+    const away = this.outlineAway;
+    window.setTimeout(() => {
+      if (this.outlineAway === away)
+        document.addEventListener("pointerdown", away, true);
+    }, 0);
+  }
+  // ── In-screen find (the recovered 答え合わせ item): re-find a passage
+  //    INSIDE what is already open, instead of a new dictionary query. ──
+  toggleFind(open) {
+    var _a2;
+    const want = open != null ? open : !this.findBarEl;
+    if (!want) {
+      this.closeFind();
+      return;
+    }
+    if (this.findBarEl) {
+      (_a2 = this.findInput) == null ? void 0 : _a2.focus();
+      return;
+    }
+    if (!this.navBarEl)
+      return;
+    const bar = this.navBarEl.parentElement.createDiv("jp-dict-find-bar");
+    this.findBarEl = bar;
+    this.findInput = bar.createEl("input", {
+      type: "search",
+      cls: "jp-dict-find-input",
+      placeholder: "\u3053\u306E\u753B\u9762\u5185\u3092\u691C\u7D22\u2026",
+      attr: { autocomplete: "off", autocapitalize: "off", spellcheck: "false" }
+    });
+    this.findCountEl = bar.createSpan({ cls: "jp-dict-find-count" });
+    const prev = bar.createEl("button", { text: "\u2191", cls: "jp-dict-find-step", attr: { "aria-label": "\u524D\u3078" } });
+    const next = bar.createEl("button", { text: "\u2193", cls: "jp-dict-find-step", attr: { "aria-label": "\u6B21\u3078" } });
+    const close = bar.createEl("button", { text: "\u2715", cls: "jp-dict-find-step", attr: { "aria-label": "\u9589\u3058\u308B" } });
+    prev.addEventListener("click", () => this.stepFind(-1));
+    next.addEventListener("click", () => this.stepFind(1));
+    close.addEventListener("click", () => this.closeFind());
+    this.findInput.addEventListener("input", () => {
+      if (this.findTimer)
+        clearTimeout(this.findTimer);
+      this.findTimer = setTimeout(() => {
+        var _a3, _b2;
+        return this.runFind((_b2 = (_a3 = this.findInput) == null ? void 0 : _a3.value) != null ? _b2 : "");
+      }, 150);
+    });
+    this.findInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this.stepFind(e.shiftKey ? -1 : 1);
+      }
+      if (e.key === "Escape") {
+        e.preventDefault();
+        this.closeFind();
+      }
+    });
+    this.findInput.focus();
+  }
+  closeFind() {
+    var _a2;
+    this.clearFindHits();
+    if (this.findTimer) {
+      clearTimeout(this.findTimer);
+      this.findTimer = null;
+    }
+    (_a2 = this.findBarEl) == null ? void 0 : _a2.remove();
+    this.findBarEl = null;
+    this.findInput = null;
+    this.findCountEl = null;
+  }
+  /** A render replaced the DOM under an open find — run it again on the new
+   *  content, silently. The hits array only ever points at live nodes. */
+  rerunFind() {
+    if (!this.findBarEl || !this.findInput)
+      return;
+    this.findHits = [];
+    this.findAt = -1;
+    const q = this.findInput.value;
+    if (q.trim())
+      this.runFind(
+        q,
+        /*keepScroll*/
+        true
+      );
+  }
+  runFind(query, keepScroll = false) {
+    var _a2, _b2, _c2;
+    this.clearFindHits();
+    const q = query.trim();
+    if (!q || !this.resultsEl) {
+      (_a2 = this.findCountEl) == null ? void 0 : _a2.setText("");
+      return;
+    }
+    const walker = document.createTreeWalker(this.resultsEl, NodeFilter.SHOW_TEXT);
+    const plan = [];
+    const lower = q.toLowerCase();
+    let n;
+    while (n = walker.nextNode()) {
+      const hay = n.data;
+      let from = 0;
+      for (; ; ) {
+        const i = hay.toLowerCase().indexOf(lower, from);
+        if (i < 0)
+          break;
+        plan.push({ node: n, idx: i });
+        from = i + q.length;
+        if (plan.length >= 300)
+          break;
+      }
+      if (plan.length >= 300)
+        break;
+    }
+    for (let i = plan.length - 1; i >= 0; i--) {
+      const { node, idx } = plan[i];
+      const hit = node.splitText(idx);
+      hit.splitText(q.length);
+      const mark = document.createElement("mark");
+      mark.className = "jp-dict-find-hit";
+      (_b2 = node.parentNode) == null ? void 0 : _b2.insertBefore(mark, hit);
+      mark.appendChild(hit);
+      this.findHits.unshift(mark);
+    }
+    this.findAt = -1;
+    (_c2 = this.findCountEl) == null ? void 0 : _c2.setText(this.findHits.length ? `${this.findHits.length}\u4EF6` : "0\u4EF6");
+    if (this.findHits.length && !keepScroll)
+      this.stepFind(1);
+  }
+  clearFindHits() {
+    for (const m of this.findHits) {
+      const parent = m.parentNode;
+      if (!parent)
+        continue;
+      while (m.firstChild)
+        parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+      parent.normalize();
+    }
+    this.findHits = [];
+    this.findAt = -1;
+  }
+  stepFind(d) {
+    var _a2, _b2;
+    if (!this.findHits.length)
+      return;
+    if (this.findAt >= 0)
+      (_a2 = this.findHits[this.findAt]) == null ? void 0 : _a2.removeClass("jp-dict-find-hit--current");
+    this.findAt = (this.findAt + d + this.findHits.length) % this.findHits.length;
+    const cur = this.findHits[this.findAt];
+    cur.addClass("jp-dict-find-hit--current");
+    cur.scrollIntoView({ block: "center" });
+    (_b2 = this.findCountEl) == null ? void 0 : _b2.setText(`${this.findAt + 1}/${this.findHits.length}\u4EF6`);
+  }
+  /**
+   * The dated History (item 16) — 1,251 entries deep in Monokakido, a
+   * session array here until now. Every row is a door back: tap → the word
+   * opens with a descend. Grouped 今日/昨日/M月D日 by dict-nav.historyDays.
+   */
+  showHistory() {
+    var _a2, _b2;
+    if (!this.resultsEl || !this.statsEl)
+      return;
+    this.searchGen++;
+    this.historyMode = true;
+    this.pendingArrive = null;
+    this.hideSuggestions();
+    this.closeFind();
+    const rows = (_b2 = (_a2 = this.historyStore) == null ? void 0 : _a2.rows()) != null ? _b2 : [];
+    this.statsEl.empty();
+    this.statsEl.createSpan({ text: `\u5C65\u6B74 ${rows.length}\u4EF6`, cls: "jp-dict-stat-text" });
+    this.resultsEl.empty();
+    if (!rows.length) {
+      this.renderEmpty("\u307E\u3060\u5C65\u6B74\u304C\u3042\u308A\u307E\u305B\u3093 \u2014 \u5F15\u3044\u305F\u8A9E\u304C\u3053\u3053\u306B\u65E5\u4ED8\u3064\u304D\u3067\u6B8B\u308A\u307E\u3059\u3002");
+      this.renderNavBar();
+      return;
+    }
+    const wrap = this.resultsEl.createDiv("jp-dict-hist");
+    for (const day of historyDays(rows, Date.now())) {
+      wrap.createDiv({ text: day.label, cls: "jp-dict-hist-day" });
+      for (const r2 of day.rows) {
+        const row = wrap.createDiv("jp-dict-hist-row");
+        row.createSpan({ text: r2.word, cls: "jp-dict-hist-word" });
+        const t = new Date(r2.at);
+        row.createSpan({
+          text: `${t.getHours()}:${String(t.getMinutes()).padStart(2, "0")}`,
+          cls: "jp-dict-hist-time"
+        });
+        row.addEventListener("click", () => this.lookupWord(r2.word, { tempo: "descend" }));
+      }
+    }
+    this.renderNavBar();
+  }
   // ── Build UI ───────────────────────────────────────────────
   buildUI() {
     const container = this.containerEl.children[1];
@@ -36918,6 +37535,39 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     this.suggestionsEl.style.display = "none";
     this.statsEl = container.createDiv("jp-dict-stats");
     this.resultsEl = container.createDiv("jp-dict-results");
+    this.navBarEl = container.createDiv("jp-dict-navbar");
+    this.nbPrevEl = this.navBarEl.createEl("button", {
+      cls: "jp-dict-nb jp-dict-nb--prev",
+      attr: { "aria-label": "\u524D\u306E\u898B\u51FA\u3057\u8A9E" }
+    });
+    this.nbPrevEl.addEventListener("click", () => this.flipStep(-1));
+    const mid = this.navBarEl.createDiv("jp-dict-navbar-mid");
+    const outlineBtn = mid.createEl("button", {
+      text: "\u2261",
+      cls: "jp-dict-nb-mid",
+      attr: { "aria-label": "\u3053\u306E\u753B\u9762\u306E\u76EE\u6B21" }
+    });
+    outlineBtn.addEventListener("click", () => this.toggleOutline());
+    const findBtn = mid.createEl("button", {
+      text: "\u691C\u7D22",
+      cls: "jp-dict-nb-mid jp-dict-nb-mid--find",
+      attr: { "aria-label": "\u753B\u9762\u5185\u691C\u7D22" }
+    });
+    findBtn.addEventListener("click", () => this.toggleFind());
+    const histBtn = mid.createEl("button", {
+      text: "\u23F1",
+      cls: "jp-dict-nb-mid",
+      attr: { "aria-label": "\u5C65\u6B74" }
+    });
+    histBtn.addEventListener("click", () => this.showHistory());
+    this.nbNextEl = this.navBarEl.createEl("button", {
+      cls: "jp-dict-nb jp-dict-nb--next",
+      attr: { "aria-label": "\u6B21\u306E\u898B\u51FA\u3057\u8A9E" }
+    });
+    this.nbNextEl.addEventListener("click", () => this.flipStep(1));
+    this.renderNavBar();
+    this.armNeighborFlick(this.resultsEl);
+    this.armPinchOutline(this.resultsEl);
   }
   // ── Search flow ────────────────────────────────────────────
   onSearchInput() {
@@ -36990,9 +37640,12 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
    * Uses substringSearch to catch partial/contains matches.
    */
   performLiveSearch(query) {
+    var _a2;
     this.hideSuggestions();
     if (!this.resultsEl || !this.statsEl)
       return;
+    this.pendingArrive = null;
+    this.historyMode = false;
     const gen = ++this.searchGen;
     let merged = this.mergeResults(
       this.dictStore.lookup(query),
@@ -37025,6 +37678,8 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
       }
     }
     this.setStats(query, merged.length, !!this.bigDict, allDeinflected(merged));
+    (_a2 = this.historyStore) == null ? void 0 : _a2.record(query);
+    this.afterRender();
     void this.appendBigResults(query, gen, merged, narrowing);
   }
   /**
@@ -37127,6 +37782,7 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
     for (const group of this.groupResults(extra)) {
       this.renderEntryCard(this.resultsEl, group);
     }
+    this.afterRender();
   }
   showSuggestions(prefix) {
     if (!this.suggestionsEl)
@@ -37168,6 +37824,7 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
     }
   }
   performLookup(query) {
+    var _a2;
     this.hideSuggestions();
     if (!this.resultsEl || !this.statsEl)
       return;
@@ -37200,6 +37857,8 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
       }
     }
     this.setStats(query, results.length, !!this.bigDict, allDeinflected(results));
+    (_a2 = this.historyStore) == null ? void 0 : _a2.record(query);
+    this.afterRender();
     void this.appendBigResults(query, gen, results, narrowing);
   }
   // ── Group results ──────────────────────────────────────────
@@ -37918,6 +38577,7 @@ ${sense}` : primary.term.expression,
   }
   // ── Home / empty states ────────────────────────────────────
   renderHome() {
+    var _a2, _b2;
     if (!this.resultsEl || !this.statsEl)
       return;
     this.statsEl.empty();
@@ -37951,6 +38611,19 @@ ${sense}` : primary.term.expression,
       text: "Type to search across all imported dictionaries.",
       cls: "jp-dict-home-hint"
     });
+    const recent = (_b2 = (_a2 = this.historyStore) == null ? void 0 : _a2.rows().slice(0, 8)) != null ? _b2 : [];
+    if (recent.length) {
+      const sec = home.createDiv("jp-dict-hist jp-dict-hist--home");
+      const head = sec.createDiv("jp-dict-hist-day");
+      head.setText("\u6700\u8FD1");
+      const all = head.createEl("button", { text: "\u3059\u3079\u3066\u306E\u5C65\u6B74 \u23F1", cls: "jp-dict-hist-all" });
+      all.addEventListener("click", () => this.showHistory());
+      for (const r2 of recent) {
+        const row = sec.createDiv("jp-dict-hist-row");
+        row.createSpan({ text: r2.word, cls: "jp-dict-hist-word" });
+        row.addEventListener("click", () => this.lookupWord(r2.word, { tempo: "descend" }));
+      }
+    }
     for (const d of this.bigInstalled) {
       const card = home.createDiv("jp-dict-info-card");
       const row = card.createDiv("jp-dict-info-row");
@@ -37991,6 +38664,7 @@ ${sense}` : primary.term.expression,
         badges.createSpan({ text: "\u{1F3B5} Pitch", cls: "jp-dict-info-badge" });
       badges.createSpan({ text: `v${meta.revision}`, cls: "jp-dict-info-badge" });
     }
+    this.renderNavBar();
   }
   renderEmpty(message) {
     if (!this.resultsEl)
@@ -39794,6 +40468,8 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
     this.resultsEl = null;
     this.loadMoreEl = null;
     this.debounceTimer = null;
+    /** Guards the chunked card paint — a newer render orphans the older chain. */
+    this.paintGen = 0;
     /** Engine output per frozen tweet — see the pill block in renderTweetCard. */
     this.patternCache = /* @__PURE__ */ new Map();
     /** Last KWIC build — the full-corpus scan must not re-run per keystroke. */
@@ -40117,6 +40793,7 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
       text: `\u30ED\u30FC\u30AB\u30EB ${shown.length}\u4EF6` + (demoted.length ? `\uFF08+ \u90E8\u5206\u4E00\u81F4 ${demoted.length}\u4EF6\uFF09` : "") + ` / \u30B3\u30FC\u30D1\u30B9 ${total}\u4EF6` + (probe ? `\u30FB${probe.cls} \u3068\u3057\u3066\u95A2\u9023\u9806\uFF08\u4E26\u3073\u66FF\u3048\u306F\u540C\u70B9\u6642\u306E\u307F\uFF09` : "") + (live2 ? "" : "\u30FB\u30E9\u30A4\u30D6\u53D6\u5F97\u30AA\u30D5\uFF08\u{1F511}\u3067\u8A2D\u5B9A\uFF09"),
       cls: "jp-x-status-text"
     });
+    this.paintGen++;
     this.resultsEl.empty();
     if (this.loadMoreEl)
       this.loadMoreEl.empty();
@@ -40144,28 +40821,41 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
       });
     }
     const terms = highlightTerms(this.query);
-    for (const t of shown)
-      this.renderTweetCard(this.resultsEl, t, terms, whyById.get(t.id));
-    if (demoted.length) {
-      const tail3 = this.resultsEl.createDiv("jp-x-partial");
-      const head = tail3.createEl("button", { cls: "jp-x-partial-head" });
-      const body2 = tail3.createDiv("jp-x-partial-body");
-      body2.hide();
-      const paint = (open) => head.setText((open ? "\u25BE " : "\u25B8 ") + tailLabel);
-      paint(false);
-      head.onclick = () => {
-        const open = !body2.isShown();
-        if (open && !body2.childElementCount) {
-          for (const t of demoted)
-            this.renderTweetCard(body2, t, terms);
-        }
-        if (open)
-          body2.show();
-        else
-          body2.hide();
-        paint(open);
-      };
-    }
+    const CHUNK = 60;
+    const gen = ++this.paintGen;
+    const paintCards = (from) => {
+      if (gen !== this.paintGen || !this.resultsEl)
+        return;
+      const end = Math.min(from + CHUNK, shown.length);
+      for (let k = from; k < end; k++) {
+        this.renderTweetCard(this.resultsEl, shown[k], terms, whyById.get(shown[k].id));
+      }
+      if (end < shown.length) {
+        requestAnimationFrame(() => paintCards(end));
+        return;
+      }
+      if (demoted.length) {
+        const tail3 = this.resultsEl.createDiv("jp-x-partial");
+        const head = tail3.createEl("button", { cls: "jp-x-partial-head" });
+        const body2 = tail3.createDiv("jp-x-partial-body");
+        body2.hide();
+        const paint = (open) => head.setText((open ? "\u25BE " : "\u25B8 ") + tailLabel);
+        paint(false);
+        head.onclick = () => {
+          const open = !body2.isShown();
+          if (open && !body2.childElementCount) {
+            for (const t of demoted)
+              this.renderTweetCard(body2, t, terms);
+          }
+          if (open)
+            body2.show();
+          else
+            body2.hide();
+          paint(open);
+        };
+      }
+    };
+    paintCards(0);
   }
   /**
    * §29 rung 3 on screen. Every attested rung is a DOOR: tapping it re-asks
@@ -40245,6 +40935,7 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
       text: `\u2605 \u5171\u8D77\uFF08\u4FDD\u5B58\u691C\u7D22\u30922\u3064\u4EE5\u4E0A\u542B\u3080\uFF09${rows.length}\u4EF6`,
       cls: "jp-x-status-text"
     });
+    this.paintGen++;
     this.resultsEl.empty();
     if (this.loadMoreEl)
       this.loadMoreEl.empty();
@@ -40264,6 +40955,7 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
     if (!this.resultsEl || !this.statusEl)
       return;
     this.statusEl.empty();
+    this.paintGen++;
     this.resultsEl.empty();
     if (this.loadMoreEl)
       this.loadMoreEl.empty();
@@ -53937,6 +54629,8 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
     this.inboxStore.load(stored == null ? void 0 : stored._inbox);
     this.holdStore = new HoldStore((data) => this.dm.setKey("_hold", data), this.holdKnobs());
     this.holdStore.load(stored == null ? void 0 : stored._hold);
+    this.dictHistory = new DictHistoryStore((data) => this.dm.setKey("_dictHistory", data));
+    this.dictHistory.load(stored == null ? void 0 : stored._dictHistory);
     this.holdDock = new HoldDock({
       chips: () => this.holdStore.all(),
       knobs: () => this.holdKnobs(),
@@ -53955,7 +54649,9 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
           }
         }, this.makeCaptureDeps()).open();
       },
-      lookup: (chip) => void this.openDictionaryView(chip.text),
+      // The chip's SCENE rides into the dictionary too: the sentence it was
+      // grabbed with lands lit in the tan band (辞書 arrival grammar).
+      lookup: (chip) => void this.openDictionaryView(chip.text, { light: chip.sentence }),
       discard: (chip) => {
         this.holdStore.release(chip.id);
         this.holdDock.render();
@@ -55103,6 +55799,50 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       callback: () => this.openDictionaryView()
     });
     this.addCommand({
+      id: "dict-neighbor-next",
+      name: "\u8F9E\u66F8: \u6B21\u306E\u898B\u51FA\u3057\u8A9E\u3078 (flip next)",
+      callback: () => {
+        var _a3;
+        return (_a3 = this.activeDictView()) == null ? void 0 : _a3.flipStep(1);
+      }
+    });
+    this.addCommand({
+      id: "dict-neighbor-prev",
+      name: "\u8F9E\u66F8: \u524D\u306E\u898B\u51FA\u3057\u8A9E\u3078 (flip prev)",
+      callback: () => {
+        var _a3;
+        return (_a3 = this.activeDictView()) == null ? void 0 : _a3.flipStep(-1);
+      }
+    });
+    this.addCommand({
+      id: "dict-history",
+      name: "\u8F9E\u66F8: \u5C65\u6B74 (dated lookup history)",
+      callback: async () => {
+        if (!this.activeDictView())
+          await this.openDictionaryView();
+        setTimeout(() => {
+          var _a3;
+          return (_a3 = this.activeDictView()) == null ? void 0 : _a3.showHistory();
+        }, 120);
+      }
+    });
+    this.addCommand({
+      id: "dict-outline",
+      name: "\u8F9E\u66F8: \u3053\u306E\u753B\u9762\u306E\u76EE\u6B21 (outline)",
+      callback: () => {
+        var _a3;
+        return (_a3 = this.activeDictView()) == null ? void 0 : _a3.toggleOutline();
+      }
+    });
+    this.addCommand({
+      id: "dict-find",
+      name: "\u8F9E\u66F8: \u753B\u9762\u5185\u691C\u7D22 (find in screen)",
+      callback: () => {
+        var _a3;
+        return (_a3 = this.activeDictView()) == null ? void 0 : _a3.toggleFind(true);
+      }
+    });
+    this.addCommand({
       id: "dictionary-lookup",
       name: "Look Up Selected Word in Dictionary",
       editorCallback: (editor) => {
@@ -55829,7 +56569,11 @@ ${summary}
       return void 0;
     return {
       deinflect: (s) => deinflect(s),
-      isWord: (s) => this.dictStore.lookup(s).some((r2) => !r2.deinflection)
+      // Same truth as lookup(s).some(r => !r.deinflection) — an exact surface
+      // hit — but without the deinflection FALLBACK lookup() runs on every
+      // miss, and this oracle's calls are almost all misses (く足して…). The
+      // boundary test's per-keystroke cost is dominated by exactly that.
+      isWord: (s) => this.dictStore.hasExactSurface(s)
     };
   }
   makeXDeps() {
@@ -57606,6 +58350,7 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     v.openSurface = (s) => void this.openSurface(s);
     v.dismiss = () => void this.navBack();
     v.surfaceBadge = (s) => this.surfaceBadge(s);
+    v.historyStore = this.dictHistory;
     Object.assign(v, this.peekChrome());
     v.bigDict = {
       lookup: (q, limit) => this.bigDict.lookup(q, limit),
@@ -60590,7 +61335,7 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
     }
     new import_obsidian37.Notice(`\u30D8\u30EB\u30B9\u30C1\u30A7\u30C3\u30AF\u3092\u66F8\u304D\u51FA\u3057\u307E\u3057\u305F: ${path}`, 6e3);
   }
-  async openDictionaryView(query) {
+  async openDictionaryView(query, arrive) {
     var _a2, _b2;
     const leaf = (_a2 = this.surfaceLeaf(JP_DICTIONARY_VIEW_TYPE)) != null ? _a2 : void 0;
     if (leaf && ((_b2 = leaf.view) == null ? void 0 : _b2.getViewType()) !== JP_DICTIONARY_VIEW_TYPE) {
@@ -60601,10 +61346,18 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
       if (query) {
         setTimeout(() => {
           const view = leaf.view;
-          view.lookupWord(query);
+          view.lookupWord(query, { tempo: "descend", light: arrive == null ? void 0 : arrive.light });
         }, 100);
       }
     }
+  }
+  /** The 辞書 leaf a command should speak to, if one is open. */
+  activeDictView() {
+    for (const leaf of this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE)) {
+      if (leaf.view instanceof DictionaryView)
+        return leaf.view;
+    }
+    return null;
   }
   importData() {
     const input = document.createElement("input");

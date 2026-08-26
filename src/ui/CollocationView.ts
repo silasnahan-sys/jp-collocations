@@ -38,6 +38,7 @@ export class CollocationView extends ItemView {
   private currentPOSFilter: PartOfSpeech[] = [];
   private currentTagFilter: string[] = [];
   private searchInput: HTMLInputElement | null = null;
+  private searchDebounce: ReturnType<typeof setTimeout> | null = null;
   private resultContainer: HTMLElement | null = null;
   private statsEl: HTMLElement | null = null;
   private tabBar: HTMLElement | null = null;
@@ -95,7 +96,10 @@ export class CollocationView extends ItemView {
     this.refresh();
   }
 
-  async onClose(): Promise<void> { this.lexiconPanel?.dispose(); }
+  async onClose(): Promise<void> {
+    if (this.searchDebounce) clearTimeout(this.searchDebounce);
+    this.lexiconPanel?.dispose();
+  }
 
   // ══════════════════════════════════════════════════════════
   // UI SCAFFOLD
@@ -157,7 +161,13 @@ export class CollocationView extends ItemView {
       cls: "jp-col-search-input",
       attr: { autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' },
     });
-    this.searchInput.addEventListener("input", () => this.refresh());
+    // Debounced like every other live search in the plugin (辞書 80ms, 𝕏
+    // 110ms, 語彙パネル 90ms): refresh() re-renders the whole active tab, and
+    // running that on EVERY keystroke was the one undebounced search left.
+    this.searchInput.addEventListener("input", () => {
+      if (this.searchDebounce) clearTimeout(this.searchDebounce);
+      this.searchDebounce = setTimeout(() => this.refresh(), 90);
+    });
     this.searchInput.addEventListener("keydown", (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();

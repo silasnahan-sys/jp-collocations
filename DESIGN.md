@@ -2754,15 +2754,65 @@ inspector. §29 is a separate build with its own rungs; it shares repair 2's
 oracle (`deinflect` + sync `lookup`) and nothing else — do not entangle them.
 
 Two 答え合わせ items shipped NOWHERE and had fallen off every ledger until
-this line (found by the 2026-08-26 audit): **in-entry Find** (the 31-second
-refusal was the user trying to re-find a passage INSIDE an entry already
-open — space-AND fixed the list, not the entry; Monokakido has Find… in its
-≡ menu) and **the descend/flip tempo** (word-tap is a hard cut, then the
-sidecar silently repaints the answer 0.23s later — コマ送り law 3: descend
-animated 100–270ms with the landing lit, flip instant; whether a webview can
-hit "instant" is unmeasured, so this item starts with a measurement, not a
-build). Neither is covered by any shipped repair; they queue behind 宛名札
-only because a mis-addressed carry corrupts data while these cost a trip.
+the 2026-08-26 audit found them: **in-entry Find** (the 31-second refusal
+was the user trying to re-find a passage INSIDE an entry already open —
+space-AND fixed the list, not the entry) and **the descend/flip tempo**.
+Both shipped the same day, in the §30.1 nav build below.
+
+### 30.1 The 辞書 navigation grammar (2026-08-26, SHIPPED)
+
+The gap list's every-session items (7 land-lit · 8 neighbour chips · 16
+History) plus the recovered pair, built as one grammar. Pure model in
+`src/dictionary/dict-nav.ts` (golden/dict-nav.mjs, 25 checks); apertures
+pinned in reachability D4; every gesture has its command twin
+(`dict-neighbor-next/prev`, `dict-history`, `dict-outline`, `dict-find`).
+
+- **Arrival grammar (land-lit, item 7).** `lookupWord(word, {light, tempo})`
+  — every road says what carried it: the hold chip's sentence, a history
+  row's word. The cause lands in a tan band (`.jp-dict-arrive-band`),
+  applied after BOTH render halves — the async sidecar half too, which is
+  where the aperture-bug class would have eaten it.
+- **Tempo (law 3, the recovered item).** DESCEND (entering) animates 160ms
+  container-level with the landing lit; FLIP (sideways) is a hard cut. The
+  old always-on stagger — 200ms staggered slide-in on every KEYSTROKE's
+  re-filter — is dead, and reachability D4 pins that it stays dead
+  (re-filter renders with no motion, コマ送り item 5).
+- **Neighbours (item 8).** The dictionary as a walkable order: reading-sorted
+  unique headwords (the filmed 病人→病毒→廟堂 walk is the golden), chips at
+  the BOTTOM CORNERS (law 5: controls where the hand rests; new content
+  where it isn't), instant swap. `DictionaryStore.neighbors()` — index built
+  lazily, keyed on the enabled set, milliseconds at the blob cap.
+- **Kindle-quick paging + the axis grammar.** ↕ scrolls within; a fast ↔
+  FLICK (velocity ≥0.45px/ms, axis-dominant, selection wins outright, mouse
+  excluded, 28px edge zones left to edge-back) flips to the neighbour with a
+  140ms directional settle — the scrolly page-turn, distinct from the chip's
+  hard cut. True drag-past-END overscroll is NOT built (hijacking the
+  scroller's physics in a webview is jank on principle); the flick is the
+  honest form of that intent.
+- **Pinch-in = collapse to outline.** The splayed-finger reflex Monokakido
+  left unanswered (1184 f4602) now opens the ≡ — this screen's own table of
+  contents, one row per entry card, tap → scroll with the header tinted.
+- **In-screen Find (the recovered item).** 検索 in the nav bar: highlights
+  every match in what is already rendered, ↑↓/Enter walk them, re-applies
+  itself across re-renders. This is Monokakido's Find…, scoped to the
+  plugin's own screen shape (a result stack, not a single entry).
+- **The dated History (item 16).** `DictHistoryStore` under `_dictHistory`:
+  persistent, capped 500, typing coalesced (の→のば→のばあ is ONE row — rule
+  1), grouped 今日/昨日/M月D日, rows are doors that land lit. Recent-8 on
+  the home screen.
+
+Still open from the Monokakido list after this build: 12–13 (grain-named
+menus carrying 「もう台帳にある」 state), Ends match mode, Example scope,
+homophone paging — none of them navigation; they queue with §30's capture
+items.
+
+Perf, same date (the "no hiccups" pass): the 𝕏 pane's 300-card synchronous
+rebuild per settled keystroke now paints 60 cards per frame under a
+generation guard (compute was already memoized; the DOM was not); 語彙's
+search was the one live search left with NO debounce (now 90ms, like 辞書
+80 / 𝕏 110 / パネル 90); §29's oracle asked `lookup()` thousands of times
+per keystroke and paid the deinflection FALLBACK on every miss — 
+`hasExactSurface()` answers the same question without it.
 
 Perf, same date: the 𝕏 pane ran `detectPatterns` (the 126-operator engine) on
 up to 100 frozen tweets per keystroke and re-walked the whole 1.18M-char

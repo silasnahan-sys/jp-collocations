@@ -120,6 +120,8 @@ export class XSearchView extends ItemView {
   private loadMoreEl: HTMLElement | null = null;
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Guards the chunked card paint — a newer render orphans the older chain. */
+  private paintGen = 0;
   /** Engine output per frozen tweet — see the pill block in renderTweetCard. */
   private patternCache = new Map<string, ReturnType<typeof detectPatterns>>();
   /** Last KWIC build — the full-corpus scan must not re-run per keystroke. */
@@ -488,7 +490,7 @@ export class XSearchView extends ItemView {
       cls: 'jp-x-status-text',
     });
 
-    this.resultsEl.empty();
+    this.paintGen++; this.resultsEl.empty();
     if (this.loadMoreEl) this.loadMoreEl.empty();
 
     if (results.length === 0) {
@@ -549,26 +551,48 @@ export class XSearchView extends ItemView {
     }
 
     const terms = highlightTerms(this.query);
-    for (const t of shown) this.renderTweetCard(this.resultsEl, t, terms, whyById.get(t.id));
 
-    // The demoted tail: collapsed, counted, and NAMING what swallowed each
-    // hit. Built lazily — the cards only exist if the hand opens it.
-    if (demoted.length) {
-      const tail = this.resultsEl.createDiv('jp-x-partial');
-      const head = tail.createEl('button', { cls: 'jp-x-partial-head' });
-      const body = tail.createDiv('jp-x-partial-body');
-      body.hide();
-      const paint = (open: boolean): void => head.setText((open ? '▾ ' : '▸ ') + tailLabel);
-      paint(false);
-      head.onclick = () => {
-        const open = !body.isShown();
-        if (open && !body.childElementCount) {
-          for (const t of demoted) this.renderTweetCard(body, t, terms);
-        }
-        if (open) body.show(); else body.hide();
-        paint(open);
-      };
-    }
+    // The DOM half of the typing-lag fix. The COMPUTE per card is memoized
+    // (patternCache), but a 300-result query still rebuilt 300 cards
+    // synchronously on every settled keystroke — DOM work no cache absorbs.
+    // The first screenful paints now; the rest append one frame at a time,
+    // under a generation guard so a newer keystroke's render simply orphans
+    // the older chain. Scroll position is unaffected: appends only ever land
+    // BELOW the fold that exists.
+    const CHUNK = 60;
+    const gen = ++this.paintGen;
+    const paintCards = (from: number): void => {
+      if (gen !== this.paintGen || !this.resultsEl) return;
+      const end = Math.min(from + CHUNK, shown.length);
+      for (let k = from; k < end; k++) {
+        this.renderTweetCard(this.resultsEl, shown[k], terms, whyById.get(shown[k].id));
+      }
+      if (end < shown.length) {
+        requestAnimationFrame(() => paintCards(end));
+        return;
+      }
+      // The demoted tail: collapsed, counted, and NAMING what swallowed each
+      // hit. Built lazily — the cards only exist if the hand opens it. It
+      // renders in the completion branch so it always sits under the LAST
+      // card, never mid-stream.
+      if (demoted.length) {
+        const tail = this.resultsEl.createDiv('jp-x-partial');
+        const head = tail.createEl('button', { cls: 'jp-x-partial-head' });
+        const body = tail.createDiv('jp-x-partial-body');
+        body.hide();
+        const paint = (open: boolean): void => head.setText((open ? '▾ ' : '▸ ') + tailLabel);
+        paint(false);
+        head.onclick = () => {
+          const open = !body.isShown();
+          if (open && !body.childElementCount) {
+            for (const t of demoted) this.renderTweetCard(body, t, terms);
+          }
+          if (open) body.show(); else body.hide();
+          paint(open);
+        };
+      }
+    };
+    paintCards(0);
   }
 
   /** What each stop rule means, said in the open rather than logged. */
@@ -651,7 +675,7 @@ export class XSearchView extends ItemView {
       text: `★ 共起（保存検索を2つ以上含む）${rows.length}件`,
       cls: 'jp-x-status-text',
     });
-    this.resultsEl.empty();
+    this.paintGen++; this.resultsEl.empty();
     if (this.loadMoreEl) this.loadMoreEl.empty();
 
     if (rows.length === 0) {
@@ -669,7 +693,7 @@ export class XSearchView extends ItemView {
   private renderHome(): void {
     if (!this.resultsEl || !this.statusEl) return;
     this.statusEl.empty();
-    this.resultsEl.empty();
+    this.paintGen++; this.resultsEl.empty();
     if (this.loadMoreEl) this.loadMoreEl.empty();
 
     const stats = this.deps.corpus.stats();

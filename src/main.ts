@@ -134,6 +134,7 @@ import { componentKeyOf, type ComponentVerdict } from "./ui/DiscourseModeView";
 import { ImportModal } from "./ui/ImportModal";
 import { InboxStore, markCard, imageCard, pairedCard, shapeDrop, type MarkRef, type InboxCard } from "./notes/inbox";
 import { HoldStore, DEFAULT_HOLD_KNOBS, type HeldChip, type HoldKnobs } from "./notes/hold";
+import { DictHistoryStore } from "./dictionary/dict-nav";
 import { HoldDock } from "./ui/hold-dock";
 // §29 — the drag road. `drop-intent` decides what arrived; `runDropIntent`
 // below hands it to the same code the equivalent command already calls.
@@ -282,6 +283,7 @@ export default class JPCollocationsPlugin extends Plugin {
   private inboxStore!: InboxStore;
   private holdStore!: HoldStore;
   private holdDock!: HoldDock;
+  private dictHistory!: DictHistoryStore;
   /** §27.5 — the converted big dictionaries (vault sidecars, async lookup). */
   private bigDict!: BigDictStore;
   /**
@@ -569,6 +571,12 @@ export default class JPCollocationsPlugin extends Plugin {
     // survives every view switch by construction (the Calendar grammar).
     this.holdStore = new HoldStore((data) => this.dm.setKey("_hold", data), this.holdKnobs());
     this.holdStore.load(stored?._hold);
+
+    // ── the 辞書's dated history (§30 nav grammar): a lookup is a fact about
+    // your study and facts survive restarts — Monokakido's counter read
+    // 1,251; the session array died with every reload.
+    this.dictHistory = new DictHistoryStore((data) => this.dm.setKey("_dictHistory", data));
+    this.dictHistory.load((stored as { _dictHistory?: unknown } | undefined)?._dictHistory);
     this.holdDock = new HoldDock({
       chips: () => this.holdStore.all(),
       knobs: () => this.holdKnobs(),
@@ -590,7 +598,9 @@ export default class JPCollocationsPlugin extends Plugin {
           },
         }, this.makeCaptureDeps()).open();
       },
-      lookup: (chip) => void this.openDictionaryView(chip.text),
+      // The chip's SCENE rides into the dictionary too: the sentence it was
+      // grabbed with lands lit in the tan band (辞書 arrival grammar).
+      lookup: (chip) => void this.openDictionaryView(chip.text, { light: chip.sentence }),
       discard: (chip) => { this.holdStore.release(chip.id); this.holdDock.render(); },
     });
     this.holdDock.mount();
@@ -1774,6 +1784,38 @@ export default class JPCollocationsPlugin extends Plugin {
       callback: () => this.openDictionaryView(),
     });
 
+    // §30 nav grammar — every gesture with its command twin (invariant 9):
+    // the corner chips, the flick, the pinch, the ⏱ and 検索 buttons all
+    // land here too, so a keyboard or a mapped mouse button reaches them.
+    this.addCommand({
+      id: "dict-neighbor-next",
+      name: "辞書: 次の見出し語へ (flip next)",
+      callback: () => this.activeDictView()?.flipStep(1),
+    });
+    this.addCommand({
+      id: "dict-neighbor-prev",
+      name: "辞書: 前の見出し語へ (flip prev)",
+      callback: () => this.activeDictView()?.flipStep(-1),
+    });
+    this.addCommand({
+      id: "dict-history",
+      name: "辞書: 履歴 (dated lookup history)",
+      callback: async () => {
+        if (!this.activeDictView()) await this.openDictionaryView();
+        setTimeout(() => this.activeDictView()?.showHistory(), 120);
+      },
+    });
+    this.addCommand({
+      id: "dict-outline",
+      name: "辞書: この画面の目次 (outline)",
+      callback: () => this.activeDictView()?.toggleOutline(),
+    });
+    this.addCommand({
+      id: "dict-find",
+      name: "辞書: 画面内検索 (find in screen)",
+      callback: () => this.activeDictView()?.toggleFind(true),
+    });
+
     this.addCommand({
       id: "dictionary-lookup",
       name: "Look Up Selected Word in Dictionary",
@@ -2587,7 +2629,11 @@ export default class JPCollocationsPlugin extends Plugin {
     if (!this.dictStore.hasDictionaries()) return undefined;
     return {
       deinflect: (s) => deinflect(s),
-      isWord: (s) => this.dictStore.lookup(s).some((r) => !r.deinflection),
+      // Same truth as lookup(s).some(r => !r.deinflection) — an exact surface
+      // hit — but without the deinflection FALLBACK lookup() runs on every
+      // miss, and this oracle's calls are almost all misses (く足して…). The
+      // boundary test's per-keystroke cost is dominated by exactly that.
+      isWord: (s) => this.dictStore.hasExactSurface(s),
     };
   }
 
@@ -4250,6 +4296,9 @@ export default class JPCollocationsPlugin extends Plugin {
     // handler ran. backPeek (its required pair) arrives from peekChrome below.
     v.dismiss = () => void this.navBack();
     v.surfaceBadge = (s) => this.surfaceBadge(s);
+    // §30 nav grammar: the dated history is plugin state, not view state —
+    // every 辞書 leaf shares one past.
+    v.historyStore = this.dictHistory;
     Object.assign(v, this.peekChrome());
     // §27.5 — the converted dictionaries. Same store the 語彙 panel queries, so
     // 辞書 and 語彙 cannot disagree about what is installed.
@@ -7227,7 +7276,7 @@ export default class JPCollocationsPlugin extends Plugin {
     new Notice(`ヘルスチェックを書き出しました: ${path}`, 6000);
   }
 
-  async openDictionaryView(query?: string): Promise<void> {
+  async openDictionaryView(query?: string, arrive?: { light?: string }): Promise<void> {
     const leaf = this.surfaceLeaf(JP_DICTIONARY_VIEW_TYPE) ?? undefined;
     if (leaf && leaf.view?.getViewType() !== JP_DICTIONARY_VIEW_TYPE) {
       await leaf.setViewState({ type: JP_DICTIONARY_VIEW_TYPE, active: true });
@@ -7235,13 +7284,23 @@ export default class JPCollocationsPlugin extends Plugin {
     if (leaf) {
       this.app.workspace.revealLeaf(leaf);
       if (query) {
-        // Trigger lookup after view is ready
+        // Trigger lookup after view is ready. Arriving from another surface
+        // is a DESCEND, and whatever carried you (a held chip's sentence)
+        // lands lit — the arrival grammar, not just a query echo.
         setTimeout(() => {
           const view = leaf!.view as DictionaryView;
-          view.lookupWord(query);
+          view.lookupWord(query, { tempo: "descend", light: arrive?.light });
         }, 100);
       }
     }
+  }
+
+  /** The 辞書 leaf a command should speak to, if one is open. */
+  private activeDictView(): DictionaryView | null {
+    for (const leaf of this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE)) {
+      if (leaf.view instanceof DictionaryView) return leaf.view;
+    }
+    return null;
   }
 
   private importData(): void {

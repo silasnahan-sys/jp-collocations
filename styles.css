@@ -3545,20 +3545,237 @@ body.jp-posture-thumb .jp-dismiss { order: 99; }
 }
 
 /* ═══════════════════════════════════════════════════════════
-   DICTIONARY LIVE SEARCH: slide-in results animation
+   DICTIONARY NAVIGATION TEMPO (§30 / コマ送り laws 3+5, item 5)
+
+   Re-filter has NO motion — Monokakido's list just changes, and a staggered
+   slide-in on every keystroke (the old rule here) was both the wrong feel
+   and per-keystroke animation work. Motion now means exactly one thing:
+   DESCEND (entering from elsewhere) settles in 160ms, container-level, one
+   compositor animation; FLIP is a hard cut, with a 140ms settle only when
+   the hand FLICKED (the kindle-quick page turn). prefers-reduced-motion
+   kills all three.
    ═══════════════════════════════════════════════════════════ */
 
-.jp-dict-card {
-  animation: jp-dict-slide-in 0.2s ease-out;
+.jp-dict-descend {
+  animation: jp-dict-descend 0.16s ease-out;
 }
-@keyframes jp-dict-slide-in {
-  from { opacity: 0; transform: translateY(6px); }
+@keyframes jp-dict-descend {
+  from { opacity: 0.4; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.jp-dict-card:nth-child(2) { animation-delay: 0.03s; }
-.jp-dict-card:nth-child(3) { animation-delay: 0.06s; }
-.jp-dict-card:nth-child(4) { animation-delay: 0.09s; }
-.jp-dict-card:nth-child(5) { animation-delay: 0.12s; }
+.jp-dict-flick-left { animation: jp-dict-flick-l 0.14s ease-out; }
+.jp-dict-flick-right { animation: jp-dict-flick-r 0.14s ease-out; }
+@keyframes jp-dict-flick-l {
+  from { opacity: 0.55; transform: translateX(18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes jp-dict-flick-r {
+  from { opacity: 0.55; transform: translateX(-18px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jp-dict-descend, .jp-dict-flick-left, .jp-dict-flick-right { animation: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   DICTIONARY NAV BAR — controls where the hand rests (law 5):
+   neighbour chips at the bottom corners, the screen's verbs between.
+   Rises with the keyboard via the same inset keyboard-aware.ts sets.
+   ═══════════════════════════════════════════════════════════ */
+
+.jp-dict-view { position: relative; }
+
+.jp-dict-navbar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(10px + var(--jp-kb-inset, 0px) + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  pointer-events: none; /* the bar is air; only its buttons are solid */
+  z-index: 12;
+}
+.jp-dict-navbar > * { pointer-events: auto; }
+
+.jp-dict-nb {
+  min-height: var(--jp-tap, 40px);
+  max-width: 34%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 6px 14px;
+  border-radius: 18px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+}
+.jp-dict-nb:active { transform: scale(0.97); }
+.jp-dict-nb--void { visibility: hidden; }
+.jp-dict-navbar--bare .jp-dict-nb { visibility: hidden; }
+
+.jp-dict-navbar-mid {
+  display: flex;
+  gap: 6px;
+}
+.jp-dict-nb-mid {
+  min-height: var(--jp-tap, 40px);
+  min-width: 40px;
+  padding: 6px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+}
+.jp-dict-nb-mid:hover, .jp-dict-nb:hover { color: var(--text-normal); }
+
+/* room so the last card's tail is never parked under the bar */
+.jp-dict-results { padding-bottom: 76px; }
+
+/* ── Land lit (item 7): the tan band on whatever carried you here ── */
+.jp-dict-arrive-band {
+  background: rgba(214, 178, 92, 0.26);
+  border-radius: 4px;
+  box-shadow: 0 0 0 4px rgba(214, 178, 92, 0.26);
+}
+.jp-dict-arrive-flash {
+  animation: jp-dict-arrive-fade 1.4s ease-out;
+}
+@keyframes jp-dict-arrive-fade {
+  from { background: rgba(214, 178, 92, 0.30); }
+  to { background: transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jp-dict-arrive-flash { animation: none; background: rgba(214, 178, 92, 0.18); }
+}
+
+/* ── In-screen find ── */
+.jp-dict-find-bar {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: calc(64px + var(--jp-kb-inset, 0px) + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 12px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+  z-index: 13;
+}
+.jp-dict-find-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 34px;
+  border: none;
+  background: var(--background-secondary);
+  border-radius: 8px;
+  padding: 4px 10px;
+}
+.jp-dict-find-count {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.jp-dict-find-step {
+  min-height: 34px;
+  min-width: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  cursor: pointer;
+}
+mark.jp-dict-find-hit {
+  background: rgba(214, 178, 92, 0.32);
+  color: inherit;
+  border-radius: 2px;
+}
+mark.jp-dict-find-hit--current {
+  background: rgba(214, 178, 92, 0.75);
+  outline: 2px solid rgba(160, 120, 30, 0.8);
+}
+
+/* ── ≡ outline popover: above the bar, off-hand ── */
+.jp-dict-outline-pop {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(64px + var(--jp-kb-inset, 0px) + env(safe-area-inset-bottom, 0px));
+  max-height: 46%;
+  min-width: 220px;
+  max-width: min(420px, 92%);
+  overflow-y: auto;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.2);
+  z-index: 14;
+}
+.jp-dict-outline-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-height: var(--jp-tap, 40px);
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.jp-dict-outline-row:hover { background: var(--background-secondary); }
+.jp-dict-outline-expr { font-weight: 600; }
+.jp-dict-outline-reading { color: var(--text-muted); font-size: var(--font-ui-smaller); }
+.jp-dict-outline-dict {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: var(--font-ui-smaller);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
+}
+
+/* ── The dated history ── */
+.jp-dict-hist { padding: 4px 2px; }
+.jp-dict-hist-day {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  letter-spacing: 0.04em;
+  padding: 12px 8px 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.jp-dict-hist-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--jp-tap, 40px);
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.jp-dict-hist-row:hover { background: var(--background-secondary); }
+.jp-dict-hist-word { font-size: var(--font-ui-medium); }
+.jp-dict-hist-time { color: var(--text-faint); font-size: var(--font-ui-smaller); }
+.jp-dict-hist-all {
+  border: none;
+  background: none;
+  color: var(--text-accent);
+  cursor: pointer;
+  font-size: var(--font-ui-smaller);
+  padding: 4px 6px;
+}
+.jp-dict-hist--home { margin-bottom: 10px; }
 
 /* Focus ring for search input */
 .jp-dict-search-input {

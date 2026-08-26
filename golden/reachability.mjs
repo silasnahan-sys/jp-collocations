@@ -261,7 +261,10 @@ console.log(`    commands: ${commands}   with a default hotkey: ${withHotkey}   
 // does each chrome BUILDER actually assign the pair.
 console.log('\n D2. every chrome builder assigns the dismiss/backPeek pair');
 {
-  const catalogHits = main.match(/withCatalogHits[\s\S]{0,1200}?return v;/)?.[0] ?? '';
+  // The window bounds the FUNCTION, not a guess at its size — it broke once
+  // (2026-08-26) when three added lines pushed `return v;` past a 1200-char
+  // cap and both checks silently tested an empty string.
+  const catalogHits = main.match(/withCatalogHits[\s\S]{0,4000}?return v;/)?.[0] ?? '';
   check('withCatalogHits (辞書) assigns dismiss', /v\.dismiss\s*=/.test(catalogHits));
   check('withCatalogHits (辞書) gets backPeek (peekChrome)', /peekChrome\(\)/.test(catalogHits));
   const withChrome = main.match(/private withChrome[\s\S]{0,1200}?return v;/)?.[0] ?? '';
@@ -281,6 +284,36 @@ for (const [file, label] of [
   ['ui/DictionaryView.ts', 'dict'], ['ui/TrayView.ts', 'tray'], ['ui/FollowAlongView.ts', 'follow'],
 ]) {
   check(`${label} arms the echo`, /armSelectionEcho\(/.test(read(...file.split('/'))));
+}
+
+// ── D4. the 辞書 nav grammar ships with its apertures open ──────────────────
+//
+// §30's nav build (neighbour chips, flick, pinch→outline, dated history,
+// in-screen find, arrival light). Same discipline as D2/D3: not "does the
+// pure model pass" (golden/dict-nav.mjs answers that) but "is each gesture
+// armed in source, does each have its command twin, and does the light reach
+// BOTH render halves" — the sidecar half answers asynchronously, and an
+// arrival light wired only to the sync half misses exactly the words that
+// come from the big dictionaries.
+console.log('\n D4. the 辞書 nav grammar: armed, twinned, and lit on both halves');
+{
+  const dict = read('ui', 'DictionaryView.ts');
+  check('the neighbour flick is armed', /this\.armNeighborFlick\(/.test(dict));
+  check('the pinch→outline reflex is armed', /this\.armPinchOutline\(/.test(dict));
+  const afterCalls = (dict.match(/this\.afterRender\(\)/g) ?? []).length;
+  check('afterRender covers live + committed + sidecar renders',
+    afterCalls >= 3, `${afterCalls} call sites, need 3`);
+  check('history rows persist through a store, not a session array',
+    /historyStore/.test(dict) && /\.record\(/.test(dict));
+  for (const id of ['dict-neighbor-next', 'dict-neighbor-prev', 'dict-history', 'dict-outline', 'dict-find']) {
+    check(`command twin '${id}' is registered`, new RegExp(`id: "${id}"`).test(main));
+  }
+  check('withCatalogHits wires the dated history', /v\.historyStore\s*=/.test(main));
+  // コマ送り item 5: re-filter has NO motion. The old always-on stagger
+  // animated every keystroke's re-render; it must stay dead.
+  const css = readFileSync(join(HERE, '..', 'styles.css'), 'utf8');
+  check('no unconditional animation on .jp-dict-card (re-filter must not move)',
+    !/\.jp-dict-card\s*\{[^}]*animation\s*:/s.test(css));
 }
 
 // ── the ledger must not rot ───────────────────────────────────────────────────

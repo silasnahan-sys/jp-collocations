@@ -47,6 +47,7 @@ import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
 import { classBadge } from './class-grammar';
 import { armDrops, armSelectionEcho, mountSurfaceBar, wideDock, type ViewChrome } from './view-chrome';
 import { makeDraggable } from './drag-out';
+import { historyDays, type DictHistoryStore } from '../dictionary/dict-nav';
 
 export const JP_DICTIONARY_VIEW_TYPE = 'jp-dictionary-view';
 
@@ -124,6 +125,23 @@ export class DictionaryView extends ItemView {
    * the late result must then be dropped rather than painted over the new one.
    */
   private searchGen = 0;
+
+  // ── the navigation grammar (dict-nav.ts; コマ送り items 7/8/16, §30) ──
+  /** Persistent dated lookup history — wired by main.ts (withCatalogHits). */
+  historyStore: DictHistoryStore | null = null;
+  private navBarEl: HTMLElement | null = null;
+  private nbPrevEl: HTMLButtonElement | null = null;
+  private nbNextEl: HTMLButtonElement | null = null;
+  private outlinePop: HTMLElement | null = null;
+  private findBarEl: HTMLElement | null = null;
+  private findInput: HTMLInputElement | null = null;
+  private findCountEl: HTMLElement | null = null;
+  private findHits: HTMLElement[] = [];
+  private findAt = -1;
+  private findTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Set by lookupWord, consumed after render: what to light, how to move. */
+  private pendingArrive: { light?: string; tempo?: 'descend' | 'flip' } | null = null;
+  private historyMode = false;
   /** Installed sidecars, cached after the first look so the home screen is sync. */
   private bigInstalled: Array<{ title: string; headwords: number; partial: boolean }> = [];
 
@@ -284,6 +302,11 @@ export class DictionaryView extends ItemView {
 
   async onClose(): Promise<void> {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
+    if (this.findTimer) clearTimeout(this.findTimer);
+    if (this.outlineAway) {
+      document.removeEventListener('pointerdown', this.outlineAway, true);
+      this.outlineAway = null;
+    }
     this.peek?.cancel();
   }
 
@@ -292,8 +315,20 @@ export class DictionaryView extends ItemView {
     else this.renderHome();
   }
 
-  /** Public method for programmatic lookup (e.g. from editor selection command) */
-  lookupWord(word: string): void {
+  /**
+   * Public method for programmatic lookup (e.g. from editor selection command).
+   *
+   * `arrive` is the navigation tempo contract (コマ送り law 3 / DESIGN §30):
+   * DESCEND (entering an entry from somewhere else) animates briefly so the
+   * hand knows it went DOWN a level; FLIP (moving sideways — neighbour chips,
+   * back) is instant, 0 frames, because the hand stayed at the same depth.
+   * No `arrive` means flip. `light` is the arrival's cause — the sentence or
+   * word that carried you here — and it lands lit in a tan band (item 7:
+   * every arrival lights what brought it, not only typed queries).
+   */
+  lookupWord(word: string, arrive?: { light?: string; tempo?: 'descend' | 'flip' }): void {
+    this.historyMode = false;
+    this.pendingArrive = arrive ?? null;
     if (this.searchInput) this.searchInput.value = word;
     this.currentQuery = word;
     this.hideSuggestions();
@@ -316,7 +351,7 @@ export class DictionaryView extends ItemView {
       });
     }
     this.lastVia = via;
-    this.lookupWord(word);
+    this.lookupWord(word, { tempo: 'descend' });
     this.renderBreadcrumbs();
   }
 
@@ -468,6 +503,366 @@ export class DictionaryView extends ItemView {
     }
   }
 
+  // ── The navigation grammar (§30 / コマ送り items 7, 8, 16 + the two
+  //    recovered items: in-screen find and the descend/flip tempo) ────────
+
+  /**
+   * Runs after every render of the results — the sync store half AND the
+   * async sidecar half. Consumes the pending tempo once, then does the three
+   * jobs that must never miss a render: light the arrival's cause, refresh
+   * the neighbour chips, re-apply an open find.
+   */
+  private afterRender(): void {
+    const a = this.pendingArrive;
+    if (a?.tempo === 'descend' && this.resultsEl
+      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const el = this.resultsEl;
+      el.removeClass('jp-dict-descend');
+      void el.offsetWidth; // restart when two descends chain back-to-back
+      el.addClass('jp-dict-descend');
+      window.setTimeout(() => el.removeClass('jp-dict-descend'), 240);
+    }
+    if (a) a.tempo = undefined; // descend runs once; retries only carry light
+    this.applyArrival();
+    this.renderNavBar();
+    this.rerunFind();
+  }
+
+  /**
+   * Land lit from the first frame (item 7): the sentence or word that carried
+   * you here sits in a tan band when the screen settles — filmed at 1175
+   * f0406 and f10384, the single strongest Monokakido habit. The band goes on
+   * the DEEPEST element containing the cause (the sense row, the example
+   * line), found by linear descent — cheap, no full-tree scan. Stays pending
+   * until some render can satisfy it (the cause may be in a sidecar card that
+   * has not answered yet); cleared by the next lookup.
+   */
+  private applyArrival(): void {
+    const light = this.pendingArrive?.light?.trim();
+    if (!light || !this.resultsEl) return;
+    const target = this.deepestWith(this.resultsEl, light)
+      ?? this.deepestWith(this.resultsEl, light.slice(0, 20));
+    if (!target) return;
+    this.pendingArrive = null;
+    this.resultsEl.querySelectorAll('.jp-dict-arrive-band')
+      .forEach((el) => el.removeClass('jp-dict-arrive-band'));
+    target.addClass('jp-dict-arrive-band');
+    target.scrollIntoView({ block: 'center' });
+  }
+
+  private deepestWith(root: HTMLElement, text: string): HTMLElement | null {
+    if (!text || !(root.textContent ?? '').includes(text)) return null;
+    let el: HTMLElement = root;
+    descend: for (;;) {
+      for (const child of Array.from(el.children)) {
+        if ((child.textContent ?? '').includes(text)) {
+          el = child as HTMLElement;
+          continue descend;
+        }
+      }
+      break;
+    }
+    return el === root ? null : el;
+  }
+
+  /** The bottom-corner chips: who stands beside the current word. */
+  private renderNavBar(): void {
+    if (!this.navBarEl || !this.nbPrevEl || !this.nbNextEl) return;
+    const nb = this.currentQuery && !this.historyMode
+      ? this.dictStore.neighbors(this.currentQuery) : null;
+    const set = (btn: HTMLButtonElement, h: { expression: string } | null, arrow: 'prev' | 'next'): void => {
+      if (!h) { btn.addClass('jp-dict-nb--void'); btn.disabled = true; btn.setText(''); return; }
+      btn.removeClass('jp-dict-nb--void');
+      btn.disabled = false;
+      btn.setText(arrow === 'prev' ? `〈 ${h.expression}` : `${h.expression} 〉`);
+    };
+    set(this.nbPrevEl, nb?.prev ?? null, 'prev');
+    set(this.nbNextEl, nb?.next ?? null, 'next');
+    this.navBarEl.toggleClass('jp-dict-navbar--bare', !nb);
+  }
+
+  /**
+   * FLIP to a neighbour — instant, 0 frames (filmed: f11732→11733, the swap
+   * happens between two frames). Sideways moves replace the current place:
+   * the breadcrumb trail neither grows nor pops, exactly like turning a page.
+   * `slide` adds the 140ms settle that makes a FLICK feel like the quick
+   * scrolly page-turn the hand asked for; chip taps stay hard cuts.
+   */
+  flipStep(dir: 1 | -1, slide?: 'left' | 'right'): void {
+    if (this.historyMode || !this.currentQuery) return;
+    const nb = this.dictStore.neighbors(this.currentQuery);
+    const target = dir > 0 ? nb?.next : nb?.prev;
+    if (!target) return;
+    this.lookupWord(target.expression);
+    this.renderBreadcrumbs();
+    if (slide && this.resultsEl
+      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      const el = this.resultsEl;
+      const cls = slide === 'left' ? 'jp-dict-flick-left' : 'jp-dict-flick-right';
+      el.removeClass('jp-dict-flick-left'); el.removeClass('jp-dict-flick-right');
+      void el.offsetWidth;
+      el.addClass(cls);
+      window.setTimeout(() => el.removeClass(cls), 200);
+    }
+  }
+
+  /**
+   * A fast horizontal FLICK pages to the neighbour. Gated three ways so
+   * nothing else ever misfires into a page turn: velocity (≥0.45 px/ms —
+   * a reading drag or selection is slower), axis dominance (|dx| ≥ 1.5|dy|),
+   * and an armed selection wins outright. Mouse excluded (a mouse drag IS
+   * selection); the 28px edge zones belong to edge-back (touch-nav.ts).
+   * Passive listeners only — this must never cost the scroller a frame.
+   */
+  private armNeighborFlick(el: HTMLElement): void {
+    let id = -1, x0 = 0, y0 = 0, t0 = 0, fromEdge = false;
+    el.addEventListener('pointerdown', (e: PointerEvent) => {
+      if (e.pointerType === 'mouse') return;
+      id = e.pointerId; x0 = e.clientX; y0 = e.clientY; t0 = e.timeStamp;
+      const w = window.innerWidth;
+      fromEdge = x0 < 28 || x0 > w - 28;
+    }, { passive: true });
+    el.addEventListener('pointerup', (e: PointerEvent) => {
+      if (e.pointerId !== id) return;
+      id = -1;
+      if (fromEdge) return;
+      const sel = window.getSelection?.();
+      if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+      const dx = e.clientX - x0, dy = e.clientY - y0, dt = e.timeStamp - t0;
+      if (dt <= 0 || dt > 350) return;
+      if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+      if (Math.abs(dx) / dt < 0.45) return;
+      // Reading direction: flick left = the page turns forward.
+      this.flipStep(dx < 0 ? 1 : -1, dx < 0 ? 'left' : 'right');
+    }, { passive: true });
+    el.addEventListener('pointercancel', () => { id = -1; }, { passive: true });
+  }
+
+  /** Pinch-in on the results = collapse to the outline. Two pointers,
+   *  distance shrinks past 72%, fires once per touch; all passive. */
+  private armPinchOutline(el: HTMLElement): void {
+    const pts = new Map<number, { x: number; y: number }>();
+    let d0 = 0, fired = false;
+    const dist = (): number => {
+      const [a, b] = [...pts.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
+    el.addEventListener('pointerdown', (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) { d0 = dist(); fired = false; }
+    }, { passive: true });
+    el.addEventListener('pointermove', (e: PointerEvent) => {
+      if (!pts.has(e.pointerId) || pts.size !== 2 || fired || !d0) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (dist() < d0 * 0.72) { fired = true; this.toggleOutline(); }
+    }, { passive: true });
+    const drop = (e: PointerEvent): void => { pts.delete(e.pointerId); if (pts.size < 2) d0 = 0; };
+    el.addEventListener('pointerup', drop, { passive: true });
+    el.addEventListener('pointercancel', drop, { passive: true });
+  }
+
+  /**
+   * ≡ — the current screen's own table of contents (item 9): one row per
+   * entry card, tap → the card scrolls into view with its header tinted.
+   * Opens ABOVE the bar it came from — off-hand, where the popover is
+   * readable without the sweep the films measured (170ms per menu).
+   */
+  private outlineAway: ((e: PointerEvent) => void) | null = null;
+
+  toggleOutline(): void {
+    if (this.outlinePop) {
+      this.outlinePop.remove();
+      this.outlinePop = null;
+      if (this.outlineAway) {
+        document.removeEventListener('pointerdown', this.outlineAway, true);
+        this.outlineAway = null;
+      }
+      return;
+    }
+    if (!this.resultsEl || !this.navBarEl) return;
+    const cards = Array.from(this.resultsEl.querySelectorAll<HTMLElement>('.jp-dict-card'));
+    if (!cards.length) return;
+    const pop = this.navBarEl.parentElement!.createDiv('jp-dict-outline-pop');
+    this.outlinePop = pop;
+    for (const card of cards) {
+      const expr = card.querySelector('.jp-dict-card-expression')?.textContent ?? '';
+      const reading = card.querySelector('.jp-dict-card-reading')?.textContent ?? '';
+      const dict = card.querySelector('.jp-dict-dict-badge')?.textContent ?? '';
+      const row = pop.createDiv('jp-dict-outline-row');
+      row.createSpan({ text: expr, cls: 'jp-dict-outline-expr' });
+      if (reading) row.createSpan({ text: reading, cls: 'jp-dict-outline-reading' });
+      row.createSpan({ text: dict, cls: 'jp-dict-outline-dict' });
+      row.addEventListener('click', () => {
+        this.toggleOutline();
+        card.scrollIntoView({ block: 'start' });
+        card.addClass('jp-dict-arrive-flash');
+        window.setTimeout(() => card.removeClass('jp-dict-arrive-flash'), 1400);
+      });
+    }
+    // Tap anywhere else closes — a popover that traps you is worse than none.
+    // The handler lives on the instance so EVERY close path (button, pinch,
+    // outside tap) removes it; a leaked capture listener taxes every tap.
+    this.outlineAway = (e: PointerEvent): void => {
+      if (this.outlinePop && !this.outlinePop.contains(e.target as Node)) this.toggleOutline();
+    };
+    const away = this.outlineAway;
+    window.setTimeout(() => {
+      if (this.outlineAway === away) document.addEventListener('pointerdown', away, true);
+    }, 0);
+  }
+
+  // ── In-screen find (the recovered 答え合わせ item): re-find a passage
+  //    INSIDE what is already open, instead of a new dictionary query. ──
+
+  toggleFind(open?: boolean): void {
+    const want = open ?? !this.findBarEl;
+    if (!want) { this.closeFind(); return; }
+    if (this.findBarEl) { this.findInput?.focus(); return; }
+    if (!this.navBarEl) return;
+    const bar = this.navBarEl.parentElement!.createDiv('jp-dict-find-bar');
+    this.findBarEl = bar;
+    this.findInput = bar.createEl('input', {
+      type: 'search', cls: 'jp-dict-find-input',
+      placeholder: 'この画面内を検索…',
+      attr: { autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' },
+    });
+    this.findCountEl = bar.createSpan({ cls: 'jp-dict-find-count' });
+    const prev = bar.createEl('button', { text: '↑', cls: 'jp-dict-find-step', attr: { 'aria-label': '前へ' } });
+    const next = bar.createEl('button', { text: '↓', cls: 'jp-dict-find-step', attr: { 'aria-label': '次へ' } });
+    const close = bar.createEl('button', { text: '✕', cls: 'jp-dict-find-step', attr: { 'aria-label': '閉じる' } });
+    prev.addEventListener('click', () => this.stepFind(-1));
+    next.addEventListener('click', () => this.stepFind(1));
+    close.addEventListener('click', () => this.closeFind());
+    this.findInput.addEventListener('input', () => {
+      if (this.findTimer) clearTimeout(this.findTimer);
+      this.findTimer = setTimeout(() => this.runFind(this.findInput?.value ?? ''), 150);
+    });
+    this.findInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); this.stepFind(e.shiftKey ? -1 : 1); }
+      if (e.key === 'Escape') { e.preventDefault(); this.closeFind(); }
+    });
+    this.findInput.focus();
+  }
+
+  private closeFind(): void {
+    this.clearFindHits();
+    if (this.findTimer) { clearTimeout(this.findTimer); this.findTimer = null; }
+    this.findBarEl?.remove();
+    this.findBarEl = null;
+    this.findInput = null;
+    this.findCountEl = null;
+  }
+
+  /** A render replaced the DOM under an open find — run it again on the new
+   *  content, silently. The hits array only ever points at live nodes. */
+  private rerunFind(): void {
+    if (!this.findBarEl || !this.findInput) return;
+    this.findHits = [];
+    this.findAt = -1;
+    const q = this.findInput.value;
+    if (q.trim()) this.runFind(q, /*keepScroll*/ true);
+  }
+
+  private runFind(query: string, keepScroll = false): void {
+    this.clearFindHits();
+    const q = query.trim();
+    if (!q || !this.resultsEl) { this.findCountEl?.setText(''); return; }
+    // Collect first, mutate after — splitting text nodes mid-walk invalidates
+    // the walker. Latin matches case-insensitively; Japanese matches exactly.
+    const walker = document.createTreeWalker(this.resultsEl, NodeFilter.SHOW_TEXT);
+    const plan: Array<{ node: Text; idx: number }> = [];
+    const lower = q.toLowerCase();
+    let n: Text | null;
+    while ((n = walker.nextNode() as Text | null)) {
+      const hay = n.data;
+      let from = 0;
+      for (;;) {
+        const i = hay.toLowerCase().indexOf(lower, from);
+        if (i < 0) break;
+        plan.push({ node: n, idx: i });
+        from = i + q.length;
+        if (plan.length >= 300) break;
+      }
+      if (plan.length >= 300) break;
+    }
+    // Wrap back-to-front per node so earlier indices stay valid.
+    for (let i = plan.length - 1; i >= 0; i--) {
+      const { node, idx } = plan[i];
+      const hit = node.splitText(idx);
+      hit.splitText(q.length);
+      const mark = document.createElement('mark');
+      mark.className = 'jp-dict-find-hit';
+      node.parentNode?.insertBefore(mark, hit);
+      mark.appendChild(hit);
+      this.findHits.unshift(mark as unknown as HTMLElement);
+    }
+    this.findAt = -1;
+    this.findCountEl?.setText(this.findHits.length
+      ? `${this.findHits.length}件` : '0件');
+    if (this.findHits.length && !keepScroll) this.stepFind(1);
+  }
+
+  private clearFindHits(): void {
+    for (const m of this.findHits) {
+      const parent = m.parentNode;
+      if (!parent) continue;
+      while (m.firstChild) parent.insertBefore(m.firstChild, m);
+      parent.removeChild(m);
+      parent.normalize();
+    }
+    this.findHits = [];
+    this.findAt = -1;
+  }
+
+  private stepFind(d: 1 | -1): void {
+    if (!this.findHits.length) return;
+    if (this.findAt >= 0) this.findHits[this.findAt]?.removeClass('jp-dict-find-hit--current');
+    this.findAt = (this.findAt + d + this.findHits.length) % this.findHits.length;
+    const cur = this.findHits[this.findAt];
+    cur.addClass('jp-dict-find-hit--current');
+    cur.scrollIntoView({ block: 'center' });
+    this.findCountEl?.setText(`${this.findAt + 1}/${this.findHits.length}件`);
+  }
+
+  /**
+   * The dated History (item 16) — 1,251 entries deep in Monokakido, a
+   * session array here until now. Every row is a door back: tap → the word
+   * opens with a descend. Grouped 今日/昨日/M月D日 by dict-nav.historyDays.
+   */
+  showHistory(): void {
+    if (!this.resultsEl || !this.statsEl) return;
+    this.searchGen++; // a sidecar answer in flight must not paint over this
+    this.historyMode = true;
+    this.pendingArrive = null;
+    this.hideSuggestions();
+    this.closeFind();
+    const rows = this.historyStore?.rows() ?? [];
+    this.statsEl.empty();
+    this.statsEl.createSpan({ text: `履歴 ${rows.length}件`, cls: 'jp-dict-stat-text' });
+    this.resultsEl.empty();
+    if (!rows.length) {
+      this.renderEmpty('まだ履歴がありません — 引いた語がここに日付つきで残ります。');
+      this.renderNavBar();
+      return;
+    }
+    const wrap = this.resultsEl.createDiv('jp-dict-hist');
+    for (const day of historyDays(rows, Date.now())) {
+      wrap.createDiv({ text: day.label, cls: 'jp-dict-hist-day' });
+      for (const r of day.rows) {
+        const row = wrap.createDiv('jp-dict-hist-row');
+        row.createSpan({ text: r.word, cls: 'jp-dict-hist-word' });
+        const t = new Date(r.at);
+        row.createSpan({
+          text: `${t.getHours()}:${String(t.getMinutes()).padStart(2, '0')}`,
+          cls: 'jp-dict-hist-time',
+        });
+        row.addEventListener('click', () => this.lookupWord(r.word, { tempo: 'descend' }));
+      }
+    }
+    this.renderNavBar();
+  }
+
   // ── Build UI ───────────────────────────────────────────────
 
   private buildUI(): void {
@@ -583,6 +978,44 @@ export class DictionaryView extends ItemView {
 
     // Results
     this.resultsEl = container.createDiv('jp-dict-results');
+
+    // ── The nav bar: controls where the hand rests, content where it isn't
+    // (コマ送り law 5). Neighbour chips at the BOTTOM CORNERS — filmed at
+    // 1175 f11670: the hand travels ballistically from the headword to the
+    // corner chip in 0.2s and the new entry appears where the hand isn't.
+    // The mid-cluster holds the screen's own verbs: outline, find, history.
+    this.navBarEl = container.createDiv('jp-dict-navbar');
+    this.nbPrevEl = this.navBarEl.createEl('button', {
+      cls: 'jp-dict-nb jp-dict-nb--prev', attr: { 'aria-label': '前の見出し語' },
+    });
+    this.nbPrevEl.addEventListener('click', () => this.flipStep(-1));
+    const mid = this.navBarEl.createDiv('jp-dict-navbar-mid');
+    const outlineBtn = mid.createEl('button', {
+      text: '≡', cls: 'jp-dict-nb-mid', attr: { 'aria-label': 'この画面の目次' },
+    });
+    outlineBtn.addEventListener('click', () => this.toggleOutline());
+    const findBtn = mid.createEl('button', {
+      text: '検索', cls: 'jp-dict-nb-mid jp-dict-nb-mid--find', attr: { 'aria-label': '画面内検索' },
+    });
+    findBtn.addEventListener('click', () => this.toggleFind());
+    const histBtn = mid.createEl('button', {
+      text: '⏱', cls: 'jp-dict-nb-mid', attr: { 'aria-label': '履歴' },
+    });
+    histBtn.addEventListener('click', () => this.showHistory());
+    this.nbNextEl = this.navBarEl.createEl('button', {
+      cls: 'jp-dict-nb jp-dict-nb--next', attr: { 'aria-label': '次の見出し語' },
+    });
+    this.nbNextEl.addEventListener('click', () => this.flipStep(1));
+    this.renderNavBar();
+
+    // Kindle-quick sideways paging: the axis tells the hand its stratum —
+    // ↕ scrolls within this entry stack, a fast ↔ FLICK moves to the
+    // neighbour. Velocity-gated so a slow drag (selection, a hesitant
+    // scroll) never pages; touch/pen only (a mouse drag is selection).
+    this.armNeighborFlick(this.resultsEl);
+    // The pinch reflex, answered: pinch-in = collapse to the outline (the
+    // splayed-fingers gesture Monokakido left unanswered at 1184 f4602).
+    this.armPinchOutline(this.resultsEl);
   }
 
   // ── Search flow ────────────────────────────────────────────
@@ -662,6 +1095,9 @@ export class DictionaryView extends ItemView {
   private performLiveSearch(query: string): void {
     this.hideSuggestions();
     if (!this.resultsEl || !this.statsEl) return;
+    // Typing supersedes any pending arrival, and leaves history mode.
+    this.pendingArrive = null;
+    this.historyMode = false;
     const gen = ++this.searchGen;
 
     // Merge: exact results first, then substring-only
@@ -708,6 +1144,13 @@ export class DictionaryView extends ItemView {
       }
     }
     this.setStats(query, merged.length, !!this.bigDict, allDeinflected(merged));
+    // A live query IS a lookup once it settles — recordLookup's refinement
+    // rule collapses の→のば→のばあ into one history row, so recording per
+    // debounce is safe (dict-nav.ts rule 1). Re-filter renders with NO
+    // motion (コマ送り item 5: the list just changes) — afterRender only
+    // animates an explicit descend, and typing cleared that above.
+    this.historyStore?.record(query);
+    this.afterRender();
     void this.appendBigResults(query, gen, merged, narrowing);
   }
 
@@ -819,6 +1262,11 @@ export class DictionaryView extends ItemView {
     for (const group of this.groupResults(extra)) {
       this.renderEntryCard(this.resultsEl, group);
     }
+    // The arrival's cause may live in a sidecar card that only now exists —
+    // the light must land on the ASYNC half too, or the hold-chip road lights
+    // nothing exactly when the word came from the big dictionaries (the
+    // aperture-bug class: the mechanism ran, the async door missed it).
+    this.afterRender();
   }
 
   private showSuggestions(prefix: string): void {
@@ -907,6 +1355,8 @@ export class DictionaryView extends ItemView {
       }
     }
     this.setStats(query, results.length, !!this.bigDict, allDeinflected(results));
+    this.historyStore?.record(query);
+    this.afterRender();
     void this.appendBigResults(query, gen, results, narrowing);
   }
 
@@ -1806,6 +2256,22 @@ export class DictionaryView extends ItemView {
       cls: 'jp-dict-home-hint',
     });
 
+    // Where you have been — the home screen answers it before you type
+    // (item 16). Eight recent doors; the full dated list is one tap away.
+    const recent = this.historyStore?.rows().slice(0, 8) ?? [];
+    if (recent.length) {
+      const sec = home.createDiv('jp-dict-hist jp-dict-hist--home');
+      const head = sec.createDiv('jp-dict-hist-day');
+      head.setText('最近');
+      const all = head.createEl('button', { text: 'すべての履歴 ⏱', cls: 'jp-dict-hist-all' });
+      all.addEventListener('click', () => this.showHistory());
+      for (const r of recent) {
+        const row = sec.createDiv('jp-dict-hist-row');
+        row.createSpan({ text: r.word, cls: 'jp-dict-hist-word' });
+        row.addEventListener('click', () => this.lookupWord(r.word, { tempo: 'descend' }));
+      }
+    }
+
     // §27.5 the converted sidecars, biggest first (BigDictStore's order).
     for (const d of this.bigInstalled) {
       const card = home.createDiv('jp-dict-info-card');
@@ -1850,6 +2316,7 @@ export class DictionaryView extends ItemView {
       if (meta.hasPitch) badges.createSpan({ text: '🎵 Pitch', cls: 'jp-dict-info-badge' });
       badges.createSpan({ text: `v${meta.revision}`, cls: 'jp-dict-info-badge' });
     }
+    this.renderNavBar();
   }
 
   private renderEmpty(message: string): void {

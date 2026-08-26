@@ -22,6 +22,7 @@ import type {
 import { DEFAULT_DICTIONARY_SETTINGS } from './types';
 import { toHiragana, normalizeJapanese, isJapanese } from '../utils/japanese';
 import { deinflect } from './deinflect';
+import { buildNeighborIndex, neighborsOf, type NavHeadword, type NeighborIndex } from './dict-nav';
 
 // ── Serialization types (Maps → plain objects) ───────────────
 
@@ -154,6 +155,36 @@ export class DictionaryStore {
     return total;
   }
 
+  // ── Neighbours (dict-nav.ts) ───────────────────────────────
+  //
+  // The dictionary as a walkable order: every headword has a left and a right
+  // neighbour in reading (gojūon) order, like a page in a physical book —
+  // Monokakido's bottom-corner chips (コマ送り item 8). The index is built
+  // lazily and keyed on (enabled set × installed set), so importing, removing
+  // or toggling a dictionary self-invalidates without any hook wiring; term
+  // data inside a dictionary never mutates after install, so the key is
+  // sufficient. Cost: one flatten + sort per mutation, milliseconds at the
+  // blob cap (120k terms), never per lookup.
+  private navCache: { key: string; index: NeighborIndex } | null = null;
+
+  neighbors(query: string): ReturnType<typeof neighborsOf> {
+    const q = normalizeJapanese(query.trim());
+    if (!q) return null;
+    // Mirror lookupSurface exactly: only ENABLED dictionaries are places.
+    const enabled = this.settings.enabledDictionaries.filter(t => this.dictionaries.has(t));
+    const key = [...enabled].sort().join('\u0001');
+    if (!this.navCache || this.navCache.key !== key) {
+      const entries: NavHeadword[] = [];
+      for (const title of enabled) {
+        const dict = this.dictionaries.get(title);
+        if (!dict) continue;
+        for (const t of dict.terms) entries.push({ expression: t.expression, reading: t.reading });
+      }
+      this.navCache = { key, index: buildNeighborIndex(entries) };
+    }
+    return neighborsOf(this.navCache.index, q);
+  }
+
   // ── Lookup ─────────────────────────────────────────────────
 
   /**
@@ -184,6 +215,29 @@ export class DictionaryStore {
       if (results.length >= this.settings.maxResults) break;
     }
     return results.slice(0, this.settings.maxResults);
+  }
+
+  /**
+   * Exact-surface EXISTENCE test — no result assembly, no deinflection
+   * fallback. §29 rung 0's oracle asks this thousands of times per keystroke
+   * (every extension probe of every occurrence), and almost every probe is a
+   * miss; `lookup()` answers a miss by running the whole deinflection
+   * fallback, which is pure waste when the question is only "is this surface
+   * a headword". Same truth as `lookup(s).some(r => !r.deinflection)`,
+   * measured severalfold cheaper on misses.
+   */
+  hasExactSurface(query: string): boolean {
+    const normalized = normalizeJapanese(query.trim());
+    if (!normalized) return false;
+    const hiragana = toHiragana(normalized);
+    for (const title of this.settings.enabledDictionaries) {
+      const dict = this.dictionaries.get(title);
+      if (!dict) continue;
+      if (dict.expressionIndex.has(normalized)) return true;
+      if (dict.readingIndex.has(normalized)) return true;
+      if (hiragana !== normalized && dict.readingIndex.has(hiragana)) return true;
+    }
+    return false;
   }
 
   /** Exact expression/reading lookup for one surface (no deinflection). */
