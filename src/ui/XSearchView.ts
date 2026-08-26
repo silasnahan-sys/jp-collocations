@@ -42,6 +42,8 @@ export const JP_X_VIEW_TYPE = 'jp-x-search-view';
 
 /** Callbacks the view needs from the plugin. */
 import { occurrences, trueHits, partialLabel, rankByClass, type Oracle, type Probe } from '../x/relevance.ts';
+import { descend, verdictLine, type ProbeResult } from '../x/probe.ts';
+import { tokenizeForCanvas } from '../notes/token-canvas.ts';
 
 export interface XViewDeps {
   corpus: XCorpusStore;
@@ -106,6 +108,10 @@ export class XSearchView extends ItemView {
 
   private query: XSearchQuery;
   private mainInput: HTMLInputElement | null = null;
+  /** §29 rung 3 — the ladder walks the whole corpus per rung, so it is
+   *  memoised the same way the KWIC panel is. The corpus is append-only,
+   *  so (term, size) misses only when the answer would really differ. */
+  private descentCache: { term: string; size: number; result: ProbeResult } | null = null;
   private chipsEl: HTMLElement | null = null;
   private advancedEl: HTMLElement | null = null;
   private advancedOpen = false;
@@ -486,6 +492,17 @@ export class XSearchView extends ItemView {
     if (this.loadMoreEl) this.loadMoreEl.empty();
 
     if (results.length === 0) {
+      /**
+       * §29 RUNG 3 — at this corpus size silence is the MODAL answer, and an
+       * empty box throws the finding away. The interesting fact is never that
+       * the corpus lacks your sentence; it is WHICH PIECE it lacks and what it
+       * holds instead. So a single-term miss gets the descent ladder and a
+       * verdict labelled by kind, not a shrug.
+       */
+      if (single && this.deps.oracle && total > 0) {
+        this.renderDescent(single);
+        return;
+      }
       const empty = this.resultsEl.createDiv('jp-x-empty');
       empty.createDiv({ cls: 'jp-x-empty-icon', text: '🔍' });
       empty.createDiv({
@@ -551,6 +568,77 @@ export class XSearchView extends ItemView {
         if (open) body.show(); else body.hide();
         paint(open);
       };
+    }
+  }
+
+  /** What each stop rule means, said in the open rather than logged. */
+  private static readonly STOP_WHY: Record<string, string> = {
+    床: 'これ以上は短すぎて問いにならない',
+    逸: 'これ以上外すと別の問いになる',
+    平: '外しても件数が増えない — ここが答え',
+  };
+
+  /**
+   * §29 rung 3 on screen. Every attested rung is a DOOR: tapping it re-asks
+   * the corpus that question, so the ladder is a way to move rather than a
+   * report to read. Unattested rungs stay flat — a door onto nothing is the
+   * seam this whole section exists to remove.
+   */
+  private renderDescent(term: string): void {
+    if (!this.resultsEl || !this.deps.oracle) return;
+    const oracle = this.deps.oracle;
+    const all = this.deps.corpus.getAll();
+
+    let result: ProbeResult;
+    const cached = this.descentCache;
+    if (cached && cached.term === term && cached.size === all.length) {
+      result = cached.result;
+    } else {
+      const count = (span: string) => {
+        let occ = 0, docs = 0;
+        const voices = new Set<string>();
+        for (const t of all) {
+          let k = 0;
+          let i = t.text.indexOf(span);
+          while (i !== -1) { k++; i = t.text.indexOf(span, i + 1); }
+          if (k) { occ += k; docs++; voices.add(t.authorHandle); }
+        }
+        return { occ, docs, authors: voices.size };
+      };
+      const pieces = tokenizeForCanvas(term, oracle.isWord).map((t) => t.text);
+      result = descend(term, pieces, count, { isWord: oracle.isWord });
+      this.descentCache = { term, size: all.length, result };
+    }
+
+    const box = this.resultsEl.createDiv('jp-x-descent');
+    box.createDiv({ cls: 'jp-x-descent-verdict', text: verdictLine(result) });
+
+    const ladder = box.createDiv('jp-x-descent-ladder');
+    for (const rung of result.rungs) {
+      const attested = rung.count.occ > 0;
+      const row = ladder.createEl(attested ? 'button' : 'div', {
+        cls: 'jp-x-descent-rung' + (attested ? ' jp-x-descent-rung--door' : ''),
+      });
+      row.createSpan({
+        cls: 'jp-x-descent-drop',
+        text: rung.dropped ? `−${rung.dropped.text}` : '',
+      });
+      row.createSpan({ cls: 'jp-x-descent-span', text: rung.span });
+      row.createSpan({
+        cls: 'jp-x-descent-count',
+        text: attested ? `${rung.count.occ}件 / ${rung.count.authors}人` : '0件',
+      });
+      if (attested) {
+        (row as HTMLButtonElement).onclick = () => this.searchFor(rung.span, false);
+        row.setAttr('title', `${rung.span} で引き直す`);
+      }
+    }
+
+    if (result.stoppedBy) {
+      box.createDiv({
+        cls: 'jp-x-descent-stop',
+        text: `停止: ${result.stoppedBy} — ${XSearchView.STOP_WHY[result.stoppedBy] ?? ""}`,
+      });
     }
   }
 
