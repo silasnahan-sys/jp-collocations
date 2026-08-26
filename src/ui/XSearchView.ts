@@ -23,6 +23,7 @@ import { XClient, XScrapeError } from '../x/XClient';
 import type { XSettings, XSearchQuery, XSearchProduct, XTweet, SavedQuery } from '../x/x-types';
 import { emptyQuery } from '../x/x-types';
 import { parseTerms, highlightTerms, isEmptyQuery } from '../x/query-builder';
+import { parseTerm, notationHint } from '../x/query-notation';
 import { runSavedQuery, runAllSavedQueries, extractTweetId } from '../x/saved-queries';
 import { exportTweetsToVault } from '../x/export-notes';
 import { formatTweetCallout, shouldCollapse } from '../x/tweet-format';
@@ -108,6 +109,7 @@ export class XSearchView extends ItemView {
 
   private query: XSearchQuery;
   private mainInput: HTMLInputElement | null = null;
+  private notationHintEl: HTMLElement | null = null;
   /** §29 rung 3 — the ladder walks the whole corpus per rung, so it is
    *  memoised the same way the KWIC panel is. The corpus is append-only,
    *  so (term, size) misses only when the answer would really differ. */
@@ -232,11 +234,17 @@ export class XSearchView extends ItemView {
     const searchRow = (wide ?? header).createDiv('jp-x-search-row');
     this.mainInput = searchRow.createEl('input', {
       type: 'search',
-      placeholder: '語をスペース区切りで（AND）… 例: 以前の でさえ',
+      placeholder: '語=AND ・ 〜=語順と近接 ・ ○○=スロット … 例: はず〜まずは',
       cls: 'jp-x-search-input',
       attr: { autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', enterkeyhint: 'search' },
     });
-    this.mainInput.addEventListener('input', () => this.onInput());
+    // The two-languages lesson (IMG_1197): a search grammar nobody is
+    // taught is a refusal waiting to be filmed. The 辞書 box teaches its
+    // tilde modes in place; this one says, per term, what it just read the
+    // notation to MEAN — so 〜 is confirmed as an ordered window before the
+    // hand spends a query discovering it.
+    this.notationHintEl = (wide ?? header).createDiv('jp-x-notation-hint');
+    this.mainInput.addEventListener('input', () => { this.renderNotationHint(); this.onInput(); });
     this.mainInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -355,6 +363,25 @@ export class XSearchView extends ItemView {
 
     textField('期間 since:', 'YYYY-MM-DD', () => this.query.since, (v) => { this.query.since = v; });
     textField('期間 until:', 'YYYY-MM-DD', () => this.query.until, (v) => { this.query.until = v; });
+  }
+
+  /**
+   * Say what the notation in the box was read to mean — one line per term
+   * that carries any, nothing at all when every term is a plain literal.
+   * A hint that fires on ordinary typing is chrome; this one only speaks
+   * when there is a grammar to explain.
+   */
+  private renderNotationHint(): void {
+    const el = this.notationHintEl;
+    if (!el) return;
+    const raw = this.mainInput?.value ?? "";
+    const lines = parseTerms(raw)
+      .map((t) => notationHint(parseTerm(t, this.query.proximity)))
+      .filter((s): s is string => !!s);
+    el.empty();
+    if (!lines.length) { el.hide(); return; }
+    el.show();
+    for (const line of lines) el.createDiv({ cls: "jp-x-notation-hint-row", text: line });
   }
 
   // ── Query collection ───────────────────────────────────────

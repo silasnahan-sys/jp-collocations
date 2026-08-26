@@ -39508,6 +39508,79 @@ var DictManageModal = class extends import_obsidian16.Modal {
   }
 };
 
+// src/x/query-notation.ts
+var DEFAULT_PROXIMITY = 30;
+var SLOT_RE2 = /[○〇]{2,}/;
+var LINK_RE = /[〜~～→⇒]/;
+function parseTerm(term, window2 = DEFAULT_PROXIMITY) {
+  const raw = term.trim();
+  if (SLOT_RE2.test(raw)) {
+    const fixed = raw.split(SLOT_RE2).map((s) => s.trim()).filter(Boolean);
+    if (fixed.length)
+      return { kind: "frame", raw, parts: fixed, fixed, window: window2 };
+  }
+  if (LINK_RE.test(raw)) {
+    const parts = raw.split(LINK_RE).map((s) => s.trim()).filter(Boolean);
+    if (parts.length >= 2)
+      return { kind: "proximity", raw, parts, window: window2 };
+  }
+  return { kind: "literal", raw, parts: [raw], window: window2 };
+}
+function walkOrdered(text, parts, window2) {
+  if (!parts.length)
+    return { hit: false };
+  let from = 0;
+  let start = -1;
+  let cursor = -1;
+  let gap = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const at = text.indexOf(parts[i], from);
+    if (at === -1)
+      return { hit: false };
+    if (i === 0) {
+      start = at;
+    } else {
+      const between = at - cursor;
+      if (between > window2)
+        return { hit: false };
+      gap += Math.max(0, between);
+    }
+    cursor = at + parts[i].length;
+    from = cursor;
+  }
+  return { hit: true, span: [start, cursor], gap };
+}
+function termMatches(text, p) {
+  var _a2;
+  switch (p.kind) {
+    case "literal": {
+      const at = text.indexOf(p.parts[0]);
+      return at === -1 ? { hit: false } : { hit: true, span: [at, at + p.parts[0].length], gap: 0 };
+    }
+    case "proximity":
+      return walkOrdered(text, p.parts, p.window);
+    case "frame":
+      return walkOrdered(text, (_a2 = p.fixed) != null ? _a2 : p.parts, p.window);
+  }
+}
+function probeOf(p) {
+  let best = "";
+  for (const s of p.parts)
+    if (s.length > best.length)
+      best = s;
+  return best;
+}
+function notationHint(p) {
+  switch (p.kind) {
+    case "proximity":
+      return `${p.parts.join(" \u2192 ")} \u2014 \u3053\u306E\u9806\u3067 ${p.window}\u5B57\u4EE5\u5185`;
+    case "frame":
+      return `${p.raw} \u2014 \u25CB\u25CB\u306F\u4EFB\u610F\uFF08${p.window}\u5B57\u307E\u3067\uFF09`;
+    default:
+      return null;
+  }
+}
+
 // src/x/XCorpusStore.ts
 var CORPUS_VERSION = 1;
 var XCorpusStore = class {
@@ -39703,7 +39776,7 @@ var XCorpusStore = class {
   candidateIds(q) {
     let probe = "";
     for (const t of q.allTerms) {
-      const n = normTerm(t);
+      const n = probeOf(parseTerm(normTerm(t)));
       if (n.length >= 2 && n.length > probe.length)
         probe = n;
     }
@@ -39734,19 +39807,20 @@ var XCorpusStore = class {
   }
   /** Full predicate match for one tweet against a query. */
   matches(t, q) {
-    var _a2;
+    var _a2, _b2;
     const text = (_a2 = this.normText.get(t.id)) != null ? _a2 : normalizeJapanese(t.text);
+    const win = (_b2 = q.proximity) != null ? _b2 : DEFAULT_PROXIMITY;
     for (const term of q.allTerms) {
-      if (!text.includes(normTerm(term)))
+      if (!termMatches(text, parseTerm(normTerm(term), win)).hit)
         return false;
     }
     if (q.anyTerms.length > 0) {
-      const hit = q.anyTerms.some((term) => text.includes(normTerm(term)));
+      const hit = q.anyTerms.some((term) => termMatches(text, parseTerm(normTerm(term), win)).hit);
       if (!hit)
         return false;
     }
     for (const term of q.noneTerms) {
-      if (text.includes(normTerm(term)))
+      if (termMatches(text, parseTerm(normTerm(term), win)).hit)
         return false;
     }
     if (q.lang && t.lang && t.lang !== q.lang)
@@ -41194,6 +41268,7 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
   constructor(leaf, deps) {
     super(leaf);
     this.mainInput = null;
+    this.notationHintEl = null;
     /** §29 rung 3 — the ladder walks the whole corpus per rung, so it is
      *  memoised the same way the KWIC panel is. The corpus is append-only,
      *  so (term, size) misses only when the answer would really differ. */
@@ -41292,11 +41367,15 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
     const searchRow = (wide != null ? wide : header).createDiv("jp-x-search-row");
     this.mainInput = searchRow.createEl("input", {
       type: "search",
-      placeholder: "\u8A9E\u3092\u30B9\u30DA\u30FC\u30B9\u533A\u5207\u308A\u3067\uFF08AND\uFF09\u2026 \u4F8B: \u4EE5\u524D\u306E \u3067\u3055\u3048",
+      placeholder: "\u8A9E=AND \u30FB \u301C=\u8A9E\u9806\u3068\u8FD1\u63A5 \u30FB \u25CB\u25CB=\u30B9\u30ED\u30C3\u30C8 \u2026 \u4F8B: \u306F\u305A\u301C\u307E\u305A\u306F",
       cls: "jp-x-search-input",
       attr: { autocomplete: "off", autocapitalize: "off", spellcheck: "false", enterkeyhint: "search" }
     });
-    this.mainInput.addEventListener("input", () => this.onInput());
+    this.notationHintEl = (wide != null ? wide : header).createDiv("jp-x-notation-hint");
+    this.mainInput.addEventListener("input", () => {
+      this.renderNotationHint();
+      this.onInput();
+    });
     this.mainInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
@@ -41434,6 +41513,28 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
     textField("\u671F\u9593 until:", "YYYY-MM-DD", () => this.query.until, (v) => {
       this.query.until = v;
     });
+  }
+  /**
+   * Say what the notation in the box was read to mean — one line per term
+   * that carries any, nothing at all when every term is a plain literal.
+   * A hint that fires on ordinary typing is chrome; this one only speaks
+   * when there is a grammar to explain.
+   */
+  renderNotationHint() {
+    var _a2, _b2;
+    const el = this.notationHintEl;
+    if (!el)
+      return;
+    const raw = (_b2 = (_a2 = this.mainInput) == null ? void 0 : _a2.value) != null ? _b2 : "";
+    const lines = parseTerms(raw).map((t) => notationHint(parseTerm(t, this.query.proximity))).filter((s) => !!s);
+    el.empty();
+    if (!lines.length) {
+      el.hide();
+      return;
+    }
+    el.show();
+    for (const line of lines)
+      el.createDiv({ cls: "jp-x-notation-hint-row", text: line });
   }
   // ── Query collection ───────────────────────────────────────
   collectMainTerms() {

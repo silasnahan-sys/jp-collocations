@@ -89,6 +89,13 @@ export interface XSearchQuery {
   minRetweets: number;
   /** min_replies threshold (0 = no filter). */
   minReplies: number;
+  /**
+   * How far apart the parts of a notation term may sit and still be one
+   * construction (query-notation.ts). Optional: absent means the stated
+   * default, and it is a KNOB because a construction is clause-scale and the
+   * hand should be able to say otherwise without editing a matcher.
+   */
+  proximity?: number;
   /** since:YYYY-MM-DD (inclusive). Empty = no lower bound. */
   since: string;
   /** until:YYYY-MM-DD (exclusive, per X semantics). Empty = no upper bound. */

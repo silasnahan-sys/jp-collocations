@@ -419,6 +419,36 @@ console.log('\n D7. the entry stratum: door in, pages, overflow, door out');
   }
 }
 
+// ── D8. the 𝕏 query reads patterns, and the index can be asked ────────
+//
+// The report: proximity and patternistic matching were asked for and were
+// not there — matches() tested every term with `includes`, so two words
+// three sentences apart scored like a construction. The pure grammar is
+// golden/x-notation.mjs; these are the two apertures that decide whether
+// it reaches a query at all — the matcher must USE it, and the bigram
+// probe must ask the index for a string a tweet could actually contain.
+console.log('\n D8. \u{1D54F}: terms are patterns, and the probe is askable');
+{
+  const store = read('x', 'XCorpusStore.ts');
+  const view = read('ui', 'XSearchView.ts');
+  const css = readFileSync(join(HERE, '..', 'styles.css'), 'utf8');
+  check('matches() reads terms as patterns, not substrings',
+    /termMatches\(text, parseTerm\(/.test(store));
+  check('and the old bag-of-substrings test is gone',
+    !/text\.includes\(normTerm\(term\)\)/.test(store));
+  // Load-bearing: 「はず〜まずは」 is in no tweet ever written, so probing
+  // the index with the raw term answers 0件 while the matcher works fine.
+  check('the bigram probe uses the LITERAL material only',
+    /probeOf\(parseTerm\(normTerm\(t\)\)\)/.test(store));
+  check('the window is a query field, not a buried constant',
+    /proximity\?: number/.test(readFileSync(join(SRC, 'x', 'x-types.ts'), 'utf8')));
+  // A grammar nobody is taught is a refusal waiting to be filmed.
+  check('the box teaches the notation in its placeholder', /\u301c=\u8a9e\u9806\u3068\u8fd1\u63a5/.test(view));
+  check('and says per term what it just read it to mean',
+    /notationHint\(parseTerm\(/.test(view) && /renderNotationHint\(\)/.test(view));
+  check('the hint has somewhere to render', /jp-x-notation-hint/.test(css));
+}
+
 // ── the ledger must not rot ───────────────────────────────────────────────────
 //
 // An allow-list nobody prunes becomes permission. Every entry above is asserted

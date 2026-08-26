@@ -1455,6 +1455,18 @@ body.jp-posture-thumb .jp-dismiss { order: 99; }
    line is ever cut in half and a page turn is a page turn. touch-action
    stays pan-y (house rule 11) — the horizontal axis is taken by the pan
    handler, the vertical one is left to whatever legitimately scrolls. */
+/* what the 𝕏 box just read the notation to MEAN — speaks only when there
+   is a grammar to explain, so ordinary typing stays silent */
+.jp-x-notation-hint {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 8px 4px;
+}
+.jp-x-notation-hint-row {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
 .jp-dict-article {
   flex: 1;
   min-height: 0;

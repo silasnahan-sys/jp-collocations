@@ -2931,3 +2931,34 @@ characters.
 
 Suite after this pass: 94 suites, reachability 79 checks, debt 8 (unchanged
 and still true — nothing here touches the Elecom substrate).
+
+### 30.4 記事 + 語順と近接 — the two glass reports of 2026-08-26 (SHIPPED)
+
+**The nav (記事).** Second report: 「a mix of vertical and horizontal with
+kindle page turn like feel in some ways but not others」. v1.1.0 had given the
+pan correct physics and wired it to the neighbouring HEADWORD — still
+list-level motion. The 辞書 had ONE stratum, so the second axis had nothing to
+mean. Now: list ↕ among entries, entry ↔ through ONE entry, and past the last
+page the neighbour — the drag-past-end reading of the filmed 唾を付ける drag.
+縦書き stays refused, so pagination comes from the user's other reference:
+CSS multi-column reflow (Kindle), never a clipped scroll. `stepPage` returns an
+OVERFLOW rather than clamping — the end of an article is a door, not a wall.
+
+**𝕏 (語順と近接).** Second report: 「x dict doesnt seem to have the word
+proximity and patternistic matching i asked for」. It did not: `matches()` tested
+every term with `includes`, so two words anywhere in one tweet scored like a
+construction. MEASURED on the live corpus: はず + まずは as substrings = 9 hits,
+with the two words **199 to 11,214 characters apart** — long posts, not one a
+construction. Ordered within 30 chars = 0, which is the true answer.
+
+The move was to invent no query language: the box now speaks the notation the
+hand already writes, one alphabet shared with derive and save. はず〜まずは =
+ordered within a window; ○○として = a slot. Order is meaning (the reverse is a
+different construction); the window is a query field, not a buried constant;
+a bare or trailing mark stays a literal so a half-typed query is never
+silently reinterpreted. The bigram probe uses the LITERAL material only —
+「はず〜まずは」 is in no tweet ever written, and probing the index with the raw
+term would answer 0件 while the matcher worked perfectly.
+
+Apertures: reachability D7 (13 checks) and D8 (7). 95 suites, reachability 99
+checks, debt 8 unchanged.

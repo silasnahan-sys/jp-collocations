@@ -14,6 +14,7 @@
 
 import type { XTweet, XSearchQuery, XCorpusData } from './x-types';
 import { normTerm } from './query-builder';
+import { parseTerm, termMatches, probeOf, DEFAULT_PROXIMITY } from './query-notation';
 import { normalizeJapanese } from '../utils/japanese';
 
 const CORPUS_VERSION = 1;
@@ -225,10 +226,15 @@ export class XCorpusStore {
 
   /** Narrow to a candidate id set using the bigram index, else everything. */
   private candidateIds(q: XSearchQuery): Iterable<string> {
-    // Use the longest required term (>=2 chars) as the selective probe.
+    // Use the longest required term (>=2 chars) as the selective probe —
+    // but of its LITERAL material only. The bigram index is built over
+    // tweet text, and 「はず〜まずは」 appears in no tweet ever written, so
+    // probing with the raw term would return an empty candidate set and
+    // every notation query would answer 0件 while matches() sat there
+    // working perfectly.
     let probe = '';
     for (const t of q.allTerms) {
-      const n = normTerm(t);
+      const n = probeOf(parseTerm(normTerm(t)));
       if (n.length >= 2 && n.length > probe.length) probe = n;
     }
     if (!probe) return this.tweets.keys();
@@ -257,15 +263,21 @@ export class XCorpusStore {
   private matches(t: XTweet, q: XSearchQuery): boolean {
     const text = this.normText.get(t.id) ?? normalizeJapanese(t.text);
 
+    // A term is a PATTERN, not a string (query-notation.ts). はず〜まずは
+    // means "はず then まずは, in order, within the window" — the old
+    // `includes` said yes to the two words three sentences apart, which is
+    // a bag of substrings and not a search for a construction.
+    // Normalize first: NFKC folds ～ to ~, which the alphabet already knows.
+    const win = q.proximity ?? DEFAULT_PROXIMITY;
     for (const term of q.allTerms) {
-      if (!text.includes(normTerm(term))) return false;
+      if (!termMatches(text, parseTerm(normTerm(term), win)).hit) return false;
     }
     if (q.anyTerms.length > 0) {
-      const hit = q.anyTerms.some(term => text.includes(normTerm(term)));
+      const hit = q.anyTerms.some((term) => termMatches(text, parseTerm(normTerm(term), win)).hit);
       if (!hit) return false;
     }
     for (const term of q.noneTerms) {
-      if (text.includes(normTerm(term))) return false;
+      if (termMatches(text, parseTerm(normTerm(term), win)).hit) return false;
     }
 
     if (q.lang && t.lang && t.lang !== q.lang) return false;
