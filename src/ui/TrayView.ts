@@ -14,7 +14,7 @@
 
 import { ItemView, WorkspaceLeaf, Notice, normalizePath, setIcon, TFile } from 'obsidian';
 import type { InboxStore, InboxCard, ReadingSession, MarkRef, MarkClip } from '../notes/inbox.ts';
-import { shapeDrop, imageCard, sessionGroups } from '../notes/inbox.ts';
+import { shapeDrop, imageCard, sessionGroups, nowlineIndex, nowlineLabel } from '../notes/inbox.ts';
 import { fmtStamp } from '../notes/srt.ts';
 import type { CaptureContext } from './CaptureModal.ts';
 import { NOTE_TYPES, type NoteClass } from '../notes/note-types.ts';
@@ -76,6 +76,10 @@ export interface TrayDoor {
 
 export interface TrayDeps {
   store: InboxStore;
+  /** 現在線 (§2.5): when this tray was last stood in front of (epoch ms). */
+  lastVisit?: () => number;
+  /** …and the moment this sitting ends. */
+  markVisit?: (t: number) => void;
   /** §30 the front door. Absent → the tray renders as it always did. */
   doors?: () => TrayDoor[];
   openCapture: (ctx: CaptureContext) => void;
@@ -128,10 +132,23 @@ export class TrayView extends ItemView {
   getDisplayText(): string { return '収集トレイ'; }
   getIcon(): string { return 'inbox'; }
 
+  /** 現在線: the reading position, frozen for the sitting. The rail must not
+   *  tick while you stand here — the eye arranges against a LANDMARK. */
+  private visitFloor = 0;
+  private nowlineScrolled = false;
+
   async onOpen(): Promise<void> {
     this.contentEl.setAttr('tabindex', '0');
     this.registerDomEvent(this.contentEl, 'keydown', (e) => this.onKey(e));
+    this.visitFloor = this.deps.lastVisit?.() ?? 0;
+    this.nowlineScrolled = false;
     this.render();
+  }
+
+  async onClose(): Promise<void> {
+    // The sitting ends — the rail's next position is set NOW, so tomorrow's
+    // open draws the line exactly where today's reading stopped.
+    this.deps.markVisit?.(Date.now());
   }
 
   /** Re-render from outside (a reach was opened, or the watcher made offers). */
@@ -176,6 +193,10 @@ export class TrayView extends ItemView {
     if (!c) return;
     if (k === 'x' || e.key === 'Delete' || e.key === 'Backspace') {
       return go(async () => { await this.deps.store.remove(c.id); this.focusId = null; this.render(); });
+    }
+    if (k === 'd') {
+      // 鋳造's keyboard form: mint a twin beside the focused card.
+      return go(async () => { await this.deps.store.duplicate(c.id); this.render(); });
     }
     if (k === 'e' || e.key === 'Enter') {
       return go(() => {
@@ -244,7 +265,7 @@ export class TrayView extends ItemView {
 
     // §23.5 keyboard hints, visible in place
     const keys = root.createDiv('jp-dm-keys jp-tray-keys');
-    for (const [key, label] of [['j/k', '移動'], ['⏎/e', '分類'], ['x', '削除']] as const) {
+    for (const [key, label] of [['j/k', '移動'], ['⏎/e', '分類'], ['d', '複製'], ['x', '削除']] as const) {
       const chip = keys.createSpan('jp-dm-key');
       chip.createEl('kbd', { text: key });
       chip.createSpan({ text: label });
@@ -269,11 +290,30 @@ export class TrayView extends ItemView {
       ...groups.map((g) => ({ at: g.end, group: g })),
       ...all.filter((c) => c.kind !== 'image').map((c) => ({ at: c.createdAt, card: c })),
     ].sort((a, b) => b.at - a.at);
-    for (const item of feed) {
+    // 現在線 (§2.5): the thin always-on rail between what arrived since you
+    // last stood here and everything already triaged past. Minute-exact,
+    // renders through the feed, holds still for the whole sitting. Arriving
+    // at the tray lands AT it (the one scroll below, once per open) — the
+    // back-stroke returns you to your reading position, not to the top.
+    const railAt = nowlineIndex(feed.map((i) => i.at), this.visitFloor);
+    let rail: HTMLElement | null = null;
+    const drawRail = (): void => {
+      rail = list.createDiv('jp-tray-nowline');
+      rail.createSpan({ text: nowlineLabel(this.visitFloor, Date.now()), cls: 'jp-tray-nowline-label' });
+    };
+    for (let fi = 0; fi < feed.length; fi++) {
+      if (fi === railAt) drawRail();
+      const item = feed[fi];
       if (item.card) { this.renderCard(list, item.card); continue; }
       const g = item.group!;
       if (g.cards.length < 2) { this.renderCard(list, g.cards[0]); continue; }
       this.renderSession(list, g);
+    }
+    if (railAt === feed.length && feed.length) drawRail();
+    if (rail && !this.nowlineScrolled) {
+      this.nowlineScrolled = true;
+      // after paint — landing at the line, not yanking during later renders
+      requestAnimationFrame(() => rail?.scrollIntoView({ block: 'center' }));
     }
 
     // After the paint, never during it. Resolves each mark's line exactly once
@@ -920,6 +960,25 @@ export class TrayView extends ItemView {
         text: '',
         source: { kind: 'web', url: c.content, sourceName: c.origin },
       });
+    }
+
+    // 鋳造 (CALENDAR-PHYSICS §2.3): every card can mint a twin beside itself
+    // — one tap at the object, no dialog, no aim. The Calendar gesture was
+    // long-press → menu → Duplicate; here the actions row IS the menu at the
+    // object, and long-press stays with what it already means on text: the
+    // OS selection. (`d` on a focused card is the keyboard form.)
+    {
+      const acts = card.querySelector<HTMLElement>('.jp-tray-card-actions')
+        ?? card.createDiv('jp-tray-card-actions');
+      const mintBtn = acts.createEl('button', {
+        text: '⧉', cls: 'jp-tray-classify jp-tray-mint',
+        attr: { title: '複製 — 隣に鋳造', 'aria-label': '複製' },
+      });
+      mintBtn.onclick = async (e) => {
+        e.stopPropagation();
+        await this.deps.store.duplicate(c.id);
+        this.render();
+      };
     }
   }
 }

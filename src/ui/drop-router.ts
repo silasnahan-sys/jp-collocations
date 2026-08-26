@@ -31,7 +31,7 @@
  * apologises.
  */
 
-import { dropIntents, type DropIntent, type DropSample, type DropSurface } from '../notes/drop-intent.ts';
+import { dropIntents, atenaFor, type DropIntent, type DropSample, type DropSurface } from '../notes/drop-intent.ts';
 import type { InVault } from '../notes/resource-url.ts';
 import { registerPointerDropZone } from './pointer-drag.ts';
 import type { DragPayload } from './drag-out.ts';
@@ -369,6 +369,9 @@ export function attachDropRouter(root: HTMLElement, deps: DropRouterDeps): () =>
       teardown();
       void deps.run(chosen, []);
     },
+    // 宛名札 — reads the SAME rack and the SAME aim as drop() above, so the
+    // line at the nib and the act on release cannot disagree (§2.2).
+    address: (x, y) => cards.length ? atenaFor(cards, cardAtPoint(x, y), ctx().surface) : null,
   });
 
   root.addEventListener('dragenter', onEnter);

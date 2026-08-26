@@ -314,6 +314,32 @@ console.log('\n D4. the 辞書 nav grammar: armed, twinned, and lit on both halv
   const css = readFileSync(join(HERE, '..', 'styles.css'), 'utf8');
   check('no unconditional animation on .jp-dict-card (re-filter must not move)',
     !/\.jp-dict-card\s*\{[^}]*animation\s*:/s.test(css));
+  // The two-languages lesson (IMG_1197): a search grammar nobody is taught
+  // is a refusal waiting to be filmed. The box teaches its own modes.
+  check('the search box teaches the tilde grammar in place',
+    /後方一致/.test(dict) && /searchNotation/.test(dict));
+  // Items 12–13: the echo carries 台帳 state on every armed surface.
+  const echo = read('ui', 'selection-echo.ts');
+  check('the echo says もう台帳にある and opens the entry',
+    /もう台帳にある/.test(echo) && /openPattern/.test(echo));
+  check('peekChrome wires the state once for every surface',
+    /patternsIn: \(text\) => this\.patternsIn\(text\)/.test(main));
+}
+
+// ── D5. the carried thing is always addressed (宛名札, §2.2) ────────────────
+//
+// The address must be WIRED at all three stations, or a carry goes back to
+// being "somewhere": the pill renders it, the router answers it from the
+// same rack drop() reads, and the hold chip names its toss.
+console.log('\n D5. 宛名札 — pill renders, router answers, toss is named');
+{
+  const pdrag = read('ui', 'pointer-drag.ts');
+  check('the carry renders the address chip', /jp-atena/.test(pdrag) && /setAtena\(/.test(pdrag));
+  check('the address updates at the hit-test beat', /zone\?\.address\?\.\(/.test(pdrag));
+  const router = read('ui', 'drop-router.ts');
+  check('the router answers address() from the SAME rack as drop()', /address: \(x, y\)/.test(router) && /atenaFor\(/.test(router));
+  const dock = read('ui', 'hold-dock.ts');
+  check('the hold toss names its landing', /収集トレイ/.test(dock) && /jp-atena--hold/.test(dock));
 }
 
 // ── the ledger must not rot ───────────────────────────────────────────────────

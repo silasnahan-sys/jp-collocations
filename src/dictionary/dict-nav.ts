@@ -180,3 +180,22 @@ export function neighborsOf(
     next: i < index.order.length - 1 ? index.order[i + 1] : null,
   };
 }
+
+// ── The search notation: Starts/Ends in the alphabet the plugin already speaks ──
+
+/**
+ * Monokakido offers Equals / Starts / Ends as a dropdown; the plugin's users
+ * already write 〜たなら for "something before たなら" in every notation
+ * field. Same alphabet here: a leading tilde is Ends, a trailing tilde is
+ * Starts, no tilde is the ordinary walk (exact → prefix → contains). All
+ * three tilde forms (〜 U+301C, ~ U+007E, ～ U+FF5E) are one mark — the
+ * third-alphabet lesson of the 2026-08-20 review.
+ */
+export function searchNotation(q: string): { mode: 'ends' | 'starts'; term: string } | null {
+  const t = q.trim();
+  const ends = /^[〜~～](.+)$/.exec(t);
+  if (ends) return { mode: 'ends', term: ends[1].trim() };
+  const starts = /^(.+?)[〜~～]$/.exec(t);
+  if (starts) return { mode: 'starts', term: starts[1].trim() };
+  return null;
+}

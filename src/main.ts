@@ -284,6 +284,8 @@ export default class JPCollocationsPlugin extends Plugin {
   private holdStore!: HoldStore;
   private holdDock!: HoldDock;
   private dictHistory!: DictHistoryStore;
+  /** 現在線 — when the tray was last stood in front of. */
+  private trayVisitAt = 0;
   /** §27.5 — the converted big dictionaries (vault sidecars, async lookup). */
   private bigDict!: BigDictStore;
   /**
@@ -602,6 +604,13 @@ export default class JPCollocationsPlugin extends Plugin {
       // grabbed with lands lit in the tan band (辞書 arrival grammar).
       lookup: (chip) => void this.openDictionaryView(chip.text, { light: chip.sentence }),
       discard: (chip) => { this.holdStore.release(chip.id); this.holdDock.render(); },
+      // 鋳造 (§2.3) — the twin seats beside its sibling; a cap overflow still
+      // lands in the tray, never the void (law 1).
+      mint: (chip) => {
+        const r = this.holdStore.mint(chip.id);
+        if (r?.evicted) void this.landHeldChip(r.evicted, /*rerender*/ false);
+        this.holdDock.render();
+      },
     });
     this.holdDock.mount();
 
@@ -625,8 +634,12 @@ export default class JPCollocationsPlugin extends Plugin {
 
     this.reachStore = new ReachStore((data) => this.dm.setKey("_reaches", data));
     this.reachStore.load((stored as { _reaches?: ReachData } | undefined)?._reaches);
+    // 現在線 (§2.5) — the tray's reading position, one number in the blob.
+    this.trayVisitAt = Number((stored as { _trayVisit?: unknown } | undefined)?._trayVisit) || 0;
     this.registerView(JP_TRAY_VIEW_TYPE, (leaf) => new TrayView(leaf, {
       store: this.inboxStore,
+      lastVisit: () => this.trayVisitAt,
+      markVisit: (t) => { this.trayVisitAt = t; void this.dm.setKey("_trayVisit", t); },
       // §30 — the front door. Every road that used to require knowing which of
       // 60 palette entries matched the medium in your hand.
       doors: () => this.trayDoors(),
@@ -643,9 +656,9 @@ export default class JPCollocationsPlugin extends Plugin {
       // §25.4: and can still have its scene cut, long after the watch ended
       clipForMark: Platform.isDesktopApp ? (card) => this.cutClipForMarkCard(card) : undefined,
       setMarkNote: async (id: string, text: string) => { await this.inboxStore.setMarkNote(id, text); },
-      // §28 S1: a dropped phrase you have already noticed says so
-      patternsIn: (text) => this.patternsIn(text),
-      openPattern: (id) => void this.openLexiconAt(id),
+      // §28 S1: a dropped phrase you have already noticed says so —
+      // patternsIn/openPattern now arrive via peekChrome() below, one wiring
+      // for every echo-armed surface (items 12–13).
       // §27.0.2 — the holes, held beside the stream that might fill them
       reaches: () => this.reachStore.all(),
       openReach: () => new ReachModal(this.app, async (want, gloss) => {
@@ -1188,6 +1201,18 @@ export default class JPCollocationsPlugin extends Plugin {
         const chip = this.holdStore.newest();
         if (!chip) { new Notice("何も持っていません", 4000); return; }
         void this.landHeldChip(chip);
+      },
+    });
+    // 鋳造 (§2.3) — the ⧉ verb's command twin.
+    this.addCommand({
+      id: "hold-mint",
+      name: "持っている一番新しいものを複製 — mint a twin beside it",
+      callback: () => {
+        const chip = this.holdStore.newest();
+        if (!chip) { new Notice("何も持っていません", 4000); return; }
+        const r = this.holdStore.mint(chip.id);
+        if (r?.evicted) void this.landHeldChip(r.evicted, false);
+        this.holdDock.render();
       },
     });
 
@@ -2716,9 +2741,8 @@ export default class JPCollocationsPlugin extends Plugin {
         }, this.makeCaptureDeps()).open();
       },
       // §28 S1: the X corpus is a view of the SAME lexicon. A tweet holding a
-      // pattern already in the 台帳 wears that pattern's class mark here too.
-      patternsIn: (text) => this.patternsIn(text),
-      openPattern: (id) => this.openLexiconAt(id),
+      // pattern already in the 台帳 wears that pattern's class mark here too
+      // (patternsIn/openPattern ride in on peekChrome() below).
       onDrop: (intent, files) => void this.runDropIntent(intent, files),
       dropCan: () => this.dropCapabilities(),
       openSurface: (s) => void this.openSurface(s),
@@ -4203,7 +4227,13 @@ export default class JPCollocationsPlugin extends Plugin {
    * no edge gesture, which is the one failure mode the invariant cannot
    * survive. Coupling them at one line makes that unforgettable.
    */
-  private peekChrome(): Pick<ViewChrome, "lookUp" | "openWord" | "backPeek" | "inVault" | "hold"> {
+  private peekChrome(): Pick<ViewChrome, "lookUp" | "openWord" | "backPeek" | "inVault" | "hold"> & {
+    // NonNullable: the chrome contract admits null so a VIEW FIELD can start
+    // unwired, but what THIS builder hands out is always the real closure —
+    // deps interfaces that take `?: fn` must not be poisoned by the union.
+    patternsIn: NonNullable<ViewChrome["patternsIn"]>;
+    openPattern: NonNullable<ViewChrome["openPattern"]>;
+  } {
     return {
       lookUp: (text, sentence) => this.lookUpPhrase(text, sentence),
       openWord: (hw) => void this.openDictionaryView(hw),
@@ -4211,6 +4241,9 @@ export default class JPCollocationsPlugin extends Plugin {
       inVault: (c) => this.resolveVaultPath(c),
       // Move 1 (掴む): every echo-armed surface grabs identically, wired once.
       hold: (text, surface, sentence) => this.holdText(text, surface, sentence),
+      // Items 12–13: the echo carries 台帳 state on every surface, wired once.
+      patternsIn: (text) => this.patternsIn(text),
+      openPattern: (id) => void this.openLexiconAt(id),
     };
   }
 

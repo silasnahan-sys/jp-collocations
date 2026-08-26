@@ -148,5 +148,54 @@ console.log('\n══ a mark carries WHAT WAS SAID, resolved once ══');
     store.marksNeedingLine().length === 0);
 }
 
+console.log('══ 鋳造: duplicate is a mint, and the copy seats beside its sibling ══');
+{
+  const s = new I.InboxStore(async () => {});
+  const a = I.shapeDrop('外的要因に左右される', 1000, 'test');
+  const b = I.shapeDrop('まったく別のカード', 2000, 'test');
+  await s.add(a);
+  await s.add(b);
+  const copy = await s.duplicate(a.id);
+  check('the twin exists with a fresh id', !!copy && copy.id !== a.id);
+  check('the twin keeps the sibling time (adjacent in the feed)', copy.createdAt === a.createdAt);
+  check('the twin carries the content', copy.content === a.content);
+  const order = s.all().map((c) => c.id);
+  check('the copy seats directly after the original',
+    order.indexOf(copy.id) === order.indexOf(a.id) + 1, order.join(','));
+  const copy2 = await s.duplicate(a.id);
+  check('a second mint gets its own id', copy2.id !== copy.id);
+  check('a ghost id mints nothing', await s.duplicate('inb-nope') === null);
+  // a shared container mutated later must not write through to the twin
+  const withSaid = I.shapeDrop('はず', 3000, 'test');
+  withSaid.said = 'やはり向き不向きがあるはずで';
+  await s.add(withSaid);
+  const twin = await s.duplicate(withSaid.id);
+  twin.said = '書き換えた';
+  check('twins are clones, not aliases', s.all().find((c) => c.id === withSaid.id).said === 'やはり向き不向きがあるはずで');
+}
+
+console.log('══ 現在線: the rail sits between the new and the already-read ══');
+{
+  const feed = [5000, 4000, 3000, 2000, 1000]; // desc, like the tray renders
+  check('the rail sits before the first already-seen item',
+    I.nowlineIndex(feed, 3500) === 2, String(I.nowlineIndex(feed, 3500)));
+  check('a floor ON an item counts that item as seen',
+    I.nowlineIndex(feed, 3000) === 2);
+  check('nothing new → the rail at the top, saying so',
+    I.nowlineIndex(feed, 9000) === 0);
+  check('everything new → the rail under it all',
+    I.nowlineIndex(feed, 500) === 5);
+  check('never visited → no line to draw',
+    I.nowlineIndex(feed, 0) === -1);
+  const day = 24 * 60 * 60 * 1000;
+  const noon = new Date(2026, 7, 26, 12, 4).getTime();
+  check('same-day label is the minute alone',
+    I.nowlineLabel(noon - 60_000, noon) === '前回ここまで ・ 12:03',
+    I.nowlineLabel(noon - 60_000, noon));
+  check('an older day carries its date',
+    I.nowlineLabel(noon - 2 * day, noon).startsWith('前回ここまで ・ 8/24'),
+    I.nowlineLabel(noon - 2 * day, noon));
+}
+
 console.log(fail ? `\n✗ inbox: ${fail} failed (${pass} passed)` : `\n✓ inbox: all ${pass} pass`);
 process.exit(fail ? 1 : 0);

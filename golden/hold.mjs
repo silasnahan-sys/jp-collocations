@@ -90,5 +90,23 @@ console.log('══ the two feel functions ══');
   check('the threshold is the knob', H.isToss(5, 5, 6));
 }
 
+console.log('══ 鋳造: mint a twin beside the chip, cap still evicts to gravity ══');
+{
+  const s = new H.HoldStore(() => {}, { cap: 3, flickPx: 24 });
+  const a = s.hold('一つ目', 'x').chip;
+  const b = s.hold('二つ目', 'dict').chip;
+  const m = s.mint(a.id);
+  check('the twin exists with a fresh id', !!m && m.chip.id !== a.id && m.chip.text === a.text);
+  const ids = s.all().map((c) => c.id);
+  check('the twin seats directly after its sibling', ids.indexOf(m.chip.id) === ids.indexOf(a.id) + 1, ids.join(','));
+  check('nothing evicted below cap', m.evicted === null);
+  const m2 = s.mint(a.id);
+  check('a second mint gets its own id and the cap hands the OLDEST to gravity',
+    m2.chip.id !== m.chip.id && m2.evicted !== null && s.all().length === 3);
+  check('a ghost id mints nothing', s.mint('hold-nope') === null);
+  check('the twin re-grabbed by content still dedupes to the ORIGINAL id',
+    s.hold('二つ目', 'dict').chip.id === b.id);
+}
+
 console.log(fail ? `\n✗ hold: ${fail} failed (${pass} passed)` : `\n✓ hold: all ${pass} pass`);
 process.exit(fail ? 1 : 0);

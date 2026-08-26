@@ -115,6 +115,30 @@ export class HoldStore {
     return { chip, evicted };
   }
 
+  /**
+   * 鋳造 (CALENDAR-PHYSICS §2.3): duplicate is a one-gesture mint, and the
+   * copy lands BESIDE its sibling — variant-making costs nothing and demands
+   * no aim. The twin gets a fresh id (the content-derived id would collide
+   * with the dedupe, and colliding is the point of the dedupe — a mint is
+   * the one deliberate request for a twin), seats at i+1, and the cap still
+   * evicts to gravity, never to the void (law 1) — even if the oldest chip
+   * is the original itself.
+   */
+  mint(id: string): { chip: HeldChip; evicted: HeldChip | null } | null {
+    const i = this.chips.findIndex((c) => c.id === id);
+    if (i < 0) return null;
+    const orig = this.chips[i];
+    let n = 2;
+    let mid = `${orig.id}-m${n}`;
+    while (this.chips.some((c) => c.id === mid)) mid = `${orig.id}-m${++n}`;
+    const chip: HeldChip = { ...orig, id: mid, at: Date.now() };
+    this.chips.splice(i + 1, 0, chip);
+    let evicted: HeldChip | null = null;
+    if (this.chips.length > this.knobs.cap) evicted = this.chips.shift() ?? null;
+    this.persist();
+    return { chip, evicted };
+  }
+
   /** Take a chip OUT (it landed somewhere, or was discarded on purpose). */
   release(id: string): HeldChip | null {
     const i = this.chips.findIndex((c) => c.id === id);

@@ -91,6 +91,13 @@ export interface PointerDropZone {
   leave(): void;
   /** it was released here. */
   drop(p: DragPayload, x: number, y: number): void;
+  /**
+   * 宛名札 (§2.2): what a release at (x, y) does RIGHT NOW, as one line —
+   * 「→ 辞書 ・ 🔍 辞書で引く」. Null when this zone would do nothing.
+   * The carry renders it beside the pill so the held thing is never
+   * "somewhere"; a zone that omits it is simply unaddressed.
+   */
+  address?(x: number, y: number): string | null;
 }
 
 const zones = new Set<PointerDropZone>();
@@ -180,11 +187,26 @@ export function beginPointerDrag(
   if (live) { pill.remove(); return; }
 
   pill.addClass('jp-drag-pill--live');
+  // 宛名札 — the carried thing is always addressed (CALENDAR-PHYSICS §2.2).
+  // Rides ABOVE-LEFT of the nib: the hand (usually right, usually below) is
+  // exactly where a label must not be, and the films measured a 170ms sweep
+  // every time a menu opened under the pressing hand.
+  const atena = document.body.createDiv('jp-atena');
+  let atenaText = '';
+  const setAtena = (t: string): void => {
+    if (t === atenaText) return;
+    atenaText = t;
+    atena.setText(t);
+    atena.toggleClass('jp-atena--void', t.startsWith('着地なし'));
+  };
+  setAtena('着地なし — 離すと戻る');
   // Held under the nib rather than centred, matching `setDragImage(…, 16, 12)`
   // on the native path: a finger or a Pencil hides what is directly beneath it.
   const place = (cx: number, cy: number): void => {
     pill.style.left = `${cx + 16}px`;
     pill.style.top = `${cy + 12}px`;
+    atena.style.left = `${cx - 12}px`;
+    atena.style.top = `${cy - 14}px`;
   };
   place(x, y);
   source.addClass('jp-draggable--lifted');
@@ -226,6 +248,7 @@ export function beginPointerDrag(
     try { source.releasePointerCapture(pointerId); } catch { /* already gone */ }
     source.removeClass('jp-draggable--lifted');
     pill.remove();
+    atena.remove();
     live = null;
   };
 
@@ -259,6 +282,10 @@ export function beginPointerDrag(
       zone?.enter(payload);
     }
     zone?.over(x, y);
+    // The address updates at the same once-per-frame beat as the hit-test —
+    // it reads the SAME aim the drop will read, so it can never disagree
+    // with what release actually does.
+    setAtena(zone?.address?.(x, y) ?? '着地なし — 離すと戻る');
   };
   const onMove = (ev: PointerEvent): void => {
     if (ev.pointerId !== pointerId) return;

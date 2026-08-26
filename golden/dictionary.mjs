@@ -203,5 +203,24 @@ check(typeof DictionaryStore.BLOB_TERM_LIMIT === 'number' && DictionaryStore.BLO
     'the 2.36M-term dictionary is NOT written to the blob (this is the 239MB bug)');
 }
 
+console.log('\n══ 〜-Ends mode + homophone paging (the gap-list leftovers) ══');
+{
+  const ends = store.endsWithSearch('べる');
+  check(ends.some((r) => r.term.expression === '食べる'), `endsWithSearch(べる) finds 食べる (${ends.length} hits)`);
+  const endsKu = store.endsWithSearch('く');
+  check(endsKu.length >= 3 && ['効く', '利く', '聞く'].every((e) => endsKu.some((r) => r.term.expression === e)),
+    'endsWithSearch(く) finds the whole きく column');
+  check(store.endsWithSearch('存在しない').length === 0, 'an impossible suffix finds nothing');
+  // reading-scan: すり is the TAIL of くすり — the びを→口火を切る row of the gap list
+  check(store.endsWithSearch('すり').some((r) => r.term.expression === '薬'),
+    'a reading tail reaches its headword (すり → 薬)');
+
+  const same = store.homophones('聞く');
+  check(same.length === 2 && same.every((h) => h.expression === '効く' || h.expression === '利く'),
+    `homophones(聞く) → 効く・利く, never itself (got ${same.map((h) => h.expression).join('・')})`);
+  check(store.homophones('きく').length === 3, 'a reading query pages ALL its spellings');
+  check(store.homophones('食べる').length === 0, 'a lone reading has no pages beside it');
+}
+
 console.log(`\n${failures ? '✗' : '✓'} ${checks - failures}/${checks} dictionary checks pass`);
 process.exit(failures ? 1 : 0);

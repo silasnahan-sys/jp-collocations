@@ -543,3 +543,43 @@ function isJustEmbed(text: string): boolean {
   if (!t) return true;
   return /^!\[\[[^\]]*\]\]$/.test(t) || /^!\[[^\]\n]*\]\([^)\s]*\)$/.test(t);
 }
+
+// ── 宛名札 (CALENDAR-PHYSICS §2.2): the carried thing is always addressed ──
+//
+// Filmed: dragging a Calendar block deep enough that the landing slot left
+// the screen, a red readout pinned to the edge with the FULL address
+// ("8/25/26, 2:45PM"). The world never lets a held thing become "somewhere".
+// This is the pure half: given the rack that is painted and where the nib
+// is aimed, the one line that says what a release RIGHT NOW does — what this
+// lands AS and WHERE. The chip that shows it rides the carry (pointer-drag)
+// and the hold-dock toss; S-law "what you knew must arrive" made visible
+// DURING the throw instead of audited after it.
+
+/** Where a landing happens, in the words the UI already uses. */
+export const SURFACE_NAMES: Record<DropSurface, string> = {
+  lexicon: '語彙',
+  entry: 'この項目',
+  tray: '収集トレイ',
+  dict: '辞書',
+  x: '𝕏検索',
+  follow: '鑑賞',
+};
+
+/**
+ * The address line for a carry in flight.
+ *
+ *   aimed at a card   → that card, named:      「→ 辞書 ・ 🔍 辞書で引く」
+ *   over the surface  → the default, said so:  「→ 辞書 ・ 🔍 辞書で引く（既定）」
+ *   rack is empty     → the honest nothing:    「着地なし — 離すと戻る」
+ *
+ * The synthetic-drag path knows its payload from the first frame, so this is
+ * never a guess — the intent named here is the intent drop() will run.
+ */
+export function atenaFor(
+  intents: readonly DropIntent[], aimed: number, surface: DropSurface,
+): string {
+  if (!intents.length) return '着地なし — 離すと戻る';
+  const it = aimed >= 0 && intents[aimed] ? intents[aimed] : intents[0];
+  const mark = aimed >= 0 && intents[aimed] ? '' : '（既定）';
+  return `→ ${SURFACE_NAMES[surface] ?? surface} ・ ${it.icon} ${it.label}${mark}`;
+}

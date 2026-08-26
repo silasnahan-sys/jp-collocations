@@ -18,6 +18,7 @@ import type { DropIntent, DropSurface } from '../notes/drop-intent.ts';
 import { attachDropRouter } from './drop-router.ts';
 import { attachSelectionEcho, type InVault } from './selection-echo.ts';
 import type { PeekData } from './hover-peek.ts';
+import type { NoteClass } from '../notes/note-types.ts';
 import { edgeDock, wideDock, isTouchy } from './posture.ts';
 import { setIcon } from 'obsidian';
 import { renderSurfaceBar, PLACES, TOOLS, type Surface } from './surface-bar.ts';
@@ -69,6 +70,12 @@ export interface ViewChrome {
    *  armed surface grabs identically. `sentence` is the containing line —
    *  the scene rides with the specimen (S1). */
   hold?: (text: string, surface: string, sentence?: string) => void;
+  /** Items 12–13 (コマ送り) — the menu carries STATE: catalog patterns whose
+   *  terms all occur in this text, so the echo can say 「もう台帳にある」
+   *  instead of offering to add what the hand already caught. */
+  patternsIn?: ((text: string) => Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }>) | null;
+  /** …and the door to the entry it already is. */
+  openPattern?: ((id: string) => void) | null;
 }
 
 /**
@@ -132,6 +139,8 @@ export function armSelectionEcho(
     ...(chrome.openWord ? { open: chrome.openWord } : {}),
     ...(chrome.inVault ? { inVault: chrome.inVault } : {}),
     ...(chrome.hold ? { hold: chrome.hold } : {}),
+    ...(chrome.patternsIn ? { patternsIn: chrome.patternsIn } : {}),
+    ...(chrome.openPattern ? { openPattern: chrome.openPattern } : {}),
   });
 }
 

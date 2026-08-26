@@ -412,6 +412,86 @@ export class DictionaryStore {
   }
 
   /**
+   * Monokakido's Ends mode, spoken in the plugin's own alphabet: the query
+   * 〜たなら means "headwords and readings that END in たなら" — the same 〜
+   * every notation in the catalog already uses for "material before this".
+   * (X〜 is Starts, and prefixSearch already answers it.) The reading scan is
+   * what makes びを find 口火を切る — the reading-substring-across-idioms row
+   * of the gap list. One pass over the index keys; the keys are the corpus.
+   */
+  endsWithSearch(suffix: string, limit = 40): DictLookupResult[] {
+    const normalized = normalizeJapanese(suffix.trim());
+    if (!normalized) return [];
+    const hiragana = toHiragana(normalized);
+    const results: DictLookupResult[] = [];
+    const seen = new Set<string>();
+    const take = (dict: DictionaryData, dictTitle: string, ids: number[]): boolean => {
+      for (const id of ids) {
+        const term = dict.terms[id];
+        if (!term) continue;
+        const key = `${term.expression}|${term.reading}|${dictTitle}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        results.push({ term, dictionary: dictTitle, tags: [], frequency: dict.frequencies.get(term.expression) });
+        if (results.length >= limit) return true;
+      }
+      return false;
+    };
+    for (const dictTitle of this.settings.enabledDictionaries) {
+      const dict = this.dictionaries.get(dictTitle);
+      if (!dict) continue;
+      for (const [expr, ids] of dict.expressionIndex) {
+        if ((expr.endsWith(normalized) || expr.endsWith(hiragana)) && take(dict, dictTitle, ids)) return results;
+      }
+      for (const [read, ids] of dict.readingIndex) {
+        if ((read.endsWith(normalized) || read.endsWith(hiragana)) && take(dict, dictTitle, ids)) return results;
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Homophone paging (gap-list item 6): the other words that SOUND like this
+   * one — 決行 → 血行・結構, Monokakido's あさ/あした/ちょう pages for 朝.
+   * The readings of the query's exact hits fan out through the readingIndex;
+   * every expression sharing one is a page beside this page.
+   */
+  homophones(query: string, cap = 8): Array<{ expression: string; reading: string }> {
+    const normalized = normalizeJapanese(query.trim());
+    if (!normalized) return [];
+    const hiragana = toHiragana(normalized);
+    const readings = new Set<string>();
+    for (const dictTitle of this.settings.enabledDictionaries) {
+      const dict = this.dictionaries.get(dictTitle);
+      if (!dict) continue;
+      const ids = dict.expressionIndex.get(normalized);
+      if (ids) for (const id of ids) { const t = dict.terms[id]; if (t?.reading) readings.add(toHiragana(t.reading)); }
+      // the query may itself BE a reading (typed in kana)
+      if (dict.readingIndex.has(normalized)) readings.add(hiragana);
+      else if (hiragana !== normalized && dict.readingIndex.has(hiragana)) readings.add(hiragana);
+    }
+    if (!readings.size) return [];
+    const out: Array<{ expression: string; reading: string }> = [];
+    const seen = new Set<string>([normalized]);
+    for (const dictTitle of this.settings.enabledDictionaries) {
+      const dict = this.dictionaries.get(dictTitle);
+      if (!dict) continue;
+      for (const r of readings) {
+        const ids = dict.readingIndex.get(r);
+        if (!ids) continue;
+        for (const id of ids) {
+          const t = dict.terms[id];
+          if (!t || seen.has(t.expression)) continue;
+          seen.add(t.expression);
+          out.push({ expression: t.expression, reading: t.reading });
+          if (out.length >= cap) return out;
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
    * Render a definition to plain text (strips structured content to readable text).
    */
   static definitionToText(def: YomitanDefinition): string {

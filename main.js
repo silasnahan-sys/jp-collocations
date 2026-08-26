@@ -14357,9 +14357,21 @@ function beginPointerDrag(source, payload, pill, pointerId, x, y) {
     return;
   }
   pill.addClass("jp-drag-pill--live");
+  const atena = document.body.createDiv("jp-atena");
+  let atenaText = "";
+  const setAtena = (t) => {
+    if (t === atenaText)
+      return;
+    atenaText = t;
+    atena.setText(t);
+    atena.toggleClass("jp-atena--void", t.startsWith("\u7740\u5730\u306A\u3057"));
+  };
+  setAtena("\u7740\u5730\u306A\u3057 \u2014 \u96E2\u3059\u3068\u623B\u308B");
   const place = (cx, cy) => {
     pill.style.left = `${cx + 16}px`;
     pill.style.top = `${cy + 12}px`;
+    atena.style.left = `${cx - 12}px`;
+    atena.style.top = `${cy - 14}px`;
   };
   place(x, y);
   source.addClass("jp-draggable--lifted");
@@ -14391,6 +14403,7 @@ function beginPointerDrag(source, payload, pill, pointerId, x, y) {
     }
     source.removeClass("jp-draggable--lifted");
     pill.remove();
+    atena.remove();
     live = null;
   };
   const deadman = window.setTimeout(() => {
@@ -14400,6 +14413,7 @@ function beginPointerDrag(source, payload, pill, pointerId, x, y) {
   let frame = 0;
   let at = null;
   const settle2 = () => {
+    var _a2, _b2;
     frame = 0;
     if (!at || ended)
       return;
@@ -14411,6 +14425,7 @@ function beginPointerDrag(source, payload, pill, pointerId, x, y) {
       zone == null ? void 0 : zone.enter(payload);
     }
     zone == null ? void 0 : zone.over(x2, y2);
+    setAtena((_b2 = (_a2 = zone == null ? void 0 : zone.address) == null ? void 0 : _a2.call(zone, x2, y2)) != null ? _b2 : "\u7740\u5730\u306A\u3057 \u2014 \u96E2\u3059\u3068\u623B\u308B");
   };
   const onMove = (ev) => {
     if (ev.pointerId !== pointerId)
@@ -25372,6 +25387,22 @@ function isJustEmbed(text) {
     return true;
   return /^!\[\[[^\]]*\]\]$/.test(t) || /^!\[[^\]\n]*\]\([^)\s]*\)$/.test(t);
 }
+var SURFACE_NAMES = {
+  lexicon: "\u8A9E\u5F59",
+  entry: "\u3053\u306E\u9805\u76EE",
+  tray: "\u53CE\u96C6\u30C8\u30EC\u30A4",
+  dict: "\u8F9E\u66F8",
+  x: "\u{1D54F}\u691C\u7D22",
+  follow: "\u9451\u8CDE"
+};
+function atenaFor(intents, aimed, surface) {
+  var _a2;
+  if (!intents.length)
+    return "\u7740\u5730\u306A\u3057 \u2014 \u96E2\u3059\u3068\u623B\u308B";
+  const it = aimed >= 0 && intents[aimed] ? intents[aimed] : intents[0];
+  const mark = aimed >= 0 && intents[aimed] ? "" : "\uFF08\u65E2\u5B9A\uFF09";
+  return `\u2192 ${(_a2 = SURFACE_NAMES[surface]) != null ? _a2 : surface} \u30FB ${it.icon} ${it.label}${mark}`;
+}
 
 // src/ui/drop-router.ts
 var MAX_CARDS = 4;
@@ -25604,7 +25635,10 @@ function attachDropRouter(root, deps) {
       flash(root, x, y);
       teardown();
       void deps.run(chosen, []);
-    }
+    },
+    // 宛名札 — reads the SAME rack and the SAME aim as drop() above, so the
+    // line at the nib and the act on release cannot disagree (§2.2).
+    address: (x, y) => cards.length ? atenaFor(cards, cardAtPoint(x, y), ctx().surface) : null
   });
   root.addEventListener("dragenter", onEnter);
   root.addEventListener("dragover", onOver);
@@ -25721,7 +25755,7 @@ function attachSelectionEcho(root, deps) {
     });
   };
   const show = () => {
-    var _a2;
+    var _a2, _b2;
     const sel = window.getSelection();
     const text = (_a2 = sel == null ? void 0 : sel.toString().trim()) != null ? _a2 : "";
     if (!sel || sel.rangeCount === 0 || [...text].length < MIN_CHARS) {
@@ -25775,6 +25809,27 @@ function attachSelectionEcho(root, deps) {
           }
         }
       );
+    }
+    if (deps.patternsIn && deps.openPattern) {
+      const known = deps.patternsIn(text);
+      if (known.length) {
+        const exact = (_b2 = known.find((k) => k.key === text.trim())) != null ? _b2 : known[0];
+        const chip = bar.createDiv("jp-echo-known");
+        classDot(chip, exact.class, { ratified: exact.classRatified !== false });
+        chip.createSpan({
+          text: exact.key === text.trim() ? "\u3082\u3046\u53F0\u5E33\u306B\u3042\u308B" : `\u53F0\u5E33\u306B ${known.length}\u4EF6\uFF08${exact.key}\uFF09`,
+          cls: "jp-echo-known-label"
+        });
+        chip.title = known.map((k) => k.key).join("\u30FB") + " \u2014 \u30BF\u30C3\u30D7\u3067\u53F0\u5E33\u306E\u9805\u76EE\u3078";
+        chip.addEventListener("pointerdown", (e) => {
+          var _a3;
+          e.preventDefault();
+          e.stopPropagation();
+          hide();
+          (_a3 = window.getSelection()) == null ? void 0 : _a3.removeAllRanges();
+          deps.openPattern(exact.id);
+        });
+      }
     }
     const verbs = bar.createDiv("jp-echo-verbs");
     for (const intent of intents) {
@@ -26418,7 +26473,9 @@ function armSelectionEcho(host, chrome, surface, opts = {}) {
     ...chrome.lookUp ? { look: chrome.lookUp } : {},
     ...chrome.openWord ? { open: chrome.openWord } : {},
     ...chrome.inVault ? { inVault: chrome.inVault } : {},
-    ...chrome.hold ? { hold: chrome.hold } : {}
+    ...chrome.hold ? { hold: chrome.hold } : {},
+    ...chrome.patternsIn ? { patternsIn: chrome.patternsIn } : {},
+    ...chrome.openPattern ? { openPattern: chrome.openPattern } : {}
   });
 }
 function mountSurfaceBar(viewRoot, chrome, current2, fallback) {
@@ -33736,6 +33793,16 @@ function neighborsOf(index, query) {
     next: i < index.order.length - 1 ? index.order[i + 1] : null
   };
 }
+function searchNotation(q) {
+  const t = q.trim();
+  const ends = /^[〜~～](.+)$/.exec(t);
+  if (ends)
+    return { mode: "ends", term: ends[1].trim() };
+  const starts = /^(.+?)[〜~～]$/.exec(t);
+  if (starts)
+    return { mode: "starts", term: starts[1].trim() };
+  return null;
+}
 
 // src/dictionary/DictionaryStore.ts
 var _DictionaryStore = class _DictionaryStore {
@@ -34059,6 +34126,104 @@ var _DictionaryStore = class _DictionaryStore {
       }
     }
     return results;
+  }
+  /**
+   * Monokakido's Ends mode, spoken in the plugin's own alphabet: the query
+   * 〜たなら means "headwords and readings that END in たなら" — the same 〜
+   * every notation in the catalog already uses for "material before this".
+   * (X〜 is Starts, and prefixSearch already answers it.) The reading scan is
+   * what makes びを find 口火を切る — the reading-substring-across-idioms row
+   * of the gap list. One pass over the index keys; the keys are the corpus.
+   */
+  endsWithSearch(suffix, limit = 40) {
+    const normalized = normalizeJapanese(suffix.trim());
+    if (!normalized)
+      return [];
+    const hiragana = toHiragana(normalized);
+    const results = [];
+    const seen = /* @__PURE__ */ new Set();
+    const take = (dict, dictTitle, ids) => {
+      for (const id of ids) {
+        const term = dict.terms[id];
+        if (!term)
+          continue;
+        const key = `${term.expression}|${term.reading}|${dictTitle}`;
+        if (seen.has(key))
+          continue;
+        seen.add(key);
+        results.push({ term, dictionary: dictTitle, tags: [], frequency: dict.frequencies.get(term.expression) });
+        if (results.length >= limit)
+          return true;
+      }
+      return false;
+    };
+    for (const dictTitle of this.settings.enabledDictionaries) {
+      const dict = this.dictionaries.get(dictTitle);
+      if (!dict)
+        continue;
+      for (const [expr, ids] of dict.expressionIndex) {
+        if ((expr.endsWith(normalized) || expr.endsWith(hiragana)) && take(dict, dictTitle, ids))
+          return results;
+      }
+      for (const [read, ids] of dict.readingIndex) {
+        if ((read.endsWith(normalized) || read.endsWith(hiragana)) && take(dict, dictTitle, ids))
+          return results;
+      }
+    }
+    return results;
+  }
+  /**
+   * Homophone paging (gap-list item 6): the other words that SOUND like this
+   * one — 決行 → 血行・結構, Monokakido's あさ/あした/ちょう pages for 朝.
+   * The readings of the query's exact hits fan out through the readingIndex;
+   * every expression sharing one is a page beside this page.
+   */
+  homophones(query, cap = 8) {
+    const normalized = normalizeJapanese(query.trim());
+    if (!normalized)
+      return [];
+    const hiragana = toHiragana(normalized);
+    const readings = /* @__PURE__ */ new Set();
+    for (const dictTitle of this.settings.enabledDictionaries) {
+      const dict = this.dictionaries.get(dictTitle);
+      if (!dict)
+        continue;
+      const ids = dict.expressionIndex.get(normalized);
+      if (ids)
+        for (const id of ids) {
+          const t = dict.terms[id];
+          if (t == null ? void 0 : t.reading)
+            readings.add(toHiragana(t.reading));
+        }
+      if (dict.readingIndex.has(normalized))
+        readings.add(hiragana);
+      else if (hiragana !== normalized && dict.readingIndex.has(hiragana))
+        readings.add(hiragana);
+    }
+    if (!readings.size)
+      return [];
+    const out = [];
+    const seen = /* @__PURE__ */ new Set([normalized]);
+    for (const dictTitle of this.settings.enabledDictionaries) {
+      const dict = this.dictionaries.get(dictTitle);
+      if (!dict)
+        continue;
+      for (const r2 of readings) {
+        const ids = dict.readingIndex.get(r2);
+        if (!ids)
+          continue;
+        for (const id of ids) {
+          const t = dict.terms[id];
+          if (!t || seen.has(t.expression))
+            continue;
+          seen.add(t.expression);
+          out.push({ expression: t.expression, reading: t.reading });
+          if (out.length >= cap)
+            return out;
+        }
+      }
+    }
+    return out;
   }
   /**
    * Render a definition to plain text (strips structured content to readable text).
@@ -37077,6 +37242,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       a.tempo = void 0;
     this.applyArrival();
     this.renderNavBar();
+    this.renderHomophones();
     this.rerunFind();
   }
   /**
@@ -37432,6 +37598,63 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     (_b2 = this.findCountEl) == null ? void 0 : _b2.setText(`${this.findAt + 1}/${this.findHits.length}\u4EF6`);
   }
   /**
+   * A tilde-mode search (〜X = Ends, X〜 = Starts) is answered whole from the
+   * in-memory indexes — the sidecars have no ends-scan, and the stats line
+   * says so instead of pretending they were asked.
+   */
+  renderNotationSearch(nota, query) {
+    var _a2;
+    if (!this.resultsEl || !this.statsEl)
+      return;
+    this.searchGen++;
+    const results = nota.mode === "ends" ? this.dictStore.endsWithSearch(nota.term, 40) : this.dictStore.prefixSearch(nota.term, 40);
+    const modeName = nota.mode === "ends" ? "\u5F8C\u65B9\u4E00\u81F4" : "\u524D\u65B9\u4E00\u81F4";
+    this.statsEl.empty();
+    this.statsEl.createSpan({
+      text: `\u300C${query}\u300D${modeName} ${results.length}\u4EF6\uFF08\u30ED\u30FC\u30AB\u30EB\u8F9E\u66F8\u306E\u307F\uFF09`,
+      cls: "jp-dict-stat-text"
+    });
+    this.resultsEl.empty();
+    if (!results.length) {
+      this.renderEmpty(`\u300C${nota.term}\u300D\u3067${nota.mode === "ends" ? "\u7D42\u308F\u308B" : "\u59CB\u307E\u308B"}\u898B\u51FA\u3057\u30FB\u8AAD\u307F\u306F\u3042\u308A\u307E\u305B\u3093`);
+    } else {
+      for (const group of this.groupResults(results)) {
+        this.renderEntryCard(this.resultsEl, group);
+      }
+    }
+    (_a2 = this.historyStore) == null ? void 0 : _a2.record(query);
+    this.afterRender();
+  }
+  /**
+   * Homophone paging (gap item 6): the words that SOUND like this one, as
+   * chips over the results — 決行 beside 血行, Monokakido's あさ/あした/ちょう
+   * pages. A chip tap is a FLIP: same depth, instant, breadcrumbs untouched.
+   */
+  renderHomophones() {
+    if (!this.resultsEl || !this.currentQuery || this.historyMode)
+      return;
+    if (this.resultsEl.querySelector(".jp-dict-homophones"))
+      return;
+    if (!this.resultsEl.querySelector(".jp-dict-card"))
+      return;
+    const same = this.dictStore.homophones(this.currentQuery);
+    if (!same.length)
+      return;
+    if (this.resultsEl.scrollTop > 4)
+      return;
+    const row = createDiv("jp-dict-homophones");
+    row.createSpan({ text: "\u540C\u97F3", cls: "jp-dict-homophones-label" });
+    for (const h of same) {
+      const chip = row.createEl("button", { cls: "jp-dict-homophone", attr: { title: h.reading } });
+      chip.setText(h.expression);
+      chip.addEventListener("click", () => {
+        this.lookupWord(h.expression);
+        this.renderBreadcrumbs();
+      });
+    }
+    this.resultsEl.prepend(row);
+  }
+  /**
    * The dated History (item 16) — 1,251 entries deep in Monokakido, a
    * session array here until now. Every row is a door back: tap → the word
    * opens with a descend. Grouped 今日/昨日/M月D日 by dict-nav.historyDays.
@@ -37498,7 +37721,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     const searchRow = (wide != null ? wide : header).createDiv("jp-dict-search-row");
     this.searchInput = searchRow.createEl("input", {
       type: "search",
-      placeholder: "\u691C\u7D22\u2026 (\u7A7A\u767D\u533A\u5207\u308A = \u7D5E\u308A\u8FBC\u307F)",
+      placeholder: "\u691C\u7D22\u2026 (\u7A7A\u767D=\u7D5E\u308A\u8FBC\u307F \u30FB \u301CX=\u5F8C\u65B9\u4E00\u81F4 \u30FB X\u301C=\u524D\u65B9\u4E00\u81F4)",
       cls: "jp-dict-search-input",
       attr: {
         autocomplete: "off",
@@ -37647,6 +37870,11 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
     this.pendingArrive = null;
     this.historyMode = false;
     const gen = ++this.searchGen;
+    const nota = searchNotation(query);
+    if (nota) {
+      this.renderNotationSearch(nota, query);
+      return;
+    }
     let merged = this.mergeResults(
       this.dictStore.lookup(query),
       this.dictStore.substringSearch(query, 20)
@@ -37829,6 +38057,11 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
     if (!this.resultsEl || !this.statsEl)
       return;
     const gen = ++this.searchGen;
+    const nota = searchNotation(query);
+    if (nota) {
+      this.renderNotationSearch(nota, query);
+      return;
+    }
     let results = this.dictStore.lookup(query);
     let narrowing;
     const terms = _DictionaryView.queryTerms(query);
@@ -49644,6 +49877,35 @@ var InboxStore = class {
     this.cards.delete(id);
     await this.persist();
   }
+  /**
+   * 鋳造 (CALENDAR-PHYSICS §2.3): duplicate is a one-gesture mint, and copies
+   * coexist. The twin keeps the SAME createdAt — the time-sorted feed then
+   * seats it beside its sibling (equal keys keep insertion order, and the map
+   * is rebuilt with the copy directly after the original) — and every other
+   * field, deep-cloned so a later edit of one twin never writes through to
+   * the other. A variant starts as an exact twin; the varying is the hand's
+   * next act, not this one's.
+   */
+  async duplicate(id) {
+    const orig = this.cards.get(id);
+    if (!orig)
+      return null;
+    let n = 2;
+    let mid = `${orig.id}-m${n}`;
+    while (this.cards.has(mid))
+      mid = `${orig.id}-m${++n}`;
+    const copy = structuredClone(orig);
+    copy.id = mid;
+    const next = /* @__PURE__ */ new Map();
+    for (const [k, v] of this.cards) {
+      next.set(k, v);
+      if (k === id)
+        next.set(copy.id, copy);
+    }
+    this.cards = next;
+    await this.persist();
+    return copy;
+  }
   /** attach OCR'd bubbles to an image card (once — OCR results are frozen). */
   async setBubbles(id, bubbles) {
     const c = this.cards.get(id);
@@ -49717,6 +49979,19 @@ var InboxStore = class {
     }).sort((a, b) => a.createdAt - b.createdAt);
   }
 };
+function nowlineIndex(atsDesc, floor) {
+  if (floor <= 0)
+    return -1;
+  const i = atsDesc.findIndex((at) => at <= floor);
+  return i === -1 ? atsDesc.length : i;
+}
+function nowlineLabel(floor, now) {
+  const f = new Date(floor);
+  const n = new Date(now);
+  const hm = `${f.getHours()}:${String(f.getMinutes()).padStart(2, "0")}`;
+  const sameDay = f.getFullYear() === n.getFullYear() && f.getMonth() === n.getMonth() && f.getDate() === n.getDate();
+  return sameDay ? `\u524D\u56DE\u3053\u3053\u307E\u3067 \u30FB ${hm}` : `\u524D\u56DE\u3053\u3053\u307E\u3067 \u30FB ${f.getMonth() + 1}/${f.getDate()} ${hm}`;
+}
 
 // src/notes/hold.ts
 var DEFAULT_HOLD_KNOBS = { cap: 3, flickPx: 24 };
@@ -49781,6 +50056,33 @@ var HoldStore = class {
     this.persist();
     return { chip, evicted };
   }
+  /**
+   * 鋳造 (CALENDAR-PHYSICS §2.3): duplicate is a one-gesture mint, and the
+   * copy lands BESIDE its sibling — variant-making costs nothing and demands
+   * no aim. The twin gets a fresh id (the content-derived id would collide
+   * with the dedupe, and colliding is the point of the dedupe — a mint is
+   * the one deliberate request for a twin), seats at i+1, and the cap still
+   * evicts to gravity, never to the void (law 1) — even if the oldest chip
+   * is the original itself.
+   */
+  mint(id) {
+    var _a2;
+    const i = this.chips.findIndex((c) => c.id === id);
+    if (i < 0)
+      return null;
+    const orig = this.chips[i];
+    let n = 2;
+    let mid = `${orig.id}-m${n}`;
+    while (this.chips.some((c) => c.id === mid))
+      mid = `${orig.id}-m${++n}`;
+    const chip = { ...orig, id: mid, at: Date.now() };
+    this.chips.splice(i + 1, 0, chip);
+    let evicted = null;
+    if (this.chips.length > this.knobs.cap)
+      evicted = (_a2 = this.chips.shift()) != null ? _a2 : null;
+    this.persist();
+    return { chip, evicted };
+  }
   /** Take a chip OUT (it landed somewhere, or was discarded on purpose). */
   release(id) {
     const i = this.chips.findIndex((c) => c.id === id);
@@ -49834,6 +50136,7 @@ var HoldDock = class {
     if (this.verbsFor === chip.id)
       this.renderVerbs(el, chip);
     let x0 = 0, y0 = 0, dx = 0, dy = 0, tracking = false;
+    let atena = null;
     el.addEventListener("pointerdown", (e) => {
       e.preventDefault();
       tracking = true;
@@ -49850,11 +50153,21 @@ var HoldDock = class {
       dx = e.clientX - x0;
       dy = e.clientY - y0;
       el.style.transform = `translate(${dx}px, ${dy}px) scale(1.04)`;
+      const tossing = isToss(dx, dy, this.deps.knobs().flickPx);
+      if (tossing && !atena) {
+        atena = el.createDiv("jp-atena jp-atena--hold");
+        atena.setText(chip.sentence ? "\u2192 \u53CE\u96C6\u30C8\u30EC\u30A4 \u30FB scene\u4E57\u8ECA" : "\u2192 \u53CE\u96C6\u30C8\u30EC\u30A4");
+      } else if (!tossing && atena) {
+        atena.remove();
+        atena = null;
+      }
     });
     const settle2 = (e) => {
       if (!tracking)
         return;
       tracking = false;
+      atena == null ? void 0 : atena.remove();
+      atena = null;
       el.releasePointerCapture(e.pointerId);
       el.removeClass("jp-hold-chip--held");
       if (isToss(dx, dy, this.deps.knobs().flickPx)) {
@@ -49889,6 +50202,7 @@ var HoldDock = class {
     verb("\u2935", "\u30C8\u30EC\u30A4\u3078", () => this.deps.toTray(chip));
     verb("\u26A1", "\u5206\u985E\u3057\u3066\u53F0\u5E33\u3078\uFF08\u5834\u9762\u3064\u304D\uFF09", () => this.deps.classify(chip));
     verb("\u{1F4D6}", "\u8F9E\u66F8\u3067\u5F15\u304F", () => this.deps.lookup(chip));
+    verb("\u29C9", "\u8907\u88FD \u2014 \u96A3\u306B\u92F3\u9020", () => this.deps.mint(chip));
     verb("\u2715", "\u6368\u3066\u308B\uFF08\u30C8\u30EC\u30A4\u306B\u6B8B\u3089\u306A\u3044\uFF09", () => this.deps.discard(chip));
   }
 };
@@ -50218,6 +50532,10 @@ var TrayView = class extends import_obsidian33.ItemView {
     this.deps = deps;
     /** §23.5 keyboard hand: focused card id (j/k walk). */
     this.focusId = null;
+    /** 現在線: the reading position, frozen for the sitting. The rail must not
+     *  tick while you stand here — the eye arranges against a LANDMARK. */
+    this.visitFloor = 0;
+    this.nowlineScrolled = false;
     /** One backfill pass at a time — `render()` fires this and it calls back. */
     this.backfilling = false;
   }
@@ -50231,9 +50549,16 @@ var TrayView = class extends import_obsidian33.ItemView {
     return "inbox";
   }
   async onOpen() {
+    var _a2, _b2, _c2;
     this.contentEl.setAttr("tabindex", "0");
     this.registerDomEvent(this.contentEl, "keydown", (e) => this.onKey(e));
+    this.visitFloor = (_c2 = (_b2 = (_a2 = this.deps).lastVisit) == null ? void 0 : _b2.call(_a2)) != null ? _c2 : 0;
+    this.nowlineScrolled = false;
     this.render();
+  }
+  async onClose() {
+    var _a2, _b2;
+    (_b2 = (_a2 = this.deps).markVisit) == null ? void 0 : _b2.call(_a2, Date.now());
   }
   /** Re-render from outside (a reach was opened, or the watcher made offers). */
   refresh() {
@@ -50290,6 +50615,12 @@ var TrayView = class extends import_obsidian33.ItemView {
         this.render();
       });
     }
+    if (k === "d") {
+      return go(async () => {
+        await this.deps.store.duplicate(c.id);
+        this.render();
+      });
+    }
     if (k === "e" || e.key === "Enter") {
       return go(() => {
         var _a2;
@@ -50341,7 +50672,7 @@ var TrayView = class extends import_obsidian33.ItemView {
     this.renderDoors(root);
     this.renderReaches(root);
     const keys = root.createDiv("jp-dm-keys jp-tray-keys");
-    for (const [key, label] of [["j/k", "\u79FB\u52D5"], ["\u23CE/e", "\u5206\u985E"], ["x", "\u524A\u9664"]]) {
+    for (const [key, label] of [["j/k", "\u79FB\u52D5"], ["\u23CE/e", "\u5206\u985E"], ["d", "\u8907\u88FD"], ["x", "\u524A\u9664"]]) {
       const chip = keys.createSpan("jp-dm-key");
       chip.createEl("kbd", { text: key });
       chip.createSpan({ text: label });
@@ -50366,7 +50697,16 @@ var TrayView = class extends import_obsidian33.ItemView {
       ...groups.map((g) => ({ at: g.end, group: g })),
       ...all.filter((c) => c.kind !== "image").map((c) => ({ at: c.createdAt, card: c }))
     ].sort((a, b) => b.at - a.at);
-    for (const item of feed) {
+    const railAt = nowlineIndex(feed.map((i) => i.at), this.visitFloor);
+    let rail = null;
+    const drawRail = () => {
+      rail = list.createDiv("jp-tray-nowline");
+      rail.createSpan({ text: nowlineLabel(this.visitFloor, Date.now()), cls: "jp-tray-nowline-label" });
+    };
+    for (let fi = 0; fi < feed.length; fi++) {
+      if (fi === railAt)
+        drawRail();
+      const item = feed[fi];
       if (item.card) {
         this.renderCard(list, item.card);
         continue;
@@ -50377,6 +50717,12 @@ var TrayView = class extends import_obsidian33.ItemView {
         continue;
       }
       this.renderSession(list, g);
+    }
+    if (railAt === feed.length && feed.length)
+      drawRail();
+    if (rail && !this.nowlineScrolled) {
+      this.nowlineScrolled = true;
+      requestAnimationFrame(() => rail == null ? void 0 : rail.scrollIntoView({ block: "center" }));
     }
     void this.backfillMarkLines();
   }
@@ -50839,7 +51185,7 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
     }
   }
   renderCard(list, c) {
-    var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2;
+    var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2;
     const card = list.createDiv("jp-tray-card" + (c.id === this.focusId ? " jp-tray-card--focus" : ""));
     card.addEventListener("pointerdown", () => {
       this.focusId = c.id;
@@ -51065,6 +51411,19 @@ ${failed.join("\n")}` : `\u{1F50E} ${ok}\u679A\u306E\u5439\u304D\u51FA\u3057\u30
         text: "",
         source: { kind: "web", url: c.content, sourceName: c.origin }
       });
+    }
+    {
+      const acts = (_i2 = card.querySelector(".jp-tray-card-actions")) != null ? _i2 : card.createDiv("jp-tray-card-actions");
+      const mintBtn = acts.createEl("button", {
+        text: "\u29C9",
+        cls: "jp-tray-classify jp-tray-mint",
+        attr: { title: "\u8907\u88FD \u2014 \u96A3\u306B\u92F3\u9020", "aria-label": "\u8907\u88FD" }
+      });
+      mintBtn.onclick = async (e) => {
+        e.stopPropagation();
+        await this.deps.store.duplicate(c.id);
+        this.render();
+      };
     }
   }
 };
@@ -54400,6 +54759,8 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
     /** §23.3 gold v2 layer-2: every component pill accept/reject, keyed
      *  file|componentKey. Grows from ordinary 談話モード use. */
     this.componentGold = {};
+    /** 現在線 — when the tray was last stood in front of. */
+    this.trayVisitAt = 0;
     /**
      * Which dictionary conversion is running, if any. Two conversions write the
      * SAME shard folders, and the backup pass resets a dictionary on its first
@@ -54655,6 +55016,18 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       discard: (chip) => {
         this.holdStore.release(chip.id);
         this.holdDock.render();
+      },
+      // 鋳造 (§2.3) — the twin seats beside its sibling; a cap overflow still
+      // lands in the tray, never the void (law 1).
+      mint: (chip) => {
+        const r2 = this.holdStore.mint(chip.id);
+        if (r2 == null ? void 0 : r2.evicted)
+          void this.landHeldChip(
+            r2.evicted,
+            /*rerender*/
+            false
+          );
+        this.holdDock.render();
       }
     });
     this.holdDock.mount();
@@ -54672,8 +55045,14 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
     );
     this.reachStore = new ReachStore((data) => this.dm.setKey("_reaches", data));
     this.reachStore.load(stored == null ? void 0 : stored._reaches);
+    this.trayVisitAt = Number(stored == null ? void 0 : stored._trayVisit) || 0;
     this.registerView(JP_TRAY_VIEW_TYPE, (leaf) => new TrayView(leaf, {
       store: this.inboxStore,
+      lastVisit: () => this.trayVisitAt,
+      markVisit: (t) => {
+        this.trayVisitAt = t;
+        void this.dm.setKey("_trayVisit", t);
+      },
       // §30 — the front door. Every road that used to require knowing which of
       // 60 palette entries matched the medium in your hand.
       doors: () => this.trayDoors(),
@@ -54690,9 +55069,9 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       setMarkNote: async (id, text) => {
         await this.inboxStore.setMarkNote(id, text);
       },
-      // §28 S1: a dropped phrase you have already noticed says so
-      patternsIn: (text) => this.patternsIn(text),
-      openPattern: (id) => void this.openLexiconAt(id),
+      // §28 S1: a dropped phrase you have already noticed says so —
+      // patternsIn/openPattern now arrive via peekChrome() below, one wiring
+      // for every echo-armed surface (items 12–13).
       // §27.0.2 — the holes, held beside the stream that might fill them
       reaches: () => this.reachStore.all(),
       openReach: () => new ReachModal(this.app, async (want, gloss) => {
@@ -55235,6 +55614,21 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
           return;
         }
         void this.landHeldChip(chip);
+      }
+    });
+    this.addCommand({
+      id: "hold-mint",
+      name: "\u6301\u3063\u3066\u3044\u308B\u4E00\u756A\u65B0\u3057\u3044\u3082\u306E\u3092\u8907\u88FD \u2014 mint a twin beside it",
+      callback: () => {
+        const chip = this.holdStore.newest();
+        if (!chip) {
+          new import_obsidian37.Notice("\u4F55\u3082\u6301\u3063\u3066\u3044\u307E\u305B\u3093", 4e3);
+          return;
+        }
+        const r2 = this.holdStore.mint(chip.id);
+        if (r2 == null ? void 0 : r2.evicted)
+          void this.landHeldChip(r2.evicted, false);
+        this.holdDock.render();
       }
     });
     this.addCommand({
@@ -56655,9 +57049,8 @@ ${summary}
         }, this.makeCaptureDeps()).open();
       },
       // §28 S1: the X corpus is a view of the SAME lexicon. A tweet holding a
-      // pattern already in the 台帳 wears that pattern's class mark here too.
-      patternsIn: (text) => this.patternsIn(text),
-      openPattern: (id) => this.openLexiconAt(id),
+      // pattern already in the 台帳 wears that pattern's class mark here too
+      // (patternsIn/openPattern ride in on peekChrome() below).
       onDrop: (intent, files) => void this.runDropIntent(intent, files),
       dropCan: () => this.dropCapabilities(),
       openSurface: (s) => void this.openSurface(s),
@@ -58265,7 +58658,10 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       backPeek: () => this.navPeek(),
       inVault: (c) => this.resolveVaultPath(c),
       // Move 1 (掴む): every echo-armed surface grabs identically, wired once.
-      hold: (text, surface, sentence) => this.holdText(text, surface, sentence)
+      hold: (text, surface, sentence) => this.holdText(text, surface, sentence),
+      // Items 12–13: the echo carries 台帳 state on every surface, wired once.
+      patternsIn: (text) => this.patternsIn(text),
+      openPattern: (id) => void this.openLexiconAt(id)
     };
   }
   /** Feel knobs for the hold — settings override the defaults, never guessed. */

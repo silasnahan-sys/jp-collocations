@@ -220,5 +220,23 @@ console.log('\n══ the synthetic carry routes identically to a real drag ═�
   check('an empty carry offers nothing', acts(carried('')).length === 0);
 }
 
+console.log('══ 宛名札 — the address line says exactly what release does (§2.2) ══');
+{
+  const rack = [
+    { action: 'capture', icon: '⚡', label: '分類して台帳へ', payload: {} },
+    { action: 'tray', icon: '⤵', label: 'トレイへ', payload: {} },
+  ];
+  check('an aimed card is the address, named with its surface',
+    D.atenaFor(rack, 1, 'dict') === '→ 辞書 ・ ⤵ トレイへ',
+    D.atenaFor(rack, 1, 'dict'));
+  check('no aim yet → the default runs, and the line SAYS it is the default',
+    D.atenaFor(rack, -1, 'x') === '→ 𝕏検索 ・ ⚡ 分類して台帳へ（既定）',
+    D.atenaFor(rack, -1, 'x'));
+  check('an empty rack is the honest nothing',
+    D.atenaFor([], 0, 'tray') === '着地なし — 離すと戻る');
+  check('an out-of-range aim falls back to the default, marked as such',
+    D.atenaFor(rack, 9, 'tray').includes('（既定）'));
+}
+
 console.log(`\n${fail === 0 ? '✓' : '✗'} drop-intent: ${pass}/${pass + fail} checks passed`);
 if (fail) process.exitCode = 1;

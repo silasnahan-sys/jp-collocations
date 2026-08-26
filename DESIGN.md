@@ -2814,6 +2814,55 @@ search was the one live search left with NO debounce (now 90ms, like 辞書
 per keystroke and paid the deinflection FALLBACK on every miss — 
 `hasExactSurface()` answers the same question without it.
 
+### 30.2 The Calendar laws land + the menu carries state (2026-08-26, SHIPPED)
+
+CALENDAR-PHYSICS §2's three unbuilt laws, plus the gap list's items 12–13
+and match modes. Apertures pinned in reachability D5 + D4 additions.
+
+- **宛名札 (§2.2).** Every synthetic carry renders an address chip
+  above-left of the nib naming what a release RIGHT NOW does — 「→ 辞書 ・
+  🔍 辞書で引く」, 「（既定）」 when nothing is aimed, 「着地なし — 離すと
+  戻る」 over nothing. `PointerDropZone.address()` reads the SAME rack and
+  aim as `drop()`, so the line and the act cannot disagree (pure half:
+  `atenaFor`, drop-intent.ts, golden-pinned). The hold chip names its toss
+  (「→ 収集トレイ ・ scene乗車」) the moment the travel would commit — the
+  tray need not be on screen for the world to say where the thing lands.
+- **鋳造 (§2.3).** `HoldStore.mint` / `InboxStore.duplicate`: one gesture
+  at the object (the ⧉ verb on hold chips; ⧉ on every tray card; `d` on the
+  focused card; command `hold-mint`), the twin seats BESIDE its sibling
+  (same createdAt + insertion order in the tray; i+1 in the dock), no
+  dialog, deep-cloned so twins never alias. The cap still evicts to
+  gravity. This is Move 3 並べ替える's substrate. Deviation, stated: the
+  Calendar gesture was long-press → menu; on TEXT objects long-press
+  belongs to the OS selection, so the object's action row plays the menu.
+- **現在線 (§2.5).** The tray's present is its READING POSITION: a thin
+  minute-exact rail between what arrived since you last stood here and
+  everything already triaged, frozen for the sitting (the eye arranges
+  against a landmark, not a ticker), moved only between visits
+  (`_trayVisit`). Opening the tray lands AT the rail — the back-stroke
+  returns to the reading position, not the top. Pure half `nowlineIndex`/
+  `nowlineLabel`, golden-pinned.
+- **もう台帳にある (items 12–13).** The echo carries STATE on every armed
+  surface: a selection the 台帳 already holds shows its class dot and
+  「もう台帳にある」/「台帳に ×N」, and the chip is a door to the entry it
+  already is (`patternsIn`/`openPattern` ride peekChrome — one wiring, six
+  surfaces). The verbs stay: deliberate re-classification is legal;
+  accidental twinning because the menu never said is what this removes.
+- **The tilde search grammar (Ends/Starts).** 〜X = 後方一致, X〜 = 前方一致
+  — Monokakido's match modes in the alphabet every notation field already
+  speaks, taught by the search box's own placeholder (the two-languages
+  lesson). `endsWithSearch` scans expression AND reading keys, which is
+  also the reading-substring row (びを → 口火を切る shape: すり → 薬 is the
+  golden). Local indexes only, and the stats line says so.
+- **Homophone paging.** 決行 beside 血行: `homophones()` fans the query's
+  readings through the readingIndex; chips over the results flip instantly,
+  breadcrumbs untouched (聞く → 効く・利く golden-pinned).
+- **Deliberately NOT built — Example scope.** The space-AND narrowing
+  already reaches example text (`entryText` includes definitions), which
+  covers the "find the entry whose example says X" need; a dedicated scope
+  should come from shape-index's typed 用例 nodes, not from a fourth ad-hoc
+  scan. Queued, not faked.
+
 Perf, same date: the 𝕏 pane ran `detectPatterns` (the 126-operator engine) on
 up to 100 frozen tweets per keystroke and re-walked the whole 1.18M-char
 corpus for single-term KWIC. Both memoized (`patternCache` by tweet id;

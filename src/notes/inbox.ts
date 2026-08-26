@@ -248,6 +248,33 @@ export class InboxStore {
     await this.persist();
   }
 
+  /**
+   * 鋳造 (CALENDAR-PHYSICS §2.3): duplicate is a one-gesture mint, and copies
+   * coexist. The twin keeps the SAME createdAt — the time-sorted feed then
+   * seats it beside its sibling (equal keys keep insertion order, and the map
+   * is rebuilt with the copy directly after the original) — and every other
+   * field, deep-cloned so a later edit of one twin never writes through to
+   * the other. A variant starts as an exact twin; the varying is the hand's
+   * next act, not this one's.
+   */
+  async duplicate(id: string): Promise<InboxCard | null> {
+    const orig = this.cards.get(id);
+    if (!orig) return null;
+    let n = 2;
+    let mid = `${orig.id}-m${n}`;
+    while (this.cards.has(mid)) mid = `${orig.id}-m${++n}`;
+    const copy: InboxCard = structuredClone(orig);
+    copy.id = mid;
+    const next = new Map<string, InboxCard>();
+    for (const [k, v] of this.cards) {
+      next.set(k, v);
+      if (k === id) next.set(copy.id, copy);
+    }
+    this.cards = next;
+    await this.persist();
+    return copy;
+  }
+
   /** attach OCR'd bubbles to an image card (once — OCR results are frozen). */
   async setBubbles(id: string, bubbles: NonNullable<InboxCard['bubbles']>): Promise<boolean> {
     const c = this.cards.get(id);
@@ -314,4 +341,37 @@ export class InboxStore {
       .filter((c) => c.kind === 'mark' && c.mark?.file === path)
       .sort((a, b) => a.createdAt - b.createdAt);
   }
+}
+
+// ── 現在線 (CALENDAR-PHYSICS §2.5): the present as a thin, always-on landmark ──
+//
+// Calendar's now-line is minute-exact, renders through everything, and the
+// whole filmed session is the hand arranging objects AGAINST it. The tray's
+// present is not clock-now (that is just the top of a time-sorted feed); it
+// is the READING POSITION — the boundary between what arrived since you last
+// stood here and everything you have already triaged past. The rail holds
+// still for the whole sitting (the eye arranges against a landmark, not a
+// ticker) and moves only between visits.
+
+/**
+ * Where the rail sits in a DESC-sorted feed: the index of the first item
+ * at-or-under the floor. 0 = nothing new (rail at the top, and it SAYS so);
+ * length = everything is new; -1 = never visited, no line to draw.
+ */
+export function nowlineIndex(atsDesc: readonly number[], floor: number): number {
+  if (floor <= 0) return -1;
+  const i = atsDesc.findIndex((at) => at <= floor);
+  return i === -1 ? atsDesc.length : i;
+}
+
+/** Minute-exact, like the filmed line. Same-day shows the time alone. */
+export function nowlineLabel(floor: number, now: number): string {
+  const f = new Date(floor);
+  const n = new Date(now);
+  const hm = `${f.getHours()}:${String(f.getMinutes()).padStart(2, '0')}`;
+  const sameDay = f.getFullYear() === n.getFullYear()
+    && f.getMonth() === n.getMonth() && f.getDate() === n.getDate();
+  return sameDay
+    ? `前回ここまで ・ ${hm}`
+    : `前回ここまで ・ ${f.getMonth() + 1}/${f.getDate()} ${hm}`;
 }

@@ -44,6 +44,8 @@ export interface HoldDockDeps {
   lookup: (chip: HeldChip) => void;
   /** discard on purpose (the one road that does NOT go to the tray). */
   discard: (chip: HeldChip) => void;
+  /** 鋳造 — mint a twin beside this chip (§2.3). */
+  mint: (chip: HeldChip) => void;
 }
 
 export class HoldDock {
@@ -77,6 +79,7 @@ export class HoldDock {
     if (this.verbsFor === chip.id) this.renderVerbs(el, chip);
 
     let x0 = 0, y0 = 0, dx = 0, dy = 0, tracking = false;
+    let atena: HTMLElement | null = null;
     el.addEventListener('pointerdown', (e) => {
       // chrome you press, not text you read — the press must not start a
       // selection or scroll underneath (chip is body-level; page scroll is
@@ -92,10 +95,24 @@ export class HoldDock {
       dx = e.clientX - x0; dy = e.clientY - y0;
       // compositor-only while in flight (the floating-rail lesson)
       el.style.transform = `translate(${dx}px, ${dy}px) scale(1.04)`;
+      // 宛名札 (§2.2): the moment the travel would COMMIT as a toss, the
+      // destination is named at the chip — the tray need not be on screen for
+      // the world to say where this lands. Appears only past the threshold,
+      // so a resting press never grows a label.
+      const tossing = isToss(dx, dy, this.deps.knobs().flickPx);
+      if (tossing && !atena) {
+        atena = el.createDiv('jp-atena jp-atena--hold');
+        atena.setText(chip.sentence ? '→ 収集トレイ ・ scene乗車' : '→ 収集トレイ');
+      } else if (!tossing && atena) {
+        atena.remove();
+        atena = null;
+      }
     });
     const settle = (e: PointerEvent): void => {
       if (!tracking) return;
       tracking = false;
+      atena?.remove();
+      atena = null;
       el.releasePointerCapture(e.pointerId);
       el.removeClass('jp-hold-chip--held');
       if (isToss(dx, dy, this.deps.knobs().flickPx)) {
@@ -129,6 +146,9 @@ export class HoldDock {
     verb('⤵', 'トレイへ', () => this.deps.toTray(chip));
     verb('⚡', '分類して台帳へ（場面つき）', () => this.deps.classify(chip));
     verb('📖', '辞書で引く', () => this.deps.lookup(chip));
+    // 鋳造 (§2.3): the menu at the object mints a twin beside it — variant-
+    // making costs nothing, demands no aim, and asks no dialog.
+    verb('⧉', '複製 — 隣に鋳造', () => this.deps.mint(chip));
     verb('✕', '捨てる（トレイに残らない）', () => this.deps.discard(chip));
   }
 }

@@ -24,6 +24,8 @@ import { dropIntents, type DropIntent, type DropSurface } from '../notes/drop-in
 import { vaultPathOf, type InVault } from '../notes/resource-url.ts';
 import { hand, isSlate, isThumb } from './posture.ts';
 import type { PeekData } from './hover-peek.ts';
+import { classDot } from './class-grammar.ts';
+import type { NoteClass } from '../notes/note-types.ts';
 
 export interface SelectionEchoDeps {
   surface: DropSurface | (() => DropSurface);
@@ -66,6 +68,16 @@ export interface SelectionEchoDeps {
    * scene arrives wherever the chip lands (S1).
    */
   hold?: (text: string, surface: string, sentence?: string) => void;
+
+  /**
+   * Items 12–13 (コマ送り): the menu carries STATE. Monokakido's hold menu
+   * flips to 「Delete … from Bookmarks」 when the thing is already saved; the
+   * plugin's echo offered 分類 with a straight face for a phrase the hand had
+   * classified last week. These two make the card say 「もう台帳にある」 and
+   * open the entry it already is, instead of minting a twin by accident.
+   */
+  patternsIn?: (text: string) => Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }>;
+  openPattern?: (id: string) => void;
 
   /**
    * Turn what a rendered image's DOM knows into a vault path the tray can
@@ -264,6 +276,34 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
         // such word", which is a different and much stronger claim.
         () => { if (mine === seq && bar) { fillHead(head, null, '辞書を読めませんでした'); place(rect); } },
       );
+    }
+
+    // Items 12–13: BETWEEN the answer and the verbs, the state. A phrase the
+    // 台帳 already holds says so — with its class dot, wearing the same mark
+    // it wears everywhere — and the chip is a door to the entry it already
+    // is. The verbs below stay: re-classifying deliberately is legal; doing
+    // it because the menu never said is the accident this line removes.
+    if (deps.patternsIn && deps.openPattern) {
+      const known = deps.patternsIn(text);
+      if (known.length) {
+        const exact = known.find((k) => k.key === text.trim()) ?? known[0];
+        const chip = bar.createDiv('jp-echo-known');
+        classDot(chip, exact.class, { ratified: exact.classRatified !== false });
+        chip.createSpan({
+          text: exact.key === text.trim()
+            ? 'もう台帳にある'
+            : `台帳に ${known.length}件（${exact.key}）`,
+          cls: 'jp-echo-known-label',
+        });
+        chip.title = known.map((k) => k.key).join('・') + ' — タップで台帳の項目へ';
+        chip.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          hide();
+          window.getSelection()?.removeAllRanges();
+          deps.openPattern!(exact.id);
+        });
+      }
     }
 
     // The verbs get their own row so the answer can have one above them; with

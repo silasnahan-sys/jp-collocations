@@ -8038,3 +8038,105 @@ body.jp-posture-slate .jp-drop-veil {
   font-size: 12px;
   line-height: 1.5;
 }
+
+/* ═══════════════════════════════════════════════════════════
+   宛名札 — the carried thing is always addressed (§2.2 / §30.2)
+   Rides above-left of the nib during any synthetic carry, naming what a
+   release RIGHT NOW does. On the hold chip it appears only once the travel
+   would commit as a toss. Same z as the pill: they travel together.
+   ═══════════════════════════════════════════════════════════ */
+.jp-atena {
+  position: fixed;
+  transform: translate(-100%, -100%);
+  z-index: 101;
+  pointer-events: none;
+  white-space: nowrap;
+  padding: 3px 10px;
+  border-radius: 10px;
+  font-size: var(--font-ui-smaller);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  border: 1px solid var(--text-accent);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+}
+.jp-atena--void {
+  border-color: var(--background-modifier-border);
+  color: var(--text-faint);
+}
+.jp-atena--hold {
+  position: absolute;
+  left: 50%;
+  top: -8px;
+  transform: translate(-50%, -100%);
+  z-index: 1;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   現在線 — the present as a thin, always-on landmark (§2.5)
+   The reading position, minute-exact, rendering through the feed.
+   ═══════════════════════════════════════════════════════════ */
+.jp-tray-nowline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+.jp-tray-nowline::before,
+.jp-tray-nowline::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  background: var(--text-accent);
+  opacity: 0.75;
+  border-radius: 1px;
+}
+.jp-tray-nowline-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-accent);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 鋳造 — the ⧉ mint sits small at the row's end */
+.jp-tray-mint { margin-left: auto; min-width: 34px; }
+
+/* Items 12–13 — the echo carries 台帳 state: already caught, said so */
+.jp-echo-known {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  margin: 2px 6px;
+  border-radius: 9px;
+  background: var(--background-secondary);
+  cursor: pointer;
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+}
+.jp-echo-known:hover { color: var(--text-normal); }
+
+/* Homophone paging — the words that sound like this one, as flip chips */
+.jp-dict-homophones {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+.jp-dict-homophones-label {
+  font-size: var(--font-ui-smaller);
+  color: var(--text-faint);
+  letter-spacing: 0.06em;
+}
+.jp-dict-homophone {
+  min-height: 30px;
+  padding: 3px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  cursor: pointer;
+}
+.jp-dict-homophone:hover { border-color: var(--text-accent); }

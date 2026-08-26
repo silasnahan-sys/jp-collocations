@@ -47,7 +47,7 @@ import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
 import { classBadge } from './class-grammar';
 import { armDrops, armSelectionEcho, mountSurfaceBar, wideDock, type ViewChrome } from './view-chrome';
 import { makeDraggable } from './drag-out';
-import { historyDays, type DictHistoryStore } from '../dictionary/dict-nav';
+import { historyDays, searchNotation, type DictHistoryStore } from '../dictionary/dict-nav';
 
 export const JP_DICTIONARY_VIEW_TYPE = 'jp-dictionary-view';
 
@@ -525,6 +525,7 @@ export class DictionaryView extends ItemView {
     if (a) a.tempo = undefined; // descend runs once; retries only carry light
     this.applyArrival();
     this.renderNavBar();
+    this.renderHomophones();
     this.rerunFind();
   }
 
@@ -826,6 +827,62 @@ export class DictionaryView extends ItemView {
   }
 
   /**
+   * A tilde-mode search (〜X = Ends, X〜 = Starts) is answered whole from the
+   * in-memory indexes — the sidecars have no ends-scan, and the stats line
+   * says so instead of pretending they were asked.
+   */
+  private renderNotationSearch(nota: { mode: 'ends' | 'starts'; term: string }, query: string): void {
+    if (!this.resultsEl || !this.statsEl) return;
+    this.searchGen++; // a sidecar answer in flight must not paint over this
+    const results = nota.mode === 'ends'
+      ? this.dictStore.endsWithSearch(nota.term, 40)
+      : this.dictStore.prefixSearch(nota.term, 40);
+    const modeName = nota.mode === 'ends' ? '後方一致' : '前方一致';
+    this.statsEl.empty();
+    this.statsEl.createSpan({
+      text: `「${query}」${modeName} ${results.length}件（ローカル辞書のみ）`,
+      cls: 'jp-dict-stat-text',
+    });
+    this.resultsEl.empty();
+    if (!results.length) {
+      this.renderEmpty(`「${nota.term}」で${nota.mode === 'ends' ? '終わる' : '始まる'}見出し・読みはありません`);
+    } else {
+      for (const group of this.groupResults(results)) {
+        this.renderEntryCard(this.resultsEl, group);
+      }
+    }
+    this.historyStore?.record(query);
+    this.afterRender();
+  }
+
+  /**
+   * Homophone paging (gap item 6): the words that SOUND like this one, as
+   * chips over the results — 決行 beside 血行, Monokakido's あさ/あした/ちょう
+   * pages. A chip tap is a FLIP: same depth, instant, breadcrumbs untouched.
+   */
+  private renderHomophones(): void {
+    if (!this.resultsEl || !this.currentQuery || this.historyMode) return;
+    if (this.resultsEl.querySelector('.jp-dict-homophones')) return;
+    if (!this.resultsEl.querySelector('.jp-dict-card')) return;
+    const same = this.dictStore.homophones(this.currentQuery);
+    if (!same.length) return;
+    // A late (sidecar-half) prepend must not shift a page the hand is
+    // already reading — only a fresh, unscrolled screen gets the row.
+    if (this.resultsEl.scrollTop > 4) return;
+    const row = createDiv('jp-dict-homophones');
+    row.createSpan({ text: '同音', cls: 'jp-dict-homophones-label' });
+    for (const h of same) {
+      const chip = row.createEl('button', { cls: 'jp-dict-homophone', attr: { title: h.reading } });
+      chip.setText(h.expression);
+      chip.addEventListener('click', () => {
+        this.lookupWord(h.expression);
+        this.renderBreadcrumbs();
+      });
+    }
+    this.resultsEl.prepend(row);
+  }
+
+  /**
    * The dated History (item 16) — 1,251 entries deep in Monokakido, a
    * session array here until now. Every row is a door back: tap → the word
    * opens with a descend. Grouped 今日/昨日/M月D日 by dict-nav.historyDays.
@@ -931,7 +988,7 @@ export class DictionaryView extends ItemView {
     const searchRow = (wide ?? header).createDiv('jp-dict-search-row');
     this.searchInput = searchRow.createEl('input', {
       type: 'search',
-      placeholder: '検索… (空白区切り = 絞り込み)',
+      placeholder: '検索… (空白=絞り込み ・ 〜X=後方一致 ・ X〜=前方一致)',
       cls: 'jp-dict-search-input',
       attr: {
         autocomplete: 'off',
@@ -1099,6 +1156,13 @@ export class DictionaryView extends ItemView {
     this.pendingArrive = null;
     this.historyMode = false;
     const gen = ++this.searchGen;
+
+    // The tilde grammar (dict-nav.searchNotation): 〜たなら = Ends,
+    // もし〜 = Starts — Monokakido's match modes in the alphabet every
+    // notation field already speaks. A mode query is its own complete
+    // answer; the ordinary walk below never runs for one.
+    const nota = searchNotation(query);
+    if (nota) { this.renderNotationSearch(nota, query); return; }
 
     // Merge: exact results first, then substring-only
     let merged = this.mergeResults(
@@ -1317,6 +1381,10 @@ export class DictionaryView extends ItemView {
     this.hideSuggestions();
     if (!this.resultsEl || !this.statsEl) return;
     const gen = ++this.searchGen;
+
+    // The tilde grammar — same branch as the live path.
+    const nota = searchNotation(query);
+    if (nota) { this.renderNotationSearch(nota, query); return; }
 
     let results = this.dictStore.lookup(query);
 

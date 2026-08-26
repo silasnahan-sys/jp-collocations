@@ -125,5 +125,14 @@ console.log('══ neighbours: reading entry + kana folding + honest null ═�
   check('a word with no place returns null (chips hide)', N.neighborsOf(idx, '存在しない語') === null);
 }
 
+console.log('══ the tilde search grammar: one alphabet, three modes ══');
+{
+  check('〜たなら is Ends', JSON.stringify(N.searchNotation('〜たなら')) === '{"mode":"ends","term":"たなら"}');
+  check('all three tildes are one mark', N.searchNotation('~たなら')?.mode === 'ends' && N.searchNotation('～たなら')?.mode === 'ends');
+  check('もし〜 is Starts', JSON.stringify(N.searchNotation('もし〜')) === '{"mode":"starts","term":"もし"}');
+  check('a bare word is the ordinary walk', N.searchNotation('たなら') === null);
+  check('a lone tilde asks nothing', N.searchNotation('〜') === null);
+}
+
 console.log(`\n${fail ? '✗' : '✓'} dict-nav: ${pass}/${pass + fail} checks passed`);
 if (fail) process.exit(1);
