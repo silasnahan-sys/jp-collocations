@@ -329,6 +329,21 @@ code near one, run its golden.
    re-indexed file was counted twice (then five times, then forty) in the
    constellation, and a deleted file could never stop voting.
 
+18. **A hold is a signal, never an action — carry commits on MOTION.** The
+   30fps films measured the tip PARKING on its target 0.47–1.33s on every
+   single tap (reading, then committing). `pointer-drag.ts` therefore never
+   starts a carry on a timer: the hold matures into a silent `--held` lift,
+   movement begins the carry, release-in-place falls through to the row's own
+   click, and the non-passive scroll blocker installs only mid-carry. Do not
+   "fix" this back to arm-at-350ms/carry-at-700ms — that made every reading
+   park a locked page. Same evidence base (DESIGN §30): the 辞書 search box
+   speaks space-AND (whole-string first, then narrow; the empty state names
+   the failing term), the selection echo grows a mid-word cut through its
+   sentence before trusting a deinflection guess, a mismatched drop repaints
+   as a chooser instead of executing the leader, and `detectPatterns` in the
+   𝕏 pane is memoized per frozen tweet — re-running the engine per keystroke
+   was the felt slowness there.
+
 ### Corpus adapters (`scraper/`) — the 語法プロフィール, §22.7
 
 Two sources feed the one frozen `payload.goho`. Both are **enrichment**: one

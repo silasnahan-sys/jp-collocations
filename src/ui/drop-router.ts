@@ -24,11 +24,13 @@
  * `types` plus per-file MIME — and re-derived concretely on drop. `dropIntents`
  * keys intents by action precisely so the target you aimed at is still findable
  * a moment later. When it isn't (you aimed at ⚡ but the payload turned out to
- * be a YouTube link), the concrete leader wins and says so; guessing your aim
- * onto a payload that cannot support it would be the dishonest branch.
+ * be a YouTube link), NOTHING runs: the rack repaints with what the payload
+ * really supports and the user chooses or cancels. Running the concrete leader
+ * with an explanatory toast was tried first and filmed landing as bafflement —
+ * an executed verb the user never picked is a broken promise however well it
+ * apologises.
  */
 
-import { Notice } from 'obsidian';
 import { dropIntents, type DropIntent, type DropSample, type DropSurface } from '../notes/drop-intent.ts';
 import type { InVault } from '../notes/resource-url.ts';
 import { registerPointerDropZone } from './pointer-drag.ts';
@@ -138,7 +140,7 @@ export function attachDropRouter(root: HTMLElement, deps: DropRouterDeps): () =>
     cards = [];
   };
 
-  const paint = (intents: DropIntent[], mode: 'drag' | 'paste'): void => {
+  const paint = (intents: DropIntent[], mode: 'drag' | 'paste' | 'confirm'): void => {
     cards = intents.slice(0, MAX_CARDS);
     if (!cards.length) { teardown(); return; }
     veil?.remove();
@@ -146,7 +148,9 @@ export function attachDropRouter(root: HTMLElement, deps: DropRouterDeps): () =>
     const sheet = veil.createDiv('jp-drop-sheet');
     sheet.createDiv({
       cls: 'jp-drop-title',
-      text: mode === 'paste' ? '貼り付けたものを…' : 'ここへ落とす',
+      text: mode === 'paste' ? '貼り付けたものを…'
+        : mode === 'confirm' ? '落としたものは違いました — どれにする?'
+          : 'ここへ落とす',
     });
     const rack = sheet.createDiv('jp-drop-cards');
     for (const [i, intent] of cards.entries()) {
@@ -236,6 +240,33 @@ export function attachDropRouter(root: HTMLElement, deps: DropRouterDeps): () =>
     if (depth <= 0) teardown();
   };
 
+  /**
+   * Turn the painted cards into a tap-to-choose sheet. One wiring for the two
+   * moments a human decision sits between the gesture and the run: a paste
+   * (which never had an aim) and a drop whose aim the real payload cannot
+   * support (which had one and lost it).
+   */
+  const armChooser = (files: File[]): void => {
+    if (!veil) return;
+    veil.querySelectorAll('.jp-drop-card').forEach((el, i) => {
+      el.addEventListener('click', () => {
+        const intent = cards[i];
+        teardown();
+        void deps.run(intent, files);
+      });
+    });
+    // Anywhere else, or Escape, cancels — a chooser that traps you is worse
+    // than no chooser.
+    veil.addEventListener('click', (ev) => { if (ev.target === veil) teardown(); });
+    const esc = (ev: KeyboardEvent): void => {
+      if (ev.key !== 'Escape') return;
+      ev.preventDefault();
+      teardown();
+      window.removeEventListener('keydown', esc, true);
+    };
+    window.addEventListener('keydown', esc, true);
+  };
+
   const onDrop = (e: DragEvent): void => {
     if (!veil || !e.dataTransfer) { teardown(); return; }
     const aimedIdx = cardAt(e);
@@ -246,13 +277,21 @@ export function attachDropRouter(root: HTMLElement, deps: DropRouterDeps): () =>
     e.preventDefault();
     e.stopPropagation();
     const chosen = (aimed && real.find((i) => i.action === aimed)) ?? real[0];
+    // The aim was unsupportable by what actually arrived. The old branch ran
+    // the concrete leader and explained itself in a toast — which was honest
+    // and still wrong, because it EXECUTED something the user never chose
+    // (filmed, IMG_1197 213s: 「落としたものは別物でした」 landing as pure
+    // confusion). Nothing runs on a broken promise now: the cards repaint
+    // with what the payload really supports, and the user picks or cancels.
+    // The bytes are already held (`realSample`), so the choice can take its
+    // time.
+    if (aimed && chosen.action !== aimed) {
+      paint(real, 'confirm');
+      armChooser(files);
+      return;
+    }
     flash(root, e.clientX, e.clientY);
     teardown();
-    // The aim was unsupportable by what actually arrived. Say so rather than
-    // pretending — the alternative is a drop that silently did something else.
-    if (aimed && chosen.action !== aimed) {
-      new Notice(`落としたものは別物でした → ${chosen.icon} ${chosen.label}`, 4000);
-    }
     void deps.run(chosen, files);
   };
 
@@ -276,24 +315,7 @@ export function attachDropRouter(root: HTMLElement, deps: DropRouterDeps): () =>
     if (!intents.length) return;
     e.preventDefault();
     paint(intents, 'paste');
-    if (!veil) return;
-    veil.querySelectorAll('.jp-drop-card').forEach((el, i) => {
-      el.addEventListener('click', () => {
-        const intent = cards[i];
-        teardown();
-        void deps.run(intent, files);
-      });
-    });
-    // Anywhere else, or Escape, cancels — a paste chooser that traps you is
-    // worse than no paste chooser.
-    veil.addEventListener('click', (ev) => { if (ev.target === veil) teardown(); });
-    const esc = (ev: KeyboardEvent): void => {
-      if (ev.key !== 'Escape') return;
-      ev.preventDefault();
-      teardown();
-      window.removeEventListener('keydown', esc, true);
-    };
-    window.addEventListener('keydown', esc, true);
+    armChooser(files);
   };
 
   /**

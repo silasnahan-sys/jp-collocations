@@ -97,6 +97,10 @@ export class XSearchView extends ItemView {
   private loadMoreEl: HTMLElement | null = null;
 
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Engine output per frozen tweet — see the pill block in renderTweetCard. */
+  private patternCache = new Map<string, ReturnType<typeof detectPatterns>>();
+  /** Last KWIC build — the full-corpus scan must not re-run per keystroke. */
+  private usageCache: { term: string; count: number; total: number; usage: ReturnType<typeof buildXUsage> } | null = null;
   private liveCursor: string | null = null;
   private liveBusy = false;
   private sortMode: SortMode = 'latest';
@@ -436,7 +440,16 @@ export class XSearchView extends ItemView {
     const single = this.query.allTerms.length === 1 && !this.query.anyTerms.length
       ? this.query.allTerms[0].trim() : '';
     if (single) {
-      const u = buildXUsage(this.deps.corpus.getAll(), single, total);
+      // The KWIC alignment walks the WHOLE corpus (1.18M chars). Typing やや
+      // used to run it three times before the last keystroke settled. The
+      // corpus is append-only, so (term, size, total) misses only when the
+      // answer would actually differ.
+      const all = this.deps.corpus.getAll();
+      const c = this.usageCache;
+      const u = (c && c.term === single && c.count === all.length && c.total === total)
+        ? c.usage
+        : buildXUsage(all, single, total);
+      this.usageCache = { term: single, count: all.length, total, usage: u };
       renderXUsage(this.resultsEl, u, {
         openUrl: (url) => window.open(url, '_blank'),
         onCapture: this.deps.onCaptureLine
@@ -695,8 +708,18 @@ export class XSearchView extends ItemView {
       }
     }
 
-    // Discourse-pattern pills — the plugin's signature analysis, applied to the tweet.
-    const patterns = detectPatterns(t.text);
+    // Discourse-pattern pills — the plugin's signature analysis, applied to the
+    // tweet. MEMOIZED per tweet id: this is the 126-operator engine, and the
+    // local search re-renders up to 100 cards per keystroke (110ms debounce) —
+    // re-running the engine on the same frozen tweet every keystroke was most
+    // of the felt slowness of typing in this pane. A corpus tweet's text never
+    // changes, so the cache cannot go stale.
+    let patterns = this.patternCache.get(t.id);
+    if (!patterns) {
+      patterns = detectPatterns(t.text);
+      if (this.patternCache.size > 3000) this.patternCache.clear();
+      this.patternCache.set(t.id, patterns);
+    }
     if (patterns.length > 0) {
       const pills = card.createDiv('jp-x-card-patterns');
       const seen = new Set<string>();

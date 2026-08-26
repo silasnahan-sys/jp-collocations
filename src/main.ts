@@ -48,6 +48,7 @@ import { generatePhraseInContextCard, generateRelationChunkCards, setCardGenReso
 import { extractCollocations } from "./srs/collocation-extractor";
 import { DictionaryView, JP_DICTIONARY_VIEW_TYPE } from "./ui/DictionaryView";
 import { DictionaryStore } from "./dictionary/DictionaryStore";
+import type { DictLookupResult } from "./dictionary/types";
 import { XCorpusStore } from "./x/XCorpusStore";
 import { XClient } from "./x/XClient";
 import { XSearchView, JP_X_VIEW_TYPE, type XViewDeps } from "./ui/XSearchView";
@@ -4014,19 +4015,22 @@ export default class JPCollocationsPlugin extends Plugin {
    * one holding the 35 books — is the fallback, and it is the only one of the
    * two worth an await.
    */
-  private async lookUpPhrase(text: string): Promise<PeekData | null> {
+  private async lookUpPhrase(text: string, sentence?: string): Promise<PeekData | null> {
     const q = text.trim();
     if (!q) return null;
-    const local = this.dictStore.lookup(q);
-    if (local.length) {
-      const h = local[0];
-      return {
-        headword: h.term.expression,
-        reading: h.term.reading,
-        deinflection: h.deinflection,
-        def: definitionsPreview(h.term.definitions),
-      };
-    }
+    const direct = this.peekOfLocal(this.dictStore.lookup(q));
+    // An EXACT hit on what the hand selected is the answer, full stop.
+    if (direct && !direct.deinflection?.length) return direct;
+    // Anything else the bare string yields is a deinflection GUESS, and the
+    // guess can be junk when the selection knife cut mid-word: filmed
+    // (IMG_1197 34–36s), まない selected out of 気が進まない, the ない→る rule
+    // validated まる, and the echo answered a word the user never touched.
+    // The characters the knife left behind are sitting in the sentence —
+    // grow the selection back through them first, longest extension first,
+    // and let a real dictionary hit on 進まない (→ 進む) outrank the junk.
+    const grown = sentence ? await this.lookUpGrown(q, sentence) : null;
+    if (grown) return grown;
+    if (direct) return direct;
     const hit = (await this.bigDict.lookup(q, 1))[0];
     if (!hit) return null;
     return {
@@ -4035,6 +4039,53 @@ export default class JPCollocationsPlugin extends Plugin {
       ...(hit.deinflection ? { deinflection: hit.deinflection } : {}),
       def: definitionsPreview(hit.entry.senses ?? []),
     };
+  }
+
+  /** First local hit as a peek, or null. */
+  private peekOfLocal(local: DictLookupResult[]): PeekData | null {
+    const h = local[0];
+    if (!h) return null;
+    return {
+      headword: h.term.expression,
+      reading: h.term.reading,
+      deinflection: h.deinflection,
+      def: definitionsPreview(h.term.definitions),
+    };
+  }
+
+  /**
+   * Try the selection with 1–4 of its own preceding characters restored,
+   * longest first, stopping at anything that ends a word's territory
+   * (punctuation, brackets, whitespace). A candidate only wins by being a
+   * REAL entry — the same validation every deinflection candidate passes —
+   * so growth can only replace junk with attested words, never invent.
+   */
+  private async lookUpGrown(q: string, sentence: string): Promise<PeekData | null> {
+    const idx = sentence.indexOf(q);
+    if (idx <= 0) return null;
+    const stop = /[\s、。．，！？!?…‥「」『』（）()［］\[\]〈〉《》・：;；]/;
+    const grownForms: string[] = [];
+    for (let ext = 1; ext <= 4 && idx - ext >= 0; ext++) {
+      const ch = sentence[idx - ext];
+      if (stop.test(ch)) break;
+      grownForms.unshift(sentence.slice(idx - ext, idx) + q);
+    }
+    // longest first — the most specific surface the sentence supports
+    for (const form of grownForms) {
+      const peek = this.peekOfLocal(this.dictStore.lookup(form));
+      if (peek) return peek;
+    }
+    for (const form of grownForms) {
+      const hit = (await this.bigDict.lookup(form, 1))[0];
+      if (!hit) continue;
+      return {
+        headword: hit.entry.expression,
+        ...(hit.entry.reading ? { reading: hit.entry.reading } : {}),
+        ...(hit.deinflection ? { deinflection: hit.deinflection } : {}),
+        def: definitionsPreview(hit.entry.senses ?? []),
+      };
+    }
+    return null;
   }
 
   /** The two peek deps every chrome-armed surface gets, spread in at each site. */
@@ -4047,7 +4098,7 @@ export default class JPCollocationsPlugin extends Plugin {
    */
   private peekChrome(): Pick<ViewChrome, "lookUp" | "openWord" | "backPeek" | "inVault" | "hold"> {
     return {
-      lookUp: (text) => this.lookUpPhrase(text),
+      lookUp: (text, sentence) => this.lookUpPhrase(text, sentence),
       openWord: (hw) => void this.openDictionaryView(hw),
       backPeek: () => this.navPeek(),
       inVault: (c) => this.resolveVaultPath(c),

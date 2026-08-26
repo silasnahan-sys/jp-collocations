@@ -44,8 +44,16 @@ export interface SelectionEchoDeps {
    * Here they are one thing. Same card, same gesture, one shape (`PeekData`)
    * for one idea. Optional because a surface with nothing to look up should
    * render no head rather than an empty one (§28 S6).
+   *
+   * `sentence` is the line the selection was cut from, when one can be found.
+   * It exists because the selection knife cuts mid-word: filmed (IMG_1197
+   * 34–36s), a Pencil selection of まない out of 気が進まない was looked up
+   * bare, the ない→る rule validated まる, and the echo confidently answered
+   * a word the user never touched. The characters the knife left behind are
+   * right there in the sentence — the resolver can grow the selection back
+   * through them and find 進む. See `lookUpPhrase` in main.ts.
    */
-  look?: (text: string) => Promise<PeekData | null>;
+  look?: (text: string, sentence?: string) => Promise<PeekData | null>;
 
   /** The way out: open the full entry when the head is not enough. */
   open?: (headword: string) => void;
@@ -92,6 +100,18 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
    *  the selection moved on writes into nothing instead of into the wrong
    *  phrase's card. */
   let seq = 0;
+  /**
+   * What made the last press — because a selection made by touch or Pencil on
+   * a touch posture summons the PLATFORM's edit menu too (Copy / Writing
+   * Tools), and iOS places it ABOVE the selection. Filmed (IMG_1197 51–63s):
+   * the echo also placed itself above, the native bar landed between them,
+   * and one selection wore three layers of chrome. We cannot suppress the
+   * system's menu; we can stop fighting it for the same airspace — see
+   * `place`.
+   */
+  let lastPointer = 'mouse';
+  const notePointer = (e: PointerEvent): void => { lastPointer = e.pointerType || 'mouse'; };
+  root.addEventListener('pointerdown', notePointer, { capture: true, passive: true });
 
   const hide = (): void => { seq++; bar?.remove(); bar = null; };
 
@@ -130,9 +150,27 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
     // the bar must never sit on top of the words it is about. On a slate the
     // preference for ABOVE is stronger than a preference: below the selection
     // is exactly where the writing hand is.
+    //
+    // EXCEPT when the platform's own edit menu is coming. A touch or Pencil
+    // selection on a touch posture summons iOS's Copy/Writing-Tools bar, and
+    // the system always claims the space directly above the highlight. Two
+    // menus above one selection was the filmed stack-up; so when the native
+    // bar is expected, this one yields ABOVE and takes BELOW — each menu gets
+    // its own airspace and both stay readable. The hand-occlusion worry that
+    // made ABOVE the slate preference is already softened by `bias`.
+    const nativeLikely = isSlate() && lastPointer !== 'mouse';
     const above = rect.top - box.top - bar.offsetHeight - 8;
+    const below = rect.bottom - box.top + 8;
+    const belowFits = below + bar.offsetHeight < box.height - 4;
     bar.style.left = `${left}px`;
-    bar.style.top = above > 4 ? `${above}px` : `${rect.bottom - box.top + 8}px`;
+    if (nativeLikely && belowFits) {
+      bar.style.top = `${below}px`;
+    } else if (nativeLikely && above > 4) {
+      // No room below; go above, but clear the native bar's altitude too.
+      bar.style.top = `${Math.max(4, above - 44)}px`;
+    } else {
+      bar.style.top = above > 4 ? `${above}px` : `${below}px`;
+    }
   };
 
   /** The answer, once the shelf has one. */
@@ -201,7 +239,11 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
 
     hide();
     const mine = ++seq;
+    const range0 = sel.rangeCount ? sel.getRangeAt(0) : null;
     const rect = sel.getRangeAt(0).getBoundingClientRect();
+    // Cut once, used twice: the lookup grows a mid-word selection through it,
+    // and the grab carries it as the scene (S1).
+    const sentence = sentenceAround(range0, root);
     // Footed on a phone only. A tablet keeps the bar AT the selection: the
     // Pencil is already there, and a trip to the bottom of a 1366px screen to
     // act on a word the nib is touching is the opposite of the point.
@@ -216,7 +258,7 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
         cls: 'jp-echo-head-hw',
         text: [...text].length > 18 ? `${[...text].slice(0, 18).join('')}…` : text,
       });
-      void deps.look(text).then(
+      void deps.look(text, sentence).then(
         (d) => { if (mine === seq && bar) { fillHead(head, d); place(rect); } },
         // A shelf that fails to answer says so. It must never look like "no
         // such word", which is a different and much stronger claim.
@@ -251,7 +293,6 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
     // intent list on purpose: intents compete for MAX_VERBS slots by surface
     // relevance, and the grab must exist on every surface unconditionally.
     if (deps.hold) {
-      const sentence = sentenceAround(sel.rangeCount ? sel.getRangeAt(0) : null, root);
       const b = verbs.createEl('button', { cls: 'jp-echo-btn jp-echo-btn--hold', attr: { title: '持っておく — 画面端に置いて読み続ける' } });
       b.createSpan({ cls: 'jp-echo-icon', text: '✊' });
       b.createSpan({ cls: 'jp-echo-label', text: '持つ' });
@@ -284,6 +325,7 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
     hide();
     document.removeEventListener('selectionchange', onChange);
     root.removeEventListener('scroll', hide, true);
+    root.removeEventListener('pointerdown', notePointer, true);
     window.removeEventListener('keydown', onEsc, true);
     root.removeClass('jp-echo-host');
     delete host._jpcEcho;
@@ -310,8 +352,10 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
  * the chip simply carries no sentence (S6: absent, not fabricated).
  */
 function sentenceAround(range: Range | null, root: HTMLElement): string | undefined {
-  if (!range) return undefined;
-  let node: Node | null = range.startContainer;
+  // `startContainer` is optional in the golden's hand-written DOM, and this
+  // runs on every show now — degrade to "no sentence" (S6), never throw.
+  const node: Node | undefined = range?.startContainer ?? undefined;
+  if (!node) return undefined;
   let el: HTMLElement | null = node.nodeType === 1 ? (node as HTMLElement) : node.parentElement;
   for (let hops = 0; el && el !== root && hops < 5; hops++) {
     const text = el.textContent?.trim().replace(/\s+/g, ' ') ?? '';

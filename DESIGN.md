@@ -2466,3 +2466,241 @@ contract that `pattern-store.ts` already encodes (`Attestation`, `SceneRef`,
 `stratumOf`, `status:'suggested'`) and that the ingestion pipelines only
 partially honor. When the two disagree, **the contract in `pattern-store.ts`
 wins and the pipeline is the bug.**
+
+## 29. The 𝕏検索辞書 as an interrogated corpus — one build from three angles (2026-08-25, PROPOSED)
+
+This is the DESIGN section `claude/PHYSICS-2026-08-19.md §5` adjudicated and
+every prior pass promised without writing. It consolidates the Aug-19 governing
+directive (Axis 2: X relevance per note-type), the 印象として brief, the
+fourth-pass probe design (rescued into PHYSICS §5), and two use cases measured
+2026-08-25 (the study-label paradigm; the 言えば slot). Doctrine first:
+
+**The X view is not a search box over tweets; it is a corpus you interrogate
+from the production direction.** You arrive with a draft thought (言えるか),
+not a string you have — the same inversion as §27 (reach-for) and the HOLE
+(§27.0.2): entered by what you don't have. Relevance is class-conditional (§7
+is the schema of "relevant HOW"); silence is an interpretable answer, never a
+failure; every answer re-anchors the next probe; and a probe the corpus cannot
+answer becomes a **standing 台帳 entry** (`attestations: []`,
+`status:'wondered'`) that the growing corpus answers over time. PHYSICS §5:
+*X relevance + probe + 産出 = ONE build from three angles.* This section is
+that build's contract.
+
+**Current state — the entire gap in one line:** `XCorpusStore.search()` ends in
+`out.sort((a, b) => b.createdAt - a.createdAt)`; recency IS the ranking, sort
+modes are latest/likes/RT, and `makeXDeps` passes the X view no dictionary
+access at all. Zero lines of any rung below exist.
+
+**The corpus, measured 2026-08-25 on the live vault** (`part_xCorpus.json`):
+2,480 tweets, 2,337 authors, 1,183,143 chars. Two measured facts govern the
+whole design. At this size **silence is the modal answer** (印象=47 but
+印象として=1, 印象として持っ=0; 今まで×勘案=0), so the descent ladder is the
+machine's first duty (§5 law ②). And **substring matching lies**: 足して=23
+occurrences, all 23 false friends (満足して×15, 不足して×7, 補足して×1 — zero
+true 足す), so the true-hit layer is the floor under everything.
+
+### 29.1 One test at three scales (the spine)
+
+Greedy matching fails at three different boundaries, and the SAME move — extend
+the context, ask whether the extension produces a swallower, type what remains
+— is the fix at each. This is the HOLE's "same shape at three scales" table,
+for matching:
+
+| scale | the question | the test | fixture |
+|---|---|---|---|
+| word | is this substring this word? | boundary test: extend the span; if the extension deinflects to a covering dictionary word, false friend | A: 足して vs 満足して |
+| construction | is this filler filling this slot? | left-context cue + morphological typing + family distribution | C: 悪く言えば vs 蒼き狼と言えば |
+| register/use | is this string used AS this? | positional label-ness + paradigm at the slot + authority reach | B: ゆる勉 vs アウトプット |
+
+Rung 0's word test and rung 4's construction test are one idea at two scales,
+and §5 already stated the third: *the descent ladder IS the generalized
+deinflector.*
+
+### 29.2 The rungs (bottom = cheapest; each earns the next)
+
+- **Rung 0 — true hits (word boundary).** Pure. `deinflect()` is pure+sync and
+  `DictionaryStore.lookup` is sync in-memory, so this runs at render time with
+  no async plumbing. For each raw hit, extend the matched span; if a dictionary
+  word covers the original match (満足する ⊃ 足す), the hit is a **false
+  friend** — demoted to a collapsed 部分一致 tail that NAMES its swallower,
+  never deleted (S6: degrade honestly, in place). True hits carry their
+  deinflection trail for the 〈…〉 badge (same convention as `BigDictStore`,
+  invariant 3).
+- **Rung 1 — class-conditional ranking.** The comparator is a function of the
+  probing entry's class: 🟡 verbatim echo first; 🔵 collocate adjacency; 🟢 the
+  gesture's halo context, not the string; 🟠 parts-in-order with the intervener
+  profile (介在プロフィール — the material between anchors is a RESULT,
+  computable on the existing bigram index); 💠 slot-typed; 🔴 position in
+  discourse. **Recency and likes become tiebreaks only** — the current sort's
+  single surviving role.
+- **Rung 2 — environment promotion.** `buildXUsage` already computes KWIC
+  neighbours with count + author-spread thresholds — display-only today.
+  Promoted into ranking: hits sharing a recurring environment rank as a GROUP
+  (the environment is the answer; the tweets are its evidence). Plus position
+  entropy pre-shading (骨/穴/偏/灰) and the measure fixture B forced:
+  **label-ness** — the fraction of a string's occurrences that are
+  line-initial / standalone / hashtag vs mid-clause. "がっつり is real but
+  reads as commentary, not a calendar entry" has a computable correlate.
+- **Rung 3 — the descent ladder + verdicts.** On silence, attack the query's
+  own 過剰指定: leave-one-out over the probe's pieces, reporting what the
+  corpus DOES hold at every rung (印象として持っている → 印象として=1 →
+  印象=47 with environments). Every probe returns one of six verdicts —
+  顕在 / 偏在 / 競合 / 沈黙・有意 / 沈黙・無力 / 圏外 — so silence is labeled
+  by KIND, never hidden. Stop rules 床/逸/平 bound the descent.
+- **Rung 4 — construction boundary + the 転 table (operators get a hand).**
+  The nine operators (開 軸 膠 溶 括 転 距 替 典) are GESTURES offered on
+  result rows, never a query language — §5's "operators have no hand" is cured
+  at the row, where the re-anchoring actually happens. Slot membership (the
+  smart-not-greedy requirement) is three cheap tests, no parser: ①
+  morphological typing via deinflect+lookup (冷たく → 冷たい ADJ く-form;
+  思って → 思う V て-form); ② one-character left-context cues (preceding と →
+  quotative/topic, か → rhetorical, そう → lexicalized そういえば) — the
+  boundary test one scale up; ③ distribution across the frame family (real
+  fillers recur across 言えば/言うと/言ったら; chained clauses don't). Rows
+  that stay ambiguous are typed 灰 and juxtaposed in their own group — the
+  machine offers, never adjudicates (HOLE rule 1).
+- **Rung 5 — the horizontal step (authority-cycle ▾).** A silent rung is HELD,
+  not abandoned: cycle the same probe across 台帳 ⇄ 辞書 ⇄ corpus ⇄ live 𝕏 ⇄
+  TWC. 距's three dials pick the authority (線 linear → corpus; 係 relational →
+  TWC word-sketch; 談 discourse → transcripts). 1.18M chars cannot answer
+  multi-anchor questions, so the cycle is load-bearing, not a convenience.
+  Live-𝕏 reliability keeps its tiers: syndication add-by-URL = floor, signed
+  GraphQL = best-effort, Scriptable = iOS.
+- **Rung 6 — standing questions.** §5's deepest move: **a question is a
+  capture with `attestations: []`** — a `PatternEntry`, not a new store (S5).
+  Filing is one gesture from ANY rung (the recursion-vs-immersion rule: every
+  rung droppable into the tray; return free; the sweep works it while you
+  read). The existing sweep-fan/願い machinery answers on arrival — the
+  dedup-key blocker fell 2026-08-20. `sweepMuted` gets the exemption the
+  review flagged: 3 rejections retire a catalog entry, but a wondering's
+  rejections are normal fishing. Verdicts accrete as a HISTORY — 沈黙・有意
+  becoming 偏在 over months IS the corpus answering.
+
+### 29.3 The three golden fixtures (measured 2026-08-25; these ARE the film scripts)
+
+**Fixture A — 足して / 印象として (word boundary + descent).**
+`golden/x-relevance.mjs`.
+- 足して → today: 23 hits ranked by recency, 23/23 false friends. Required:
+  0 true hits; a collapsed 部分一致 tail of 23 naming 満足する/不足する/補足する;
+  verdict 沈黙 — labeled, not an empty list, and never a confident 23.
+- 印象として持っている → ladder: full span 0 → 印象として=1 (shown) →
+  印象=47 with environments; verdict 沈黙・有意 at full span; the surviving
+  rung offers 替/典.
+- Pins: no true hit for any 満/不/補-preceded span; deinflection trail present
+  on true hits; the demoted tail is never dropped.
+
+**Fixture B — ゆる勉 (paradigm + position + authority).** `golden/x-probe.mjs`.
+- ゆる勉 (a label being invented) → 0; まったり×勉強 co=0; がっつり=1,
+  mid-clause. Required: verdict 圏外/沈黙・無力 **with** the 替 paradigm of
+  what IS locally attested at the study-label slot (アウトプット=12,
+  インプット=6, ながら勉強=1, 多聴=1), each with its label-ness; がっつり shown
+  but shaded low label-ness; the unanswerable remainder offered as (a) a
+  live-𝕏 reach seeded by the ladder's surviving pieces and (b) a standing
+  question filed in one gesture.
+- Pins: silence yields paradigm + verdict, never an empty box (S6); label-ness
+  computed from position; the filed row carries `attestations: []` and
+  survives `sweepMuted`.
+
+**Fixture C — 悪く言えば…に近い (construction boundary + 転 + 距).**
+`golden/x-slot.mjs`.
+- The two-anchor frame generalizes to [MANNER 言えば] … [Yに近い] (💠/🟠
+  grammar; 距 between the anchors). Measured: family 言えば/言うと/言ったら =
+  113 occurrences. True fillers typed く/に/で/て **plus the corpus-taught
+  から and を** (一言で×8, 逆に×4, 結論から×4, 簡単に×3, 正直に, 厳密に,
+  大まかに, 分かりやすく, かなり冷たく, 極論を, 無理を承知で…). Impostors
+  excluded by cue: 27/113 are と-preceded (蒼き狼と言えば, 大阪と言えば),
+  plus かと言えば and そういえば. Second anchor locally attested: 10
+  co-occurrences with に近い.
+- Pins: と/か/そう-preceded hits never enter the manner table; every row
+  carries its morphological type; ambiguous rows land in a 灰 group — never
+  silently dropped, never asserted; family-distribution counts present.
+
+Certification per PHYSICS §6 items 2–3: a hand performs each fixture
+end-to-end on glass, on camera.
+
+### 29.4 Modules + wiring (pure cores, thin apertures)
+
+- `src/x/relevance.ts` — PURE, rungs 0–2: `trueHits(hits, oracle)`, per-class
+  comparators, environment grouping, label-ness. `oracle` is `{deinflect,
+  lookup}` injected; the golden stands in for `DictionaryStore` offline (the
+  `readings.fixture.json` convention, §6).
+- `src/x/probe.ts` — PURE, rungs 3+6: ladder, verdicts, verdict history, the
+  standing-question shape.
+- `src/x/slot.ts` — PURE, rung 4: left-context cues, filler typing, family
+  distribution, the 転 table.
+- **The one seam to cut:** `makeXDeps` gains the oracle (the X view currently
+  has no dictionary access). `XCorpusStore.search()` keeps returning raw
+  matches; ranking moves into the pure comparator. Knobs (window, thresholds,
+  ladder depth) exposed in settings — ship crude with knobs, tune on glass.
+- Explicitly NOT built: a segmenter or parser (typing is deinflect+lookup
+  only — the plugin's standing bet); auto-fill of any probe (HOLE rule 1); any
+  "N% of questions answered" metric (HOLE rule 4). X result rows are classed
+  objects — everything class-colored routes through `ui/class-grammar.ts` (S1).
+
+### 29.5 Build order (value ÷ effort)
+
+1. **Rung 0** — cheapest, and the floor: fixture A says today's canonical
+   query is 100% garbage.
+2. **Rung 2 + rung 1** — `buildXUsage` already computes the environments;
+   promotion and the class comparator are mostly plumbing.
+3. **Rung 3** — highest value at this corpus size: converts the modal outcome
+   (silence) into the dialogue.
+4. **Rung 6** — nearly free since 2026-08-20; the `sweepMuted` exemption is
+   the only new rule.
+5. **Rungs 4–5** — the 転/slot layer and the authority-cycle: the research
+   tail plus the horizontal step; fixture C is ready when it lands.
+
+Each step ships as staged diffs with its film script (PHYSICS §6). The streak
+is the metric.
+
+## 30. コマ送り — the measured hand, six repairs (2026-08-25, SHIPPED)
+
+The 30fps film corpus now has two readers and one verdict. The コマ送り
+report read Calendar (1082/1144/1159) and Monokakido (1175/1184) frame-by-frame
+into ten laws; `claude/CALENDAR-PHYSICS-2026-08-24.md` read three further
+Calendar reels (1212–1214) into nine; and IMG_1197 — the first reel of the
+PLUGIN ITSELF failing on glass — turned laws into defects with timestamps.
+Six repairs shipped 2026-08-25, each citing its filmed moment:
+
+1. **辞書 speaks the X pane's grammar — space = AND.** Filmed: 「ものの　そうで
+   なげ」 → 見つかりませんでした for 20s while 𝕏検索's own help advertised
+   space-AND one tab away. Whole-string lookup runs first (英辞郎 phrasals keep
+   working); on a miss, term 1 finds entries, every further term must appear IN
+   them, and the empty state names the failing term (the げ/け typo becomes
+   visible). `DictionaryView` `queryTerms`/`missMessage`.
+2. **A mid-word selection grows back through its sentence.** Filmed: まない
+   selected out of 気が進まない; ない→る validated まる; the echo answered a
+   word never touched. `lookUpPhrase(text, sentence)` restores 1–4 preceding
+   characters, longest-first, candidates validated as real entries — 進まない
+   → 進む〈negative〉. Guess-only result sets say 直接一致なし in the stats.
+3. **One selection, one airspace.** Filmed: echo + native Copy/Writing-Tools
+   stacked three layers on one selection. On a slate with a touch/pen
+   selection the echo yields ABOVE to the system menu and takes BELOW.
+4. **The drop road never executes a guess.** 「落としたものは別物でした」
+   (filmed landing as bafflement) is gone: an unsupportable aim repaints the
+   rack as a chooser (`--confirm`), and nothing runs until the hand picks.
+5. **The pane yields to the keyboard** (`ui/keyboard-aware.ts`, armed via
+   `mountSurfaceBar`): docked/split keyboard inset shortens the pane; the
+   floating 10-key is a system window nothing can see — the focused input is
+   scrolled into view and that is the honest ceiling.
+6. **Carry commits on MOTION, never on time.** The measured constant: the tip
+   PARKS on every target 0.47–1.33s while reading. `pointer-drag` no longer
+   arms at 350ms or carries at the deadline — the hold matures into a silent
+   `--held` lift; move = carry from the nib, release-in-place = the row's own
+   tap; the scroll-lock installs only mid-carry. This is CALENDAR-PHYSICS
+   §2.4's 両利き requirement met from the reading direction.
+
+**Reconciliation with §2 of CALENDAR-PHYSICS (open items are debts, not
+disagreements):** §2.4 covered by repair 6; §2.7's squeeze-palette contract is
+the echo card (repairs 2–3; its ~400ms budget holds — 160ms settle + sync
+local lookup). Still open, in value order: §2.2 宛名札 (address chip riding
+every carry/flick, edge readout when the destination is off-screen — would
+also PREVENT repair 4's mismatch case), §2.3 鋳造 (long-press mint, lane
+landing), §2.5 現在線, §2.1/2.6 stored-vs-candidate registers in the Move 2
+inspector. §29 is a separate build with its own rungs; it shares repair 2's
+oracle (`deinflect` + sync `lookup`) and nothing else — do not entangle them.
+
+Perf, same date: the 𝕏 pane ran `detectPatterns` (the 126-operator engine) on
+up to 100 frozen tweets per keystroke and re-walked the whole 1.18M-char
+corpus for single-term KWIC. Both memoized (`patternCache` by tweet id;
+`usageCache` by term+size) — the felt typing lag in that pane was this.

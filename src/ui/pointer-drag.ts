@@ -42,6 +42,28 @@
  * iOS chose one: on a scrolling list, a press that moves is a scroll, and the
  * only way to distinguish "carry this" from "scroll past this" without stealing
  * one of them is to make carrying begin from a stationary hold.
+ *
+ * ## One press, three outcomes — commit on MOTION, not on time
+ *
+ * The 30fps films (IMG_1159/1175/1184/1197) measured what a hand actually does
+ * on a row: the tip PARKS on its target while the eyes read — 0.47–1.33s on
+ * every single tap in Monokakido and Calendar — and only then commits. The old
+ * model here armed a visual at 350ms and STARTED THE CARRY at the commit
+ * deadline, which turned every reading-park into a drag pill and a locked
+ * page: the plugin was mistaking reading for carrying, hundreds of times a
+ * session. So the deadline no longer begins anything. It only changes what the
+ * press MEANS:
+ *
+ *   • move before the deadline  → a scroll. We stand down instantly.
+ *   • survive the deadline      → the row LIFTS (`--held`) — a signal, not an
+ *     action. Nothing is blocked, nothing follows the finger yet.
+ *   • then move                 → NOW the carry begins, pill and all.
+ *   • then release in place     → nothing. The click goes through — a parked
+ *     press that lifts is a TAP, which is exactly what the films show a
+ *     reading hand doing (park → read → commit the row).
+ *
+ * The scroll blocker therefore installs only when a carry is genuinely in
+ * flight, never while a hand is merely resting on a row it is reading.
  */
 
 import { dragCommitMs, noteDragPress } from './posture.ts';
@@ -79,10 +101,8 @@ export function registerPointerDropZone(z: PointerDropZone): () => void {
   return () => { zones.delete(z); };
 }
 
-/** Movement (px) before commit that means "this is a scroll", not a press. */
+/** Movement (px) before the hold matures that means "this is a scroll". */
 const SLOP = 10;
-/** When the row starts LOOKING picked up — feedback before the commitment. */
-const ARM_MS = 350;
 /**
  * When we take over, given native has not — now asked per press, not fixed.
  *
@@ -324,14 +344,14 @@ export function bindPointerDrag(
 
     const pid = e.pointerId, x0 = e.clientX, y0 = e.clientY;
     const kind = e.pointerType;
-    let armTimer: number | null = window.setTimeout(
-      () => el.addClass('jp-draggable--arming'), ARM_MS);
+    /** The hold has matured: the row is lifted, the next move is a carry. */
+    let held = false;
     let commitTimer: number | null = null;
 
     const done = (): void => {
-      if (armTimer !== null) { window.clearTimeout(armTimer); armTimer = null; }
       if (commitTimer !== null) { window.clearTimeout(commitTimer); commitTimer = null; }
-      el.removeClass('jp-draggable--arming');
+      held = false;
+      el.removeClass('jp-draggable--held');
       el.removeEventListener('dragstart', onNative);
       el.removeEventListener('pointermove', onCandidateMove);
       el.removeEventListener('pointerup', done);
@@ -351,7 +371,15 @@ export function bindPointerDrag(
 
     const onCandidateMove = (ev: PointerEvent): void => {
       if (ev.pointerId !== pid) return;
-      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) > SLOP) done();
+      if (Math.hypot(ev.clientX - x0, ev.clientY - y0) <= SLOP) return;
+      if (!held) { done(); return; }        // moved before the lift: a scroll
+      // Moved after it: the carry begins, from where the pointer is NOW —
+      // the pill must appear under the nib, not back where the press landed.
+      const p = payload();
+      const cx = ev.clientX, cy = ev.clientY;
+      done();
+      if (!p || !p.text.trim()) return;
+      beginPointerDrag(el, p, pill(p), pid, cx, cy);
     };
 
     commitTimer = window.setTimeout(() => {
@@ -361,10 +389,12 @@ export function bindPointerDrag(
       // says nothing about whether a drag would have been offered, and counting
       // it would convict the platform on evidence it never gave.
       noteDragPress(kind, false);
-      const p = payload();
-      done();
-      if (!p || !p.text.trim()) return;
-      beginPointerDrag(el, p, pill(p), pid, x0, y0);
+      // Not a carry yet — a SIGNAL that one is available. The films' parked
+      // reading press (0.47–1.33s, every tap) reaches here constantly, and it
+      // must cost the reader nothing: no pill, no scroll lock, and on release
+      // the row's ordinary click still lands.
+      held = true;
+      el.addClass('jp-draggable--held');
     }, dragCommitMs(e.pointerType));
 
     el.addEventListener('dragstart', onNative);

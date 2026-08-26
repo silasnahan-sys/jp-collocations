@@ -50,6 +50,23 @@ import { makeDraggable } from './drag-out';
 
 export const JP_DICTIONARY_VIEW_TYPE = 'jp-dictionary-view';
 
+/**
+ * How a space-separated query was narrowed: `primary` found the candidates,
+ * every `filters` term had to appear in them. `primaryHits` counts what the
+ * first term found across BOTH stores, so the empty-state can say which half
+ * of the query failed — the word, or the narrowing.
+ */
+interface TermNarrowing {
+  primary: string;
+  filters: string[];
+  primaryHits: number;
+}
+
+/** True when a non-empty result set holds nothing but deinflection guesses. */
+function allDeinflected(results: DictLookupResult[]): boolean {
+  return results.length > 0 && results.every(r => (r.deinflection?.length ?? 0) > 0);
+}
+
 export class DictionaryView extends ItemView {
   private dictStore: DictionaryStore;
   private contextEngine: ContextEngine | null;
@@ -519,7 +536,7 @@ export class DictionaryView extends ItemView {
     const searchRow = (wide ?? header).createDiv('jp-dict-search-row');
     this.searchInput = searchRow.createEl('input', {
       type: 'search',
-      placeholder: '検索… (漢字・ひらがな・カタカナ)',
+      placeholder: '検索… (空白区切り = 絞り込み)',
       cls: 'jp-dict-search-input',
       attr: {
         autocomplete: 'off',
@@ -589,6 +606,55 @@ export class DictionaryView extends ItemView {
     }, 80);
   }
 
+  // ── the space-separated query grammar ──────────────────────
+  //
+  // Filmed (IMG_1197, 131–153s): 「ものの　そうでなけ」typed into this box
+  // returned 「見つかりませんでした」 for twenty straight seconds — while the
+  // plugin's own X pane advertises 「語をスペース区切りで入力すると、両方を
+  // 含むツイートを探します (AND)」 one tab away. Two search boxes in one
+  // plugin spoke two languages, and the film shows which one the hand
+  // expected. Same grammar now: space (ASCII or 全角) means AND — the first
+  // term finds entries, every further term must appear somewhere IN the
+  // entry. 「ものの そうでな」 lands on the ものの entry whose example is
+  // 「援軍があったからよかったものの、そうでなければ壊滅していた」.
+  //
+  // Whole-string lookup always runs FIRST: an English phrasal in 英辞郎
+  // ("give up") is a headword WITH a space, and splitting it would break the
+  // lookup that has always worked. The narrowing engages only when the whole
+  // string finds nothing.
+
+  /** How a narrowed search was derived, for the honest empty-message. */
+  private static queryTerms(q: string): string[] {
+    return q.split(/[\s　]+/).filter(Boolean);
+  }
+
+  /** Everything an entry says, flattened once for containment tests. */
+  private entryText(r: DictLookupResult): string {
+    const defs = r.term.definitions.map((d) => DictionaryStore.definitionToText(d)).join('\n');
+    const extra = (r.entryBlocks || r.entryNodes)
+      ? JSON.stringify([r.entryBlocks ?? null, r.entryNodes ?? null])
+      : '';
+    return `${r.term.expression}\n${r.term.reading}\n${defs}\n${extra}`;
+  }
+
+  private static bigHitText(h: BigDictHit): string {
+    return `${h.entry.expression}\n${h.entry.reading ?? ''}\n${JSON.stringify(h.entry.senses ?? [])}${h.entry.nodes ? JSON.stringify(h.entry.nodes) : ''}`;
+  }
+
+  /** Exact-first merge of two local result lists, deduped. */
+  private mergeResults(first: DictLookupResult[], second: DictLookupResult[]): DictLookupResult[] {
+    const merged = [...first];
+    const seen = new Set(first.map(r => `${r.term.expression}|${r.term.reading}|${r.dictionary}`));
+    for (const r of second) {
+      const key = `${r.term.expression}|${r.term.reading}|${r.dictionary}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push(r);
+      }
+    }
+    return merged;
+  }
+
   /**
    * Live search: show inline results as you type (no separate suggestions).
    * Uses substringSearch to catch partial/contains matches.
@@ -598,21 +664,25 @@ export class DictionaryView extends ItemView {
     if (!this.resultsEl || !this.statsEl) return;
     const gen = ++this.searchGen;
 
-    // Use substring search for fuzzy live results
-    const results = this.dictStore.substringSearch(query, 20);
-
-    // Also get exact match results for higher-quality display
-    const exactResults = this.dictStore.lookup(query);
-
     // Merge: exact results first, then substring-only
-    const merged = [...exactResults];
-    const seen = new Set(exactResults.map(r => `${r.term.expression}|${r.term.reading}|${r.dictionary}`));
-    for (const r of results) {
-      const key = `${r.term.expression}|${r.term.reading}|${r.dictionary}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        merged.push(r);
-      }
+    let merged = this.mergeResults(
+      this.dictStore.lookup(query),
+      this.dictStore.substringSearch(query, 20),
+    );
+
+    // Whole string found nothing and the query is several terms → the
+    // narrowing grammar (see the block comment above).
+    let narrowing: TermNarrowing | undefined;
+    const terms = DictionaryView.queryTerms(query);
+    if (!merged.length && terms.length > 1) {
+      const primary = terms[0];
+      const filters = terms.slice(1);
+      const wide = this.mergeResults(
+        this.dictStore.lookup(primary),
+        this.dictStore.substringSearch(primary, 40),
+      );
+      narrowing = { primary, filters, primaryHits: wide.length };
+      merged = wide.filter(r => filters.every(f => this.entryText(r).includes(f)));
     }
 
     if (!this.hasAnyDictionary()) {
@@ -630,15 +700,33 @@ export class DictionaryView extends ItemView {
     if (merged.length === 0) {
       this.renderEmpty(this.bigDict
         ? `"${query}" — 変換済み辞書を検索中…`
-        : `"${query}" が見つかりませんでした`);
+        : this.missMessage(query, narrowing));
     } else {
       this.resultsEl.empty();
       for (const group of this.groupResults(merged)) {
         this.renderEntryCard(this.resultsEl, group);
       }
     }
-    this.setStats(query, merged.length, !!this.bigDict);
-    void this.appendBigResults(query, gen, merged);
+    this.setStats(query, merged.length, !!this.bigDict, allDeinflected(merged));
+    void this.appendBigResults(query, gen, merged, narrowing);
+  }
+
+  /**
+   * The honest "nothing" — which names the term that failed when a narrowed
+   * search dies, because 「見つかりませんでした」 alone cannot distinguish
+   * "the word isn't in the books" from "your second term has a typo". The
+   * film's query died on exactly that: そうでな**げ** for そうでな**け**, and
+   * the flat message gave the hand nothing to fix.
+   */
+  private missMessage(query: string, narrowing?: TermNarrowing): string {
+    if (narrowing && narrowing.primaryHits > 0) {
+      return `「${narrowing.primary}」は ${narrowing.primaryHits}件 — `
+        + `そのうち「${narrowing.filters.join('」「')}」を含む項目はありません`;
+    }
+    if (narrowing) {
+      return `「${narrowing.primary}」が見つかりませんでした (空白区切り = 絞り込み)`;
+    }
+    return `"${query}" が見つかりませんでした`;
   }
 
   // ── the converted (sidecar) dictionaries ───────────────────
@@ -648,8 +736,12 @@ export class DictionaryView extends ItemView {
     return this.dictStore.hasDictionaries() || this.bigInstalled.length > 0;
   }
 
-  /** One stats line for both halves; `pending` marks a sidecar read in flight. */
-  private setStats(query: string, count: number, pending: boolean): void {
+  /** One stats line for both halves; `pending` marks a sidecar read in flight.
+   *  `guessOnly` marks a result set where NOTHING matched the query directly —
+   *  every hit is a deinflection guess. Filmed (IMG_1197 34–36s): 「3 entries
+   *  for まない」 over three まる cards read as an assertion that まない IS
+   *  まる. A guessed answer must not wear a direct answer's stats line. */
+  private setStats(query: string, count: number, pending: boolean, guessOnly = false): void {
     if (!this.statsEl) return;
     this.statsEl.empty();
     // "0 entries" is an assertion; while a read is in flight the honest count
@@ -657,7 +749,9 @@ export class DictionaryView extends ItemView {
     this.statsEl.createSpan({
       text: count === 0
         ? (pending ? `"${query}" — 検索中…` : `"${query}" — no results`)
-        : `${count} entries for "${query}"`,
+        : guessOnly
+          ? `「${query}」直接一致なし — 活用の逆引き ${count}件`
+          : `${count} entries for "${query}"`,
       cls: 'jp-dict-stat-text',
     });
     if (pending) {
@@ -684,27 +778,38 @@ export class DictionaryView extends ItemView {
    */
   private async appendBigResults(
     query: string, gen: number, local: DictLookupResult[],
+    narrowing?: TermNarrowing,
   ): Promise<void> {
     if (!this.bigDict) return;
     let hits: BigDictHit[];
     try {
       hits = await this.bigDict.lookup(query, 40);
+      // Whole string missed the sidecars too and the query is several terms:
+      // the same narrowing grammar as the local half — first term finds the
+      // entries, the rest must appear in them.
+      if (!hits.length && narrowing) {
+        const wide = await this.bigDict.lookup(narrowing.primary, 60);
+        narrowing.primaryHits += wide.length;
+        hits = wide.filter(h =>
+          narrowing.filters.every(f => DictionaryView.bigHitText(h).includes(f)));
+      }
     } catch (e) {
       console.error('[jp-collocations] sidecar lookup failed:', e);
       if (gen === this.searchGen) {
-        this.setStats(query, local.length, false);
+        this.setStats(query, local.length, false, allDeinflected(local));
         // the provisional 検索中… placeholder must not outlive the search
-        if (!local.length) this.renderEmpty(`"${query}" が見つかりませんでした`);
+        if (!local.length) this.renderEmpty(this.missMessage(query, narrowing));
       }
       return;
     }
     if (gen !== this.searchGen || !this.resultsEl || !this.statsEl) return;
 
     const extra = dedupeAgainst(hits, local);
-    this.setStats(query, local.length + extra.length, false);
+    this.setStats(query, local.length + extra.length, false,
+      allDeinflected([...local, ...extra]));
     // both halves answered with nothing — NOW "not found" is true
     if (!local.length && !extra.length) {
-      this.renderEmpty(`"${query}" が見つかりませんでした`);
+      this.renderEmpty(this.missMessage(query, narrowing));
       return;
     }
     if (!extra.length) return;
@@ -765,7 +870,21 @@ export class DictionaryView extends ItemView {
     if (!this.resultsEl || !this.statsEl) return;
     const gen = ++this.searchGen;
 
-    const results = this.dictStore.lookup(query);
+    let results = this.dictStore.lookup(query);
+
+    // Whole string first, then the space-AND grammar — see performLiveSearch.
+    let narrowing: TermNarrowing | undefined;
+    const terms = DictionaryView.queryTerms(query);
+    if (!results.length && terms.length > 1) {
+      const primary = terms[0];
+      const filters = terms.slice(1);
+      const wide = this.mergeResults(
+        this.dictStore.lookup(primary),
+        this.dictStore.substringSearch(primary, 40),
+      );
+      narrowing = { primary, filters, primaryHits: wide.length };
+      results = wide.filter(r => filters.every(f => this.entryText(r).includes(f)));
+    }
 
     if (!this.hasAnyDictionary()) {
       this.statsEl.empty();
@@ -779,7 +898,7 @@ export class DictionaryView extends ItemView {
       // live path — appendBigResults renders the real verdict)
       this.renderEmpty(this.bigDict
         ? `"${query}" — 変換済み辞書を検索中…`
-        : `"${query}" が見つかりませんでした`);
+        : this.missMessage(query, narrowing));
     } else {
       // Group by sequence & expression for merging related senses
       this.resultsEl.empty();
@@ -787,8 +906,8 @@ export class DictionaryView extends ItemView {
         this.renderEntryCard(this.resultsEl, group);
       }
     }
-    this.setStats(query, results.length, !!this.bigDict);
-    void this.appendBigResults(query, gen, results);
+    this.setStats(query, results.length, !!this.bigDict, allDeinflected(results));
+    void this.appendBigResults(query, gen, results, narrowing);
   }
 
   // ── Group results ──────────────────────────────────────────

@@ -6362,9 +6362,13 @@ body.is-mobile .jp-part-capture { opacity: 0.55; position: static; margin-left: 
 }
 
 /* Cmd-V uses the same rack, but a paste is a CHOICE, not an aim — so the cards
-   are clickable and the default is not pre-blessed. */
-.jp-drop-veil--paste .jp-drop-card { cursor: pointer; }
-.jp-drop-veil--paste .jp-drop-card:hover {
+   are clickable and the default is not pre-blessed. --confirm is the same
+   posture arrived at from the other side: a drop whose aim the real payload
+   could not support repaints as a choice instead of executing a guess. */
+.jp-drop-veil--paste .jp-drop-card,
+.jp-drop-veil--confirm .jp-drop-card { cursor: pointer; }
+.jp-drop-veil--paste .jp-drop-card:hover,
+.jp-drop-veil--confirm .jp-drop-card:hover {
   transform: translateY(-2px) scale(1.01);
   border-color: var(--interactive-accent);
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
@@ -6472,20 +6476,29 @@ body.jp-posture-slate .jp-lex-exgrip {
    `elementFromPoint` see the surface underneath rather than the pill. */
 .jp-drag-pill--live { z-index: 100; }
 
-/* The press is being taken seriously — shown BEFORE the carry commits, so a
-   long press is never a dead hold.
+/* The hold has matured (`pointer-drag.ts`): the row is liftable NOW — move to
+   carry it, release to tap it as normal. A signal, never an action: the films
+   (コマ送り) measured the tip parking 0.47–1.33s on every row it merely READ,
+   so nothing may follow from time alone.
 
    A ring rather than a transform on purpose: these same rows carry
    `bindSwipe`, which drives `style.transform` directly, and two things
    animating one property would fight over it. */
-.jp-draggable--arming {
-  box-shadow: inset 0 0 0 2px var(--interactive-accent);
+.jp-draggable--held {
+  box-shadow: inset 0 0 0 2px var(--interactive-accent),
+    0 3px 12px rgba(0, 0, 0, 0.14);
   border-radius: 8px;
   transition: box-shadow 160ms ease;
 }
 @media (prefers-reduced-motion: reduce) {
-  .jp-draggable--arming { transition: none; }
+  .jp-draggable--held { transition: none; }
 }
+
+/* keyboard-aware.ts: while the software keyboard is up and the focus is in
+   this pane, the pane shortens by the keyboard's height instead of letting
+   the keyboard sit on the results. Every view root is a flex column, so its
+   scroller shrinks and bottom-docked controls rise with it. */
+.jp-kb-open { padding-bottom: var(--jp-kb-inset, 0px); }
 
 @media (prefers-reduced-motion: reduce) {
   .jp-drop-veil, .jp-drop-card, .jp-drop-flash { animation: none; }

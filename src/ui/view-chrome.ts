@@ -25,6 +25,7 @@ import { attachEdgeBack } from './touch-nav.ts';
 import { mountClipboardDoor } from './clipboard-door.ts';
 import { observePane, paneSizeOf, isNarrowPane } from './pane-size.ts';
 import { armBarRetreat } from './bar-retreat.ts';
+import { armKeyboardClearance } from './keyboard-aware.ts';
 
 /**
  * Which drop surface a bar surface counts as, for anything routing text into
@@ -54,8 +55,9 @@ export interface ViewChrome {
   backPeek?: () => string | null;
   /** §26.3 — the ANSWER half of a selection, off the sharded shelf. Wired once
    *  in main.ts so every surface answers a highlighted phrase identically.
-   *  See `SelectionEchoDeps.look`. */
-  lookUp?: (text: string) => Promise<PeekData | null>;
+   *  `sentence` is the line the selection was cut from, so a mid-word cut can
+   *  be grown back through its own context. See `SelectionEchoDeps.look`. */
+  lookUp?: (text: string, sentence?: string) => Promise<PeekData | null>;
   /** …and the way from the answer into the full entry. */
   openWord?: (headword: string) => void;
   /** §26.3 — a selection is not always words. Lets the echo confirm a
@@ -188,6 +190,10 @@ export function mountSurfaceBar(
   // so every rule below answers the pane the user is looking at rather than the
   // window it happens to live in. Idempotent, so re-renders are free.
   observePane(viewRoot);
+  // Every surface with a query box gets the same rule: when the software
+  // keyboard takes the bottom of the screen, the pane shortens by the same
+  // amount rather than letting the keyboard sit on the results. Idempotent.
+  armKeyboardClearance(viewRoot);
   const home = fallback ?? viewRoot;
   const places = wideDock(viewRoot) ?? home;
   const tools = edgeDock(viewRoot) ?? home;
