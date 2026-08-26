@@ -171,5 +171,27 @@ console.log('\u2550\u2550 foldForFind \u2014 the length-preserving contract \u25
     rawText.slice(i, i + 3) === '\uff21\uff22\uff23', rawText.slice(i, i + 3));
 }
 
+console.log('\u2550\u2550 the entry stratum: pages, and the end as a DOOR \u2550\u2550');
+{
+  check('an exact fit is one page', N.pageCount(300, 300) === 1);
+  check('a ragged tail still costs a page', N.pageCount(1000, 300) === 3, String(N.pageCount(1000, 300)));
+  check('an empty view never divides by zero', N.pageCount(1000, 0) === 1);
+  check('page offsets step by the view', N.pageOffset(2, 300) === 600);
+  check('page 0 sits at the origin', N.pageOffset(0, 300) === 0);
+
+  // The property the whole stratum rests on: the end of an article is a
+  // DOOR, not a wall. A forward turn on the last page reports overflow so
+  // the caller can spend it on the neighbouring headword — the filmed
+  // 唾を付ける sideways drag, read as intent instead of logged as a stumble.
+  check('a middle turn just turns', JSON.stringify(N.stepPage(1, 4, 1)) === '{"page":2,"overflow":0}');
+  check('forward off the last page OVERFLOWS (\u2192 next headword)',
+    N.stepPage(3, 4, 1).overflow === 1);
+  check('and clamps the page rather than inventing one', N.stepPage(3, 4, 1).page === 3);
+  check('back off the first page OVERFLOWS (\u2192 prev headword)',
+    N.stepPage(0, 4, -1).overflow === -1);
+  check('a single-page entry overflows in BOTH directions',
+    N.stepPage(0, 1, 1).overflow === 1 && N.stepPage(0, 1, -1).overflow === -1);
+}
+
 console.log(`\n${fail ? '✗' : '✓'} dict-nav: ${pass}/${pass + fail} checks passed`);
 if (fail) process.exit(1);

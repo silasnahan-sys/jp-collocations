@@ -385,6 +385,40 @@ console.log('\n D6. two registers: supplied, read, rendered, and rewritten on co
     /if \(!moved\.length\) \{ el\.hide\(\); return; \}/.test(modal));
 }
 
+// ── D7. the entry stratum exists, and the axis names it ───────────────
+//
+// Reported from glass twice. v1.1.0 gave the pan correct physics and wired
+// it to the neighbouring HEADWORD — still list-level motion, so the two-axis
+// grammar had only one stratum to work with. These check the second one is
+// really there: a door in, real pagination, an end that overflows to the
+// neighbour, a way back, and a command for every gesture (invariant 9).
+console.log('\n D7. the entry stratum: door in, pages, overflow, door out');
+{
+  const dict = read('ui', 'DictionaryView.ts');
+  const css = readFileSync(join(HERE, '..', 'styles.css'), 'utf8');
+  check('the list headword is a door into the article',
+    /jp-dict-card-header--enters/.test(dict) && /this\.openArticle\(group\)/.test(dict));
+  check('the article renders through the SAME card renderer (one truth)',
+    /openArticle[\s\S]{0,900}?this\.renderEntryCard\(page, g\)/.test(dict));
+  // Real pagination reflows; a clipped scroll cuts lines in half.
+  check('pages are CSS columns, measured from the reflow',
+    /columnWidth/.test(dict) && /pageCount\(page\.scrollWidth/.test(dict));
+  check('.jp-dict-article-page declares the column box', /column-fill: auto/.test(css));
+  check('house rule 11: the article leaves the vertical axis alone',
+    /\.jp-dict-article \{[^}]*touch-action: pan-y/s.test(css));
+  // The end of an article is a door, not a wall.
+  check('an overflow spends itself on the neighbouring headword',
+    /stepPage\(this\.articlePage/.test(dict) && /this\.flipTo\(target\.expression\)/.test(dict));
+  check('and the neighbour is LANDED IN, not dropped back to the list',
+    /articlePending/.test(dict) && /this\.openArticle\(this\.lastGroups\[0\]\)/.test(dict));
+  check('the pan is touch-only (a Pencil drag is selection \u2014 law 2)',
+    /armArticlePan[\s\S]{0,600}?pointerType !== .touch./.test(dict));
+  check('there is a way back out', /closeArticle\(/.test(dict));
+  for (const id of ['dict-article', 'dict-article-close', 'dict-page-next', 'dict-page-prev']) {
+    check(`command twin \u2018${id}\u2019 is registered`, new RegExp(`id: "${id}"`).test(main));
+  }
+}
+
 // ── the ledger must not rot ───────────────────────────────────────────────────
 //
 // An allow-list nobody prunes becomes permission. Every entry above is asserted

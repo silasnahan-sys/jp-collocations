@@ -216,6 +216,69 @@ export function searchNotation(q: string): { mode: 'ends' | 'starts'; term: stri
  *   • no target: nothing to turn to — always snap back (the rubber band
  *     already told the hand during the drag).
  */
+// ── The entry stratum (記事) ─────────────────────────────────────────
+//
+// The 辞書 had ONE stratum: a vertical list of cards, and tapping a word
+// replaced it with another vertical list of cards. v1.1.0 added a
+// horizontal pan and wired it to the neighbouring HEADWORD — correct
+// physics, wrong stratum, because flipping to a different word is still
+// list-level motion. Reported from glass twice: "not really felt", then
+// "kindle page turn like feel in some ways but not others".
+//
+// Monokakido’s grammar needs two strata and the AXIS names which one you
+// are in: the list moves ↕ among items, the entry moves ↔ within one item
+// (its 縦書き columns). You never need a label to know where you are.
+//
+// The plugin sets horizontal text, so "reading forward" is DOWN, not
+// sideways — 縦書き is a written-down refusal (§30, and Monokakido’s own
+// selection fails in it). The reconciliation is the user’s other
+// reference: Kindle paginates horizontal text into pages you turn
+// sideways. Same two-axis grammar, native to the text direction we keep.
+//
+//   list  ↕ scroll among entries
+//   entry ↔ turn pages of ONE entry, and past the last page, the
+//           neighbouring headword — which is the "drag past the end =
+//           carry me to the next one" reading of the filmed 唾を付ける
+//           sideways drag, made literal instead of aspirational.
+
+/**
+ * How many pages an `extent` occupies in a `view`-sized window.
+ *
+ * Axis-agnostic on purpose. The article paginates with CSS multi-column
+ * (column-width = the pane, gap 0), so the content REFLOWS into pages and
+ * the extent is `scrollWidth` — no line is ever cut in half, which is the
+ * difference between a page turn and a clipped scroll. A translate-the-
+ * -content approach would have been fewer lines and would have sliced a
+ * sentence across every boundary.
+ */
+export function pageCount(extent: number, view: number): number {
+  if (view <= 0) return 1;
+  return Math.max(1, Math.round(extent / view));
+}
+
+/** The offset of page `p` (0-based) along the paging axis. */
+export function pageOffset(p: number, view: number): number {
+  return Math.max(0, p) * Math.max(0, view);
+}
+
+/**
+ * Step a page, and SAY when the step left the entry.
+ *
+ * `overflow` is the whole point: at the last page a forward turn does not
+ * clamp and die, it reports +1, and the caller spends that on the
+ * neighbouring headword. The end of an article is a door, not a wall —
+ * which is exactly the intent the films recorded and every prior pass
+ * logged as a stumble.
+ */
+export function stepPage(
+  page: number, pages: number, dir: 1 | -1,
+): { page: number; overflow: -1 | 0 | 1 } {
+  const next = page + dir;
+  if (next < 0) return { page: 0, overflow: -1 };
+  if (next > pages - 1) return { page: pages - 1, overflow: 1 };
+  return { page: next, overflow: 0 };
+}
+
 /**
  * Case- and width-folding for the in-screen find, and STRICTLY
  * length-preserving.

@@ -33949,6 +33949,19 @@ function searchNotation(q) {
     return { mode: "starts", term: starts[1].trim() };
   return null;
 }
+function pageCount(extent, view) {
+  if (view <= 0)
+    return 1;
+  return Math.max(1, Math.round(extent / view));
+}
+function stepPage(page, pages, dir) {
+  const next = page + dir;
+  if (next < 0)
+    return { page: 0, overflow: -1 };
+  if (next > pages - 1)
+    return { page: pages - 1, overflow: 1 };
+  return { page: next, overflow: 0 };
+}
 function foldForFind(s) {
   let out = s.toLowerCase();
   out = out.replace(/[\uff01-\uff5e]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 65248));
@@ -37080,6 +37093,20 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
      * readable without the sweep the films measured (170ms per menu).
      */
     this.outlineAway = null;
+    // ── The entry stratum (記事) ──
+    // The list is ↕ and one entry is ↔. Two strata, and the AXIS says which
+    // one the hand is in — see dict-nav.ts for why this is the missing half
+    // of the Monokakido grammar and why it paginates instead of scrolling.
+    this.articleEl = null;
+    this.articlePageEl = null;
+    this.articleCountEl = null;
+    this.articleGroup = null;
+    this.articlePage = 0;
+    this.articlePages = 1;
+    /** set when an overflow sent us to a neighbour: open its article on land. */
+    this.articlePending = null;
+    /** the groups the last render produced, so one can be opened alone. */
+    this.lastGroups = [];
     this.dictStore = dictStore;
     this.onImport = onImport;
     this.onSaveEntry = onSaveEntry != null ? onSaveEntry : () => {
@@ -37425,6 +37452,15 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     this.renderNavBar();
     this.renderHomophones();
     this.rerunFind();
+    if (this.articlePending && this.lastGroups.length) {
+      const where = this.articlePending;
+      this.articlePending = null;
+      this.openArticle(this.lastGroups[0]);
+      if (where === "last") {
+        this.articlePage = this.articlePages - 1;
+        this.paintArticle(false);
+      }
+    }
   }
   /**
    * Land lit from the first frame (item 7): the sentence or word that carried
@@ -37878,6 +37914,175 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     cur.addClass("jp-dict-find-hit--current");
     cur.scrollIntoView({ block: "center" });
     (_b2 = this.findCountEl) == null ? void 0 : _b2.setText(`${this.findAt + 1}/${this.findHits.length}\u4EF6`);
+  }
+  /**
+   * Enter the entry stratum: ONE headword, full pane, paginated.
+   *
+   * Rendered with the SAME renderEntryCard the list uses — a second card
+   * renderer would be two truths about what an entry looks like, and this
+   * project has paid for that shape before.
+   */
+  openArticle(group) {
+    const g = group != null ? group : this.lastGroups[0];
+    if (!g || !this.resultsEl)
+      return;
+    this.closeFind();
+    this.articleGroup = g;
+    this.articlePage = 0;
+    this.resultsEl.hide();
+    if (!this.articleEl) {
+      this.articleEl = this.resultsEl.parentElement.createDiv("jp-dict-article");
+      const bar = this.articleEl.createDiv("jp-dict-article-bar");
+      const close = bar.createEl("button", { text: "\u2715", cls: "jp-dict-article-close", attr: { "aria-label": "\u4E00\u89A7\u3078\u623B\u308B" } });
+      close.addEventListener("click", () => this.closeArticle());
+      this.articleCountEl = bar.createSpan({ cls: "jp-dict-article-count" });
+      this.articlePageEl = this.articleEl.createDiv("jp-dict-article-page");
+      this.armArticlePan(this.articleEl);
+    }
+    this.articleEl.show();
+    const page = this.articlePageEl;
+    page.empty();
+    this.renderEntryCard(page, g);
+    this.layoutArticle();
+  }
+  /**
+   * Measure after render. The columns do the pagination — the page count is
+   * READ from the reflowed content, never computed from a guess at how much
+   * text a pane holds.
+   */
+  layoutArticle() {
+    const page = this.articlePageEl;
+    const host = this.articleEl;
+    if (!page || !host)
+      return;
+    const w = host.clientWidth;
+    if (w > 0)
+      page.style.columnWidth = `${w}px`;
+    this.articlePages = pageCount(page.scrollWidth, w);
+    this.articlePage = Math.min(this.articlePage, this.articlePages - 1);
+    this.paintArticle(false);
+  }
+  paintArticle(animate2) {
+    var _a2;
+    const page = this.articlePageEl;
+    const host = this.articleEl;
+    if (!page || !host)
+      return;
+    const w = host.clientWidth;
+    page.style.transition = animate2 ? "transform 160ms ease-out" : "";
+    page.style.transform = `translateX(${-this.articlePage * w}px)`;
+    (_a2 = this.articleCountEl) == null ? void 0 : _a2.setText(`${this.articlePage + 1}/${this.articlePages}`);
+  }
+  /**
+   * Turn a page — and spend an OVERFLOW on the neighbouring headword.
+   * The end of an article is a door, not a wall (dict-nav.stepPage).
+   */
+  turnPage(dir) {
+    if (!this.articleEl || this.articleEl.isShown() === false)
+      return;
+    const r2 = stepPage(this.articlePage, this.articlePages, dir);
+    if (r2.overflow === 0) {
+      this.articlePage = r2.page;
+      this.paintArticle(true);
+      return;
+    }
+    const nb = this.currentNeighbors();
+    const target = r2.overflow > 0 ? nb == null ? void 0 : nb.next : nb == null ? void 0 : nb.prev;
+    if (!target) {
+      this.paintArticle(true);
+      return;
+    }
+    this.articlePending = r2.overflow > 0 ? "first" : "last";
+    this.closeArticle(
+      /*keepPending*/
+      true
+    );
+    this.flipTo(target.expression);
+  }
+  closeArticle(keepPending = false) {
+    var _a2, _b2;
+    if (!keepPending)
+      this.articlePending = null;
+    (_a2 = this.articleEl) == null ? void 0 : _a2.hide();
+    this.articleGroup = null;
+    (_b2 = this.resultsEl) == null ? void 0 : _b2.show();
+  }
+  /** Horizontal pan over the article = page turns. Touch only: a Pencil
+   *  drag across text IS selection on iPadOS (law 2, §30.1). */
+  armArticlePan(el) {
+    let id = -1, x0 = 0, y0 = 0, t0 = 0, engaged = false, dx = 0, raf = 0;
+    const page = () => this.articlePageEl;
+    const paint = () => {
+      raf = 0;
+      const p = page();
+      if (!p)
+        return;
+      const w = el.clientWidth;
+      p.style.transition = "";
+      p.style.transform = `translateX(${-this.articlePage * w + dx}px)`;
+    };
+    el.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "touch")
+        return;
+      id = e.pointerId;
+      x0 = e.clientX;
+      y0 = e.clientY;
+      t0 = e.timeStamp;
+      engaged = false;
+      dx = 0;
+    }, { passive: true });
+    el.addEventListener("pointermove", (e) => {
+      var _a2;
+      if (e.pointerId !== id)
+        return;
+      const mx = e.clientX - x0, my = e.clientY - y0;
+      if (!engaged) {
+        if (Math.abs(mx) < 14 || Math.abs(mx) < Math.abs(my) * 1.2)
+          return;
+        const sel = (_a2 = window.getSelection) == null ? void 0 : _a2.call(window);
+        if (sel && !sel.isCollapsed && sel.toString().trim())
+          return;
+        engaged = true;
+        try {
+          el.setPointerCapture(id);
+        } catch (e2) {
+        }
+      }
+      const r2 = stepPage(this.articlePage, this.articlePages, mx < 0 ? 1 : -1);
+      const nb = this.currentNeighbors();
+      const hasTarget = r2.overflow === 0 || (r2.overflow > 0 ? !!(nb == null ? void 0 : nb.next) : !!(nb == null ? void 0 : nb.prev));
+      dx = hasTarget ? mx : mx * 0.35;
+      if (!raf)
+        raf = requestAnimationFrame(paint);
+    }, { passive: true });
+    el.addEventListener("pointerup", (e) => {
+      if (e.pointerId !== id)
+        return;
+      id = -1;
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      if (!engaged)
+        return;
+      engaged = false;
+      const mx = e.clientX - x0;
+      const r2 = stepPage(this.articlePage, this.articlePages, mx < 0 ? 1 : -1);
+      const nb = this.currentNeighbors();
+      const hasTarget = r2.overflow === 0 || (r2.overflow > 0 ? !!(nb == null ? void 0 : nb.next) : !!(nb == null ? void 0 : nb.prev));
+      const v = panVerdict(Math.abs(mx), e.timeStamp - t0, el.clientWidth, hasTarget);
+      dx = 0;
+      if (v === "commit")
+        this.turnPage(mx < 0 ? 1 : -1);
+      else
+        this.paintArticle(true);
+    }, { passive: true });
+    el.addEventListener("pointercancel", () => {
+      id = -1;
+      engaged = false;
+      dx = 0;
+      this.paintArticle(true);
+    }, { passive: true });
   }
   /**
    * A tilde-mode search (〜X = Ends, X〜 = Starts) is answered whole from the
@@ -38395,8 +38600,25 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
   renderEntryCard(parent, group) {
     var _a2, _b2, _c2, _d2;
     const primary = group[0];
+    if (parent === this.resultsEl) {
+      if (!this.resultsEl.querySelector(".jp-dict-card"))
+        this.lastGroups = [];
+      this.lastGroups.push(group);
+    }
     const card = parent.createDiv("jp-dict-card");
     const headerRow = card.createDiv("jp-dict-card-header");
+    if (parent === this.resultsEl) {
+      headerRow.addClass("jp-dict-card-header--enters");
+      headerRow.addEventListener("click", (e) => {
+        var _a3;
+        if (e.target.closest("button, a"))
+          return;
+        const sel = (_a3 = window.getSelection) == null ? void 0 : _a3.call(window);
+        if (sel && !sel.isCollapsed && sel.toString().trim())
+          return;
+        this.openArticle(group);
+      });
+    }
     makeDraggable(headerRow, () => {
       const sense = this.extractExampleFromDefs(group);
       return {
@@ -56508,6 +56730,38 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       callback: () => {
         var _a3;
         return (_a3 = this.activeDictView()) == null ? void 0 : _a3.toggleOutline();
+      }
+    });
+    this.addCommand({
+      id: "dict-article",
+      name: "\u8F9E\u66F8: \u3053\u306E\u9805\u76EE\u3092\u8A18\u4E8B\u3067\u958B\u304F (open entry)",
+      callback: () => {
+        var _a3;
+        return (_a3 = this.activeDictView()) == null ? void 0 : _a3.openArticle();
+      }
+    });
+    this.addCommand({
+      id: "dict-article-close",
+      name: "\u8F9E\u66F8: \u8A18\u4E8B\u3092\u9589\u3058\u3066\u4E00\u89A7\u3078 (back to list)",
+      callback: () => {
+        var _a3;
+        return (_a3 = this.activeDictView()) == null ? void 0 : _a3.closeArticle();
+      }
+    });
+    this.addCommand({
+      id: "dict-page-next",
+      name: "\u8F9E\u66F8: \u6B21\u306E\u30DA\u30FC\u30B8 (next page)",
+      callback: () => {
+        var _a3;
+        return (_a3 = this.activeDictView()) == null ? void 0 : _a3.turnPage(1);
+      }
+    });
+    this.addCommand({
+      id: "dict-page-prev",
+      name: "\u8F9E\u66F8: \u524D\u306E\u30DA\u30FC\u30B8 (prev page)",
+      callback: () => {
+        var _a3;
+        return (_a3 = this.activeDictView()) == null ? void 0 : _a3.turnPage(-1);
       }
     });
     this.addCommand({

@@ -1835,6 +1835,29 @@ export default class JPCollocationsPlugin extends Plugin {
       name: "辞書: この画面の目次 (outline)",
       callback: () => this.activeDictView()?.toggleOutline(),
     });
+    // Invariant 9: the entry stratum is a gesture grammar, so every verb in
+    // it also answers to a keystroke — which is the only thing an Elecom
+    // side button can ever reach.
+    this.addCommand({
+      id: "dict-article",
+      name: "辞書: この項目を記事で開く (open entry)",
+      callback: () => this.activeDictView()?.openArticle(),
+    });
+    this.addCommand({
+      id: "dict-article-close",
+      name: "辞書: 記事を閉じて一覧へ (back to list)",
+      callback: () => this.activeDictView()?.closeArticle(),
+    });
+    this.addCommand({
+      id: "dict-page-next",
+      name: "辞書: 次のページ (next page)",
+      callback: () => this.activeDictView()?.turnPage(1),
+    });
+    this.addCommand({
+      id: "dict-page-prev",
+      name: "辞書: 前のページ (prev page)",
+      callback: () => this.activeDictView()?.turnPage(-1),
+    });
     this.addCommand({
       id: "dict-find",
       name: "辞書: 画面内検索 (find in screen)",

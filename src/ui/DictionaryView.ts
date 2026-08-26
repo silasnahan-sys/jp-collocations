@@ -47,7 +47,7 @@ import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
 import { classBadge } from './class-grammar';
 import { armDrops, armSelectionEcho, mountSurfaceBar, wideDock, type ViewChrome } from './view-chrome';
 import { makeDraggable } from './drag-out';
-import { historyDays, searchNotation, panVerdict, foldForFind, type DictHistoryStore } from '../dictionary/dict-nav';
+import { historyDays, searchNotation, panVerdict, foldForFind, pageCount, stepPage, type DictHistoryStore } from '../dictionary/dict-nav';
 
 export const JP_DICTIONARY_VIEW_TYPE = 'jp-dictionary-view';
 
@@ -537,6 +537,15 @@ export class DictionaryView extends ItemView {
     this.renderNavBar();
     this.renderHomophones();
     this.rerunFind();
+    // An overflow sent us to the neighbour; land IN its article, on the
+    // page the motion was heading for, so a run of page turns crosses
+    // headwords without ever dropping the hand back into the list.
+    if (this.articlePending && this.lastGroups.length) {
+      const where = this.articlePending;
+      this.articlePending = null;
+      this.openArticle(this.lastGroups[0]);
+      if (where === 'last') { this.articlePage = this.articlePages - 1; this.paintArticle(false); }
+    }
   }
 
   /**
@@ -771,6 +780,21 @@ export class DictionaryView extends ItemView {
    */
   private outlineAway: ((e: PointerEvent) => void) | null = null;
 
+  // ── The entry stratum (記事) ──
+  // The list is ↕ and one entry is ↔. Two strata, and the AXIS says which
+  // one the hand is in — see dict-nav.ts for why this is the missing half
+  // of the Monokakido grammar and why it paginates instead of scrolling.
+  private articleEl: HTMLElement | null = null;
+  private articlePageEl: HTMLElement | null = null;
+  private articleCountEl: HTMLElement | null = null;
+  private articleGroup: DictLookupResult[] | null = null;
+  private articlePage = 0;
+  private articlePages = 1;
+  /** set when an overflow sent us to a neighbour: open its article on land. */
+  private articlePending: 'first' | 'last' | null = null;
+  /** the groups the last render produced, so one can be opened alone. */
+  private lastGroups: DictLookupResult[][] = [];
+
   toggleOutline(): void {
     if (this.outlinePop) {
       this.outlinePop.remove();
@@ -930,6 +954,140 @@ export class DictionaryView extends ItemView {
     cur.addClass('jp-dict-find-hit--current');
     cur.scrollIntoView({ block: 'center' });
     this.findCountEl?.setText(`${this.findAt + 1}/${this.findHits.length}件`);
+  }
+
+  /**
+   * Enter the entry stratum: ONE headword, full pane, paginated.
+   *
+   * Rendered with the SAME renderEntryCard the list uses — a second card
+   * renderer would be two truths about what an entry looks like, and this
+   * project has paid for that shape before.
+   */
+  openArticle(group?: DictLookupResult[]): void {
+    const g = group ?? this.lastGroups[0];
+    if (!g || !this.resultsEl) return;
+    this.closeFind();
+    this.articleGroup = g;
+    this.articlePage = 0;
+    this.resultsEl.hide();
+    if (!this.articleEl) {
+      this.articleEl = this.resultsEl.parentElement!.createDiv('jp-dict-article');
+      const bar = this.articleEl.createDiv('jp-dict-article-bar');
+      const close = bar.createEl('button', { text: '✕', cls: 'jp-dict-article-close', attr: { 'aria-label': '一覧へ戻る' } });
+      close.addEventListener('click', () => this.closeArticle());
+      this.articleCountEl = bar.createSpan({ cls: 'jp-dict-article-count' });
+      this.articlePageEl = this.articleEl.createDiv('jp-dict-article-page');
+      this.armArticlePan(this.articleEl);
+    }
+    this.articleEl.show();
+    const page = this.articlePageEl!;
+    page.empty();
+    this.renderEntryCard(page, g);
+    this.layoutArticle();
+  }
+
+  /**
+   * Measure after render. The columns do the pagination — the page count is
+   * READ from the reflowed content, never computed from a guess at how much
+   * text a pane holds.
+   */
+  private layoutArticle(): void {
+    const page = this.articlePageEl;
+    const host = this.articleEl;
+    if (!page || !host) return;
+    const w = host.clientWidth;
+    if (w > 0) page.style.columnWidth = `${w}px`;
+    this.articlePages = pageCount(page.scrollWidth, w);
+    this.articlePage = Math.min(this.articlePage, this.articlePages - 1);
+    this.paintArticle(false);
+  }
+
+  private paintArticle(animate: boolean): void {
+    const page = this.articlePageEl;
+    const host = this.articleEl;
+    if (!page || !host) return;
+    const w = host.clientWidth;
+    page.style.transition = animate ? 'transform 160ms ease-out' : '';
+    page.style.transform = `translateX(${-this.articlePage * w}px)`;
+    this.articleCountEl?.setText(`${this.articlePage + 1}/${this.articlePages}`);
+  }
+
+  /**
+   * Turn a page — and spend an OVERFLOW on the neighbouring headword.
+   * The end of an article is a door, not a wall (dict-nav.stepPage).
+   */
+  turnPage(dir: 1 | -1): void {
+    if (!this.articleEl || this.articleEl.isShown() === false) return;
+    const r = stepPage(this.articlePage, this.articlePages, dir);
+    if (r.overflow === 0) { this.articlePage = r.page; this.paintArticle(true); return; }
+    const nb = this.currentNeighbors();
+    const target = r.overflow > 0 ? nb?.next : nb?.prev;
+    // No neighbour = a real edge of the shelf. Snap back rather than
+    // closing the article out from under the hand.
+    if (!target) { this.paintArticle(true); return; }
+    this.articlePending = r.overflow > 0 ? 'first' : 'last';
+    this.closeArticle(/*keepPending*/ true);
+    this.flipTo(target.expression);
+  }
+
+  closeArticle(keepPending = false): void {
+    if (!keepPending) this.articlePending = null;
+    this.articleEl?.hide();
+    this.articleGroup = null;
+    this.resultsEl?.show();
+  }
+
+  /** Horizontal pan over the article = page turns. Touch only: a Pencil
+   *  drag across text IS selection on iPadOS (law 2, §30.1). */
+  private armArticlePan(el: HTMLElement): void {
+    let id = -1, x0 = 0, y0 = 0, t0 = 0, engaged = false, dx = 0, raf = 0;
+    const page = (): HTMLElement | null => this.articlePageEl;
+    const paint = (): void => {
+      raf = 0;
+      const p = page();
+      if (!p) return;
+      const w = el.clientWidth;
+      p.style.transition = '';
+      p.style.transform = `translateX(${-this.articlePage * w + dx}px)`;
+    };
+    el.addEventListener('pointerdown', (e: PointerEvent) => {
+      if (e.pointerType !== 'touch') return;
+      id = e.pointerId; x0 = e.clientX; y0 = e.clientY; t0 = e.timeStamp; engaged = false; dx = 0;
+    }, { passive: true });
+    el.addEventListener('pointermove', (e: PointerEvent) => {
+      if (e.pointerId !== id) return;
+      const mx = e.clientX - x0, my = e.clientY - y0;
+      if (!engaged) {
+        if (Math.abs(mx) < 14 || Math.abs(mx) < Math.abs(my) * 1.2) return;
+        const sel = window.getSelection?.();
+        if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+        engaged = true;
+        try { el.setPointerCapture(id); } catch { /* older webview */ }
+      }
+      // Rubber-band toward a page that does not exist, so the edge of the
+      // article is FELT before it is discovered.
+      const r = stepPage(this.articlePage, this.articlePages, mx < 0 ? 1 : -1);
+      const nb = this.currentNeighbors();
+      const hasTarget = r.overflow === 0 || (r.overflow > 0 ? !!nb?.next : !!nb?.prev);
+      dx = hasTarget ? mx : mx * 0.35;
+      if (!raf) raf = requestAnimationFrame(paint);
+    }, { passive: true });
+    el.addEventListener('pointerup', (e: PointerEvent) => {
+      if (e.pointerId !== id) return;
+      id = -1;
+      if (raf) { cancelAnimationFrame(raf); raf = 0; }
+      if (!engaged) return;
+      engaged = false;
+      const mx = e.clientX - x0;
+      const r = stepPage(this.articlePage, this.articlePages, mx < 0 ? 1 : -1);
+      const nb = this.currentNeighbors();
+      const hasTarget = r.overflow === 0 || (r.overflow > 0 ? !!nb?.next : !!nb?.prev);
+      const v = panVerdict(Math.abs(mx), e.timeStamp - t0, el.clientWidth, hasTarget);
+      dx = 0;
+      if (v === 'commit') this.turnPage(mx < 0 ? 1 : -1);
+      else this.paintArticle(true);
+    }, { passive: true });
+    el.addEventListener('pointercancel', () => { id = -1; engaged = false; dx = 0; this.paintArticle(true); }, { passive: true });
   }
 
   /**
@@ -1557,6 +1715,13 @@ export class DictionaryView extends ItemView {
 
   private renderEntryCard(parent: HTMLElement, group: DictLookupResult[]): void {
     const primary = group[0];
+    // Remember what the list is showing so ONE of them can be opened alone.
+    // Resets on the first card of a render rather than at four call sites —
+    // four places to remember is three places to forget.
+    if (parent === this.resultsEl) {
+      if (!this.resultsEl.querySelector('.jp-dict-card')) this.lastGroups = [];
+      this.lastGroups.push(group);
+    }
     const card = parent.createDiv('jp-dict-card');
 
     // ── Header: expression + reading ─────────────────────────
@@ -1567,6 +1732,19 @@ export class DictionaryView extends ItemView {
     // The header only, never the definition body: senses are selectable text
     // and selection is this view's own capture verb.
     const headerRow = card.createDiv('jp-dict-card-header');
+    // Tap the headword = enter the entry stratum (Monokakido: tap a row,
+    // you are IN the article). Only from the list — inside the article the
+    // header is just the header. Click and drag do not collide: a drag
+    // needs motion and never fires click.
+    if (parent === this.resultsEl) {
+      headerRow.addClass('jp-dict-card-header--enters');
+      headerRow.addEventListener('click', (e) => {
+        if ((e.target as HTMLElement).closest('button, a')) return;
+        const sel = window.getSelection?.();
+        if (sel && !sel.isCollapsed && sel.toString().trim()) return;
+        this.openArticle(group);
+      });
+    }
     makeDraggable(headerRow, () => {
       const sense = this.extractExampleFromDefs(group);
       return {

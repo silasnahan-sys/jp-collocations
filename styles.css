@@ -1449,6 +1449,58 @@ body.jp-posture-thumb .jp-dismiss { order: 99; }
 }
 
 /* ── Results ──────────────────────────────────────────────── */
+/* ── The entry stratum (記事) ──────────────────────────────────────────
+   The list is ↕ and one entry is ↔. The pagination is real CSS columns,
+   not a clipped scroll: the content REFLOWS into pane-wide pages, so no
+   line is ever cut in half and a page turn is a page turn. touch-action
+   stays pan-y (house rule 11) — the horizontal axis is taken by the pan
+   handler, the vertical one is left to whatever legitimately scrolls. */
+.jp-dict-article {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  touch-action: pan-y;
+  background: var(--background-primary);
+}
+.jp-dict-article-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  flex: 0 0 auto;
+}
+.jp-dict-article-close {
+  min-width: 44px;
+  min-height: 30px;
+  padding: 2px 10px;
+}
+.jp-dict-article-count {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
+}
+.jp-dict-article-page {
+  flex: 1;
+  min-height: 0;
+  padding: 8px;
+  column-gap: 0;
+  column-fill: auto;
+  will-change: transform;
+}
+/* inside the article the card is the whole page, so it drops the list
+   chrome that only made sense when it sat among siblings */
+.jp-dict-article-page .jp-dict-card {
+  border: none;
+  margin: 0;
+  box-shadow: none;
+  background: transparent;
+}
+/* the headword in the LIST is a door; say so without adding chrome */
+.jp-dict-card-header--enters { cursor: pointer; }
 .jp-dict-results {
   flex: 1;
   overflow-y: auto;
