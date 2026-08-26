@@ -1059,8 +1059,14 @@ export class DictionaryView extends ItemView {
         chip.title = `${b.book} が「${b.label}」を持っています — タップで表示`;
         chip.onclick = () => {
           if (!usageOnly) { usageOnly = true; usageToggle!.setText('意味は ▸'); renderDefs(); }
-          const target = Array.from(defsSection.querySelectorAll('.jp-shape-label'))
-            .find((x) => x.textContent === b.label);
+          // Scope to the badge's OWN book first. The global search stays as
+          // the fallback for a book that rendered no usage block, so the jump
+          // is never silently wrong and never simply dead.
+          const inBook = defsSection.querySelector<HTMLElement>(
+            `.jp-dict-usage-book-block[data-jp-book="${CSS.escape(b.book)}"]`);
+          const byLabel = (root: ParentNode): Element | undefined =>
+            Array.from(root.querySelectorAll('.jp-shape-label')).find((x) => x.textContent === b.label);
+          const target = (inBook ? byLabel(inBook) : undefined) ?? byLabel(defsSection);
           target?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         };
       }
@@ -1081,9 +1087,17 @@ export class DictionaryView extends ItemView {
         // Books with no usage apparatus simply do not appear — their absence
         // is the fact, and the mode itself is gated on ≥1 answer.
         for (const result of usable) {
-          const head = defsSection.createDiv('jp-dict-usage-book');
+          // Each book gets its OWN block, tagged with whose it is. Badges are
+          // emitted per (book x labelled node), so two books that both carry a
+          // section titled 使い分け produce two identical chips — and with the
+          // nodes rendered flat into defsSection, the chip's jump resolved by
+          // label TEXT alone, so both chips landed on the first book. The chip
+          // has always known its book (b.book); now the DOM does too.
+          const block = defsSection.createDiv('jp-dict-usage-book-block');
+          block.dataset.jpBook = result.dictionary;
+          const head = block.createDiv('jp-dict-usage-book');
           head.createSpan({ text: result.dictionary, cls: 'jp-dict-dict-badge' });
-          renderEntryNodes(defsSection, usageNodes(result.entryNodes!), optsFor(result));
+          renderEntryNodes(block, usageNodes(result.entryNodes!), optsFor(result));
         }
         this.makeJapaneseClickable(defsSection);
         this.attachExampleCaptures(defsSection, group);

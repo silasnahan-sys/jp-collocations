@@ -96,5 +96,37 @@ console.log('══ evidence beyond the span (relationally defined classes) ═�
   check('probe-backed components add evidence', withProbe[0].why.some((w) => w.includes('辞書に載る')));
 }
 
+console.log('╬ a caller hint beats a WEAK read and loses to a STRONG one ╬');
+{
+  // The 🔵 road: a 語法 profile row IS a collocation by provenance.
+  // 「強い風」 is a canonical one - and structure's only word about it is
+  // the 1-3 point "short enough to be a bare lemma" heuristic, which used to
+  // preselect 🟢修辞連語 and destroy the one road into the starved class.
+  const weak = S.suggestClass('強い風', []);
+  const weakTop = weak[0];
+  check('a real collocation row gets only a WEAK structural read',
+    weakTop.score > 0 && weakTop.score < S.HINT_FLOOR);
+  const hinted = S.chooseSuggested(weak, 'collocation', 'serifu');
+  check('the caller hint wins over a weak read',
+    hinted.cls === 'collocation' && hinted.from === 'hint');
+  check('and it names the signal it outranked', !!hinted.beat && hinted.beat.why.length > 0);
+
+  // A strong read is real evidence and still wins: notation scores 8.
+  const strong = S.suggestClass('んだったら〜じゃん', []);
+  check('a STRONG read outranks the hint',
+    S.chooseSuggested(strong, 'collocation', 'serifu').cls === 'skeletal');
+
+  // With no hint on the table the old rule stands: any nomination wins.
+  check('no hint -> any nomination wins',
+    S.chooseSuggested(weak, undefined, 'serifu').cls === weakTop.cls);
+
+  // Nothing nominated and no hint -> the notation derivation is the floor.
+  const none = S.suggestClass('common divisor,common multiple.', []);
+  check('nothing nominated, no hint -> derivation',
+    S.chooseSuggested(none, undefined, 'serifu').from === 'derivation');
+  check('nothing nominated, with a hint -> the hint, unbeaten',
+    S.chooseSuggested(none, 'collocation', 'serifu').beat === undefined);
+}
+
 console.log(fail ? `\n✗ suggester: ${fail} failed (${pass} passed)` : `\n✓ suggester: all ${pass} pass`);
 process.exit(fail ? 1 : 0);

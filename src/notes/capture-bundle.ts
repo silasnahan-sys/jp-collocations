@@ -122,6 +122,8 @@ export interface BundleRecord {
     lemma?: string;
     halo?: string;
     bundleId?: string;
+    /** rides L0 only — see CaptureModal.saveBundle for why it goes no further */
+    gloss?: string;
     bundleEdges?: Array<{ from: number; to: number; kind: string; at?: [number, number]; surfaces?: string[] }>;
     slotTypes?: string[];
     glueParts?: string[];
@@ -144,11 +146,19 @@ const toStoreFrame = (notation: string): string =>
  * carries the shared bundleId. Keys derive downstream exactly as today —
  * parts join for links, frame for 💠 — so the flat consumers see nothing new.
  */
-export function bundleRecords(bundle: Bundle): BundleRecord[] {
+export function bundleRecords(bundle: Bundle, opts: { gloss?: string } = {}): BundleRecord[] {
   const bundleId = `b_${fnv(bundle.text)}`;
   return bundle.layers.map((l, i) => {
     const payload: BundleRecord['payload'] = { bundleId };
     if (i === 0 && bundle.edges.length) payload.bundleEdges = bundle.edges.map((e) => ({ ...e }));
+    // The gloss the hand typed describes THE THOUGHT it was looking at — the
+    // whole span — so it rides L0 and goes no further. A derived core
+    // (〜予定ではなかった) does not mean what the whole utterance meant, and
+    // copying one gloss onto every cut would assert something the hand never
+    // said. Before this, ⿻全層保存 wrote no gloss at all, which multiplied
+    // PRINCIPLE-2026-08-05's "gloss empty on all 305" by the layer count.
+    // Empty beats wrong; L0 beats empty.
+    if (i === 0 && opts.gloss) payload.gloss = opts.gloss;
     switch (l.role) {
       case 'frame':
       case 'core':

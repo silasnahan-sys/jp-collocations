@@ -20,6 +20,7 @@ import { Modal, Notice } from 'obsidian';
 import type { App } from 'obsidian';
 import { NOTE_TYPES, NOTE_CLASSES, type NoteClass } from '../notes/note-types.ts';
 import type { ClassEvidence, ClassSignal } from '../notes/class-suggester.ts';
+import { chooseSuggested } from '../notes/class-suggester.ts';
 import { classChips, CLASS_HINTS } from './class-grammar.ts';
 import { derivePattern, type PatternEntry, type Attestation } from '../notes/pattern-store.ts';
 import { TokenCanvas } from './TokenCanvas.ts';
@@ -134,16 +135,22 @@ export class CaptureModal extends Modal {
     // An explicit caller hint (a curated candidate's frame shape) outranks bare
     // notation derivation, but the calibrated suggester still wins when it has
     // real confidence — it is the one that learns from the user's overrides.
-    this.suggested = top && top.score > 0 ? top.cls : (ctx.classHint ?? d.suggestedClass);
+    // HINT_FLOOR is what "real confidence" means once a hint is on the table.
+    const choice = chooseSuggested(this.ranking, ctx.classHint, d.suggestedClass);
+    this.suggested = choice.cls;
     this.cls = this.suggested;
-    if (top && top.score > 0) {
+    if (choice.from === 'structure' && top) {
       this.suggestWhy = top.why.join('・');
       const alt = this.ranking[1];
       if (alt && alt.score > 0 && alt.why.length) {
         this.suggestWhy += ` ／ 次点 ${NOTE_TYPES[alt.cls].emoji} ${alt.why[0]}`;
       }
-    } else if (ctx.classHint) {
-      this.suggestWhy = '呼び出し元の型ヒント';
+    } else if (choice.from === 'hint') {
+      // Name the signal the hint outranked, so a preselection that came from
+      // provenance rather than from shape says so instead of looking oracular.
+      this.suggestWhy = choice.beat
+        ? `呼び出し元の型ヒント（構造の手がかりは弱い: ${choice.beat.why[0] ?? '—'}）`
+        : '呼び出し元の型ヒント';
     } else {
       this.suggestWhy = d.keyKind === 'link' ? '〜記法（部品リンク）'
         : d.keyKind === 'frame' ? '○○スロット記法'
@@ -208,6 +215,10 @@ export class CaptureModal extends Modal {
       this.cls = c;
       chipHandle?.set(c);
       this.hintEl.setText(CLASS_HINTS[c]);
+      // The reason row re-answers for the class actually chosen. It used to be
+      // written once in the constructor, so overriding the suggestion left a
+      // line still arguing for the class the hand had just rejected.
+      this.whyEl?.setText(this.whyLineFor(c));
       this.renderPayload();
     };
     chipHandle = classChips(contentEl, {
@@ -217,7 +228,7 @@ export class CaptureModal extends Modal {
       onPick: (c) => selectClass(c),
     });
     this.whyEl = contentEl.createDiv('jp-capture-whyrow');
-    this.whyEl.setText(this.suggestWhy ? `提案の根拠: ${this.suggestWhy}` : '');
+    this.whyEl.setText(this.whyLineFor(this.cls));
     this.hintEl = contentEl.createDiv('jp-capture-hint');
     this.hintEl.setText(CLASS_HINTS[this.cls]);
 
@@ -444,6 +455,28 @@ export class CaptureModal extends Modal {
     save.addEventListener('click', () => void this.save(true));
   }
 
+  /**
+   * The reason row, for whatever class is CHOSEN — not for whatever was
+   * suggested. While the suggestion stands, this is the machine's own
+   * skeletal why. Once the hand overrides, the machine's argument for the
+   * rejected class is no longer a reason for anything, so the row states the
+   * chosen class's own structural signals instead — and when structure gave
+   * that class nothing, it says exactly that, which is the useful fact: the
+   * hand is ahead of the machine, and the override is the training example
+   * (§21). Never an assertion that the choice is right; the hand is the
+   * classifier either way.
+   */
+  private whyLineFor(c: NoteClass): string {
+    if (c === this.suggested) {
+      return this.suggestWhy ? `提案の根拠: ${this.suggestWhy}` : '';
+    }
+    const sig = this.ranking.find((s) => s.cls === c);
+    if (sig && sig.score > 0 && sig.why.length) {
+      return `この分類の根拠: ${NOTE_TYPES[c].emoji} ${sig.why.join('・')}（提案は ${NOTE_TYPES[this.suggested].emoji}）`;
+    }
+    return `この分類の根拠: 構造上の手がかりなし — あなたの判断（提案は ${NOTE_TYPES[this.suggested].emoji}）`;
+  }
+
   /** One save at a time: the buttons go dead while one is in flight, so a
    *  second tap (the filmed take-2, IMG_1082) cannot mint a duplicate. */
   private setButtonsBusy(busy: boolean): void {
@@ -480,7 +513,9 @@ export class CaptureModal extends Modal {
   private async saveBundle(): Promise<void> {
     if (this.saving) return;
     const b = this.currentBundle();
-    const recs = b ? bundleRecords(b) : [];
+    // The gloss rides L0 only — the policy lives in the pure core so it is
+    // pinned by golden/capture-bundle.mjs rather than by this call site.
+    const recs = b ? bundleRecords(b, { gloss: this.gloss.trim() || undefined }) : [];
     if (recs.length <= 1) { await this.save(true); return; }
     this.setButtonsBusy(true);
     try {

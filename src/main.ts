@@ -875,17 +875,34 @@ export default class JPCollocationsPlugin extends Plugin {
         fetchGoho: (this.settings.hyogenEnabled || this.settings.twcEnabled)
           ? (p) => this.freezeGoho(p)
           : undefined,
-        captureCorpus: (p, example, prov) => {
+        captureCorpus: (p, example, prov, colloc) => {
           // §28 S2 — when the corpus told us which document a sentence came
           // from, that is the provenance, not the adapter's name. "corpus" as a
           // sourceName is what we fall back to, never what we prefer.
+          //
+          // Two different things arrive here. A 用例 row is a SENTENCE: the
+          // headword is the 見出し and the sentence is its attestation. A
+          // 語法プロフィール row is a COLLOCATION — 「クーラーの風」 — and it
+          // used to come down the sentence road, which filed the headword as
+          // the 見出し and demoted the pair to an example. The pair is the
+          // whole content of a 連語, so that road could never produce one;
+          // 🔵 has zero entries ever recorded (PRINCIPLE-2026-08-05) and this
+          // is the mechanism. Now the pair IS the capture, 🔵 is the offered
+          // class (a hint, never a verdict — the hand still taps), and the
+          // frame it attaches by rides as provenance.
+          //
+          // Deliberately NOT carried: freq / MI / logDice. There is no payload
+          // field for association measures and inventing one here would be a
+          // schema change without a golden. The row still shows them, and the
+          // frozen goho profile still holds them on the headword's entry.
           new CaptureModal(this.app, {
-            text: p.key,
-            example,
+            text: colloc?.surface ?? p.key,
+            example: colloc ? undefined : example,
+            classHint: colloc ? "collocation" : undefined,
             source: {
               kind: "web", medium: "corpus",
               sourceName: prov?.sourceName ?? p.payload.goho?.source ?? "corpus",
-              loc: prov?.url ?? p.key,
+              loc: prov?.url ?? (colloc?.frame ? `${p.key} — ${colloc.frame}` : p.key),
             },
           }, this.makeCaptureDeps()).open();
         },

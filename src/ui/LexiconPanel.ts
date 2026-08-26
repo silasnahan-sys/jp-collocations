@@ -147,6 +147,15 @@ export interface LexiconDeps {
     example: string,
     /** the document the sentence actually came from, when the source said. */
     prov?: { sourceName?: string; url?: string },
+    /**
+     * Present when the thing tapped IS a collocation rather than a sentence:
+     * a 語法プロフィール row is 「クーラーの風」, not 風. Carries the pair's own
+     * surface and the frame it instantiates, so the capture arrives about the
+     * PAIR — the only thing that makes it a 連語 — instead of about the
+     * headword with the pair demoted to an example. (🔵 has zero entries ever
+     * recorded; this road existed but destroyed its payload at the door.)
+     */
+    colloc?: { surface: string; frame?: string },
   ) => void;
   /**
    * §27.5 — the big vault-sidecar dictionaries. ASYNC by nature: each query is
@@ -1520,7 +1529,7 @@ export class LexiconPanel {
         const item = block.createSpan({ text: it, cls: 'jp-lex-goho-phrase jp-lex-tappable' });
         item.title = `${it} — 台帳へ取り込む（📊 コーパス層）`;
         item.onclick = () => this.deps.captureCorpus
-          ? this.deps.captureCorpus(p, it)
+          ? this.deps.captureCorpus(p, it, undefined, { surface: it, frame: f.label })
           : this.deps.openDict(it);
         makeDraggable(item, () => ({
           kind: 'entry', text: it, label: it, sub: goho.source,
@@ -1541,7 +1550,7 @@ export class LexiconPanel {
       const word = row.createSpan({ text: it, cls: 'jp-lex-goho-word jp-lex-tappable' });
       word.title = `${it} — 台帳へ取り込む（📊 コーパス層）`;
       word.onclick = () => this.deps.captureCorpus
-        ? this.deps.captureCorpus(p, it)
+        ? this.deps.captureCorpus(p, it, undefined, { surface: it, frame: f.label })
         : this.deps.openDict(it);
       if (m) {
         row.createSpan({ text: m.freq.toLocaleString(), cls: 'jp-lex-goho-num jp-lex-goho-num--freq' });

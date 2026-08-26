@@ -203,3 +203,47 @@ export function suggestClass(evidence: string | ClassEvidence, history: HistoryI
 
   return calibrated.sort((a, b) => b.score - a.score);
 }
+
+/**
+ * What "real confidence" means, as a number, once a caller supplied a class.
+ *
+ * Structure's STRONG reads are the notation ones (8: 〜記法 / ○○スロット) and
+ * the dense 名詞+助詞+動詞 shape (5). Its WEAK ones are 1–3 heuristics —
+ * "short enough to be a bare lemma", "ends like an utterance".
+ */
+export const HINT_FLOOR = 4;
+
+/** Where a preselected class came from — rendered as its own why. */
+export interface SuggestionChoice {
+  cls: NoteClass;
+  from: 'structure' | 'hint' | 'derivation';
+  /** the weak structural read a hint outranked, when there was one */
+  beat?: ClassSignal;
+}
+
+/**
+ * Which class the capture modal preselects.
+ *
+ * An explicit caller hint is better evidence than a weak heuristic — a
+ * 語法プロフィール row IS a collocation, a sidecar candidate was classed by the
+ * book, a tray mark was classed by the hand — and worse evidence than a strong
+ * structural read. Without the floor, 「風を」 arriving from the collocation
+ * grid was preselected 🟢 on nothing but its length, which is the calibration
+ * prior's "nominating out of nothing" failure (§21) one layer up.
+ *
+ * Pure, so the contract is pinned by golden/suggester.mjs rather than living
+ * inside a Modal where nothing can reach it.
+ */
+export function chooseSuggested(
+  ranking: ClassSignal[],
+  classHint: NoteClass | undefined,
+  derived: NoteClass,
+): SuggestionChoice {
+  const top = ranking[0];
+  const useTop = !!top && (classHint ? top.score >= HINT_FLOOR : top.score > 0);
+  if (useTop && top) return { cls: top.cls, from: 'structure' };
+  if (classHint) {
+    return { cls: classHint, from: 'hint', beat: top && top.score > 0 ? top : undefined };
+  }
+  return { cls: derived, from: 'derivation' };
+}

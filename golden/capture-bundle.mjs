@@ -113,5 +113,25 @@ const probeOf = (words) => (s) => words.includes(s);
     'the chunk carries its own hole', recs[1].payload.frame);
 }
 
+/* ── the gloss rides L0 and goes no further ───────────────── */
+{
+  // One sighting, several cuts. The gloss the hand typed is about the THOUGHT
+  // it was looking at; a derived core does not mean what the whole utterance
+  // meant, so copying it onto every layer would assert something never said.
+  // Writing none at all was the other failure: it multiplied the measured
+  // "gloss empty on all 305" (PRINCIPLE-2026-08-05) by the layer count.
+  const gText = 'こんな人間になる予定ではなかった';
+  const gTokens = T.tokenizeForCanvas(gText, probeOf(['こんな', '人間', 'になる', '予定', 'ではなかった']));
+  const gMarks = { ...T.emptyMarks(), struck: [0, 1], glue: [2] };
+  const gb = C.bundleFromCanvas(gText, gTokens, gMarks);
+  const g = '思っていなかった展開への嘆き';
+  const gRecs = C.bundleRecords(gb, { gloss: g });
+  ok(gRecs.length > 1, 'the fixture derives more than one layer', String(gRecs.length));
+  ok(gRecs[0].payload.gloss === g, 'L0 carries the gloss the hand typed', String(gRecs[0].payload.gloss));
+  ok(gRecs.slice(1).every((r) => r.payload.gloss === undefined), 'no derived layer claims it');
+  ok(C.bundleRecords(gb).every((r) => r.payload.gloss === undefined), 'no gloss typed, none invented');
+  ok(C.bundleRecords(gb, { gloss: '' }).every((r) => r.payload.gloss === undefined), 'an empty gloss is not a gloss');
+}
+
 console.log(`\n${fail ? '✗' : '✓'} capture-bundle: ${n - fail}/${n} checks passed`);
 process.exit(fail ? 1 : 0);
