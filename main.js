@@ -27856,7 +27856,7 @@ ${ex.url}` : cited;
       for (const { text: it } of rows) {
         const item = block.createSpan({ text: it, cls: "jp-lex-goho-phrase jp-lex-tappable" });
         item.title = `${it} \u2014 \u53F0\u5E33\u3078\u53D6\u308A\u8FBC\u3080\uFF08\u{1F4CA} \u30B3\u30FC\u30D1\u30B9\u5C64\uFF09`;
-        item.onclick = () => this.deps.captureCorpus ? this.deps.captureCorpus(p, it) : this.deps.openDict(it);
+        item.onclick = () => this.deps.captureCorpus ? this.deps.captureCorpus(p, it, void 0, { surface: it, frame: f.label }) : this.deps.openDict(it);
         makeDraggable(item, () => ({
           kind: "entry",
           text: it,
@@ -27874,7 +27874,7 @@ ${ex.url}` : cited;
       const row = grid.createDiv("jp-lex-goho-row");
       const word = row.createSpan({ text: it, cls: "jp-lex-goho-word jp-lex-tappable" });
       word.title = `${it} \u2014 \u53F0\u5E33\u3078\u53D6\u308A\u8FBC\u3080\uFF08\u{1F4CA} \u30B3\u30FC\u30D1\u30B9\u5C64\uFF09`;
-      word.onclick = () => this.deps.captureCorpus ? this.deps.captureCorpus(p, it) : this.deps.openDict(it);
+      word.onclick = () => this.deps.captureCorpus ? this.deps.captureCorpus(p, it, void 0, { surface: it, frame: f.label }) : this.deps.openDict(it);
       if (m) {
         row.createSpan({ text: m.freq.toLocaleString(), cls: "jp-lex-goho-num jp-lex-goho-num--freq" });
         row.createSpan({ text: m.mi.toFixed(2), cls: "jp-lex-goho-num" });
@@ -31056,6 +31056,128 @@ JS: ${d.jsRuntime || "(deno auto)"}
 // src/ui/CaptureModal.ts
 var import_obsidian14 = require("obsidian");
 
+// src/notes/class-suggester.ts
+var RESPONSIVE_HEADS = /^(えー|ええ|うん|いや|まあ|あー|は?い|そう|なるほど|だって|でも|ってか|つーか)/;
+var INTERACTIONAL_TAIL = /(じゃん|よね|でしょ|っけ|かよ|かな|もんね|わけ|んだよ|のよ|ぞ|ぜ)[？?！!。]?$/;
+var SENTENCE_FINAL = /(です|ます|だ|た|ない|よ|ね|わ)[？?！!。]?$/;
+var CASE_PARTICLE = /[をがにでへとも]/;
+var VERBAL_TAIL = /[うくぐすつぬぶむる]$/;
+var SLOT_RE = /[○〇]{2,}/;
+var KANA_RE = /^[぀-ヿー]+$/;
+var JAPANESE_RE = /[ぁ-ゖァ-ヶ一-鿿ー]/;
+function structuralSignals(evidence) {
+  var _a2, _b2;
+  const ev = typeof evidence === "string" ? { note: evidence } : evidence;
+  const note = normalizeJapanese((_a2 = ev.note) != null ? _a2 : "").trim();
+  const compact2 = note.replace(/\s+/g, "");
+  const out = new Map(
+    NOTE_CLASSES.map((c) => [c, { cls: c, score: 0, why: [] }])
+  );
+  const add = (c, pts, why) => {
+    const s = out.get(c);
+    s.score += pts;
+    s.why.push(why);
+  };
+  if (!JAPANESE_RE.test(compact2))
+    return [...out.values()];
+  const tildeParts = compact2.split(/[〜~]/).filter(Boolean);
+  if (tildeParts.length >= 2)
+    add("skeletal", 8, "\u301C\u8A18\u6CD5\uFF08\u90E8\u54C1\u30EA\u30F3\u30AF\uFF09");
+  if (SLOT_RE.test(compact2))
+    add("phrase_schema", 8, "\u25CB\u25CB\u30B9\u30ED\u30C3\u30C8\u8A18\u6CD5");
+  if (RESPONSIVE_HEADS.test(compact2))
+    add("discourse", 3, "\u5FDC\u7B54\u7684\u306A\u51FA\u3060\u3057");
+  if (INTERACTIONAL_TAIL.test(compact2)) {
+    add("discourse", 2, "\u5BFE\u8A71\u7684\u306A\u7D42\u52A9\u8A5E");
+    add("serifu", 2, "\u767A\u8A71\u3089\u3057\u3044\u7D42\u308F\u308A");
+  }
+  if (ev.hasPriorTurns && out.get("discourse").score > 0)
+    add("discourse", 2, "\u524D\u306E\u767A\u8A71\u306B\u5FDC\u3058\u308B\u6587\u8108\u304C\u3042\u308B");
+  if (compact2.length >= 10 && SENTENCE_FINAL.test(compact2))
+    add("serifu", 3, "\u6587\u3089\u3057\u3044\u9577\u3055+\u6587\u672B\u5F62");
+  if (/[。？！?!]/.test(compact2))
+    add("serifu", 2, "\u6587\u672B\u8A18\u53F7\u3092\u542B\u3080");
+  if (ev.example && compact2.length >= 8 && compact2 === normalizeJapanese(ev.example).trim().replace(/\s+/g, "")) {
+    add("serifu", 2, "\u767A\u8A71\u307E\u308B\u3054\u3068\u306E\u9078\u629E");
+  }
+  if (!SLOT_RE.test(compact2) && tildeParts.length < 2 && compact2.length >= 3 && compact2.length <= 14 && CASE_PARTICLE.test(compact2) && VERBAL_TAIL.test(compact2)) {
+    add("collocation", 5, "\u540D\u8A5E+\u52A9\u8A5E+\u52D5\u8A5E\u306E\u5BC6\u306A\u5F62");
+    if (ev.lexeme) {
+      const m = /^(.+?)[をがにでへとも](.+)$/.exec(compact2);
+      if (m && m[1].length >= 2 && m[2].length >= 2 && ev.lexeme(m[1]) && ev.lexeme(m[2])) {
+        add("collocation", 3, "\u4E21\u6210\u5206\u3068\u3082\u8F9E\u66F8\u306B\u8F09\u308B\u8A9E");
+      }
+    }
+  }
+  if (compact2.length <= 4 && !CASE_PARTICLE.test(compact2) && !SLOT_RE.test(compact2) && tildeParts.length < 2) {
+    add("rhet_collocation", 2, "\u88F8\u306E\u30EC\u30F3\u30DE\u3089\u3057\u3044\u77ED\u3055");
+    if (!KANA_RE.test(compact2))
+      add("rhet_collocation", 1, "\u6F22\u5B57\u30EC\u30F3\u30DE");
+    if ((_b2 = ev.lexeme) == null ? void 0 : _b2.call(ev, compact2))
+      add("rhet_collocation", 1, "\u8F9E\u66F8\u306B\u8F09\u308B\u8A9E");
+  }
+  if (ev.medium === "dict") {
+    const d = out.get("discourse");
+    if (d.score > 0) {
+      d.score = 0;
+      d.why = ["\u8F9E\u66F8\u7531\u6765 \u2014 \u5FDC\u7B54\u3059\u308B\u76F8\u624B\u304C\u5B58\u5728\u3057\u306A\u3044"];
+    }
+    const s = out.get("serifu");
+    if (s.score > 0) {
+      s.score = Math.floor(s.score / 2);
+      s.why.push("\u8F9E\u66F8\u7531\u6765 \u2014 \u8AB0\u304B\u306E\u30BB\u30EA\u30D5\u3067\u306F\u306A\u3044");
+    }
+  }
+  return [...out.values()];
+}
+var PRIOR_CAP = 2.5;
+function suggestClass(evidence, history) {
+  var _a2, _b2;
+  const structural = structuralSignals(evidence);
+  const chosen = /* @__PURE__ */ new Map();
+  const transfer = /* @__PURE__ */ new Map();
+  for (const h of history) {
+    chosen.set(h.chosen, ((_a2 = chosen.get(h.chosen)) != null ? _a2 : 0) + 1);
+    if (h.suggested && h.suggested !== h.chosen) {
+      transfer.set(`${h.suggested}\u2192${h.chosen}`, ((_b2 = transfer.get(`${h.suggested}\u2192${h.chosen}`)) != null ? _b2 : 0) + 1);
+    }
+  }
+  const total = history.length;
+  const structTop = [...structural].sort((a, b) => b.score - a.score)[0];
+  const calibrated = structural.map((s) => {
+    var _a3, _b3, _c2;
+    const sig = { cls: s.cls, score: s.score, why: [...s.why] };
+    if (total >= 5 && s.score > 0) {
+      const prior = (((_a3 = chosen.get(s.cls)) != null ? _a3 : 0) + 1) / (total + NOTE_CLASSES.length);
+      const pts = Math.min(PRIOR_CAP, prior * 3 * NOTE_CLASSES.length);
+      if (pts > 1)
+        sig.why.push(`\u3042\u306A\u305F\u306E\u9078\u629E\u50BE\u5411 (${(_b3 = chosen.get(s.cls)) != null ? _b3 : 0}/${total})`);
+      sig.score += pts;
+    }
+    if (structTop && structTop.score > 0) {
+      const t = (_c2 = transfer.get(`${structTop.cls}\u2192${s.cls}`)) != null ? _c2 : 0;
+      if (t >= 2) {
+        const pts = Math.min(4, t);
+        sig.score += pts;
+        sig.why.push(`\u904E\u53BB\u306E\u8A02\u6B63: ${structTop.cls}\u2192${s.cls} \xD7${t}`);
+      }
+    }
+    return sig;
+  });
+  return calibrated.sort((a, b) => b.score - a.score);
+}
+var HINT_FLOOR = 4;
+function chooseSuggested(ranking, classHint, derived) {
+  const top = ranking[0];
+  const useTop = !!top && (classHint ? top.score >= HINT_FLOOR : top.score > 0);
+  if (useTop && top)
+    return { cls: top.cls, from: "structure" };
+  if (classHint) {
+    return { cls: classHint, from: "hint", beat: top && top.score > 0 ? top : void 0 };
+  }
+  return { cls: derived, from: "derivation" };
+}
+
 // src/notes/token-canvas.ts
 var PUNCT_RE2 = /[、。！？!?・…‥「」『』()（）\s]/;
 var KANJI = /[㐀-䶿一-鿿々]/;
@@ -31645,13 +31767,15 @@ var fnv2 = (s) => {
   return (h >>> 0).toString(36);
 };
 var toStoreFrame = (notation) => notation.replace(/〔[^〕]*〕/g, "").split(SLOT_ANY).join("\u25CB\u25CB");
-function bundleRecords(bundle) {
+function bundleRecords(bundle, opts = {}) {
   const bundleId = `b_${fnv2(bundle.text)}`;
   return bundle.layers.map((l, i) => {
     var _a2, _b2;
     const payload = { bundleId };
     if (i === 0 && bundle.edges.length)
       payload.bundleEdges = bundle.edges.map((e) => ({ ...e }));
+    if (i === 0 && opts.gloss)
+      payload.gloss = opts.gloss;
     switch (l.role) {
       case "frame":
       case "core":
@@ -31816,16 +31940,17 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
       medium: ctx.source.medium
     })) != null ? _d2 : [];
     const top = this.ranking[0];
-    this.suggested = top && top.score > 0 ? top.cls : (_e2 = ctx.classHint) != null ? _e2 : d.suggestedClass;
+    const choice = chooseSuggested(this.ranking, ctx.classHint, d.suggestedClass);
+    this.suggested = choice.cls;
     this.cls = this.suggested;
-    if (top && top.score > 0) {
+    if (choice.from === "structure" && top) {
       this.suggestWhy = top.why.join("\u30FB");
       const alt = this.ranking[1];
       if (alt && alt.score > 0 && alt.why.length) {
         this.suggestWhy += ` \uFF0F \u6B21\u70B9 ${NOTE_TYPES[alt.cls].emoji} ${alt.why[0]}`;
       }
-    } else if (ctx.classHint) {
-      this.suggestWhy = "\u547C\u3073\u51FA\u3057\u5143\u306E\u578B\u30D2\u30F3\u30C8";
+    } else if (choice.from === "hint") {
+      this.suggestWhy = choice.beat ? `\u547C\u3073\u51FA\u3057\u5143\u306E\u578B\u30D2\u30F3\u30C8\uFF08\u69CB\u9020\u306E\u624B\u304C\u304B\u308A\u306F\u5F31\u3044: ${(_e2 = choice.beat.why[0]) != null ? _e2 : "\u2014"}\uFF09` : "\u547C\u3073\u51FA\u3057\u5143\u306E\u578B\u30D2\u30F3\u30C8";
     } else {
       this.suggestWhy = d.keyKind === "link" ? "\u301C\u8A18\u6CD5\uFF08\u90E8\u54C1\u30EA\u30F3\u30AF\uFF09" : d.keyKind === "frame" ? "\u25CB\u25CB\u30B9\u30ED\u30C3\u30C8\u8A18\u6CD5" : "\u8A18\u6CD5\u30FB\u69CB\u9020\u306E\u624B\u304C\u304B\u308A\u306A\u3057 \u2014 \u624B\u3067\u9078\u3093\u3067\u304F\u3060\u3055\u3044";
     }
@@ -31878,9 +32003,11 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
     });
     let chipHandle = null;
     const selectClass = (c) => {
+      var _a3;
       this.cls = c;
       chipHandle == null ? void 0 : chipHandle.set(c);
       this.hintEl.setText(CLASS_HINTS[c]);
+      (_a3 = this.whyEl) == null ? void 0 : _a3.setText(this.whyLineFor(c));
       this.renderPayload();
     };
     chipHandle = classChips(contentEl, {
@@ -31890,7 +32017,7 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
       onPick: (c) => selectClass(c)
     });
     this.whyEl = contentEl.createDiv("jp-capture-whyrow");
-    this.whyEl.setText(this.suggestWhy ? `\u63D0\u6848\u306E\u6839\u62E0: ${this.suggestWhy}` : "");
+    this.whyEl.setText(this.whyLineFor(this.cls));
     this.hintEl = contentEl.createDiv("jp-capture-hint");
     this.hintEl.setText(CLASS_HINTS[this.cls]);
     const exampleText = (_a2 = this.ctx.example) != null ? _a2 : this.ctx.text;
@@ -32123,6 +32250,27 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
     const save = row.createEl("button", { text: "\u4FDD\u5B58", cls: "jp-capture-btn jp-capture-btn--cta" });
     save.addEventListener("click", () => void this.save(true));
   }
+  /**
+   * The reason row, for whatever class is CHOSEN — not for whatever was
+   * suggested. While the suggestion stands, this is the machine's own
+   * skeletal why. Once the hand overrides, the machine's argument for the
+   * rejected class is no longer a reason for anything, so the row states the
+   * chosen class's own structural signals instead — and when structure gave
+   * that class nothing, it says exactly that, which is the useful fact: the
+   * hand is ahead of the machine, and the override is the training example
+   * (§21). Never an assertion that the choice is right; the hand is the
+   * classifier either way.
+   */
+  whyLineFor(c) {
+    if (c === this.suggested) {
+      return this.suggestWhy ? `\u63D0\u6848\u306E\u6839\u62E0: ${this.suggestWhy}` : "";
+    }
+    const sig = this.ranking.find((s) => s.cls === c);
+    if (sig && sig.score > 0 && sig.why.length) {
+      return `\u3053\u306E\u5206\u985E\u306E\u6839\u62E0: ${NOTE_TYPES[c].emoji} ${sig.why.join("\u30FB")}\uFF08\u63D0\u6848\u306F ${NOTE_TYPES[this.suggested].emoji}\uFF09`;
+    }
+    return `\u3053\u306E\u5206\u985E\u306E\u6839\u62E0: \u69CB\u9020\u4E0A\u306E\u624B\u304C\u304B\u308A\u306A\u3057 \u2014 \u3042\u306A\u305F\u306E\u5224\u65AD\uFF08\u63D0\u6848\u306F ${NOTE_TYPES[this.suggested].emoji}\uFF09`;
+  }
   /** One save at a time: the buttons go dead while one is in flight, so a
    *  second tap (the filmed take-2, IMG_1082) cannot mint a duplicate. */
   setButtonsBusy(busy) {
@@ -32159,7 +32307,7 @@ var _CaptureModal = class _CaptureModal extends import_obsidian14.Modal {
     if (this.saving)
       return;
     const b = this.currentBundle();
-    const recs = b ? bundleRecords(b) : [];
+    const recs = b ? bundleRecords(b, { gloss: this.gloss.trim() || void 0 }) : [];
     if (recs.length <= 1) {
       await this.save(true);
       return;
@@ -36127,13 +36275,13 @@ var ContextEngine = class {
   }
   // ── Vault-wide text search (performance-optimized) ─────
   async searchVault(query) {
-    const occurrences = [];
+    const occurrences2 = [];
     const files = this.app.vault.getMarkdownFiles();
     const maxTotal = 50;
     const maxPerFile = 5;
     let fileCount = 0;
     for (const file of files) {
-      if (occurrences.length >= maxTotal)
+      if (occurrences2.length >= maxTotal)
         break;
       const stat = file.stat;
       if (stat && stat.size > 1e5)
@@ -36158,7 +36306,7 @@ var ContextEngine = class {
             const paragraph = content.slice(paraStart, paraEnd === -1 ? void 0 : paraEnd);
             nearbyPatterns = detectPatterns(paragraph).map((m) => m.pattern.id);
           }
-          occurrences.push({
+          occurrences2.push({
             filePath: file.path,
             fileName: file.basename,
             context,
@@ -36173,7 +36321,7 @@ var ContextEngine = class {
       } catch (e) {
       }
     }
-    return occurrences;
+    return occurrences2;
   }
   // ── Collect examples from all sources ──────────────────
   collectExamples(query, card) {
@@ -37149,12 +37297,17 @@ ${sense}` : primary.term.expression,
         const chip = qRow.createSpan({ cls: "jp-dict-usage-badge", text: b.label });
         chip.title = `${b.book} \u304C\u300C${b.label}\u300D\u3092\u6301\u3063\u3066\u3044\u307E\u3059 \u2014 \u30BF\u30C3\u30D7\u3067\u8868\u793A`;
         chip.onclick = () => {
+          var _a3;
           if (!usageOnly) {
             usageOnly = true;
             usageToggle.setText("\u610F\u5473\u306F \u25B8");
             renderDefs();
           }
-          const target = Array.from(defsSection.querySelectorAll(".jp-shape-label")).find((x) => x.textContent === b.label);
+          const inBook = defsSection.querySelector(
+            `.jp-dict-usage-book-block[data-jp-book="${CSS.escape(b.book)}"]`
+          );
+          const byLabel = (root) => Array.from(root.querySelectorAll(".jp-shape-label")).find((x) => x.textContent === b.label);
+          const target = (_a3 = inBook ? byLabel(inBook) : void 0) != null ? _a3 : byLabel(defsSection);
           target == null ? void 0 : target.scrollIntoView({ block: "nearest", behavior: "smooth" });
         };
       }
@@ -37168,9 +37321,11 @@ ${sense}` : primary.term.expression,
       defsSection.empty();
       if (usageOnly && usable.length) {
         for (const result of usable) {
-          const head = defsSection.createDiv("jp-dict-usage-book");
+          const block = defsSection.createDiv("jp-dict-usage-book-block");
+          block.dataset.jpBook = result.dictionary;
+          const head = block.createDiv("jp-dict-usage-book");
           head.createSpan({ text: result.dictionary, cls: "jp-dict-dict-badge" });
-          renderEntryNodes(defsSection, usageNodes(result.entryNodes), optsFor(result));
+          renderEntryNodes(block, usageNodes(result.entryNodes), optsFor(result));
         }
         this.makeJapaneseClickable(defsSection);
         this.attachExampleCaptures(defsSection, group);
@@ -39314,6 +39469,90 @@ function selectionWithin(el) {
   return sel.toString().trim();
 }
 
+// src/x/relevance.ts
+var DEFAULT_REACH = 4;
+function readsAsWord(surface, oracle) {
+  if (oracle.isWord(surface))
+    return surface;
+  for (const d of oracle.deinflect(surface)) {
+    if (oracle.isWord(d.term))
+      return d.term;
+  }
+  return null;
+}
+function ownWords(match2, oracle) {
+  const own = /* @__PURE__ */ new Set();
+  if (oracle.isWord(match2))
+    own.add(match2);
+  for (const d of oracle.deinflect(match2)) {
+    if (oracle.isWord(d.term))
+      own.add(d.term);
+  }
+  return own;
+}
+function judgeHit(text, span, oracle, reach = DEFAULT_REACH) {
+  const [s, e] = span;
+  const match2 = text.slice(s, e);
+  const own = ownWords(match2, oracle);
+  for (let total = 1; total <= reach * 2; total++) {
+    for (let left = 0; left <= Math.min(total, reach); left++) {
+      const right = total - left;
+      if (right > reach)
+        continue;
+      const from = s - left;
+      const to = e + right;
+      if (from < 0 || to > text.length)
+        continue;
+      const surface = text.slice(from, to);
+      if (surface === match2)
+        continue;
+      const word = readsAsWord(surface, oracle);
+      if (word && !own.has(word))
+        return { kind: "partial", swallower: word, surface };
+    }
+  }
+  for (const d of oracle.deinflect(match2)) {
+    if (own.has(d.term))
+      return { kind: "true", trail: d.trail };
+  }
+  return { kind: "true", trail: [] };
+}
+function trueHits(raw, oracle, reach = DEFAULT_REACH) {
+  var _a2;
+  const hits = [];
+  const partial = [];
+  const counts = /* @__PURE__ */ new Map();
+  for (const r2 of raw) {
+    const verdict = judgeHit(r2.text, r2.span, oracle, reach);
+    if (verdict.kind === "true")
+      hits.push({ ...r2, verdict });
+    else {
+      partial.push({ ...r2, verdict });
+      counts.set(verdict.swallower, ((_a2 = counts.get(verdict.swallower)) != null ? _a2 : 0) + 1);
+    }
+  }
+  const swallowers = [...counts.entries()].map(([term, count]) => ({ term, count })).sort((a, b) => b.count - a.count || a.term.localeCompare(b.term));
+  return { hits, partial, swallowers };
+}
+function occurrences(id, text, query) {
+  const out = [];
+  if (!query)
+    return out;
+  let i = text.indexOf(query);
+  while (i !== -1) {
+    out.push({ id, text, span: [i, i + query.length] });
+    i = text.indexOf(query, i + 1);
+  }
+  return out;
+}
+function partialLabel(r2) {
+  if (!r2.partial.length)
+    return "";
+  const named = r2.swallowers.slice(0, 3).map((s) => `${s.term}\xD7${s.count}`).join("\u30FB");
+  const rest = r2.swallowers.length > 3 ? `\u30FB\u307B\u304B${r2.swallowers.length - 3}\u8A9E` : "";
+  return `\u90E8\u5206\u4E00\u81F4 ${r2.partial.length}\u4EF6\uFF08${named}${rest}\uFF09`;
+}
+
 // src/ui/XSearchView.ts
 var JP_X_VIEW_TYPE = "jp-x-search-view";
 var XSearchView = class extends import_obsidian21.ItemView {
@@ -39619,10 +39858,26 @@ var XSearchView = class extends import_obsidian21.ItemView {
       return;
     }
     const results = this.applySort(this.deps.corpus.search(this.query, 300));
+    const single = this.query.allTerms.length === 1 && !this.query.anyTerms.length ? this.query.allTerms[0].trim() : "";
+    let shown = results;
+    let demoted = [];
+    let tailLabel = "";
+    if (single && this.deps.oracle && results.length) {
+      const judged = trueHits(
+        results.flatMap((t) => occurrences(t.id, t.text, single)),
+        this.deps.oracle
+      );
+      if (judged.partial.length) {
+        const trueIds = new Set(judged.hits.map((h) => h.id));
+        shown = results.filter((t) => trueIds.has(t.id) || !t.text.includes(single));
+        demoted = results.filter((t) => !trueIds.has(t.id) && t.text.includes(single));
+        tailLabel = partialLabel(judged);
+      }
+    }
     const live2 = this.deps.client.isConfigured();
     this.statusEl.empty();
     this.statusEl.createSpan({
-      text: `\u30ED\u30FC\u30AB\u30EB ${results.length}\u4EF6 / \u30B3\u30FC\u30D1\u30B9 ${total}\u4EF6` + (live2 ? "" : "\u30FB\u30E9\u30A4\u30D6\u53D6\u5F97\u30AA\u30D5\uFF08\u{1F511}\u3067\u8A2D\u5B9A\uFF09"),
+      text: `\u30ED\u30FC\u30AB\u30EB ${shown.length}\u4EF6` + (demoted.length ? `\uFF08+ \u90E8\u5206\u4E00\u81F4 ${demoted.length}\u4EF6\uFF09` : "") + ` / \u30B3\u30FC\u30D1\u30B9 ${total}\u4EF6` + (live2 ? "" : "\u30FB\u30E9\u30A4\u30D6\u53D6\u5F97\u30AA\u30D5\uFF08\u{1F511}\u3067\u8A2D\u5B9A\uFF09"),
       cls: "jp-x-status-text"
     });
     this.resultsEl.empty();
@@ -39637,7 +39892,6 @@ var XSearchView = class extends import_obsidian21.ItemView {
       });
       return;
     }
-    const single = this.query.allTerms.length === 1 && !this.query.anyTerms.length ? this.query.allTerms[0].trim() : "";
     if (single) {
       const all = this.deps.corpus.getAll();
       const c = this.usageCache;
@@ -39649,8 +39903,28 @@ var XSearchView = class extends import_obsidian21.ItemView {
       });
     }
     const terms = highlightTerms(this.query);
-    for (const t of results)
+    for (const t of shown)
       this.renderTweetCard(this.resultsEl, t, terms);
+    if (demoted.length) {
+      const tail3 = this.resultsEl.createDiv("jp-x-partial");
+      const head = tail3.createEl("button", { cls: "jp-x-partial-head" });
+      const body2 = tail3.createDiv("jp-x-partial-body");
+      body2.hide();
+      const paint = (open) => head.setText((open ? "\u25BE " : "\u25B8 ") + tailLabel);
+      paint(false);
+      head.onclick = () => {
+        const open = !body2.isShown();
+        if (open && !body2.childElementCount) {
+          for (const t of demoted)
+            this.renderTweetCard(body2, t, terms);
+        }
+        if (open)
+          body2.show();
+        else
+          body2.hide();
+        paint(open);
+      };
+    }
   }
   renderCooccurrence() {
     if (!this.resultsEl || !this.statusEl)
@@ -48061,117 +48335,6 @@ function parseScaffoldResponse(p, status, body2) {
   return { ok: true, examples: valid };
 }
 
-// src/notes/class-suggester.ts
-var RESPONSIVE_HEADS = /^(えー|ええ|うん|いや|まあ|あー|は?い|そう|なるほど|だって|でも|ってか|つーか)/;
-var INTERACTIONAL_TAIL = /(じゃん|よね|でしょ|っけ|かよ|かな|もんね|わけ|んだよ|のよ|ぞ|ぜ)[？?！!。]?$/;
-var SENTENCE_FINAL = /(です|ます|だ|た|ない|よ|ね|わ)[？?！!。]?$/;
-var CASE_PARTICLE = /[をがにでへとも]/;
-var VERBAL_TAIL = /[うくぐすつぬぶむる]$/;
-var SLOT_RE = /[○〇]{2,}/;
-var KANA_RE = /^[぀-ヿー]+$/;
-var JAPANESE_RE = /[ぁ-ゖァ-ヶ一-鿿ー]/;
-function structuralSignals(evidence) {
-  var _a2, _b2;
-  const ev = typeof evidence === "string" ? { note: evidence } : evidence;
-  const note = normalizeJapanese((_a2 = ev.note) != null ? _a2 : "").trim();
-  const compact2 = note.replace(/\s+/g, "");
-  const out = new Map(
-    NOTE_CLASSES.map((c) => [c, { cls: c, score: 0, why: [] }])
-  );
-  const add = (c, pts, why) => {
-    const s = out.get(c);
-    s.score += pts;
-    s.why.push(why);
-  };
-  if (!JAPANESE_RE.test(compact2))
-    return [...out.values()];
-  const tildeParts = compact2.split(/[〜~]/).filter(Boolean);
-  if (tildeParts.length >= 2)
-    add("skeletal", 8, "\u301C\u8A18\u6CD5\uFF08\u90E8\u54C1\u30EA\u30F3\u30AF\uFF09");
-  if (SLOT_RE.test(compact2))
-    add("phrase_schema", 8, "\u25CB\u25CB\u30B9\u30ED\u30C3\u30C8\u8A18\u6CD5");
-  if (RESPONSIVE_HEADS.test(compact2))
-    add("discourse", 3, "\u5FDC\u7B54\u7684\u306A\u51FA\u3060\u3057");
-  if (INTERACTIONAL_TAIL.test(compact2)) {
-    add("discourse", 2, "\u5BFE\u8A71\u7684\u306A\u7D42\u52A9\u8A5E");
-    add("serifu", 2, "\u767A\u8A71\u3089\u3057\u3044\u7D42\u308F\u308A");
-  }
-  if (ev.hasPriorTurns && out.get("discourse").score > 0)
-    add("discourse", 2, "\u524D\u306E\u767A\u8A71\u306B\u5FDC\u3058\u308B\u6587\u8108\u304C\u3042\u308B");
-  if (compact2.length >= 10 && SENTENCE_FINAL.test(compact2))
-    add("serifu", 3, "\u6587\u3089\u3057\u3044\u9577\u3055+\u6587\u672B\u5F62");
-  if (/[。？！?!]/.test(compact2))
-    add("serifu", 2, "\u6587\u672B\u8A18\u53F7\u3092\u542B\u3080");
-  if (ev.example && compact2.length >= 8 && compact2 === normalizeJapanese(ev.example).trim().replace(/\s+/g, "")) {
-    add("serifu", 2, "\u767A\u8A71\u307E\u308B\u3054\u3068\u306E\u9078\u629E");
-  }
-  if (!SLOT_RE.test(compact2) && tildeParts.length < 2 && compact2.length >= 3 && compact2.length <= 14 && CASE_PARTICLE.test(compact2) && VERBAL_TAIL.test(compact2)) {
-    add("collocation", 5, "\u540D\u8A5E+\u52A9\u8A5E+\u52D5\u8A5E\u306E\u5BC6\u306A\u5F62");
-    if (ev.lexeme) {
-      const m = /^(.+?)[をがにでへとも](.+)$/.exec(compact2);
-      if (m && m[1].length >= 2 && m[2].length >= 2 && ev.lexeme(m[1]) && ev.lexeme(m[2])) {
-        add("collocation", 3, "\u4E21\u6210\u5206\u3068\u3082\u8F9E\u66F8\u306B\u8F09\u308B\u8A9E");
-      }
-    }
-  }
-  if (compact2.length <= 4 && !CASE_PARTICLE.test(compact2) && !SLOT_RE.test(compact2) && tildeParts.length < 2) {
-    add("rhet_collocation", 2, "\u88F8\u306E\u30EC\u30F3\u30DE\u3089\u3057\u3044\u77ED\u3055");
-    if (!KANA_RE.test(compact2))
-      add("rhet_collocation", 1, "\u6F22\u5B57\u30EC\u30F3\u30DE");
-    if ((_b2 = ev.lexeme) == null ? void 0 : _b2.call(ev, compact2))
-      add("rhet_collocation", 1, "\u8F9E\u66F8\u306B\u8F09\u308B\u8A9E");
-  }
-  if (ev.medium === "dict") {
-    const d = out.get("discourse");
-    if (d.score > 0) {
-      d.score = 0;
-      d.why = ["\u8F9E\u66F8\u7531\u6765 \u2014 \u5FDC\u7B54\u3059\u308B\u76F8\u624B\u304C\u5B58\u5728\u3057\u306A\u3044"];
-    }
-    const s = out.get("serifu");
-    if (s.score > 0) {
-      s.score = Math.floor(s.score / 2);
-      s.why.push("\u8F9E\u66F8\u7531\u6765 \u2014 \u8AB0\u304B\u306E\u30BB\u30EA\u30D5\u3067\u306F\u306A\u3044");
-    }
-  }
-  return [...out.values()];
-}
-var PRIOR_CAP = 2.5;
-function suggestClass(evidence, history) {
-  var _a2, _b2;
-  const structural = structuralSignals(evidence);
-  const chosen = /* @__PURE__ */ new Map();
-  const transfer = /* @__PURE__ */ new Map();
-  for (const h of history) {
-    chosen.set(h.chosen, ((_a2 = chosen.get(h.chosen)) != null ? _a2 : 0) + 1);
-    if (h.suggested && h.suggested !== h.chosen) {
-      transfer.set(`${h.suggested}\u2192${h.chosen}`, ((_b2 = transfer.get(`${h.suggested}\u2192${h.chosen}`)) != null ? _b2 : 0) + 1);
-    }
-  }
-  const total = history.length;
-  const structTop = [...structural].sort((a, b) => b.score - a.score)[0];
-  const calibrated = structural.map((s) => {
-    var _a3, _b3, _c2;
-    const sig = { cls: s.cls, score: s.score, why: [...s.why] };
-    if (total >= 5 && s.score > 0) {
-      const prior = (((_a3 = chosen.get(s.cls)) != null ? _a3 : 0) + 1) / (total + NOTE_CLASSES.length);
-      const pts = Math.min(PRIOR_CAP, prior * 3 * NOTE_CLASSES.length);
-      if (pts > 1)
-        sig.why.push(`\u3042\u306A\u305F\u306E\u9078\u629E\u50BE\u5411 (${(_b3 = chosen.get(s.cls)) != null ? _b3 : 0}/${total})`);
-      sig.score += pts;
-    }
-    if (structTop && structTop.score > 0) {
-      const t = (_c2 = transfer.get(`${structTop.cls}\u2192${s.cls}`)) != null ? _c2 : 0;
-      if (t >= 2) {
-        const pts = Math.min(4, t);
-        sig.score += pts;
-        sig.why.push(`\u904E\u53BB\u306E\u8A02\u6B63: ${structTop.cls}\u2192${s.cls} \xD7${t}`);
-      }
-    }
-    return sig;
-  });
-  return calibrated.sort((a, b) => b.score - a.score);
-}
-
 // src/notes/manga-ocr.ts
 var MANGA_MODEL = OCR_MODEL_DEFAULT;
 var MANGA_PROMPT = [
@@ -53772,16 +53935,17 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
           }
         } : void 0,
         fetchGoho: this.settings.hyogenEnabled || this.settings.twcEnabled ? (p) => this.freezeGoho(p) : void 0,
-        captureCorpus: (p, example, prov) => {
-          var _a3, _b3, _c3, _d3;
+        captureCorpus: (p, example, prov, colloc) => {
+          var _a3, _b3, _c3, _d3, _e3;
           new CaptureModal(this.app, {
-            text: p.key,
-            example,
+            text: (_a3 = colloc == null ? void 0 : colloc.surface) != null ? _a3 : p.key,
+            example: colloc ? void 0 : example,
+            classHint: colloc ? "collocation" : void 0,
             source: {
               kind: "web",
               medium: "corpus",
-              sourceName: (_c3 = (_b3 = prov == null ? void 0 : prov.sourceName) != null ? _b3 : (_a3 = p.payload.goho) == null ? void 0 : _a3.source) != null ? _c3 : "corpus",
-              loc: (_d3 = prov == null ? void 0 : prov.url) != null ? _d3 : p.key
+              sourceName: (_d3 = (_c3 = prov == null ? void 0 : prov.sourceName) != null ? _c3 : (_b3 = p.payload.goho) == null ? void 0 : _b3.source) != null ? _d3 : "corpus",
+              loc: (_e3 = prov == null ? void 0 : prov.url) != null ? _e3 : (colloc == null ? void 0 : colloc.frame) ? `${p.key} \u2014 ${colloc.frame}` : p.key
             }
           }, this.makeCaptureDeps()).open();
         },
@@ -55316,12 +55480,29 @@ ${summary}
   }
   // ── X Search wiring ──────────────────────────────────────────
   /** Assemble the dependency bundle the X search view needs. */
+  /**
+   * §29 rung 0's oracle. isWord is STRICT — an exact surface hit with no
+   * deinflection trail — because the swallower's NAME is shown to the hand,
+   * and 満足する reads as a word where 満足して reads as a typo. lookup()
+   * already marks deinflected hits, so strictness costs one predicate.
+   */
+  xOracle() {
+    if (!this.dictStore.hasDictionaries())
+      return void 0;
+    return {
+      deinflect: (s) => deinflect(s),
+      isWord: (s) => this.dictStore.lookup(s).some((r2) => !r2.deinflection)
+    };
+  }
   makeXDeps() {
     return {
       corpus: this.xCorpus,
       client: this.xClient,
       getSettings: () => this.settings.x,
       saveSettings: () => this.saveSettings(),
+      // §29 rung 0 — rebuilt per deps call, so importing a dictionary
+      // arms the boundary test without a reload.
+      oracle: this.xOracle(),
       // §29.2 — a concordance line goes down the SAME road every capture does
       // (§28 S5): the classify modal, with the window as the example and the
       // post as the scene. Not a side channel that writes straight to a store.

@@ -56,6 +56,8 @@ import { emptyQuery, DEFAULT_X_SETTINGS } from "./x/x-types";
 // §29.2 — X as a corpus: KWIC windows, spread, and the adjacent environment.
 import { buildXUsage, kwicQuote, type XUsage } from "./x/usage";
 import { parseTerms } from "./x/query-builder";
+import type { Oracle } from "./x/relevance";
+import { deinflect } from "./dictionary/deinflect";
 import {
   buildBrowserCaptureUrl,
   decodeCaptureData,
@@ -2558,12 +2560,29 @@ export default class JPCollocationsPlugin extends Plugin {
   // ── X Search wiring ──────────────────────────────────────────
 
   /** Assemble the dependency bundle the X search view needs. */
+  /**
+   * §29 rung 0's oracle. isWord is STRICT — an exact surface hit with no
+   * deinflection trail — because the swallower's NAME is shown to the hand,
+   * and 満足する reads as a word where 満足して reads as a typo. lookup()
+   * already marks deinflected hits, so strictness costs one predicate.
+   */
+  private xOracle(): Oracle | undefined {
+    if (!this.dictStore.hasDictionaries()) return undefined;
+    return {
+      deinflect: (s) => deinflect(s),
+      isWord: (s) => this.dictStore.lookup(s).some((r) => !r.deinflection),
+    };
+  }
+
   private makeXDeps(): XViewDeps {
     return {
       corpus: this.xCorpus,
       client: this.xClient,
       getSettings: () => this.settings.x,
       saveSettings: () => this.saveSettings(),
+      // §29 rung 0 — rebuilt per deps call, so importing a dictionary
+      // arms the boundary test without a reload.
+      oracle: this.xOracle(),
       // §29.2 — a concordance line goes down the SAME road every capture does
       // (§28 S5): the classify modal, with the window as the example and the
       // post as the scene. Not a side channel that writes straight to a store.

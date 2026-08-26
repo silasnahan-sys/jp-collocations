@@ -4041,6 +4041,33 @@ body.jp-posture-thumb .jp-dismiss { order: 99; }
 }
 
 /* ── Empty / home states ────────────────────────────────────── */
+/* §29 rung 0 — the demoted 部分一致 tail. Present, counted and named, but
+   visually subordinate: these are occurrences the shelf says belong to a
+   different word. Never deleted — the hand may disagree with the shelf. */
+.jp-x-partial {
+  margin: 14px 0 4px;
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 8px;
+}
+.jp-x-partial-head {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  box-shadow: none;
+  cursor: pointer;
+  padding: 8px 10px;
+  font-size: 0.78rem;
+  color: var(--text-faint);
+  border-radius: 6px;
+}
+.jp-x-partial-head:hover {
+  color: var(--text-muted);
+  background: var(--background-modifier-hover);
+}
+.jp-x-partial-body { opacity: 0.72; }
+.jp-x-partial-body:hover { opacity: 1; }
 .jp-x-empty, .jp-x-home {
   text-align: center;
   padding: 32px 20px;

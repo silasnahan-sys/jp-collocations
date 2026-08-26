@@ -41,6 +41,8 @@ type SortMode = 'latest' | 'likes' | 'retweets';
 export const JP_X_VIEW_TYPE = 'jp-x-search-view';
 
 /** Callbacks the view needs from the plugin. */
+import { occurrences, trueHits, partialLabel, type Oracle } from '../x/relevance.ts';
+
 export interface XViewDeps {
   corpus: XCorpusStore;
   client: XClient;
@@ -65,6 +67,14 @@ export interface XViewDeps {
   patternsIn?: (text: string) => Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }>;
   /** Open a catalog pattern in the lexicon (the door back — §28 S4). */
   openPattern?: (id: string) => void;
+  /**
+   * §29 rung 0 — the two dictionary faculties the boundary test needs. The X
+   * view historically had NO dictionary access at all, which is why 足して
+   * returned 23 confident false friends: the shelf could have said that
+   * 満足する swallows this, and was never asked. Optional, so the view still
+   * renders without a converted dictionary — the test simply does not run.
+   */
+  oracle?: Oracle;
   /** §29.2 — capture one concordance line (not the whole tweet) as a 用例.
    *  `hit` = the matched surface, so the capture arrives already about it. */
   onCaptureLine?: (quote: string, url: string, handle: string, hit?: string) => void;
@@ -399,10 +409,48 @@ export class XSearchView extends ItemView {
     }
 
     const results = this.applySort(this.deps.corpus.search(this.query, 300));
+
+    /**
+     * §29.2 — the KWIC panel and the boundary test both need to know whether
+     * ONE term is being asked about. Two terms have no single column to align
+     * on and no single span to judge.
+     */
+    const single = this.query.allTerms.length === 1 && !this.query.anyTerms.length
+      ? this.query.allTerms[0].trim() : '';
+
+    /**
+     * §29 RUNG 0 — the floor under every ranking above it.
+     *
+     * MEASURED on this corpus: 足して occurs 23 times and all 23 belong to
+     * 満足する / 不足する / 補足する. Recency-ranking them was not a bad
+     * order, it was 23 wrong answers presented as results. A tweet survives
+     * when at least ONE occurrence of the term is really that word; the rest
+     * are demoted to a NAMED 部分一致 tail — never deleted, because a
+     * swallowed hit is still a fact about the corpus and the hand may
+     * disagree with the shelf (§28 S6: degrade honestly, in place).
+     */
+    let shown = results;
+    let demoted: typeof results = [];
+    let tailLabel = '';
+    if (single && this.deps.oracle && results.length) {
+      const judged = trueHits(
+        results.flatMap((t) => occurrences(t.id, t.text, single)),
+        this.deps.oracle,
+      );
+      if (judged.partial.length) {
+        const trueIds = new Set(judged.hits.map((h) => h.id));
+        shown = results.filter((t) => trueIds.has(t.id) || !t.text.includes(single));
+        demoted = results.filter((t) => !trueIds.has(t.id) && t.text.includes(single));
+        tailLabel = partialLabel(judged);
+      }
+    }
+
     const live = this.deps.client.isConfigured();
     this.statusEl.empty();
     this.statusEl.createSpan({
-      text: `ローカル ${results.length}件 / コーパス ${total}件` +
+      text: `ローカル ${shown.length}件` +
+        (demoted.length ? `（+ 部分一致 ${demoted.length}件）` : '') +
+        ` / コーパス ${total}件` +
         (live ? '' : '・ライブ取得オフ（🔑で設定）'),
       cls: 'jp-x-status-text',
     });
@@ -437,8 +485,6 @@ export class XSearchView extends ItemView {
      * on, and faking one would put the concordance's whole claim on a
      * coin-flip about which term mattered.
      */
-    const single = this.query.allTerms.length === 1 && !this.query.anyTerms.length
-      ? this.query.allTerms[0].trim() : '';
     if (single) {
       // The KWIC alignment walks the WHOLE corpus (1.18M chars). Typing やや
       // used to run it three times before the last keystroke settled. The
@@ -459,7 +505,26 @@ export class XSearchView extends ItemView {
     }
 
     const terms = highlightTerms(this.query);
-    for (const t of results) this.renderTweetCard(this.resultsEl, t, terms);
+    for (const t of shown) this.renderTweetCard(this.resultsEl, t, terms);
+
+    // The demoted tail: collapsed, counted, and NAMING what swallowed each
+    // hit. Built lazily — the cards only exist if the hand opens it.
+    if (demoted.length) {
+      const tail = this.resultsEl.createDiv('jp-x-partial');
+      const head = tail.createEl('button', { cls: 'jp-x-partial-head' });
+      const body = tail.createDiv('jp-x-partial-body');
+      body.hide();
+      const paint = (open: boolean): void => head.setText((open ? '▾ ' : '▸ ') + tailLabel);
+      paint(false);
+      head.onclick = () => {
+        const open = !body.isShown();
+        if (open && !body.childElementCount) {
+          for (const t of demoted) this.renderTweetCard(body, t, terms);
+        }
+        if (open) body.show(); else body.hide();
+        paint(open);
+      };
+    }
   }
 
   private renderCooccurrence(): void {

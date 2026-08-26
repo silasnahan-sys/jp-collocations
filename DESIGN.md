@@ -2467,7 +2467,14 @@ contract that `pattern-store.ts` already encodes (`Attestation`, `SceneRef`,
 partially honor. When the two disagree, **the contract in `pattern-store.ts`
 wins and the pipeline is the bug.**
 
-## 29. The 𝕏検索辞書 as an interrogated corpus — one build from three angles (2026-08-25, PROPOSED)
+## 29. The 𝕏検索辞書 as an interrogated corpus — one build from three angles (2026-08-25, RUNG 0 SHIPPED)
+
+**Status 2026-08-25:** rung 0 is built, wired and deployed — `src/x/relevance.ts`,
+`golden/x-relevance.mjs` (15 checks), the oracle seam cut in `makeXDeps`, the
+demoted tail rendering in `XSearchView.renderLocal`. Verified against the live
+corpus, not only fixtures: 足して → 23 raw occurrences → **0 true hits, 23
+demoted**, labelled 「部分一致 23件（満足する×15・不足する×7・補足する×1）」.
+Rungs 1–6 remain as specified below.
 
 This is the DESIGN section `claude/PHYSICS-2026-08-19.md §5` adjudicated and
 every prior pass promised without writing. It consolidates the Aug-19 governing
@@ -2518,7 +2525,7 @@ deinflector.*
 
 ### 29.2 The rungs (bottom = cheapest; each earns the next)
 
-- **Rung 0 — true hits (word boundary).** Pure. `deinflect()` is pure+sync and
+- **Rung 0 — true hits (word boundary). SHIPPED 2026-08-25.** Pure. `deinflect()` is pure+sync and
   `DictionaryStore.lookup` is sync in-memory, so this runs at render time with
   no async plumbing. For each raw hit, extend the matched span; if a dictionary
   word covers the original match (満足する ⊃ 足す), the hit is a **false
@@ -2526,6 +2533,16 @@ deinflector.*
   never deleted (S6: degrade honestly, in place). True hits carry their
   deinflection trail for the 〈…〉 badge (same convention as `BigDictStore`,
   invariant 3).
+  **The rule the build had to add:** a swallower must be a DIFFERENT word.
+  足してみた deinflects straight back to 足す, so an extension-is-a-word test
+  alone demoted the very hits it exists to protect — the query’s own word
+  wearing more inflection, reported as its own false friend. The match’s own
+  lemma set is computed first and excluded (`ownWords`). Pinned by golden.
+  Known and stated rather than hidden: with deinflect+lookup and no parser,
+  the test cannot separate a swallower that KILLS the reading (満足 ⊅ 足す)
+  from a compound that CONTAINS it (第一印象 ⊃ 印象). Both are demoted, both
+  are named, and the tail is a tail precisely so the hand can overrule it.
+  `reach` is a knob (default 4), not a guess.
 - **Rung 1 — class-conditional ranking.** The comparator is a function of the
   probing entry's class: 🟡 verbatim echo first; 🔵 collocate adjacency; 🟢 the
   gesture's halo context, not the string; 🟠 parts-in-order with the intervener
