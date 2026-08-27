@@ -144,5 +144,45 @@ console.log('══ the page-turn verdict: carried over the hill, or thrown ═�
   check('no page to turn to always snaps', N.panVerdict(300, 100, W, false) === 'snap');
 }
 
+console.log('══ the trail: back AND forward, one spine (行って戻ってまた行く) ══');
+{
+  const t = new N.Trail();
+  const stop = (word, scroll = 0) => ({ word, scroll });
+  t.push(stop('爽快', 120));       // at 爽快, descended away
+  t.push(stop('痛快'));            // at 痛快, descended away — now at 愉快
+  check('two stops behind, none ahead', t.backLength === 2 && t.forwardLength === 0);
+  const prev = t.back(stop('愉快', 44));
+  check('back returns the previous stop with its scroll', prev.word === '痛快');
+  check('the stop you left became the future', t.forwardLength === 1 && t.peekForward().word === '愉快');
+  const fwd = t.forward(stop('痛快'));
+  check('forward re-descends into that future, restoring it', fwd.word === '愉快' && fwd.scroll === 44);
+  check('…and the walk is symmetric (back again possible)', t.backLength === 2 && t.forwardLength === 0);
+  t.back(stop('愉快'));
+  check('a NEW descend burns the forward stack (you left that future)',
+    (t.push(stop('豪快')), t.forwardLength === 0 && t.backLength === 2));
+  check('back at the trail head answers null, loses nothing',
+    (t.clear(), t.back(stop('孤高')) === null && t.forwardLength === 0));
+}
+
+console.log('══ quick nav: the riffle accelerates, then glides ══');
+{
+  const seq = [0, 1, 2, 3, 4, 5, 6, 12].map((n) => N.riffleDelay(n));
+  const monotone = seq.every((v, i) => i === 0 || v <= seq[i - 1]);
+  check('each step is at least as quick as the last', monotone, seq.join(','));
+  check('the first step is deliberate (readable pages)', N.riffleDelay(0) >= 240);
+  check('the glide floors at 90ms, never runaway', N.riffleDelay(99) === 90);
+  check('a negative step asks for the deliberate tempo', N.riffleDelay(-1) === N.riffleDelay(0));
+  check('the hold gate outlasts a tap', N.RIFFLE_HOLD_MS >= 250);
+}
+
+console.log('══ the vertical verdict: same physics, other axis ══');
+{
+  const H = 600; // pane HEIGHT — panVerdict is axis-agnostic by design
+  check('pulled past 28% of the pane height commits', N.panVerdict(180, 700, H, true) === 'commit');
+  check('a shy vertical tug snaps back', N.panVerdict(100, 700, H, true) === 'snap');
+  check('a vertical throw commits', N.panVerdict(60, 100, H, true) === 'commit');
+  check('no neighbour below: always snap (the rubber band already said)', N.panVerdict(500, 100, H, false) === 'snap');
+}
+
 console.log(`\n${fail ? '✗' : '✓'} dict-nav: ${pass}/${pass + fail} checks passed`);
 if (fail) process.exit(1);

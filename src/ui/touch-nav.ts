@@ -145,7 +145,19 @@ export interface EdgeBackDeps {
    */
   peek: () => string | null;
   go: () => void;
+  /**
+   * The PAGE this gesture moves, when the view has one (its results pane).
+   * With it, the drag is iOS's interactive pop done to the content: the page
+   * follows the finger 1:1 out to the commit point and resists past it,
+   * exactly as the tab does — the tab then reads as the label on a page you
+   * are actually holding, not a proxy for one. Without it, tab-only: the
+   * pre-2026-08-27 behaviour, unchanged (「not just pressing back button」—
+   * the user's correction was that the PAGE never moved).
+   */
+  page?: () => HTMLElement | null;
 }
+
+export type EdgeSide = 'left' | 'right';
 
 const SETTLE = criticallyDamped(550);
 
@@ -162,10 +174,13 @@ const GUARDED = 'input, textarea, select, [contenteditable="true"], .jp-rail-gri
  * own left end because a navigation ate the gesture is precisely the kind of
  * exception that makes a hand stop trusting the whole grammar.
  */
-function inHorizontalScroller(from: Element | null, root: HTMLElement): boolean {
+function inHorizontalScroller(from: Element | null, root: HTMLElement, side: EdgeSide = 'left'): boolean {
   for (let el: Element | null = from; el && el !== root; el = el.parentElement) {
     const e = el as HTMLElement;
-    if (e.scrollWidth > e.clientWidth + 1 && e.scrollLeft > 0) return true;
+    if (e.scrollWidth <= e.clientWidth + 1) continue;
+    // Could the scroller itself still consume a drag from this edge?
+    if (side === 'left' ? e.scrollLeft > 0
+      : e.scrollLeft < e.scrollWidth - e.clientWidth - 1) return true;
   }
   return false;
 }
@@ -181,25 +196,69 @@ export function attachEdgeBack(
   deps: EdgeBackDeps,
   cfg: EdgeConfig = DEFAULT_EDGE,
 ): () => void {
-  const marked = host as HTMLElement & { _jpEdgeBack?: () => void };
-  if (marked._jpEdgeBack) return marked._jpEdgeBack;
+  return attachEdge(host, deps, cfg, 'left');
+}
+
+/**
+ * The mirror: a drag from the RIGHT edge goes FORWARD — the future you
+ * backed out of (Trail's other half). Same physics, same refusals; it arms
+ * only while `peek` names a forward stop, so the gesture cannot exist
+ * before a back has created a future. iOS Safari's own edge grammar.
+ */
+export function attachEdgeForward(
+  host: HTMLElement,
+  deps: EdgeBackDeps,
+  cfg: EdgeConfig = DEFAULT_EDGE,
+): () => void {
+  return attachEdge(host, deps, cfg, 'right');
+}
+
+function attachEdge(
+  host: HTMLElement,
+  deps: EdgeBackDeps,
+  cfg: EdgeConfig,
+  side: EdgeSide,
+): () => void {
+  const key = side === 'left' ? '_jpEdgeBack' : '_jpEdgeFwd';
+  const marked = host as HTMLElement & { _jpEdgeBack?: () => void; _jpEdgeFwd?: () => void };
+  const existing = marked[key];
+  if (existing) return existing;
+  /** Finger travel toward the pane's centre, positive when navigating. */
+  const inward = (dx: number): number => (side === 'left' ? dx : -dx);
 
   host.addClass('jp-nav-host');
 
   let drag: { id: number; x0: number; y0: number; axis: Axis } | null = null;
   let trail: Sample[] = [];
   let tab: HTMLElement | null = null;
+  let page: HTMLElement | null = null;
+
+  /** Put the ridden page back (or to rest after a commit repaints it). */
+  const settlePage = (animate: boolean): void => {
+    if (!page) return;
+    const el = page;
+    page = null;
+    if (animate && el.style.transform && !reducedMotion()) {
+      el.style.transition = 'transform 130ms ease-out';
+      el.style.transform = '';
+      window.setTimeout(() => { el.style.transition = ''; }, 160);
+    } else {
+      el.style.transition = '';
+      el.style.transform = '';
+    }
+  };
 
   const clear = (): void => {
     drag = null;
     trail = [];
     tab?.remove();
     tab = null;
+    settlePage(false);
   };
 
   const show = (label: string, y: number): void => {
-    tab = host.createDiv('jp-edgeback');
-    tab.createSpan({ cls: 'jp-edgeback-arrow', text: '‹' });
+    tab = host.createDiv(`jp-edgeback${side === 'right' ? ' jp-edgeback--right' : ''}`);
+    tab.createSpan({ cls: 'jp-edgeback-arrow', text: side === 'left' ? '‹' : '›' });
     tab.createSpan({ cls: 'jp-edgeback-label', text: label });
     tab.style.top = `${y}px`;
   };
@@ -207,10 +266,11 @@ export function attachEdgeBack(
   const onDown = (e: PointerEvent): void => {
     if (drag || e.pointerType === 'mouse' || !e.isPrimary) return;
     const r = host.getBoundingClientRect();
-    if (!inEdgeZone(e.clientX - r.left, cfg)) return;
+    const edgeX = side === 'left' ? e.clientX - r.left : r.left + r.width - e.clientX;
+    if (!inEdgeZone(edgeX, cfg)) return;
     const t = e.target as Element | null;
     if (t?.closest(GUARDED)) return;
-    if (inHorizontalScroller(t, host)) return;
+    if (inHorizontalScroller(t, host, side)) return;
     // Asked at touch time, not cached: an exit that does nothing costs more
     // trust than no exit at all.
     if (!deps.peek()) return;
@@ -220,7 +280,7 @@ export function attachEdgeBack(
 
   const onMove = (e: PointerEvent): void => {
     if (!drag || e.pointerId !== drag.id) return;
-    const dx = e.clientX - drag.x0;
+    const dx = inward(e.clientX - drag.x0);
     const dy = e.clientY - drag.y0;
     pushSample(trail, { t: e.timeStamp, x: e.clientX, y: e.clientY });
 
@@ -232,20 +292,25 @@ export function attachEdgeBack(
       const label = deps.peek();
       if (!label) { clear(); return; }
       show(label, e.clientY - host.getBoundingClientRect().top);
+      page = deps.page?.() ?? null;
     }
 
     // Locked. Suppress the text selection this drag would otherwise start.
     e.preventDefault();
     const pull = pullFor(dx, cfg);
     if (tab) {
-      tab.style.transform = `translateX(${pull.toFixed(1)}px)`;
+      tab.style.transform = `translateX(${(side === 'left' ? pull : -pull).toFixed(1)}px)`;
       tab.toggleClass('jp-edgeback--armed', commits(dx, 0, cfg));
     }
+    // The page rides with the same pull — direct manipulation, compositor
+    // transform only, and the resistance past the commit point is felt in
+    // the content itself, which is what makes the threshold need no label.
+    if (page) page.style.transform = `translateX(${(side === 'left' ? pull : -pull).toFixed(1)}px)`;
   };
 
   const onUp = (e: PointerEvent): void => {
     if (!drag || e.pointerId !== drag.id) return;
-    const dx = e.clientX - drag.x0;
+    const dx = inward(e.clientX - drag.x0);
     const locked = drag.axis === 'nav';
     const { vx } = throwVelocity(trail);
     // Take the element OFF the instance before resetting: the settle below
@@ -256,10 +321,13 @@ export function attachEdgeBack(
     trail = [];
     tab = null;
 
-    if (!locked) { el?.remove(); return; }
+    if (!locked) { el?.remove(); settlePage(false); return; }
 
-    if (commits(dx, vx, cfg)) {
+    if (commits(dx, inward(vx), cfg)) {
       el?.remove();
+      // The step repaints the page in place; clear the ride synchronously so
+      // the new content does not inherit a half-slid transform.
+      settlePage(false);
       deps.go();
       return;
     }
@@ -267,9 +335,11 @@ export function attachEdgeBack(
     // Refused: put it back on the same laws everything else moves by, rather
     // than blinking out. An abandoned gesture that vanishes reads as an error;
     // one that returns reads as a decision you made.
+    settlePage(true);
     if (!el) return;
     if (reducedMotion() || typeof el.animate !== 'function') { el.remove(); return; }
-    const { keys, ms } = springKeyframes(pull, 0, vx, 0, SETTLE);
+    // Screen-space: the right-side tab sits at −pull and springs home from there.
+    const { keys, ms } = springKeyframes(side === 'left' ? pull : -pull, 0, vx, 0, SETTLE);
     const anim = el.animate(keys, { duration: ms, easing: 'linear' });
     anim.onfinish = () => el.remove();
     anim.oncancel = () => el.remove();
@@ -293,8 +363,8 @@ export function attachEdgeBack(
     host.removeEventListener('pointerup', onUp, true);
     host.removeEventListener('pointercancel', onCancel, true);
     clear();
-    delete marked._jpEdgeBack;
+    delete marked[key];
   };
-  marked._jpEdgeBack = detach;
+  marked[key] = detach;
   return detach;
 }

@@ -334,6 +334,38 @@ console.log('\n D4. the 辞書 nav grammar: armed, twinned, and lit on both halv
     /もう台帳にある/.test(echo) && /openPattern/.test(echo));
   check('peekChrome wires the state once for every surface',
     /patternsIn: \(text\) => this\.patternsIn\(text\)/.test(main));
+
+  // ── 2026-08-27: the user's correction — the walk is not horizontal-only ──
+  // The previous build recorded at-end vertical continuation as a refusal and
+  // shipped back as a button; these pins hold the corrected grammar open.
+  check('the VERTICAL walk is armed (at-end tug pulls the neighbour in)',
+    /this\.armVerticalWalk\(/.test(dict) && /jp-dict-vpeek/.test(dict));
+  check('the next entry visibly begins at the end of this one (つづく)',
+    /this\.renderContinue\(\)/.test(dict) && /jp-dict-continue/.test(dict));
+  check('the trail has BOTH directions (forward exists, not only back)',
+    /goForward\(\)/.test(dict) && /trailPeekForward/.test(dict));
+  check('the edge drags ride the PAGE, not only a label tab',
+    /page\?\.\(\)|deps\.page\?\.\(\)/.test(read('ui', 'touch-nav.ts'))
+    && /pageEl/.test(read('ui', 'view-chrome.ts')));
+  check('the right edge arms forward through view-chrome',
+    /attachEdgeForward\(/.test(read('ui', 'view-chrome.ts')));
+  check('辞書 chrome walks its own trail before exiting the view',
+    /if \(!v\.goBack\(\)\) void this\.navBack\(\)/.test(main));
+  check('quick nav: holding a chip riffles (both chips armed)',
+    (dict.match(/this\.armRiffle\(/g) ?? []).length >= 2);
+  check('the selection itself is carryable (echo grip armed)',
+    /jp-echo-grip/.test(echo) && /makeDraggable\(grip/.test(echo));
+  for (const id of ['dict-back', 'dict-forward', 'x-back', 'x-forward']) {
+    check(`command twin '${id}' is registered`, new RegExp(`id: "${id}"`).test(main));
+  }
+  // …and the grammar is ONE grammar: the 𝕏 pane walks the same way.
+  const xview = read('ui', 'XSearchView.ts');
+  check('𝕏 doors ride the trail and land lit',
+    /this\.goTo\(rung\.span/.test(xview) && /jp-x-arrive-band/.test(xview));
+  check('𝕏 chrome walks its own trail before exiting the view',
+    /this\.activeXView\(\)\?\.goBack\(\)/.test(main));
+  check('a silent probe files a standing 問い in one gesture (rung 6)',
+    /fileStanding/.test(xview) && /fileStanding:/.test(main));
 }
 
 // ── D5. the carried thing is always addressed (宛名札, §2.2) ────────────────

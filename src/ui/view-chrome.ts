@@ -22,7 +22,7 @@ import type { NoteClass } from '../notes/note-types.ts';
 import { edgeDock, wideDock, isTouchy } from './posture.ts';
 import { setIcon } from 'obsidian';
 import { renderSurfaceBar, PLACES, TOOLS, type Surface } from './surface-bar.ts';
-import { attachEdgeBack } from './touch-nav.ts';
+import { attachEdgeBack, attachEdgeForward } from './touch-nav.ts';
 import { mountClipboardDoor } from './clipboard-door.ts';
 import { observePane, paneSizeOf, isNarrowPane } from './pane-size.ts';
 import { armBarRetreat } from './bar-retreat.ts';
@@ -54,6 +54,14 @@ export interface ViewChrome {
    *  goes BEFORE you commit. Null when there is nowhere behind you, which is
    *  what stops the gesture arming at all. See `touch-nav.ts`. */
   backPeek?: () => string | null;
+  /** The trail's other half (dict-nav.Trail): a RIGHT-edge drag re-descends
+   *  into the stop you backed out of. Null = no future = no gesture. */
+  forwardPeek?: () => string | null;
+  goForward?: () => void;
+  /** The results pane the edge drags RIDE (touch-nav `EdgeBackDeps.page`):
+   *  with it, back/forward move the page under the finger instead of only
+   *  the label tab — the 2026-08-27 correction. */
+  pageEl?: () => HTMLElement | null;
   /** §26.3 — the ANSWER half of a selection, off the sharded shelf. Wired once
    *  in main.ts so every surface answers a highlighted phrase identically.
    *  `sentence` is the line the selection was cut from, so a mid-word cut can
@@ -270,7 +278,18 @@ export function armEdgeBack(viewRoot: HTMLElement, chrome: ViewChrome): void {
   attachEdgeBack(viewRoot, {
     peek: () => chrome.backPeek!(),
     go: () => chrome.dismiss!(),
+    ...(chrome.pageEl ? { page: () => chrome.pageEl!() } : {}),
   });
+  // The other direction, where the view keeps a forward trail: right edge
+  // re-enters the future you backed out of. Arms per-touch off forwardPeek,
+  // so before any back has happened the gesture simply does not exist.
+  if (chrome.goForward && chrome.forwardPeek) {
+    attachEdgeForward(viewRoot, {
+      peek: () => chrome.forwardPeek!(),
+      go: () => chrome.goForward!(),
+      ...(chrome.pageEl ? { page: () => chrome.pageEl!() } : {}),
+    });
+  }
 }
 
 /**

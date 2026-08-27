@@ -54,6 +54,19 @@ lead, not evidence — re-grid before building on it.
 | IMG_1186 | 30fps sheets existed on a dead container's disk; content never written down | ⚠ unknown |
 | 07-15 Monokakido ScreenRecording (Drive) | the recording §26 was built FROM — named as the benchmark to grid before any nav build; still never gridded | PHYSICS-2026-08-19.md names the debt |
 
+## 2.5 Container access to the films (measured 2026-08-27)
+
+The 2026-08-27 session ATTEMPTED the pull and hit a wall worth recording:
+the remote container's egress proxy denies every Drive host
+(`drive.google.com`, `drive.usercontent.google.com` — CONNECT 403), and
+the Drive connector's download call dies on video-sized binaries. The
+07-15 recording is link-shared and STILL unreachable from a container, so
+its frame grid remains debt. The route that would work: attach the films
+(or their 1fps contact sheets) to a GitHub release on this repo —
+github.com is reachable from every session. Until one exists, a container
+session's ground truth is: `_ref_monokakido/` (six stills, committed),
+DESIGN §26.1/§30, CALENDAR-PHYSICS, and this ledger.
+
 ## 3. What the standing acceptance test still needs
 
 1. **The side-by-side walk** (PHYSICS §6): the same lookup walk filmed in

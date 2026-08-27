@@ -3576,8 +3576,87 @@ body.jp-posture-thumb .jp-dismiss { order: 99; }
   from { opacity: 0.6; transform: translateX(-14%); }
   to { opacity: 1; transform: translateX(0); }
 }
+/* The VERTICAL walk (the 2026-08-27 correction): committing past an end
+   finishes the turn from the direction the hand was already moving —
+   next arrives from below, previous from above, same tempo as sideways. */
+.jp-dict-flick-up { animation: jp-dict-flick-u 0.19s cubic-bezier(0.2, 0.8, 0.3, 1); }
+.jp-dict-flick-down { animation: jp-dict-flick-d 0.19s cubic-bezier(0.2, 0.8, 0.3, 1); }
+@keyframes jp-dict-flick-u {
+  from { opacity: 0.6; transform: translateY(11%); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes jp-dict-flick-d {
+  from { opacity: 0.6; transform: translateY(-11%); }
+  to { opacity: 1; transform: translateY(0); }
+}
 @media (prefers-reduced-motion: reduce) {
-  .jp-dict-descend, .jp-dict-flick-left, .jp-dict-flick-right { animation: none; }
+  .jp-dict-descend, .jp-dict-flick-left, .jp-dict-flick-right,
+  .jp-dict-flick-up, .jp-dict-flick-down { animation: none; }
+}
+
+/* The incoming neighbour during a vertical pull: a slim band at the end
+   being pulled from, naming the page that is arriving. --armed past the
+   commit distance — the band brightens instead of a label appearing. */
+.jp-dict-vpeek {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 14px;
+  background: var(--background-secondary);
+  border-top: 1px solid var(--background-modifier-border);
+  border-bottom: 1px solid var(--background-modifier-border);
+  opacity: 0.92;
+  z-index: 11;
+  pointer-events: none;
+}
+.jp-dict-vpeek--bottom { bottom: 0; }
+.jp-dict-vpeek--top { top: 0; }
+.jp-dict-vpeek-arrow { font-size: 0.8rem; color: var(--text-faint); }
+.jp-dict-vpeek-expr { font-size: 1.05rem; font-weight: 700; color: var(--text-normal); }
+.jp-dict-vpeek-reading { font-size: 0.82rem; color: var(--text-muted); }
+.jp-dict-vpeek--armed { background: var(--background-modifier-hover); opacity: 1; }
+.jp-dict-vpeek--armed .jp-dict-vpeek-arrow { color: var(--text-accent); }
+
+/* つづく — the next entry visibly beginning where this one ends: the book's
+   own promise that the world continues below the fold, and the standing
+   invitation that makes the at-end tug discoverable. */
+.jp-dict-continue {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 10px 4px 84px;
+  padding: 10px 14px;
+  border-top: 1px dashed var(--background-modifier-border);
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+.jp-dict-continue:hover { background: var(--background-modifier-hover); }
+.jp-dict-continue-label { font-size: 0.72rem; color: var(--text-faint); letter-spacing: 0.08em; }
+.jp-dict-continue-expr { font-size: 1.02rem; font-weight: 700; color: var(--text-normal); }
+.jp-dict-continue-reading { font-size: 0.8rem; }
+.jp-dict-continue-arrow { margin-left: auto; font-size: 0.8rem; color: var(--text-faint); }
+
+/* A chip mid-riffle: pressed, alive. The speed is the feedback; the style
+   only says the press is being heard. */
+.jp-dict-nb--riffling {
+  background: var(--background-modifier-hover);
+  transform: scale(0.97);
+}
+
+/* Forward — the future you backed out of, visible as a chip. */
+.jp-dict-fwd-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-accent);
+  font-size: 0.82rem;
+  padding: 2px 6px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -3643,7 +3722,10 @@ body.jp-posture-thumb .jp-dismiss { order: 99; }
    load-bearing line of the whole page-turn: pan-y hands HORIZONTAL touch
    travel to armEntryPan while the browser keeps vertical scrolling native.
    Without it the scroller eats the pan and the turn can never be felt. */
-.jp-dict-results { padding-bottom: 76px; touch-action: pan-y; }
+/* Opaque page: the edge drags RIDE this pane (touch-nav page ride), and a
+   transparent page sliding over the view chrome reads as tearing, not as a
+   page being moved. */
+.jp-dict-results { padding-bottom: 76px; touch-action: pan-y; background: var(--background-primary); position: relative; z-index: 2; }
 
 /* ── Land lit (item 7): the tan band on whatever carried you here ── */
 .jp-dict-arrive-band {
@@ -4102,6 +4184,60 @@ mark.jp-dict-find-hit--current {
   flex: 1;
   overflow-y: auto;
   padding: 8px 8px 16px;
+  /* The nav grammar on this surface too (2026-08-27): the edge drags ride
+     THIS page, so it needs its own paint and a horizontal touch must reach
+     the gesture layer instead of fighting the scroller. */
+  touch-action: pan-y;
+  background: var(--background-primary);
+  overscroll-behavior: contain;
+}
+
+/* One tempo grammar, both surfaces: descend = the iOS push from the right;
+   back pops from the left; forward re-pushes. Same curves as the 辞書. */
+.jp-x-descend { animation: jp-dict-descend 0.18s cubic-bezier(0.2, 0.8, 0.3, 1); }
+.jp-x-flick-left { animation: jp-dict-flick-l 0.19s cubic-bezier(0.2, 0.8, 0.3, 1); }
+.jp-x-flick-right { animation: jp-dict-flick-r 0.19s cubic-bezier(0.2, 0.8, 0.3, 1); }
+@media (prefers-reduced-motion: reduce) {
+  .jp-x-descend, .jp-x-flick-left, .jp-x-flick-right { animation: none; }
+}
+
+/* Land lit (item 7, on 𝕏): a door-driven arrival names what carried it. */
+.jp-x-arrive-band {
+  margin-top: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: rgba(210, 170, 90, 0.18);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+/* §29 rung 6's hand-act: the silence offers to become a standing 問い. */
+.jp-x-descent-file {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  padding: 7px 10px;
+  width: 100%;
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-align: left;
+}
+.jp-x-descent-file:hover { background: var(--background-modifier-hover); color: var(--text-normal); }
+.jp-x-descent-file-mark {
+  flex-shrink: 0;
+  width: 1.4em;
+  height: 1.4em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-weight: 700;
 }
 .jp-x-card {
   padding: 10px 12px;
@@ -7522,6 +7658,18 @@ body.jp-posture-slate .jp-follow { position: relative; }
   /* NOT `transform`: the drag writes that every frame and the refusal springs
      it home, exactly as on the rail. Only the arming colours transition. */
   transition: background 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+/* The forward tab: same pill, hung off the RIGHT edge, mirrored. */
+.jp-edgeback--right {
+  left: auto;
+  right: 0;
+  margin-left: 0;
+  margin-right: -14px;
+  padding: 9px 16px 9px 14px;
+  border-radius: 999px 0 0 999px;
+  border: 1px solid var(--background-modifier-border);
+  border-right: none;
+  flex-direction: row-reverse;
 }
 .jp-edgeback-arrow { font-size: 1.15rem; line-height: 1; opacity: 0.7; }
 .jp-edgeback-label { overflow: hidden; text-overflow: ellipsis; }

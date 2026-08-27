@@ -25669,6 +25669,76 @@ function flash(root, clientX, clientY) {
   window.setTimeout(() => dot.remove(), 520);
 }
 
+// src/ui/drag-out.ts
+var esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function defaultHtml(p) {
+  const body2 = esc(p.text);
+  switch (p.kind) {
+    case "quote":
+    case "line":
+    case "tweet": {
+      const cite = p.sub ? `<br><small>\u2014 ${esc(p.sub)}</small>` : "";
+      return `<blockquote>${body2}${cite}</blockquote>`;
+    }
+    case "entry":
+    case "dict":
+      return `<b>${body2}</b>${p.sub ? ` <span>\uFF08${esc(p.sub)}\uFF09</span>` : ""}`;
+    default:
+      return body2;
+  }
+}
+function makeDraggable(el, payload, opts = {}) {
+  var _a2;
+  const from = (_a2 = opts.grip) != null ? _a2 : el;
+  const host = from;
+  if (host._jpcDrag)
+    return;
+  host._jpcDrag = true;
+  from.setAttribute("draggable", "true");
+  from.addClass("jp-draggable");
+  from.addEventListener("dragstart", (e) => {
+    var _a3, _b2;
+    const p = payload();
+    if (!p || !p.text.trim() || !e.dataTransfer) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("text/plain", p.text);
+    e.dataTransfer.setData("text/html", (_a3 = p.html) != null ? _a3 : defaultHtml(p));
+    if (p.url)
+      e.dataTransfer.setData("text/uri-list", p.url);
+    e.dataTransfer.setData("application/x-jpc-drag", JSON.stringify({
+      kind: p.kind,
+      text: p.text,
+      ...p.path ? { path: p.path } : {},
+      ...(_b2 = p.meta) != null ? _b2 : {}
+    }));
+    e.dataTransfer.setDragImage(...dragPill(p));
+    el.addClass("jp-draggable--lifted");
+  });
+  from.addEventListener("dragend", () => el.removeClass("jp-draggable--lifted"));
+  if (opts.synthetic !== false)
+    bindPointerDrag(from, payload, dragPillEl);
+}
+function dragPillEl(p) {
+  var _a2;
+  const pill = document.body.createDiv("jp-drag-pill");
+  pill.createDiv({ cls: "jp-drag-pill-main", text: (_a2 = p.label) != null ? _a2 : snip2(p.text) });
+  if (p.sub)
+    pill.createDiv({ cls: "jp-drag-pill-sub", text: p.sub });
+  return pill;
+}
+function dragPill(p) {
+  const pill = dragPillEl(p);
+  window.setTimeout(() => pill.remove(), 0);
+  return [pill, 16, 12];
+}
+function snip2(s, n = 22) {
+  const one = s.replace(/\s+/g, " ").trim();
+  return [...one].length <= n ? one : [...one].slice(0, n).join("") + "\u2026";
+}
+
 // src/ui/selection-echo.ts
 var MIN_CHARS = 2;
 var MAX_VERBS = 4;
@@ -25858,6 +25928,19 @@ function attachSelectionEcho(root, deps) {
         deps.hold(text, ctx().surface, sentence);
       });
     }
+    const grip = verbs.createEl("button", {
+      cls: "jp-echo-btn jp-echo-grip",
+      attr: { title: "\u3064\u304B\u3093\u3067\u904B\u3076 \u2014 \u62BC\u3048\u305F\u307E\u307E\u52D5\u304B\u3059\u3068\u30C9\u30ED\u30C3\u30D7\u5148\u3078\u904B\u3079\u307E\u3059" }
+    });
+    grip.createSpan({ cls: "jp-echo-icon", text: "\u283F" });
+    grip.createSpan({ cls: "jp-echo-label", text: "\u904B\u3076" });
+    makeDraggable(grip, () => ({
+      text,
+      kind: "quote",
+      label: text.slice(0, 24),
+      sub: sentence && sentence !== text ? sentence : void 0,
+      meta: { surface: ctx().surface }
+    }));
     place(rect);
   };
   const onChange = () => {
@@ -26024,31 +26107,60 @@ function commits(dx, vx, cfg2 = DEFAULT_EDGE) {
 var SETTLE = criticallyDamped(550);
 var reducedMotion2 = () => typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 var GUARDED = 'input, textarea, select, [contenteditable="true"], .jp-rail-grip, .jp-slaterail, [draggable="true"]';
-function inHorizontalScroller(from, root) {
+function inHorizontalScroller(from, root, side = "left") {
   for (let el = from; el && el !== root; el = el.parentElement) {
     const e = el;
-    if (e.scrollWidth > e.clientWidth + 1 && e.scrollLeft > 0)
+    if (e.scrollWidth <= e.clientWidth + 1)
+      continue;
+    if (side === "left" ? e.scrollLeft > 0 : e.scrollLeft < e.scrollWidth - e.clientWidth - 1)
       return true;
   }
   return false;
 }
 function attachEdgeBack(host, deps, cfg2 = DEFAULT_EDGE) {
+  return attachEdge(host, deps, cfg2, "left");
+}
+function attachEdgeForward(host, deps, cfg2 = DEFAULT_EDGE) {
+  return attachEdge(host, deps, cfg2, "right");
+}
+function attachEdge(host, deps, cfg2, side) {
+  const key = side === "left" ? "_jpEdgeBack" : "_jpEdgeFwd";
   const marked2 = host;
-  if (marked2._jpEdgeBack)
-    return marked2._jpEdgeBack;
+  const existing = marked2[key];
+  if (existing)
+    return existing;
+  const inward = (dx) => side === "left" ? dx : -dx;
   host.addClass("jp-nav-host");
   let drag = null;
   let trail = [];
   let tab = null;
+  let page = null;
+  const settlePage = (animate2) => {
+    if (!page)
+      return;
+    const el = page;
+    page = null;
+    if (animate2 && el.style.transform && !reducedMotion2()) {
+      el.style.transition = "transform 130ms ease-out";
+      el.style.transform = "";
+      window.setTimeout(() => {
+        el.style.transition = "";
+      }, 160);
+    } else {
+      el.style.transition = "";
+      el.style.transform = "";
+    }
+  };
   const clear = () => {
     drag = null;
     trail = [];
     tab == null ? void 0 : tab.remove();
     tab = null;
+    settlePage(false);
   };
   const show = (label, y) => {
-    tab = host.createDiv("jp-edgeback");
-    tab.createSpan({ cls: "jp-edgeback-arrow", text: "\u2039" });
+    tab = host.createDiv(`jp-edgeback${side === "right" ? " jp-edgeback--right" : ""}`);
+    tab.createSpan({ cls: "jp-edgeback-arrow", text: side === "left" ? "\u2039" : "\u203A" });
     tab.createSpan({ cls: "jp-edgeback-label", text: label });
     tab.style.top = `${y}px`;
   };
@@ -26056,12 +26168,13 @@ function attachEdgeBack(host, deps, cfg2 = DEFAULT_EDGE) {
     if (drag || e.pointerType === "mouse" || !e.isPrimary)
       return;
     const r2 = host.getBoundingClientRect();
-    if (!inEdgeZone(e.clientX - r2.left, cfg2))
+    const edgeX = side === "left" ? e.clientX - r2.left : r2.left + r2.width - e.clientX;
+    if (!inEdgeZone(edgeX, cfg2))
       return;
     const t = e.target;
     if (t == null ? void 0 : t.closest(GUARDED))
       return;
-    if (inHorizontalScroller(t, host))
+    if (inHorizontalScroller(t, host, side))
       return;
     if (!deps.peek())
       return;
@@ -26069,9 +26182,10 @@ function attachEdgeBack(host, deps, cfg2 = DEFAULT_EDGE) {
     trail = [{ t: e.timeStamp, x: e.clientX, y: e.clientY }];
   };
   const onMove = (e) => {
+    var _a2, _b2;
     if (!drag || e.pointerId !== drag.id)
       return;
-    const dx = e.clientX - drag.x0;
+    const dx = inward(e.clientX - drag.x0);
     const dy = e.clientY - drag.y0;
     pushSample(trail, { t: e.timeStamp, x: e.clientX, y: e.clientY });
     if (drag.axis === "undecided") {
@@ -26089,18 +26203,21 @@ function attachEdgeBack(host, deps, cfg2 = DEFAULT_EDGE) {
         return;
       }
       show(label, e.clientY - host.getBoundingClientRect().top);
+      page = (_b2 = (_a2 = deps.page) == null ? void 0 : _a2.call(deps)) != null ? _b2 : null;
     }
     e.preventDefault();
     const pull = pullFor(dx, cfg2);
     if (tab) {
-      tab.style.transform = `translateX(${pull.toFixed(1)}px)`;
+      tab.style.transform = `translateX(${(side === "left" ? pull : -pull).toFixed(1)}px)`;
       tab.toggleClass("jp-edgeback--armed", commits(dx, 0, cfg2));
     }
+    if (page)
+      page.style.transform = `translateX(${(side === "left" ? pull : -pull).toFixed(1)}px)`;
   };
   const onUp = (e) => {
     if (!drag || e.pointerId !== drag.id)
       return;
-    const dx = e.clientX - drag.x0;
+    const dx = inward(e.clientX - drag.x0);
     const locked = drag.axis === "nav";
     const { vx } = throwVelocity(trail);
     const el = tab;
@@ -26110,20 +26227,23 @@ function attachEdgeBack(host, deps, cfg2 = DEFAULT_EDGE) {
     tab = null;
     if (!locked) {
       el == null ? void 0 : el.remove();
+      settlePage(false);
       return;
     }
-    if (commits(dx, vx, cfg2)) {
+    if (commits(dx, inward(vx), cfg2)) {
       el == null ? void 0 : el.remove();
+      settlePage(false);
       deps.go();
       return;
     }
+    settlePage(true);
     if (!el)
       return;
     if (reducedMotion2() || typeof el.animate !== "function") {
       el.remove();
       return;
     }
-    const { keys, ms } = springKeyframes(pull, 0, vx, 0, SETTLE);
+    const { keys, ms } = springKeyframes(side === "left" ? pull : -pull, 0, vx, 0, SETTLE);
     const anim = el.animate(keys, { duration: ms, easing: "linear" });
     anim.onfinish = () => el.remove();
     anim.oncancel = () => el.remove();
@@ -26143,9 +26263,9 @@ function attachEdgeBack(host, deps, cfg2 = DEFAULT_EDGE) {
     host.removeEventListener("pointerup", onUp, true);
     host.removeEventListener("pointercancel", onCancel, true);
     clear();
-    delete marked2._jpEdgeBack;
+    delete marked2[key];
   };
-  marked2._jpEdgeBack = detach;
+  marked2[key] = detach;
   return detach;
 }
 
@@ -26528,8 +26648,16 @@ function armEdgeBack(viewRoot, chrome) {
     return;
   attachEdgeBack(viewRoot, {
     peek: () => chrome.backPeek(),
-    go: () => chrome.dismiss()
+    go: () => chrome.dismiss(),
+    ...chrome.pageEl ? { page: () => chrome.pageEl() } : {}
   });
+  if (chrome.goForward && chrome.forwardPeek) {
+    attachEdgeForward(viewRoot, {
+      peek: () => chrome.forwardPeek(),
+      go: () => chrome.goForward(),
+      ...chrome.pageEl ? { page: () => chrome.pageEl() } : {}
+    });
+  }
 }
 function mountDismiss(host, chrome) {
   var _a2;
@@ -26547,76 +26675,6 @@ function mountDismiss(host, chrome) {
     e.preventDefault();
     (_a3 = chrome.dismiss) == null ? void 0 : _a3.call(chrome);
   };
-}
-
-// src/ui/drag-out.ts
-var esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-function defaultHtml(p) {
-  const body2 = esc(p.text);
-  switch (p.kind) {
-    case "quote":
-    case "line":
-    case "tweet": {
-      const cite = p.sub ? `<br><small>\u2014 ${esc(p.sub)}</small>` : "";
-      return `<blockquote>${body2}${cite}</blockquote>`;
-    }
-    case "entry":
-    case "dict":
-      return `<b>${body2}</b>${p.sub ? ` <span>\uFF08${esc(p.sub)}\uFF09</span>` : ""}`;
-    default:
-      return body2;
-  }
-}
-function makeDraggable(el, payload, opts = {}) {
-  var _a2;
-  const from = (_a2 = opts.grip) != null ? _a2 : el;
-  const host = from;
-  if (host._jpcDrag)
-    return;
-  host._jpcDrag = true;
-  from.setAttribute("draggable", "true");
-  from.addClass("jp-draggable");
-  from.addEventListener("dragstart", (e) => {
-    var _a3, _b2;
-    const p = payload();
-    if (!p || !p.text.trim() || !e.dataTransfer) {
-      e.preventDefault();
-      return;
-    }
-    e.dataTransfer.effectAllowed = "copy";
-    e.dataTransfer.setData("text/plain", p.text);
-    e.dataTransfer.setData("text/html", (_a3 = p.html) != null ? _a3 : defaultHtml(p));
-    if (p.url)
-      e.dataTransfer.setData("text/uri-list", p.url);
-    e.dataTransfer.setData("application/x-jpc-drag", JSON.stringify({
-      kind: p.kind,
-      text: p.text,
-      ...p.path ? { path: p.path } : {},
-      ...(_b2 = p.meta) != null ? _b2 : {}
-    }));
-    e.dataTransfer.setDragImage(...dragPill(p));
-    el.addClass("jp-draggable--lifted");
-  });
-  from.addEventListener("dragend", () => el.removeClass("jp-draggable--lifted"));
-  if (opts.synthetic !== false)
-    bindPointerDrag(from, payload, dragPillEl);
-}
-function dragPillEl(p) {
-  var _a2;
-  const pill = document.body.createDiv("jp-drag-pill");
-  pill.createDiv({ cls: "jp-drag-pill-main", text: (_a2 = p.label) != null ? _a2 : snip2(p.text) });
-  if (p.sub)
-    pill.createDiv({ cls: "jp-drag-pill-sub", text: p.sub });
-  return pill;
-}
-function dragPill(p) {
-  const pill = dragPillEl(p);
-  window.setTimeout(() => pill.remove(), 0);
-  return [pill, 16, 12];
-}
-function snip2(s, n = 22) {
-  const one = s.replace(/\s+/g, " ").trim();
-  return [...one].length <= n ? one : [...one].slice(0, n).join("") + "\u2026";
 }
 
 // src/ui/LexiconPanel.ts
@@ -33803,6 +33861,62 @@ function searchNotation(q) {
     return { mode: "starts", term: starts[1].trim() };
   return null;
 }
+var Trail = class {
+  constructor() {
+    this.backArr = [];
+    this.fwdArr = [];
+  }
+  /** A new descend: remember where you stand, forget the abandoned future. */
+  push(stop) {
+    this.backArr.push(stop);
+    this.fwdArr = [];
+  }
+  /** Step back: the current stop becomes the future. Null at the trail head. */
+  back(current2) {
+    const prev = this.backArr.pop();
+    if (prev === void 0)
+      return null;
+    this.fwdArr.push(current2);
+    return prev;
+  }
+  /** Step forward again. Null when no future exists. */
+  forward(current2) {
+    const next = this.fwdArr.pop();
+    if (next === void 0)
+      return null;
+    this.backArr.push(current2);
+    return next;
+  }
+  peekBack() {
+    var _a2;
+    return (_a2 = this.backArr[this.backArr.length - 1]) != null ? _a2 : null;
+  }
+  peekForward() {
+    var _a2;
+    return (_a2 = this.fwdArr[this.fwdArr.length - 1]) != null ? _a2 : null;
+  }
+  get backLength() {
+    return this.backArr.length;
+  }
+  get forwardLength() {
+    return this.fwdArr.length;
+  }
+  /** Oldest-first, for breadcrumb rendering. Read-only. */
+  backStops() {
+    return this.backArr;
+  }
+  clear() {
+    this.backArr = [];
+    this.fwdArr = [];
+  }
+};
+var RIFFLE_HOLD_MS = 320;
+var RIFFLE_STEPS = [300, 240, 190, 150, 120, 100];
+function riffleDelay(step) {
+  if (step < 0)
+    return RIFFLE_STEPS[0];
+  return step < RIFFLE_STEPS.length ? RIFFLE_STEPS[step] : 90;
+}
 function panVerdict(dxAbs, dtMs, paneWidth, hasTarget) {
   if (!hasTarget)
     return "snap";
@@ -36856,8 +36970,9 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     this.breadcrumbEl = null;
     this.debounceTimer = null;
     this.currentQuery = "";
-    /** Lookup history for recursive navigation */
-    this.lookupHistory = [];
+    /** The walk's spine: back AND forward (dict-nav.Trail — one pure organ,
+     *  shared grammar with 𝕏). A stop remembers WHERE you were reading. */
+    this.trail = new Trail();
     /** §26.3 hover peek — same shared component as the catalog (one grammar). */
     this.peek = null;
     /**
@@ -36921,6 +37036,28 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
      * needs shard-level support and is its own queued build — STATE §8.)
      */
     this.nbCache = null;
+    /**
+     * The VERTICAL walk — the dictionary as one continuous book (the user's
+     * own correction, 2026-08-27: the films show vertical nav; the previous
+     * build recorded at-end continuation as a refusal and answered a vertical
+     * ask with a horizontal-only grammar). Kindle-continuous, riding the hand:
+     *
+     *   • The results scroller keeps its native ↕ scroll. When it stands at an
+     *     END as the touch BEGINS, further travel past that end is no longer a
+     *     scroll — it is the next page being pulled in. The stack follows the
+     *     finger (compositor transform), the incoming headword shows in a peek
+     *     band at that end, rubber-bands ×0.35 when no neighbour exists, and
+     *     release asks the same `panVerdict` the sideways pan asks (distance
+     *     against the pane HEIGHT, or a throw).
+     *   • Downward continuation (off the entry's top) lands at the END of the
+     *     previous entry — the page above, read from where it left off.
+     *   • `overscroll-behavior: contain` (styles.css) keeps the platform's own
+     *     bounce from eating the travel. A drag that starts mid-entry and
+     *     reaches the end stays a scroll — the walk needs a fresh tug, which
+     *     is exactly a book's rhythm (and dodges iOS's mid-gesture claim).
+     *   • Touch only. The Pencil selects (law 2); a mouse wheels.
+     */
+    this.vpeekEl = null;
     /**
      * ≡ — the current screen's own table of contents (item 9): one row per
      * entry card, tap → the card scrolls into view with its header tinted.
@@ -37057,7 +37194,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     }
   }
   async onClose() {
-    var _a2;
+    var _a2, _b2;
     if (this.debounceTimer)
       clearTimeout(this.debounceTimer);
     if (this.findTimer)
@@ -37066,7 +37203,9 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       document.removeEventListener("pointerdown", this.outlineAway, true);
       this.outlineAway = null;
     }
-    (_a2 = this.peek) == null ? void 0 : _a2.cancel();
+    (_a2 = this.vpeekEl) == null ? void 0 : _a2.remove();
+    this.vpeekEl = null;
+    (_b2 = this.peek) == null ? void 0 : _b2.cancel();
   }
   refresh() {
     if (this.currentQuery)
@@ -37101,7 +37240,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
   recursiveLookup(word, via) {
     var _a2, _b2;
     if (this.currentQuery && this.currentQuery !== word) {
-      this.lookupHistory.push({
+      this.trail.push({
         word: this.currentQuery,
         scroll: (_b2 = (_a2 = this.resultsEl) == null ? void 0 : _a2.scrollTop) != null ? _b2 : 0,
         via
@@ -37111,25 +37250,77 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     this.lookupWord(word, { tempo: "descend" });
     this.renderBreadcrumbs();
   }
+  /** Where the trail stands RIGHT NOW, for a back/forward step to file. */
+  currentStop() {
+    var _a2, _b2;
+    return {
+      word: this.currentQuery,
+      scroll: (_b2 = (_a2 = this.resultsEl) == null ? void 0 : _a2.scrollTop) != null ? _b2 : 0,
+      via: this.lastVia
+    };
+  }
   /** Navigate back, landing exactly where you left. Backing out is a POP —
    *  the page you return to arrives from the LEFT, the mirror of descend's
    *  push from the right, so the tempo tells the hand which way it moved
-   *  through the stack (the iOS grammar the films breathe throughout). */
+   *  through the stack (the iOS grammar the films breathe throughout).
+   *  The stop you leave joins the FORWARD stack: 行って戻ってまた行く —
+   *  both directions stay free (the films' back-and-forth, made real). */
   goBack() {
-    const prev = this.lookupHistory.pop();
+    if (this.historyMode)
+      return false;
+    const prev = this.trail.back(this.currentStop());
     if (!prev)
-      return;
+      return false;
+    this.lastVia = prev.via;
     this.lookupWord(prev.word);
     this.restoreScroll(prev.scroll);
     this.renderBreadcrumbs();
-    if (this.resultsEl && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      const el = this.resultsEl;
-      el.removeClass("jp-dict-flick-left");
-      el.removeClass("jp-dict-flick-right");
-      void el.offsetWidth;
-      el.addClass("jp-dict-flick-right");
-      window.setTimeout(() => el.removeClass("jp-dict-flick-right"), 220);
-    }
+    this.slideResults("jp-dict-flick-right");
+    return true;
+  }
+  /** The mirror: re-descend into the future you backed out of. */
+  goForward() {
+    if (this.historyMode)
+      return false;
+    const next = this.trail.forward(this.currentStop());
+    if (!next)
+      return false;
+    this.lastVia = next.via;
+    this.lookupWord(next.word);
+    this.restoreScroll(next.scroll);
+    this.renderBreadcrumbs();
+    this.slideResults("jp-dict-flick-left");
+    return true;
+  }
+  /** The trail's edge-gesture face (view-chrome routes the suite edge drag
+   *  through these, trail-first): what a back/forward drag would land on. */
+  trailPeekBack() {
+    var _a2, _b2;
+    if (this.historyMode)
+      return null;
+    return (_b2 = (_a2 = this.trail.peekBack()) == null ? void 0 : _a2.word) != null ? _b2 : null;
+  }
+  trailPeekForward() {
+    var _a2, _b2;
+    if (this.historyMode)
+      return null;
+    return (_b2 = (_a2 = this.trail.peekForward()) == null ? void 0 : _a2.word) != null ? _b2 : null;
+  }
+  /** The page the edge drag rides. */
+  pageEl() {
+    return this.resultsEl;
+  }
+  slideResults(cls) {
+    if (!this.resultsEl || window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+      return;
+    const el = this.resultsEl;
+    el.removeClass("jp-dict-flick-left");
+    el.removeClass("jp-dict-flick-right");
+    el.removeClass("jp-dict-flick-up");
+    el.removeClass("jp-dict-flick-down");
+    void el.offsetWidth;
+    el.addClass(cls);
+    window.setTimeout(() => el.removeClass(cls), 220);
   }
   /**
    * Put the scroll position back after the results have actually been painted.
@@ -37162,7 +37353,8 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     if (!this.breadcrumbEl)
       return;
     this.breadcrumbEl.empty();
-    if (this.lookupHistory.length === 0) {
+    const stops = this.trail.backStops();
+    if (stops.length === 0 && this.trail.forwardLength === 0) {
       this.breadcrumbEl.style.display = "none";
       return;
     }
@@ -37171,22 +37363,18 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       text: "\u25C0 \u623B\u308B",
       cls: "jp-dict-back-btn"
     });
+    if (stops.length === 0)
+      backBtn.disabled = true;
     backBtn.addEventListener("click", () => this.goBack());
-    for (let i = 0; i < this.lookupHistory.length; i++) {
-      const hop = this.lookupHistory[i];
+    for (let i = 0; i < stops.length; i++) {
+      const hop = stops[i];
       const crumb = this.breadcrumbEl.createEl("span", {
         text: hop.word,
         cls: "jp-dict-breadcrumb-item"
       });
       crumb.title = `${hop.word} \u306B\u623B\u308B\uFF08\u8AAD\u3093\u3067\u3044\u305F\u4F4D\u7F6E\u307E\u3067\uFF09`;
-      crumb.addEventListener("click", () => {
-        const target = this.lookupHistory[i];
-        this.lookupHistory = this.lookupHistory.slice(0, i);
-        this.lookupWord(target.word);
-        this.restoreScroll(target.scroll);
-        this.renderBreadcrumbs();
-      });
-      const next = this.lookupHistory[i + 1];
+      crumb.addEventListener("click", () => this.jumpBack(i));
+      const next = stops[i + 1];
       const via = (_a2 = next ? next.via : this.lastVia) != null ? _a2 : void 0;
       if (via) {
         const e = this.breadcrumbEl.createSpan({ cls: "jp-dict-breadcrumb-via", text: via });
@@ -37198,6 +37386,36 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       text: this.currentQuery,
       cls: "jp-dict-breadcrumb-current"
     });
+    const fwd = this.trail.peekForward();
+    if (fwd) {
+      this.breadcrumbEl.createSpan({ text: " \u2192 ", cls: "jp-dict-breadcrumb-sep" });
+      const f = this.breadcrumbEl.createEl("button", {
+        text: `${fwd.word} \u25B6`,
+        cls: "jp-dict-fwd-btn"
+      });
+      f.title = `${fwd.word} \u3078\u9032\u3080\uFF08\u623B\u308B\u524D\u306B\u3044\u305F\u9805\u76EE\uFF09`;
+      f.addEventListener("click", () => this.goForward());
+    }
+  }
+  /** A crumb tap walks back through EVERY intermediate stop, so the whole
+   *  path lands on the forward stack and remains re-walkable. */
+  jumpBack(index) {
+    let target = null;
+    let cur = this.currentStop();
+    while (this.trail.backLength > index) {
+      const prev = this.trail.back(cur);
+      if (!prev)
+        break;
+      target = prev;
+      cur = prev;
+    }
+    if (!target)
+      return;
+    this.lastVia = target.via;
+    this.lookupWord(target.word);
+    this.restoreScroll(target.scroll);
+    this.renderBreadcrumbs();
+    this.slideResults("jp-dict-flick-right");
   }
   /**
    * Make text elements with Japanese content clickable for recursive lookup.
@@ -37271,6 +37489,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       a.tempo = void 0;
     this.applyArrival();
     this.renderNavBar();
+    this.renderContinue();
     this.renderHomophones();
     this.rerunFind();
   }
@@ -37360,15 +37579,25 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
   flipTo(word, slide) {
     this.lookupWord(word);
     this.renderBreadcrumbs();
-    if (slide && this.resultsEl && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      const el = this.resultsEl;
-      const cls = slide === "left" ? "jp-dict-flick-left" : "jp-dict-flick-right";
-      el.removeClass("jp-dict-flick-left");
-      el.removeClass("jp-dict-flick-right");
-      void el.offsetWidth;
-      el.addClass(cls);
-      window.setTimeout(() => el.removeClass(cls), 220);
+    if (slide) {
+      this.slideResults(`jp-dict-flick-${slide}`);
+      if (slide === "down")
+        this.scrollToEndAfterRender();
     }
+  }
+  /** After the next render settles, put the scroll at the stack's END. */
+  scrollToEndAfterRender() {
+    const gen = this.searchGen;
+    let tries = 0;
+    const put = () => {
+      if (gen !== this.searchGen || !this.resultsEl)
+        return;
+      const el = this.resultsEl;
+      el.scrollTop = el.scrollHeight;
+      if (++tries < 4)
+        requestAnimationFrame(put);
+    };
+    requestAnimationFrame(put);
   }
   flipStep(dir, slide) {
     if (this.historyMode || !this.currentQuery)
@@ -37503,6 +37732,200 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
         return;
       reset(true);
     }, { passive: true });
+  }
+  armVerticalWalk(el) {
+    let id = -1, x0 = 0, y0 = 0, t0 = 0, engaged = false, raf = 0, dy = 0;
+    let atTop0 = false, atBottom0 = false;
+    let target = null;
+    const paint = () => {
+      raf = 0;
+      el.style.transform = dy ? `translateY(${dy}px)` : "";
+      if (this.vpeekEl) {
+        const commitPx = (el.clientHeight || window.innerHeight) * 0.28;
+        this.vpeekEl.toggleClass("jp-dict-vpeek--armed", Math.abs(dy) > commitPx);
+      }
+    };
+    const dropPeek = () => {
+      var _a2;
+      (_a2 = this.vpeekEl) == null ? void 0 : _a2.remove();
+      this.vpeekEl = null;
+    };
+    const reset = (animate2) => {
+      engaged = false;
+      id = -1;
+      target = null;
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      if (animate2 && el.style.transform) {
+        el.style.transition = "transform 130ms ease-out";
+        el.style.transform = "";
+        window.setTimeout(() => {
+          el.style.transition = "";
+        }, 160);
+      } else {
+        el.style.transition = "";
+        el.style.transform = "";
+      }
+      dy = 0;
+      dropPeek();
+    };
+    el.addEventListener("pointerdown", (e) => {
+      if (e.pointerType !== "touch")
+        return;
+      if (engaged)
+        return;
+      id = e.pointerId;
+      x0 = e.clientX;
+      y0 = e.clientY;
+      t0 = e.timeStamp;
+      dy = 0;
+      atTop0 = el.scrollTop <= 0;
+      atBottom0 = el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+    }, { passive: true });
+    el.addEventListener("pointermove", (e) => {
+      var _a2, _b2;
+      if (e.pointerId !== id)
+        return;
+      const mx = e.clientX - x0, my = e.clientY - y0;
+      if (!engaged) {
+        if (Math.abs(my) < 18 || Math.abs(my) < Math.abs(mx) * 1.2)
+          return;
+        const up = my < 0;
+        if (up && !(atBottom0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 1))
+          return;
+        if (!up && !(atTop0 && el.scrollTop <= 0))
+          return;
+        const sel = (_a2 = window.getSelection) == null ? void 0 : _a2.call(window);
+        if (sel && !sel.isCollapsed && sel.toString().trim())
+          return;
+        if (this.historyMode || !this.currentQuery)
+          return;
+        engaged = true;
+        try {
+          el.setPointerCapture(id);
+        } catch (e2) {
+        }
+        const nb = this.currentNeighbors();
+        target = (_b2 = up ? nb == null ? void 0 : nb.next : nb == null ? void 0 : nb.prev) != null ? _b2 : null;
+        dropPeek();
+        const band = this.navBarEl.parentElement.createDiv(
+          `jp-dict-vpeek jp-dict-vpeek--${up ? "bottom" : "top"}`
+        );
+        if (target) {
+          band.createSpan({ text: up ? "\u25BC" : "\u25B2", cls: "jp-dict-vpeek-arrow" });
+          band.createSpan({ text: target.expression, cls: "jp-dict-vpeek-expr" });
+          if (target.reading && target.reading !== target.expression) {
+            band.createSpan({ text: target.reading, cls: "jp-dict-vpeek-reading" });
+          }
+        } else {
+          band.createSpan({ text: up ? "\u6700\u5F8C\u306E\u9805\u76EE" : "\u6700\u521D\u306E\u9805\u76EE", cls: "jp-dict-vpeek-reading" });
+        }
+        this.vpeekEl = band;
+      }
+      dy = target ? my : my * 0.35;
+      if (!raf)
+        raf = requestAnimationFrame(paint);
+    }, { passive: true });
+    el.addEventListener("pointerup", (e) => {
+      if (e.pointerId !== id)
+        return;
+      if (!engaged) {
+        id = -1;
+        return;
+      }
+      const my = e.clientY - y0, dt = e.timeStamp - t0;
+      const swallow = (c) => {
+        c.preventDefault();
+        c.stopPropagation();
+      };
+      window.addEventListener("click", swallow, { capture: true, once: true });
+      window.setTimeout(() => window.removeEventListener("click", swallow, true), 300);
+      const t = target;
+      const verdict = panVerdict(Math.abs(my), dt, el.clientHeight || window.innerHeight, !!t);
+      reset(verdict === "snap");
+      if (verdict === "commit" && t)
+        this.flipTo(t.expression, my < 0 ? "up" : "down");
+    }, { passive: true });
+    el.addEventListener("pointercancel", (e) => {
+      if (e.pointerId !== id)
+        return;
+      reset(true);
+    }, { passive: true });
+  }
+  /**
+   * The visible half of the vertical walk: the next entry BEGINS at the end
+   * of this one, the way a book's next page simply exists below the fold.
+   * One slim row after the last card — headword, reading, つづく — tappable,
+   * and the standing invitation that makes the at-end tug discoverable
+   * without a tutorial (§26.0 test b). Re-placed by afterRender so the
+   * async sidecar half cannot strand it mid-stack.
+   */
+  renderContinue() {
+    if (!this.resultsEl)
+      return;
+    this.resultsEl.querySelectorAll(".jp-dict-continue").forEach((n) => n.remove());
+    if (this.historyMode || !this.currentQuery)
+      return;
+    const nb = this.currentNeighbors();
+    if (!(nb == null ? void 0 : nb.next))
+      return;
+    const next = nb.next;
+    const row = this.resultsEl.createDiv("jp-dict-continue");
+    row.createSpan({ text: "\u3064\u3065\u304F", cls: "jp-dict-continue-label" });
+    row.createSpan({ text: next.expression, cls: "jp-dict-continue-expr" });
+    if (next.reading && next.reading !== next.expression) {
+      row.createSpan({ text: next.reading, cls: "jp-dict-continue-reading" });
+    }
+    row.createSpan({ text: "\u25BC", cls: "jp-dict-continue-arrow" });
+    row.addEventListener("click", () => this.flipTo(next.expression, "up"));
+  }
+  /**
+   * QUICK NAV — hold a neighbour chip and the dictionary riffles (Monokakido's
+   * paddles under a held thumb; the films' walk is chip-chip-chip, never
+   * press-wait-press). Steps are hard cuts; the accelerating schedule
+   * (dict-nav.riffleDelay) is the feedback. Works for finger, Pencil and
+   * mouse alike — a press is the one gesture every device produces.
+   */
+  armRiffle(btn, dir) {
+    let hold = null;
+    let stepT = null;
+    let steps = 0;
+    const stop = () => {
+      if (hold) {
+        clearTimeout(hold);
+        hold = null;
+      }
+      if (stepT) {
+        clearTimeout(stepT);
+        stepT = null;
+      }
+      if (steps > 0) {
+        const swallow = (c) => {
+          c.preventDefault();
+          c.stopPropagation();
+        };
+        window.addEventListener("click", swallow, { capture: true, once: true });
+        window.setTimeout(() => window.removeEventListener("click", swallow, true), 300);
+      }
+      steps = 0;
+      btn.removeClass("jp-dict-nb--riffling");
+    };
+    const step = () => {
+      this.flipStep(dir);
+      stepT = setTimeout(step, riffleDelay(steps++));
+    };
+    btn.addEventListener("pointerdown", () => {
+      stop();
+      hold = setTimeout(() => {
+        btn.addClass("jp-dict-nb--riffling");
+        step();
+      }, RIFFLE_HOLD_MS);
+    }, { passive: true });
+    btn.addEventListener("pointerup", stop, { passive: true });
+    btn.addEventListener("pointercancel", stop, { passive: true });
+    btn.addEventListener("pointerleave", stop, { passive: true });
   }
   /** Pinch-in on the results = collapse to the outline. Two pointers,
    *  distance shrinks past 72%, fires once per touch; all passive. */
@@ -37894,6 +38317,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       attr: { "aria-label": "\u524D\u306E\u898B\u51FA\u3057\u8A9E" }
     });
     this.nbPrevEl.addEventListener("click", () => this.flipStep(-1));
+    this.armRiffle(this.nbPrevEl, -1);
     const mid = this.navBarEl.createDiv("jp-dict-navbar-mid");
     const outlineBtn = mid.createEl("button", {
       text: "\u2261",
@@ -37918,8 +38342,10 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       attr: { "aria-label": "\u6B21\u306E\u898B\u51FA\u3057\u8A9E" }
     });
     this.nbNextEl.addEventListener("click", () => this.flipStep(1));
+    this.armRiffle(this.nbNextEl, 1);
     this.renderNavBar();
     this.armEntryPan(this.resultsEl);
+    this.armVerticalWalk(this.resultsEl);
     this.armPinchOutline(this.resultsEl);
   }
   // ── Search flow ────────────────────────────────────────────
@@ -40842,6 +41268,20 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
     this.sortMode = "latest";
     /** When set, results come from saved-query co-occurrence rather than the term box. */
     this.coocActive = false;
+    // ── The nav grammar, extended to this surface (2026-08-27) ──
+    //
+    // The user's correction: the 辞書's walk — land-lit arrivals, a trail with
+    // BOTH directions under the edge drag, the page riding the finger — is a
+    // grammar, and a grammar that exists on one surface is a seam (§26.0
+    // property 4). Here it is on the 𝕏検索辞書: every DOOR (a ladder rung, a
+    // programmatic arrival) descends through `goTo`, which files the query you
+    // were standing on; the left/right edges walk the trail through the same
+    // view-chrome ride the 辞書 uses; and a door-driven arrival says what
+    // carried it, in a band over the status line.
+    /** The trail of committed queries — doors, not keystrokes (rule 1's
+     *  refinement lesson: typing is one lookup, so per-keystroke renders never
+     *  file; only a door or an external arrival does). */
+    this.trail = new Trail();
     this.deps = deps;
     const s = deps.getSettings();
     this.query = emptyQuery(s.defaultLang, s.defaultProduct);
@@ -40869,14 +41309,98 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
    * results only (the iOS co-occurrence round trip already has the tweets, and
    * a live scrape would 404 on mobile).
    */
-  searchFor(text, live2 = true) {
+  searchFor(text, live2 = true, via) {
+    this.goTo(text, via);
+    if (live2)
+      void this.runLive(true);
+  }
+  /** Descend through a door: file where you stand, land lit. */
+  goTo(query, via) {
+    var _a2, _b2, _c2, _d2;
+    const cur = (_b2 = (_a2 = this.mainInput) == null ? void 0 : _a2.value.trim()) != null ? _b2 : "";
+    if (cur && cur !== query.trim()) {
+      this.trail.push({ q: cur, scroll: (_d2 = (_c2 = this.resultsEl) == null ? void 0 : _c2.scrollTop) != null ? _d2 : 0 });
+    }
     if (this.mainInput)
-      this.mainInput.value = text;
+      this.mainInput.value = query;
     this.collectMainTerms();
     this.renderChips();
     this.renderLocal();
-    if (live2)
-      void this.runLive(true);
+    this.arriveBand(via);
+    this.slideResults("jp-x-descend");
+  }
+  trailPeekBack() {
+    var _a2, _b2;
+    return (_b2 = (_a2 = this.trail.peekBack()) == null ? void 0 : _a2.q) != null ? _b2 : null;
+  }
+  trailPeekForward() {
+    var _a2, _b2;
+    return (_b2 = (_a2 = this.trail.peekForward()) == null ? void 0 : _a2.q) != null ? _b2 : null;
+  }
+  pageEl() {
+    return this.resultsEl;
+  }
+  goBack() {
+    var _a2, _b2, _c2, _d2;
+    const prev = this.trail.back({
+      q: (_b2 = (_a2 = this.mainInput) == null ? void 0 : _a2.value.trim()) != null ? _b2 : "",
+      scroll: (_d2 = (_c2 = this.resultsEl) == null ? void 0 : _c2.scrollTop) != null ? _d2 : 0
+    });
+    if (!prev)
+      return false;
+    this.applyStop(prev, "jp-x-flick-right");
+    return true;
+  }
+  goForward() {
+    var _a2, _b2, _c2, _d2;
+    const next = this.trail.forward({
+      q: (_b2 = (_a2 = this.mainInput) == null ? void 0 : _a2.value.trim()) != null ? _b2 : "",
+      scroll: (_d2 = (_c2 = this.resultsEl) == null ? void 0 : _c2.scrollTop) != null ? _d2 : 0
+    });
+    if (!next)
+      return false;
+    this.applyStop(next, "jp-x-flick-left");
+    return true;
+  }
+  /** Land on a trail stop: the query back in the box, the list back where
+   *  you were reading it, the pop/push tempo saying which way you moved. */
+  applyStop(stop, cls) {
+    if (this.mainInput)
+      this.mainInput.value = stop.q;
+    this.collectMainTerms();
+    this.renderChips();
+    this.renderLocal();
+    if (stop.scroll) {
+      const el = this.resultsEl;
+      let tries = 0;
+      const put = () => {
+        if (!el)
+          return;
+        el.scrollTop = stop.scroll;
+        if (++tries < 6 && Math.abs(el.scrollTop - stop.scroll) > 2)
+          requestAnimationFrame(put);
+      };
+      requestAnimationFrame(put);
+    }
+    this.slideResults(cls);
+  }
+  /** Item 7's grammar on this surface: the arrival says what carried it. */
+  arriveBand(via) {
+    if (!via || !this.statusEl)
+      return;
+    const band = this.statusEl.createDiv("jp-x-arrive-band");
+    band.setText(`\u25C0 ${via}`);
+  }
+  slideResults(cls) {
+    if (!this.resultsEl || window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+      return;
+    const el = this.resultsEl;
+    el.removeClass("jp-x-descend");
+    el.removeClass("jp-x-flick-left");
+    el.removeClass("jp-x-flick-right");
+    void el.offsetWidth;
+    el.addClass(cls);
+    window.setTimeout(() => el.removeClass(cls), 240);
   }
   // ── UI scaffold ────────────────────────────────────────────
   buildUI() {
@@ -41277,7 +41801,7 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
         text: attested ? `${rung.count.occ}\u4EF6 / ${rung.count.authors}\u4EBA` : "0\u4EF6"
       });
       if (attested) {
-        row.onclick = () => this.searchFor(rung.span, false);
+        row.onclick = () => this.goTo(rung.span, `${term} \u306E\u68AF\u5B50\u304B\u3089`);
         row.setAttr("title", `${rung.span} \u3067\u5F15\u304D\u76F4\u3059`);
       }
     }
@@ -41286,6 +41810,12 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
         cls: "jp-x-descent-stop",
         text: `\u505C\u6B62: ${result.stoppedBy} \u2014 ${(_a2 = _XSearchView.STOP_WHY[result.stoppedBy]) != null ? _a2 : ""}`
       });
+    }
+    if (this.deps.fileStanding && result.verdict.startsWith("\u6C88\u9ED9")) {
+      const fileBtn = box.createEl("button", { cls: "jp-x-descent-file" });
+      fileBtn.createSpan({ text: "\u554F", cls: "jp-x-descent-file-mark" });
+      fileBtn.createSpan({ text: "\u554F\u3044\u3068\u3057\u3066\u6B8B\u3059 \u2014 \u30B3\u30FC\u30D1\u30B9\u304C\u80B2\u3066\u3070\u7B54\u3048\u308B" });
+      fileBtn.onclick = () => this.deps.fileStanding(term);
     }
   }
   renderCooccurrence() {
@@ -56367,6 +56897,38 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       }
     });
     this.addCommand({
+      id: "dict-back",
+      name: "\u8F9E\u66F8: \u623B\u308B (trail back)",
+      callback: () => {
+        var _a3;
+        return (_a3 = this.activeDictView()) == null ? void 0 : _a3.goBack();
+      }
+    });
+    this.addCommand({
+      id: "dict-forward",
+      name: "\u8F9E\u66F8: \u9032\u3080 (trail forward)",
+      callback: () => {
+        var _a3;
+        return (_a3 = this.activeDictView()) == null ? void 0 : _a3.goForward();
+      }
+    });
+    this.addCommand({
+      id: "x-back",
+      name: "\u{1D54F}: \u623B\u308B (query trail back)",
+      callback: () => {
+        var _a3;
+        return (_a3 = this.activeXView()) == null ? void 0 : _a3.goBack();
+      }
+    });
+    this.addCommand({
+      id: "x-forward",
+      name: "\u{1D54F}: \u9032\u3080 (query trail forward)",
+      callback: () => {
+        var _a3;
+        return (_a3 = this.activeXView()) == null ? void 0 : _a3.goForward();
+      }
+    });
+    this.addCommand({
       id: "dictionary-lookup",
       name: "Look Up Selected Word in Dictionary",
       editorCallback: (editor) => {
@@ -57101,6 +57663,7 @@ ${summary}
     };
   }
   makeXDeps() {
+    const xChrome = this.peekChrome();
     return {
       corpus: this.xCorpus,
       client: this.xClient,
@@ -57184,8 +57747,39 @@ ${summary}
       onDrop: (intent, files) => void this.runDropIntent(intent, files),
       dropCan: () => this.dropCapabilities(),
       openSurface: (s) => void this.openSurface(s),
-      dismiss: () => void this.navBack(),
-      ...this.peekChrome(),
+      // Trail-first, like the 辞書 (the nav grammar is ONE grammar): the
+      // edge drag walks the 𝕏 query trail while it has somewhere to go, and
+      // only an empty trail exits the view to the suite stack.
+      dismiss: () => {
+        var _a2;
+        if (!((_a2 = this.activeXView()) == null ? void 0 : _a2.goBack()))
+          void this.navBack();
+      },
+      ...xChrome,
+      backPeek: () => {
+        var _a2, _b2, _c2, _d2;
+        return (_d2 = (_c2 = (_a2 = this.activeXView()) == null ? void 0 : _a2.trailPeekBack()) != null ? _c2 : (_b2 = xChrome.backPeek) == null ? void 0 : _b2.call(xChrome)) != null ? _d2 : null;
+      },
+      forwardPeek: () => {
+        var _a2, _b2;
+        return (_b2 = (_a2 = this.activeXView()) == null ? void 0 : _a2.trailPeekForward()) != null ? _b2 : null;
+      },
+      goForward: () => {
+        var _a2;
+        return void ((_a2 = this.activeXView()) == null ? void 0 : _a2.goForward());
+      },
+      pageEl: () => {
+        var _a2, _b2;
+        return (_b2 = (_a2 = this.activeXView()) == null ? void 0 : _a2.pageEl()) != null ? _b2 : null;
+      },
+      // §29 rung 6's hand-act: the silence files itself as a standing 問い,
+      // pre-filled — the same CaptureModal road the palette command takes,
+      // reached from the verdict instead of a menu.
+      fileStanding: (term) => new CaptureModal(this.app, {
+        text: term,
+        source: { kind: "manual" },
+        standing: true
+      }, this.makeCaptureDeps()).open(),
       surfaceBadge: (s) => this.surfaceBadge(s)
     };
   }
@@ -58874,10 +59468,21 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     v.onDrop = (intent, files) => void this.runDropIntent(intent, files);
     v.dropCan = () => this.dropCapabilities();
     v.openSurface = (s) => void this.openSurface(s);
-    v.dismiss = () => void this.navBack();
+    v.dismiss = () => {
+      if (!v.goBack())
+        void this.navBack();
+    };
     v.surfaceBadge = (s) => this.surfaceBadge(s);
     v.historyStore = this.dictHistory;
-    Object.assign(v, this.peekChrome());
+    const chrome = this.peekChrome();
+    Object.assign(v, chrome, {
+      backPeek: () => {
+        var _a2, _b2, _c2;
+        return (_c2 = (_b2 = v.trailPeekBack()) != null ? _b2 : (_a2 = chrome.backPeek) == null ? void 0 : _a2.call(chrome)) != null ? _c2 : null;
+      },
+      forwardPeek: () => v.trailPeekForward(),
+      pageEl: () => v.pageEl()
+    });
     v.bigDict = {
       lookup: (q, limit) => this.bigDict.lookup(q, limit),
       installed: () => this.listBigDictionaries()
@@ -61881,6 +62486,13 @@ youtube.com/feed/history \u306B\u6700\u8FD1\u306E\u52D5\u753B\u304C\u4E26\u3076\
   activeDictView() {
     for (const leaf of this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE)) {
       if (leaf.view instanceof DictionaryView)
+        return leaf.view;
+    }
+    return null;
+  }
+  activeXView() {
+    for (const leaf of this.app.workspace.getLeavesOfType(JP_X_VIEW_TYPE)) {
+      if (leaf.view instanceof XSearchView)
         return leaf.view;
     }
     return null;

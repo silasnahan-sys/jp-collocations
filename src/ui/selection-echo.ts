@@ -25,6 +25,7 @@ import { vaultPathOf, type InVault } from '../notes/resource-url.ts';
 import { hand, isSlate, isThumb } from './posture.ts';
 import type { PeekData } from './hover-peek.ts';
 import { classDot } from './class-grammar.ts';
+import { makeDraggable } from './drag-out.ts';
 import type { NoteClass } from '../notes/note-types.ts';
 
 export interface SelectionEchoDeps {
@@ -344,6 +345,25 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
         deps.hold!(text, ctx().surface, sentence);
       });
     }
+
+    // 掴んで運ぶ — the selection ITSELF as a carryable thing (the films'
+    // heaviest habit: select, then DRAG what you selected). The grip is
+    // chrome, so nothing readable loses its own selection (invariant 12);
+    // native drag serves the desk, the long-press carry serves touch and
+    // Pencil, and the scene rides as `sub` so the drop lands with context.
+    const grip = verbs.createEl('button', {
+      cls: 'jp-echo-btn jp-echo-grip',
+      attr: { title: 'つかんで運ぶ — 押えたまま動かすとドロップ先へ運べます' },
+    });
+    grip.createSpan({ cls: 'jp-echo-icon', text: '⠿' });
+    grip.createSpan({ cls: 'jp-echo-label', text: '運ぶ' });
+    makeDraggable(grip, () => ({
+      text,
+      kind: 'quote',
+      label: text.slice(0, 24),
+      sub: sentence && sentence !== text ? sentence : undefined,
+      meta: { surface: ctx().surface },
+    }));
 
     place(rect);
   };

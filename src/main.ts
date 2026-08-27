@@ -1840,6 +1840,28 @@ export default class JPCollocationsPlugin extends Plugin {
       name: "辞書: 画面内検索 (find in screen)",
       callback: () => this.activeDictView()?.toggleFind(true),
     });
+    // The trail's command twins (invariant 9: every gesture is also a
+    // command) — the left/right edge rides, reachable by keystroke.
+    this.addCommand({
+      id: "dict-back",
+      name: "辞書: 戻る (trail back)",
+      callback: () => this.activeDictView()?.goBack(),
+    });
+    this.addCommand({
+      id: "dict-forward",
+      name: "辞書: 進む (trail forward)",
+      callback: () => this.activeDictView()?.goForward(),
+    });
+    this.addCommand({
+      id: "x-back",
+      name: "𝕏: 戻る (query trail back)",
+      callback: () => this.activeXView()?.goBack(),
+    });
+    this.addCommand({
+      id: "x-forward",
+      name: "𝕏: 進む (query trail forward)",
+      callback: () => this.activeXView()?.goForward(),
+    });
 
     this.addCommand({
       id: "dictionary-lookup",
@@ -2663,6 +2685,7 @@ export default class JPCollocationsPlugin extends Plugin {
   }
 
   private makeXDeps(): XViewDeps {
+    const xChrome = this.peekChrome();
     return {
       corpus: this.xCorpus,
       client: this.xClient,
@@ -2746,8 +2769,23 @@ export default class JPCollocationsPlugin extends Plugin {
       onDrop: (intent, files) => void this.runDropIntent(intent, files),
       dropCan: () => this.dropCapabilities(),
       openSurface: (s) => void this.openSurface(s),
-      dismiss: () => void this.navBack(),
-      ...this.peekChrome(),
+      // Trail-first, like the 辞書 (the nav grammar is ONE grammar): the
+      // edge drag walks the 𝕏 query trail while it has somewhere to go, and
+      // only an empty trail exits the view to the suite stack.
+      dismiss: () => { if (!this.activeXView()?.goBack()) void this.navBack(); },
+      ...xChrome,
+      backPeek: () => this.activeXView()?.trailPeekBack() ?? xChrome.backPeek?.() ?? null,
+      forwardPeek: () => this.activeXView()?.trailPeekForward() ?? null,
+      goForward: () => void this.activeXView()?.goForward(),
+      pageEl: () => this.activeXView()?.pageEl() ?? null,
+      // §29 rung 6's hand-act: the silence files itself as a standing 問い,
+      // pre-filled — the same CaptureModal road the palette command takes,
+      // reached from the verdict instead of a menu.
+      fileStanding: (term) => new CaptureModal(this.app, {
+        text: term,
+        source: { kind: "manual" },
+        standing: true,
+      }, this.makeCaptureDeps()).open(),
       surfaceBadge: (s) => this.surfaceBadge(s),
     };
   }
@@ -4327,12 +4365,23 @@ export default class JPCollocationsPlugin extends Plugin {
     // optional-call on nothing. A dead back button on the most-entered
     // surface, invisible to every golden because the button existed and the
     // handler ran. backPeek (its required pair) arrives from peekChrome below.
-    v.dismiss = () => void this.navBack();
+    // Trail-first (2026-08-27): the edge drag and the 「閉じて戻る」 verb pop
+    // the 辞書's OWN trail while it has somewhere to go — 爽快→痛快→愉快
+    // backs out through 痛快, not straight out of the view — and only an
+    // empty trail exits to the suite stack. The same drag therefore means
+    // "one step back" at every depth, which is what the films show a back
+    // gesture meaning.
+    v.dismiss = () => { if (!v.goBack()) void this.navBack(); };
     v.surfaceBadge = (s) => this.surfaceBadge(s);
     // §30 nav grammar: the dated history is plugin state, not view state —
     // every 辞書 leaf shares one past.
     v.historyStore = this.dictHistory;
-    Object.assign(v, this.peekChrome());
+    const chrome = this.peekChrome();
+    Object.assign(v, chrome, {
+      backPeek: () => v.trailPeekBack() ?? chrome.backPeek?.() ?? null,
+      forwardPeek: () => v.trailPeekForward(),
+      pageEl: () => v.pageEl(),
+    });
     // §27.5 — the converted dictionaries. Same store the 語彙 panel queries, so
     // 辞書 and 語彙 cannot disagree about what is installed.
     v.bigDict = {
@@ -7332,6 +7381,13 @@ export default class JPCollocationsPlugin extends Plugin {
   private activeDictView(): DictionaryView | null {
     for (const leaf of this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE)) {
       if (leaf.view instanceof DictionaryView) return leaf.view;
+    }
+    return null;
+  }
+
+  private activeXView(): XSearchView | null {
+    for (const leaf of this.app.workspace.getLeavesOfType(JP_X_VIEW_TYPE)) {
+      if (leaf.view instanceof XSearchView) return leaf.view;
     }
     return null;
   }

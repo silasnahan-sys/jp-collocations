@@ -2881,3 +2881,66 @@ Perf, same date: the 𝕏 pane ran `detectPatterns` (the 126-operator engine) on
 up to 100 frozen tweets per keystroke and re-walked the whole 1.18M-char
 corpus for single-term KWIC. Both memoized (`patternCache` by tweet id;
 `usageCache` by term+size) — the felt typing lag in that pane was this.
+
+### 30.3 The axis correction — the walk has three axes, and both edges (2026-08-27, SHIPPED)
+
+The user's second glass report, decoded and owned: §30.1's "axis grammar"
+(↕ within an entry, ↔ between entries) was HALF an answer wearing the
+costume of a whole one. The ask was always Monokakido's full walk — the
+films show vertical nav and quick nav, heavy selection-and-drag, and smooth
+back-and-forth that is never just a back button — and the previous build
+(a) recorded at-end vertical continuation as a refusal ("scroller
+physics"), (b) shipped back as a breadcrumb button plus a label-tab edge
+drag that never moved the page, (c) had no forward at all, (d) had no way
+to move fast through the order, and (e) left the 𝕏検索辞書 out of the
+grammar entirely. Every one of those is now built:
+
+- **The vertical walk (Kindle-continuous).** The results scroller keeps its
+  native ↕ scroll; standing at an END when the touch begins, further travel
+  is the neighbouring entry being pulled in — the stack rides the finger
+  (`armVerticalWalk`), the incoming headword shows in a peek band at that
+  end, no neighbour rubber-bands ×0.35, and release asks the same
+  `panVerdict` as the sideways pan (distance against pane HEIGHT, or a
+  throw). Downward continuation lands at the END of the previous entry —
+  the page above, read from where it left off. And the walk is visible
+  before it is ever performed: `renderContinue` sets the next headword's
+  slim つづく row after the last card (tappable), so the dictionary READS
+  as one continuous book, which is what makes the at-end tug discoverable
+  by doing what you already do (§26.0 test b). A drag that starts
+  mid-entry and reaches the end stays a scroll — the walk needs a fresh
+  tug, a book's own rhythm, and the shape iOS's gesture claim allows.
+- **The trail, both directions, riding the page.** `dict-nav.Trail` is the
+  back/forward spine (pure, golden-pinned: a new descend burns the future;
+  back files the present onto it). The suite edge gesture (`touch-nav`)
+  gained the other side (`attachEdgeForward`, right edge) and a `page`
+  dep: the drag now moves the RESULTS PANE 1:1 to the commit point and
+  resists past it — iOS's interactive pop done to the content, with the
+  tab as its label — instead of moving only the tab. view-chrome arms both
+  edges from the same two lines every view already calls. The 辞書 and 𝕏
+  feed it trail-first: the drag pops their own trail while it has
+  somewhere to go, and only an empty trail exits the view. Forward also
+  shows as a chip after the current crumb; command twins `dict-back`,
+  `dict-forward`, `x-back`, `x-forward` (invariant 9).
+- **Quick nav — the riffle.** Holding a neighbour chip riffles the
+  dictionary: `riffleDelay`'s accelerating schedule (300→…→90ms floor,
+  golden-pinned monotone), hard-cut flips (the filmed chip flip), stop on
+  release. Finger, Pencil and mouse alike.
+- **The selection is carryable.** The echo bar's ⠿運ぶ grip
+  (`makeDraggable`, invariant 12) lifts the selection itself — scene
+  riding as `sub` — into any drop surface; native drag on the desk, the
+  long-press carry on glass. Select-then-drag, the films' heaviest habit.
+- **𝕏 speaks the same grammar (§29 meets §30).** Committed queries ride a
+  `Trail` (doors file, keystrokes never — rule 1's refinement lesson);
+  ladder rungs descend through `goTo` and land lit (「◀ 〜の梯子から」);
+  the edge drags walk the query trail with the same page ride; and rung
+  6's missing hand-act shipped: a 沈黙 verdict offers 「問いとして残す」
+  in place, opening the capture pre-filled with the probed shape.
+  Honestly still open in §29: rungs 2 (environment promotion into
+  ranking), 4 (construction boundary + 転 table), 5 (authority cycle ▾).
+
+Films: the egress policy of this container blocks every Drive host, so the
+07-15 recording STILL has no frame grid — see FILM-LEDGER for the pull
+route that would work (a GitHub release asset). This pass was built from
+the six committed stills, the three film-reading docs, and the user's own
+description of what the films show; the side-by-side walk (PHYSICS §6)
+remains the acceptance test, now with three axes to film.

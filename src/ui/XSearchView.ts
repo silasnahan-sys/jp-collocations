@@ -44,6 +44,7 @@ export const JP_X_VIEW_TYPE = 'jp-x-search-view';
 import { occurrences, trueHits, partialLabel, rankByClass, type Oracle, type Probe } from '../x/relevance.ts';
 import { descend, verdictLine, type ProbeResult } from '../x/probe.ts';
 import { tokenizeForCanvas } from '../notes/token-canvas.ts';
+import { Trail } from '../dictionary/dict-nav.ts';
 
 export interface XViewDeps {
   corpus: XCorpusStore;
@@ -101,6 +102,15 @@ export interface XViewDeps {
   inVault?: ViewChrome['inVault'];
   backPeek?: ViewChrome['backPeek'];
   hold?: ViewChrome['hold'];
+  /** The trail's other half + the page the edge drags ride (the nav grammar
+   *  extended to this surface, 2026-08-27 — see view-chrome.armEdgeBack). */
+  forwardPeek?: ViewChrome['forwardPeek'];
+  goForward?: ViewChrome['goForward'];
+  pageEl?: ViewChrome['pageEl'];
+  /** §29 rung 6's hand-act: file the probed shape as a standing 問い
+   *  (attestations: [], sweep-exempt from the ✕ mute) in one gesture at the
+   *  silence itself. Opens the capture pre-filled; nothing writes silently. */
+  fileStanding?: (term: string) => void;
 }
 
 export class XSearchView extends ItemView {
@@ -158,12 +168,102 @@ export class XSearchView extends ItemView {
    * results only (the iOS co-occurrence round trip already has the tweets, and
    * a live scrape would 404 on mobile).
    */
-  searchFor(text: string, live = true): void {
-    if (this.mainInput) this.mainInput.value = text;
+  searchFor(text: string, live = true, via?: string): void {
+    this.goTo(text, via);
+    if (live) void this.runLive(true);
+  }
+
+  // ── The nav grammar, extended to this surface (2026-08-27) ──
+  //
+  // The user's correction: the 辞書's walk — land-lit arrivals, a trail with
+  // BOTH directions under the edge drag, the page riding the finger — is a
+  // grammar, and a grammar that exists on one surface is a seam (§26.0
+  // property 4). Here it is on the 𝕏検索辞書: every DOOR (a ladder rung, a
+  // programmatic arrival) descends through `goTo`, which files the query you
+  // were standing on; the left/right edges walk the trail through the same
+  // view-chrome ride the 辞書 uses; and a door-driven arrival says what
+  // carried it, in a band over the status line.
+
+  /** The trail of committed queries — doors, not keystrokes (rule 1's
+   *  refinement lesson: typing is one lookup, so per-keystroke renders never
+   *  file; only a door or an external arrival does). */
+  private trail = new Trail<{ q: string; scroll: number }>();
+
+  /** Descend through a door: file where you stand, land lit. */
+  goTo(query: string, via?: string): void {
+    const cur = this.mainInput?.value.trim() ?? '';
+    if (cur && cur !== query.trim()) {
+      this.trail.push({ q: cur, scroll: this.resultsEl?.scrollTop ?? 0 });
+    }
+    if (this.mainInput) this.mainInput.value = query;
     this.collectMainTerms();
     this.renderChips();
     this.renderLocal();
-    if (live) void this.runLive(true);
+    this.arriveBand(via);
+    this.slideResults('jp-x-descend');
+  }
+
+  trailPeekBack(): string | null { return this.trail.peekBack()?.q ?? null; }
+  trailPeekForward(): string | null { return this.trail.peekForward()?.q ?? null; }
+  pageEl(): HTMLElement | null { return this.resultsEl; }
+
+  goBack(): boolean {
+    const prev = this.trail.back({
+      q: this.mainInput?.value.trim() ?? '',
+      scroll: this.resultsEl?.scrollTop ?? 0,
+    });
+    if (!prev) return false;
+    this.applyStop(prev, 'jp-x-flick-right');
+    return true;
+  }
+
+  goForward(): boolean {
+    const next = this.trail.forward({
+      q: this.mainInput?.value.trim() ?? '',
+      scroll: this.resultsEl?.scrollTop ?? 0,
+    });
+    if (!next) return false;
+    this.applyStop(next, 'jp-x-flick-left');
+    return true;
+  }
+
+  /** Land on a trail stop: the query back in the box, the list back where
+   *  you were reading it, the pop/push tempo saying which way you moved. */
+  private applyStop(stop: { q: string; scroll: number }, cls: string): void {
+    if (this.mainInput) this.mainInput.value = stop.q;
+    this.collectMainTerms();
+    this.renderChips();
+    this.renderLocal();
+    if (stop.scroll) {
+      // renderLocal paints 60 cards per frame under a generation guard, so
+      // the first frame's scrollHeight may not reach the stored offset yet —
+      // retry a few frames, stop as soon as it sticks (the dict's own rule).
+      const el = this.resultsEl;
+      let tries = 0;
+      const put = (): void => {
+        if (!el) return;
+        el.scrollTop = stop.scroll;
+        if (++tries < 6 && Math.abs(el.scrollTop - stop.scroll) > 2) requestAnimationFrame(put);
+      };
+      requestAnimationFrame(put);
+    }
+    this.slideResults(cls);
+  }
+
+  /** Item 7's grammar on this surface: the arrival says what carried it. */
+  private arriveBand(via?: string): void {
+    if (!via || !this.statusEl) return;
+    const band = this.statusEl.createDiv('jp-x-arrive-band');
+    band.setText(`◀ ${via}`);
+  }
+
+  private slideResults(cls: string): void {
+    if (!this.resultsEl || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const el = this.resultsEl;
+    el.removeClass('jp-x-descend'); el.removeClass('jp-x-flick-left'); el.removeClass('jp-x-flick-right');
+    void el.offsetWidth;
+    el.addClass(cls);
+    window.setTimeout(() => el.removeClass(cls), 240);
   }
 
   // ── UI scaffold ────────────────────────────────────────────
@@ -653,7 +753,10 @@ export class XSearchView extends ItemView {
         text: attested ? `${rung.count.occ}件 / ${rung.count.authors}人` : '0件',
       });
       if (attested) {
-        (row as HTMLButtonElement).onclick = () => this.searchFor(rung.span, false);
+        // A rung is a DOOR, and a door rides the trail: where you stood is
+        // filed, the arrival names the ladder that carried you, and the
+        // left edge walks you back up it (§29 rung 3 + the nav grammar).
+        (row as HTMLButtonElement).onclick = () => this.goTo(rung.span, `${term} の梯子から`);
         row.setAttr('title', `${rung.span} で引き直す`);
       }
     }
@@ -663,6 +766,17 @@ export class XSearchView extends ItemView {
         cls: 'jp-x-descent-stop',
         text: `停止: ${result.stoppedBy} — ${XSearchView.STOP_WHY[result.stoppedBy] ?? ""}`,
       });
+    }
+
+    // §29 rung 6, the missing hand-act: a silence worth keeping becomes a
+    // standing 問い IN ONE GESTURE, at the silence itself — not a command
+    // palette trip away. The capture arrives pre-filled with the probed
+    // shape; attestations start empty; the sweep answers over time.
+    if (this.deps.fileStanding && result.verdict.startsWith('沈黙')) {
+      const fileBtn = box.createEl('button', { cls: 'jp-x-descent-file' });
+      fileBtn.createSpan({ text: '問', cls: 'jp-x-descent-file-mark' });
+      fileBtn.createSpan({ text: '問いとして残す — コーパスが育てば答える' });
+      fileBtn.onclick = () => this.deps.fileStanding!(term);
     }
   }
 
