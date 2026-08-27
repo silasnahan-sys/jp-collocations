@@ -334,6 +334,69 @@ console.log('\n D4. the 辞書 nav grammar: armed, twinned, and lit on both halv
     /もう台帳にある/.test(echo) && /openPattern/.test(echo));
   check('peekChrome wires the state once for every surface',
     /patternsIn: \(text\) => this\.patternsIn\(text\)/.test(main));
+
+  // ── 2026-08-27: the user's correction — the walk is not horizontal-only ──
+  // The previous build recorded at-end vertical continuation as a refusal and
+  // shipped back as a button; these pins hold the corrected grammar open.
+  check('the VERTICAL walk is armed (at-end tug pulls the neighbour in)',
+    /this\.armVerticalWalk\(/.test(dict) && /jp-dict-vpeek/.test(dict));
+  check('the next entry visibly begins at the end of this one (つづく)',
+    /this\.renderContinue\(\)/.test(dict) && /jp-dict-continue/.test(dict));
+  check('the trail has BOTH directions (forward exists, not only back)',
+    /goForward\(\)/.test(dict) && /trailPeekForward/.test(dict));
+  check('the edge drags ride the PAGE, not only a label tab',
+    /page\?\.\(\)|deps\.page\?\.\(\)/.test(read('ui', 'touch-nav.ts'))
+    && /pageEl/.test(read('ui', 'view-chrome.ts')));
+  check('the right edge arms forward through view-chrome',
+    /attachEdgeForward\(/.test(read('ui', 'view-chrome.ts')));
+  check('辞書 chrome walks its own trail before exiting the view',
+    /if \(!v\.goBack\(\)\) void this\.navBack\(\)/.test(main));
+  check('quick nav: holding a chip riffles (both chips armed)',
+    (dict.match(/this\.armRiffle\(/g) ?? []).length >= 2);
+  check('the selection itself is carryable (echo grip armed)',
+    /jp-echo-grip/.test(echo) && /makeDraggable\(grip/.test(echo));
+  for (const id of ['dict-back', 'dict-forward', 'x-back', 'x-forward']) {
+    check(`command twin '${id}' is registered`, new RegExp(`id: "${id}"`).test(main));
+  }
+  // …and the grammar is ONE grammar: the 𝕏 pane walks the same way.
+  const xview = read('ui', 'XSearchView.ts');
+  check('𝕏 doors ride the trail and land lit',
+    /this\.goTo\(rung\.span/.test(xview) && /jp-x-arrive-band/.test(xview));
+  check('𝕏 chrome walks its own trail before exiting the view',
+    /this\.activeXView\(\)\?\.goBack\(\)/.test(main));
+  check('a silent probe files a standing 問い in one gesture (rung 6)',
+    /fileStanding/.test(xview) && /fileStanding:/.test(main));
+
+  // ── 2026-08-27 evening: the IMG_1184 re-grid, built to the frames ──
+  // The film was finally IN a container (FILM-LEDGER §2.4); these pin the
+  // four behaviors it showed that no earlier build had.
+  check('a word tap PEEKS over the page; descent is a choice on the card',
+    /openPeekCard\(part/.test(dict) && /全文を表示/.test(dict));
+  check('the peek card closes from every path (instance-owned away listener)',
+    /closePeekCard\(\)/.test(dict) && /peekAway/.test(dict));
+  check('the echo echoes the GRAB first, enlarged (f18/f32)',
+    /jp-echo-grab/.test(echo));
+  check('on glass the echo verbs read as a menu naming their object',
+    /jp-echo--menu/.test(echo) && /jp-echo-obj/.test(echo) && /snipOf/.test(echo));
+  check('the sentence is a copyable object of its own (文をコピー)',
+    /文をコピー/.test(echo));
+  check('the walk ghost drifts out in the direction the page went (f40)',
+    /jp-dict-walkghost/.test(dict));
+  check('the 縦書き related column exists and PEEKS, never jumps',
+    /jp-dict-vrel/.test(dict) && /renderVrel/.test(dict));
+  check('the search scopes are worn on the bar (すべて/見出し/本文)',
+    /jp-dict-scope/.test(dict) && /searchScope/.test(dict));
+  check('本文 scope never silently widens back through the sidecars',
+    /searchScope !== 'body'\) void this\.appendBigResults/.test(dict));
+  // §29 rungs 2+4, on screen — the specificity the fixtures demand.
+  check('rung 2: environments render as GROUPS that are doors',
+    /environmentGroups\(/.test(xview) && /jp-x-env\b/.test(readFileSync(join(HERE, '..', 'styles.css'), 'utf8')));
+  check('rung 2: label-ness rendered as a positional fact',
+    /labelNess\(/.test(xview) && /行頭\/タグ位置/.test(xview));
+  check('rung 4: the slot table renders with typed fillers as doors',
+    /renderSlotTable\(/.test(xview) && /slotTable\(/.test(xview));
+  check('rung 4: impostors are excluded BY NAME, 灰 juxtaposed',
+    /除外/.test(xview) && /判定保留・提示のみ/.test(xview));
 }
 
 // ── D5. the carried thing is always addressed (宛名札, §2.2) ────────────────

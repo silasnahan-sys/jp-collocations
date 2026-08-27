@@ -145,5 +145,50 @@ console.log('\n══ truncation is reported, never silent (§28 S6) ══');
     U.buildXUsage(many.slice(0, 5), 'んだけど', 1832).more === 0);
 }
 
+console.log('══ rung 2: environments promoted — the environment is the answer ══');
+{
+  const tw = (id, who, text) => ({ id, authorHandle: who, text, createdAt: 0 });
+  // Environments are EXACT fragments (the neighbour tallies' own rule): the
+  // group forms because three voices wrote the same continuation, verbatim.
+  const corpus = [
+    tw('a', 'p1', 'その印象として持っている。'),
+    tw('b', 'p2', '強い印象として持っている。'),
+    tw('c', 'p3', '印象として持っている。'),
+    tw('d', 'p4', '印象としてある'),
+    tw('e', 'p5', '第一印象として残る'),
+  ];
+  const groups = U.environmentGroups(corpus, '印象として', 3, 2);
+  check('a fragment shared by 3 voices becomes a GROUP',
+    groups.some((g) => g.side === 'after' && g.text.startsWith('持っている') && g.count === 3 && g.authors === 3),
+    JSON.stringify(groups.map((g) => [g.side, g.text, g.count])));
+  check('a fragment below the floor stays decoration (no group)',
+    !groups.some((g) => g.text.includes('ある') || g.text.includes('残る')));
+  check('one tweet evidences ONE group (the partition rule)',
+    new Set(groups.flatMap((g) => g.ids)).size === groups.reduce((n, g) => n + g.ids.length, 0));
+  const solo = U.environmentGroups(
+    [tw('x', 'p1', 'ズミ環境あ。'), tw('y', 'p1', 'ズミ環境あ。'), tw('z', 'p1', 'ズミ環境あ。')],
+    'ズミ', 3, 2);
+  check('three hits from ONE voice never make a group (spread floor)', solo.length === 0);
+}
+
+console.log('══ rung 2: label-ness — position as a fact, never a verdict ══');
+{
+  const tw = (id, text) => ({ id, authorHandle: id, text, createdAt: 0 });
+  // Fixture B's shape: アウトプット opens study-log lines; がっつり lives mid-clause.
+  const study = [
+    tw('1', 'アウトプット30分\n単語20個'),
+    tw('2', '今日の記録\nアウトプット1時間'),
+    tw('3', '#アウトプット した'),
+  ];
+  const a = U.labelNess(study, 'アウトプット');
+  check('line-initial + hashtag occurrences count as label positions',
+    a.occ === 3 && a.label === 3 && a.ratio === 1, JSON.stringify(a));
+  const chatter = [tw('4', '今日はがっつり勉強した'), tw('5', '朝からがっつりやった')];
+  const g = U.labelNess(chatter, 'がっつり');
+  check('mid-clause occurrences are NOT label positions', g.occ === 2 && g.label === 0);
+  check('an unattested term reports zero without dividing by it',
+    U.labelNess(chatter, '存在せぬ').ratio === 0);
+}
+
 console.log(`\n${fail === 0 ? '✓' : '✗'} x-usage: ${pass}/${pass + fail} checks passed`);
 if (fail) process.exitCode = 1;

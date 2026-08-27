@@ -20,7 +20,7 @@ const suites = [
   'scoreboard.mjs', 'calculus-turns.mjs', 'calculus-corpus.mjs', 'calculus-precision.mjs', 'drill.mjs',
   'anchor.mjs', 'realformat.mjs', 'ocr.mjs',
   'voicesync.mjs', 'transcript.mjs', 'history.mjs', 'audio.mjs',
-  'patterns.mjs', 'dictionary.mjs', 'dict-nav.mjs', 'x-transaction.mjs', 'x-format.mjs', 'x-usage.mjs', 'x-relevance.mjs', 'x-probe.mjs', 'x-notation.mjs',
+  'patterns.mjs', 'dictionary.mjs', 'dict-nav.mjs', 'x-transaction.mjs', 'x-format.mjs', 'x-usage.mjs', 'x-relevance.mjs', 'x-probe.mjs', 'x-notation.mjs', 'x-slot.mjs',
   'match-japanese.mjs', 'hyogen.mjs', 'twc.mjs',
   'class-grammar.mjs', 'entry-parts.mjs', 'analysis-bundle.mjs', 'capture-bundle.mjs', 'registers.mjs', 'shape-index.mjs', 'usage-board.mjs', 'savable.mjs', 'concordance.mjs', 'frames.mjs', 'eijiro.mjs', 'sidecar.mjs', 'import-eijiro.mjs', 'generic-yomitan.mjs', 'sidecar-verify.mjs', 'intent-index.mjs', 'suite-nav.mjs', 'input-map.mjs', 'big-dict.mjs', 'dexie-stream.mjs', 'import-dexie.mjs', 'reach.mjs',
   // The input layer. `ui-gestures` needs a DOM, which `golden/stub/` provides —

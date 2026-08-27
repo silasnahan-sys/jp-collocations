@@ -2882,6 +2882,7 @@ up to 100 frozen tweets per keystroke and re-walked the whole 1.18M-char
 corpus for single-term KWIC. Both memoized (`patternCache` by tweet id;
 `usageCache` by term+size) — the felt typing lag in that pane was this.
 
+<<<<<<< HEAD
 ### 30.3 二重写し — the Move-2 inspector’s two registers (2026-08-26, SHIPPED)
 
 CALENDAR-PHYSICS §2 law 1, and specifically the sharpening the 30fps read
@@ -2962,3 +2963,115 @@ term would answer 0件 while the matcher worked perfectly.
 
 Apertures: reachability D7 (13 checks) and D8 (7). 95 suites, reachability 99
 checks, debt 8 unchanged.
+
+### 30.5 The axis correction — the walk has three axes, and both edges (2026-08-27, SHIPPED)
+
+(Shipped on the parallel line as its §30.3; renumbered here when the two
+lines were rejoined 2026-08-27 — see the merge commit. Content untouched.)
+
+The user's second glass report, decoded and owned: §30.1's "axis grammar"
+(↕ within an entry, ↔ between entries) was HALF an answer wearing the
+costume of a whole one. The ask was always Monokakido's full walk — the
+films show vertical nav and quick nav, heavy selection-and-drag, and smooth
+back-and-forth that is never just a back button — and the previous build
+(a) recorded at-end vertical continuation as a refusal ("scroller
+physics"), (b) shipped back as a breadcrumb button plus a label-tab edge
+drag that never moved the page, (c) had no forward at all, (d) had no way
+to move fast through the order, and (e) left the 𝕏検索辞書 out of the
+grammar entirely. Every one of those is now built:
+
+- **The vertical walk (Kindle-continuous).** The results scroller keeps its
+  native ↕ scroll; standing at an END when the touch begins, further travel
+  is the neighbouring entry being pulled in — the stack rides the finger
+  (`armVerticalWalk`), the incoming headword shows in a peek band at that
+  end, no neighbour rubber-bands ×0.35, and release asks the same
+  `panVerdict` as the sideways pan (distance against pane HEIGHT, or a
+  throw). Downward continuation lands at the END of the previous entry —
+  the page above, read from where it left off. And the walk is visible
+  before it is ever performed: `renderContinue` sets the next headword's
+  slim つづく row after the last card (tappable), so the dictionary READS
+  as one continuous book, which is what makes the at-end tug discoverable
+  by doing what you already do (§26.0 test b). A drag that starts
+  mid-entry and reaches the end stays a scroll — the walk needs a fresh
+  tug, a book's own rhythm, and the shape iOS's gesture claim allows.
+- **The trail, both directions, riding the page.** `dict-nav.Trail` is the
+  back/forward spine (pure, golden-pinned: a new descend burns the future;
+  back files the present onto it). The suite edge gesture (`touch-nav`)
+  gained the other side (`attachEdgeForward`, right edge) and a `page`
+  dep: the drag now moves the RESULTS PANE 1:1 to the commit point and
+  resists past it — iOS's interactive pop done to the content, with the
+  tab as its label — instead of moving only the tab. view-chrome arms both
+  edges from the same two lines every view already calls. The 辞書 and 𝕏
+  feed it trail-first: the drag pops their own trail while it has
+  somewhere to go, and only an empty trail exits the view. Forward also
+  shows as a chip after the current crumb; command twins `dict-back`,
+  `dict-forward`, `x-back`, `x-forward` (invariant 9).
+- **Quick nav — the riffle.** Holding a neighbour chip riffles the
+  dictionary: `riffleDelay`'s accelerating schedule (300→…→90ms floor,
+  golden-pinned monotone), hard-cut flips (the filmed chip flip), stop on
+  release. Finger, Pencil and mouse alike.
+- **The selection is carryable.** The echo bar's ⠿運ぶ grip
+  (`makeDraggable`, invariant 12) lifts the selection itself — scene
+  riding as `sub` — into any drop surface; native drag on the desk, the
+  long-press carry on glass. Select-then-drag, the films' heaviest habit.
+- **𝕏 speaks the same grammar (§29 meets §30).** Committed queries ride a
+  `Trail` (doors file, keystrokes never — rule 1's refinement lesson);
+  ladder rungs descend through `goTo` and land lit (「◀ 〜の梯子から」);
+  the edge drags walk the query trail with the same page ride; and rung
+  6's missing hand-act shipped: a 沈黙 verdict offers 「問いとして残す」
+  in place, opening the capture pre-filled with the probed shape.
+  Honestly still open in §29: rungs 2 (environment promotion into
+  ranking), 4 (construction boundary + 転 table), 5 (authority cycle ▾).
+
+Films: the egress policy of this container blocks every Drive host, so the
+07-15 recording STILL has no frame grid — see FILM-LEDGER for the pull
+route that would work (a GitHub release asset). This pass was built from
+the six committed stills, the three film-reading docs, and the user's own
+description of what the films show; the side-by-side walk (PHYSICS §6)
+remains the acceptance test, now with three axes to film.
+
+### 30.6 The film lands in the container — built to the frames (2026-08-27, SHIPPED)
+
+(Shipped on the parallel line as its §30.4; renumbered at the same rejoin.)
+
+The user put IMG_1184 itself into the session — the first reel any
+container has actually held — and it was re-gridded per FILM-LEDGER §1
+(the window list and readings are §2.4 there). What the frames showed,
+each now built:
+
+- **The selection menu names its object** (t60/t88/t120/t200 — Add IDIOM /
+  Add HEADWORD / Add MEANINGS to Bookmarks; the reel's most-used device).
+  On glass the echo now renders as a vertical menu of readable rows, each
+  verb carrying 「its object」 (`jp-echo--menu`/`jp-echo-obj`); the GRAB
+  itself echoes first, enlarged and selection-pink (f18/f32,
+  `jp-echo-grab`); and 文をコピー copies the containing sentence — the one
+  scope the native menu cannot name because only the plugin knows the
+  scene. The desk keeps the compact bar.
+- **A word tap PEEKS; descent is a choice** (t125–170: the floating card
+  with Show Full Entry / category / Find). `openPeekCard`: summary through
+  the ONE shared lookup road, the 台帳 state chip, 「全文を表示」 (the
+  descend push) and 「画面内を検索」 (Find scoped to the word, no travel).
+  Tap-away dismisses with the place untouched. Explicit → cross-links
+  still jump — an arrow is stated intent.
+- **The walk ghost** (f40; §26.4 step 6, deferred since July): the
+  headword you LEFT drifts out in the direction the page moved — one
+  element, opacity+transform, 360ms, dead under reduced-motion.
+- **縦の関連** (t130–175: the vertical 類語 columns): on wide panes a
+  vertical-rl column beside the entry holds what this vault knows about
+  the word — homophones, walkable neighbours, class-dotted 台帳 patterns —
+  each row a PEEK, not an exit.
+- **The scopes on the bar** (t177–186: Word|Example tabs + Ends chip):
+  すべて / 見出し / 本文 chips on the search row; 本文 never silently
+  widens back through the sidecars.
+- **The article dress** (§26.1: "a typeset ARTICLE, not a UI"): the
+  bordered hover-glow card chrome is gone from the 辞書's entries —
+  typography and a hairline separate them; the semantic boxes stay.
+
+**§29 status update:** rung 2 SHIPPED (`environmentGroups`/`labelNess` in
+`x/usage.ts` — environments promoted from decoration into structure, each
+group a DOOR through the space-AND grammar; label-ness as a positional
+fact) and rung 4's slot layer SHIPPED (`x/slot.ts` — fixture C's cues,
+tail-walk く-typing, family recurrence, named impostors, the 灰 group;
+`golden/x-slot.mjs` 18 checks). Still open in §29, said plainly: rung 4's
+nine operators as row gestures beyond this table, and rung 5's authority
+cycle ▾.

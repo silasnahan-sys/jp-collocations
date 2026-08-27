@@ -200,6 +200,69 @@ export function searchNotation(q: string): { mode: 'ends' | 'starts'; term: stri
   return null;
 }
 
+// ── The trail: back AND forward, as one pure spine ───────────
+//
+// The films' walk is never one-directional: the hand descends into an entry,
+// backs out, and goes right back in — 行って戻ってまた行く — and iOS answers
+// both directions from the screen edges. The plugin had only half the organ:
+// a back array, poppable by button. This is the whole spine, shared by 辞書
+// and 𝕏 so both surfaces walk by one grammar (§26.0 property 4).
+//
+// Law: a new descend BURNS the forward stack (you left the old future), and
+// back/forward move the CURRENT stop across, so nothing is ever lost mid-walk.
+
+export class Trail<T> {
+  private backArr: T[] = [];
+  private fwdArr: T[] = [];
+
+  /** A new descend: remember where you stand, forget the abandoned future. */
+  push(stop: T): void {
+    this.backArr.push(stop);
+    this.fwdArr = [];
+  }
+
+  /** Step back: the current stop becomes the future. Null at the trail head. */
+  back(current: T): T | null {
+    const prev = this.backArr.pop();
+    if (prev === undefined) return null;
+    this.fwdArr.push(current);
+    return prev;
+  }
+
+  /** Step forward again. Null when no future exists. */
+  forward(current: T): T | null {
+    const next = this.fwdArr.pop();
+    if (next === undefined) return null;
+    this.backArr.push(current);
+    return next;
+  }
+
+  peekBack(): T | null { return this.backArr[this.backArr.length - 1] ?? null; }
+  peekForward(): T | null { return this.fwdArr[this.fwdArr.length - 1] ?? null; }
+  get backLength(): number { return this.backArr.length; }
+  get forwardLength(): number { return this.fwdArr.length; }
+  /** Oldest-first, for breadcrumb rendering. Read-only. */
+  backStops(): readonly T[] { return this.backArr; }
+  clear(): void { this.backArr = []; this.fwdArr = []; }
+}
+
+// ── Quick nav: the riffle schedule ───────────────────────────
+
+/**
+ * Hold a neighbour chip and the pages riffle — Monokakido's paddles under a
+ * held thumb, a Kindle riffled by its corner. The schedule accelerates the
+ * way a hand does: deliberate first steps while you read what is passing,
+ * then a glide once you clearly mean distance. Flips are hard cuts (the
+ * filmed chip flip lands between two frames); the ACCELERATION is the only
+ * tempo, so the speed itself is the feedback.
+ */
+export const RIFFLE_HOLD_MS = 320;
+const RIFFLE_STEPS = [300, 240, 190, 150, 120, 100] as const;
+export function riffleDelay(step: number): number {
+  if (step < 0) return RIFFLE_STEPS[0];
+  return step < RIFFLE_STEPS.length ? RIFFLE_STEPS[step] : 90;
+}
+
 // ── The page-turn verdict: does a released pan COMMIT to the neighbour? ──
 
 /**

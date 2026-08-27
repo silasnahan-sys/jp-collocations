@@ -253,3 +253,97 @@ export function spreadOf(u: XUsage): 'thin' | 'narrow' | 'spread' {
   if (u.hits < 4) return 'thin';
   return u.authors >= Math.ceil(u.hits * 0.6) ? 'spread' : 'narrow';
 }
+
+// ── §29 rung 2: the environment PROMOTED — from decoration into structure ──
+
+export interface EnvGroup {
+  side: 'before' | 'after';
+  /** the recurring fragment itself */
+  text: string;
+  count: number;
+  /** distinct voices — the spread signal, per environment */
+  authors: number;
+  /** tweet ids whose first occurrence sits in this environment */
+  ids: string[];
+}
+
+/**
+ * Recurring KWIC environments as GROUPS (§29.2 rung 2): when several voices
+ * put the same fragment beside the term, the ENVIRONMENT is the answer and
+ * the tweets are its evidence. The thresholds are the ones the display
+ * already used (count ≥ minCount across ≥ minAuthors distinct handles) —
+ * this promotes them from decoration into ranking structure. A tweet joins
+ * only its strongest group, so the groups partition rather than double-count.
+ */
+export function environmentGroups(
+  tweets: readonly XTweet[],
+  term: string,
+  minCount = 3,
+  minAuthors = 2,
+): EnvGroup[] {
+  const needle = term.normalize('NFC').trim();
+  if (!needle) return [];
+  type Tally = { count: number; who: Set<string>; ids: string[] };
+  const tally = new Map<string, Tally>();
+  const bump = (side: 'before' | 'after', raw: string, who: string, id: string): void => {
+    const k = flat(raw);
+    if (!k || !CONTENTFUL.test(k)) return;
+    const key = `${side}${k}`;
+    let e = tally.get(key);
+    if (!e) { e = { count: 0, who: new Set(), ids: [] }; tally.set(key, e); }
+    e.count++;
+    e.who.add(who);
+    e.ids.push(id);
+  };
+  for (const t of tweets) {
+    const text = (t.text ?? '').normalize('NFC');
+    const at = text.indexOf(needle);
+    if (at < 0) continue;
+    bump('before', leftWindow(text, at).text, t.authorHandle, t.id);
+    bump('after', rightWindow(text, at + needle.length).text, t.authorHandle, t.id);
+  }
+  const groups: EnvGroup[] = [];
+  for (const [key, e] of tally) {
+    if (e.count < minCount || e.who.size < minAuthors) continue;
+    const [side, text] = key.split('') as ['before' | 'after', string];
+    groups.push({ side, text, count: e.count, authors: e.who.size, ids: e.ids });
+  }
+  groups.sort((a, b) => b.count * b.authors - a.count * a.authors);
+  // Strongest claim wins: a tweet evidences ONE group.
+  const claimed = new Set<string>();
+  for (const g of groups) {
+    g.ids = g.ids.filter((id) => !claimed.has(id));
+    for (const id of g.ids) claimed.add(id);
+  }
+  return groups.filter((g) => g.ids.length > 0);
+}
+
+/**
+ * Label-ness (§29.2 rung 2, forced by fixture B): the fraction of a string's
+ * occurrences that are line-initial, standalone-line, or hashtag — versus
+ * mid-clause. アウトプット opens a study log like a heading; がっつり is
+ * real but lives mid-sentence as commentary. "Usable as a calendar-entry
+ * label" has this computable positional correlate — reported as a fact
+ * about POSITION, never as a verdict about the word.
+ */
+export function labelNess(
+  tweets: readonly XTweet[],
+  term: string,
+): { occ: number; label: number; ratio: number } {
+  const needle = term.normalize('NFC').trim();
+  let occ = 0, label = 0;
+  if (!needle) return { occ, label, ratio: 0 };
+  for (const t of tweets) {
+    const text = (t.text ?? '').normalize('NFC');
+    let at = text.indexOf(needle);
+    while (at !== -1) {
+      occ++;
+      const prev = at === 0 ? '' : text[at - 1];
+      const lineInitial = at === 0 || prev === '\n';
+      const hashtag = prev === '#' || prev === '＃';
+      if (lineInitial || hashtag) label++;
+      at = text.indexOf(needle, at + 1);
+    }
+  }
+  return { occ, label, ratio: occ ? label / occ : 0 };
+}
