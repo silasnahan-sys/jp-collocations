@@ -4211,6 +4211,66 @@ mark.jp-dict-find-hit--current {
   font-size: 0.78rem;
 }
 
+/* §29 rung 2 — the environment groups: the environment is the answer. */
+.jp-x-envs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+.jp-x-envs-label { font-size: 0.72rem; color: var(--text-faint); letter-spacing: 0.1em; }
+.jp-x-env {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.jp-x-env:hover { background: var(--background-modifier-hover); }
+.jp-x-env-text { font-size: 0.86rem; color: var(--text-normal); }
+.jp-x-env-count { font-size: 0.72rem; color: var(--text-muted); }
+.jp-x-env-labelness { font-size: 0.72rem; color: var(--text-faint); margin-left: auto; }
+
+/* §29 rung 4 — the slot table: typed fillers as doors, impostors named. */
+.jp-x-slot {
+  margin: 6px 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+.jp-x-slot-head { font-size: 0.82rem; font-weight: 600; color: var(--text-normal); margin-bottom: 6px; }
+.jp-x-slot-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+.jp-x-slot-row:hover { background: var(--background-modifier-hover); }
+.jp-x-slot-type {
+  flex-shrink: 0;
+  width: 2.6em;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  text-align: center;
+}
+.jp-x-slot-filler { font-size: 0.92rem; color: var(--text-normal); }
+.jp-x-slot-count { margin-left: auto; font-size: 0.72rem; color: var(--text-muted); }
+.jp-x-slot-gray { margin-top: 6px; font-size: 0.78rem; color: var(--text-faint); display: flex; gap: 6px; flex-wrap: wrap; }
+.jp-x-slot-imp { margin-top: 4px; font-size: 0.75rem; color: var(--text-faint); }
+
 /* §29 rung 6's hand-act: the silence offers to become a standing 問い. */
 .jp-x-descent-file {
   display: flex;
@@ -7283,6 +7343,211 @@ body.jp-posture-slate .jp-lex-exgrip {
 .jp-echo-icon { font-size: 0.95rem; line-height: 1; }
 .jp-echo-label { font-weight: 550; }
 .jp-echo-verbs { display: flex; gap: 2px; }
+
+/* f18/f32 — the grab strip: the selection itself, enlarged, selection-pink,
+   FIRST — before any answer. What you grabbed, readable at a glance. */
+.jp-echo-grab {
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(255, 105, 140, 0.16);
+  color: var(--text-normal);
+  font-size: 1.22rem;
+  font-weight: 600;
+  line-height: 1.35;
+  max-height: 3.6em;
+  overflow: hidden;
+  user-select: none;
+}
+.jp-echo-grab--long { font-size: 0.98rem; font-weight: 500; }
+
+/* The filmed menu form (IMG_1184 t60–204): on glass the verbs stack as
+   full-width readable rows, each naming its object — a menu of sentences
+   about THIS press, not a strip of icons. */
+.jp-echo--menu { max-width: min(420px, calc(100vw - 24px)); }
+.jp-echo--menu .jp-echo-verbs { flex-direction: column; gap: 0; }
+.jp-echo--menu .jp-echo-btn {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  justify-content: flex-start;
+  padding: 9px 12px;
+  border-radius: 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: 0.95rem;
+}
+.jp-echo--menu .jp-echo-btn:last-child { border-bottom: none; }
+.jp-echo-obj {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+
+/* ── The peek card (IMG_1184 t125–170): the answer OVER the page ── */
+.jp-dict-peekcard {
+  position: absolute;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--background-secondary-alt, var(--background-secondary));
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.32), 0 2px 6px rgba(0, 0, 0, 0.22);
+  user-select: text;
+  -webkit-user-select: text;
+}
+.jp-dict-peekcard-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.jp-dict-peekcard-hw { font-size: 1.2rem; font-weight: 700; color: var(--text-normal); }
+.jp-dict-peekcard-reading { font-size: 0.85rem; color: var(--text-muted); }
+.jp-dict-peekcard-body {
+  font-size: 0.88rem;
+  color: var(--text-normal);
+  line-height: 1.5;
+  max-height: 7.5em;
+  overflow: hidden;
+}
+.jp-dict-peekcard-known {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.jp-dict-peekcard-acts {
+  display: flex;
+  gap: 8px;
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 8px;
+}
+.jp-dict-peekcard-act {
+  flex: 1;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 7px;
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.jp-dict-peekcard-act--main {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  font-weight: 600;
+}
+
+/* ── f40 — the walk ghost: the headword you left, drifting out ── */
+.jp-dict-walkghost {
+  position: absolute;
+  top: 96px;
+  left: 16px;
+  z-index: 14;
+  font-size: 1.7rem;
+  font-weight: 700;
+  color: var(--text-accent);
+  opacity: 0;
+  pointer-events: none;
+  user-select: none;
+  animation: jp-walkghost-lr 0.36s ease-out;
+}
+.jp-dict-walkghost--right { left: auto; right: 16px; animation-name: jp-walkghost-rl; }
+.jp-dict-walkghost--up { animation-name: jp-walkghost-u; }
+.jp-dict-walkghost--down { animation-name: jp-walkghost-d; }
+@keyframes jp-walkghost-lr {
+  from { opacity: 0.5; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(-46px); }
+}
+@keyframes jp-walkghost-rl {
+  from { opacity: 0.5; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(46px); }
+}
+@keyframes jp-walkghost-u {
+  from { opacity: 0.5; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-42px); }
+}
+@keyframes jp-walkghost-d {
+  from { opacity: 0.5; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(42px); }
+}
+@media (prefers-reduced-motion: reduce) { .jp-dict-walkghost { display: none; } }
+
+/* ── 縦の関連 (IMG_1184 t130–175): related words as a vertical column ── */
+.jp-dict-vrel {
+  position: absolute;
+  right: 6px;
+  top: 118px;
+  z-index: 8;
+  writing-mode: vertical-rl;
+  max-height: 52%;
+  max-width: 118px;
+  overflow: auto;
+  padding: 10px 8px;
+  border-radius: 10px;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  opacity: 0.94;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.jp-dict-vrel-label {
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  letter-spacing: 0.3em;
+  padding-left: 4px;
+}
+.jp-dict-vrel-item {
+  padding: 4px 3px;
+  font-size: 0.95rem;
+  color: var(--text-normal);
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  border-radius: 5px;
+}
+.jp-dict-vrel-item:hover { background: var(--background-modifier-hover); color: var(--text-accent); }
+
+/* ── The scope chips on the search bar (IMG_1184 t177–186) ── */
+.jp-dict-scopes { display: flex; gap: 4px; padding: 2px 2px 0; }
+.jp-dict-scope {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+.jp-dict-scope--active {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* ── §26.1 — the entry is a typeset ARTICLE, not a UI ──
+   The filmed page has zero chrome inside the content area: no bordered
+   cards, no shadows; hierarchy is typography alone, boxes only where they
+   carry a named semantic role. The 辞書's entries now read the same way:
+   the border/hover-glow card dress is gone, entries separate by their own
+   headword typography and a hairline, and everything semantic (badges,
+   knowledge boxes, example-blue) stays exactly as it was. */
+.jp-dict-card {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 10px 6px 16px;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--background-modifier-border-hover, var(--background-modifier-border));
+}
+.jp-dict-card:hover {
+  border-color: var(--background-modifier-border-hover, var(--background-modifier-border));
+  box-shadow: none;
+}
 
 /* ── the answer ───────────────────────────────────────────────────────────────
    Selecting used to offer verbs for a phrase and never say what the phrase

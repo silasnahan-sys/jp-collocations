@@ -54,6 +54,35 @@ lead, not evidence — re-grid before building on it.
 | IMG_1186 | 30fps sheets existed on a dead container's disk; content never written down | ⚠ unknown |
 | 07-15 Monokakido ScreenRecording (Drive) | the recording §26 was built FROM — named as the benchmark to grid before any nav build; still never gridded | PHYSICS-2026-08-19.md names the debt |
 
+## 2.4 IMG_1184 re-gridded IN-CONTAINER (2026-08-27 — first checkable grid)
+
+The user uploaded the compressed reel (378×672, 30fps, 306.9s) directly
+into the session — the first film any container session has actually held.
+Window list per §1's conventions: full 1fps map, 11 sheets of 5×6, burned
+counter = seconds, no offset. Readings (now verifiable against this grid):
+
+- **t60–89 / t120 / t200–204 — the selection menu, the film's most-used
+  device.** Long-press/selection raises Monokakido's OWN vertical popover:
+  Copy / Copy Paragraph / Copy Highlighted Text / Copy All / Add ___ to
+  Bookmarks / Search Selection / Cancel — and the blank NAMES the pressed
+  object: Idiom (t60), headword (t88), Meanings (t120, t200). The verbs
+  carry their scope; the menu reads as sentences about THIS press.
+- **t125–170 — the peek card.** Pressing a word raises a floating card
+  OVER the page: summary + 「Show Full Entry」 + the 類語 category line +
+  Find… + Share Context. The page never moves; descent is a choice on the
+  card, not a consequence of the tap.
+- **t130–175 — 縦書き related columns.** The 類語 panel renders related
+  words as vertical columns (オイスターソース・醤油・香辛料…), pressed
+  rows highlighted tan; the 噌 kanji card sits top-right.
+- **t153–154 — the splay-pinch, unanswered** (matches the ledger's J).
+- **t177–186 — the search bar carries mode chips**: Word | Example tabs
+  and an Ends match-mode chip; results live per keystroke over the flick
+  keyboard's candidate row.
+- **t190–199 — the Pencil parks on example lines while reading** (the
+  0.47–1.33s parks; invariant 18's evidence, re-confirmed on this grid).
+- **t173–176 — descend into 調味料 from the 類語 line, then back to a
+  fresh search** — the walk is search → entry → peek → descend → back.
+
 ## 2.5 Container access to the films (measured 2026-08-27)
 
 The 2026-08-27 session ATTEMPTED the pull and hit a wall worth recording:

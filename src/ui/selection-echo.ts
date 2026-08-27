@@ -260,7 +260,19 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
     // Footed on a phone only. A tablet keeps the bar AT the selection: the
     // Pencil is already there, and a trip to the bottom of a 1366px screen to
     // act on a word the nib is touching is the opposite of the point.
-    bar = root.createDiv(`jp-echo${isThumb() ? ' jp-echo--foot' : ''}`);
+    // On glass the echo takes the FILMED form (IMG_1184 t60–204, the reel's
+    // most-used device): a vertical menu of readable rows, each verb naming
+    // its object — never a strip of icons to decode. The desk keeps the
+    // compact bar; a mouse reads tooltips, a thumb reads sentences.
+    const asMenu = isThumb() || isSlate();
+    bar = root.createDiv(`jp-echo${isThumb() ? ' jp-echo--foot' : ''}${asMenu ? ' jp-echo--menu' : ''}`);
+
+    // f18/f32 — the FIRST thing the echo does is echo: the selection itself,
+    // enlarged, selection-pink, before any answer arrives. Monokakido's
+    // banner readout of what you grabbed; the grab is instant, the answer
+    // is allowed to be async.
+    const grab = bar.createDiv(`jp-echo-grab${[...text].length > 26 ? ' jp-echo-grab--long' : ''}`);
+    grab.setText([...text].length > 64 ? [...text].slice(0, 64).join('') + '…' : text);
 
     // Answer above verbs: read what it is, then decide what to do with it.
     // That order is the whole point — the other way round is a menu of things
@@ -310,10 +322,18 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
     // The verbs get their own row so the answer can have one above them; with
     // no head the bar looks exactly as it always did.
     const verbs = bar.createDiv('jp-echo-verbs');
+    // The filmed menu's defining property (t60/t88/t120: Add IDIOM / Add
+    // HEADWORD / Add MEANINGS to Bookmarks): every verb NAMES its object.
+    // A row reads as a sentence about this press, not a label to decode.
+    const snipOf = (s: string): string => {
+      const c = [...s.trim()];
+      return `「${c.slice(0, 8).join('')}${c.length > 8 ? '…' : ''}」`;
+    };
     for (const intent of intents) {
       const b = verbs.createEl('button', { cls: 'jp-echo-btn', attr: { title: intent.detail } });
       b.createSpan({ cls: 'jp-echo-icon', text: intent.icon });
       b.createSpan({ cls: 'jp-echo-label', text: intent.label });
+      if (asMenu) b.createSpan({ cls: 'jp-echo-obj', text: snipOf(text) });
       // `pointerdown` rather than `click`: a click lands only after the
       // browser has collapsed the selection, and on iOS the synthesized
       // `mousedown` lands after `touchend` — later still. pointerdown is the
@@ -329,6 +349,24 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
       });
     }
 
+    // The filmed menu's other scope verb (Copy Paragraph, t60): the SENTENCE
+    // around the selection is a copyable object of its own — the one copy
+    // the native menu cannot name, because only this plugin knows the scene.
+    if (sentence && sentence.trim() && sentence.trim() !== text) {
+      const scene = sentence.trim();
+      const b = verbs.createEl('button', { cls: 'jp-echo-btn', attr: { title: '選択を含む一文をコピー' } });
+      b.createSpan({ cls: 'jp-echo-icon', text: '❞' });
+      b.createSpan({ cls: 'jp-echo-label', text: '文をコピー' });
+      if (asMenu) b.createSpan({ cls: 'jp-echo-obj', text: snipOf(scene) });
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void navigator.clipboard?.writeText(scene);
+        hide();
+        window.getSelection()?.removeAllRanges();
+      });
+    }
+
     // Move 1 (掴む) — the "not yet" verb, after the act-now verbs: lift the
     // phrase into the hold dock and keep reading. Rendered apart from the
     // intent list on purpose: intents compete for MAX_VERBS slots by surface
@@ -337,6 +375,7 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
       const b = verbs.createEl('button', { cls: 'jp-echo-btn jp-echo-btn--hold', attr: { title: '持っておく — 画面端に置いて読み続ける' } });
       b.createSpan({ cls: 'jp-echo-icon', text: '✊' });
       b.createSpan({ cls: 'jp-echo-label', text: '持つ' });
+      if (asMenu) b.createSpan({ cls: 'jp-echo-obj', text: snipOf(text) });
       b.addEventListener('pointerdown', (e) => {
         e.preventDefault();
         e.stopPropagation();

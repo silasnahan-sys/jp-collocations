@@ -44,7 +44,7 @@ import { PATTERN_BY_ID, type PatternCategory } from '../discourse/discourse-patt
 import { JP_COLLOCATIONS_VIEW_TYPE, CollocationView } from './CollocationView';
 import { HoverPeek, definitionsPreview } from './hover-peek';
 import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
-import { classBadge } from './class-grammar';
+import { classBadge, classDot } from './class-grammar';
 import { armDrops, armSelectionEcho, mountSurfaceBar, wideDock, type ViewChrome } from './view-chrome';
 import { makeDraggable } from './drag-out';
 import { historyDays, searchNotation, panVerdict, Trail, riffleDelay, RIFFLE_HOLD_MS, type DictHistoryStore } from '../dictionary/dict-nav';
@@ -79,6 +79,8 @@ export class DictionaryView extends ItemView {
   private breadcrumbEl: HTMLElement | null = null;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
   private currentQuery = '';
+  /** Where a query looks — worn as chips on the bar (IMG_1184 t177–186). */
+  private searchScope: 'all' | 'head' | 'body' = 'all';
   /** The walk's spine: back AND forward (dict-nav.Trail — one pure organ,
    *  shared grammar with 𝕏). A stop remembers WHERE you were reading. */
   private trail = new Trail<{ word: string; scroll: number; via?: SaveRelation }>();
@@ -107,6 +109,9 @@ export class DictionaryView extends ItemView {
    *  by withCatalogHits like everything above; it was the one chrome field
    *  never assigned, which left this surface's 戻る silently dead. */
   dismiss: ViewChrome['dismiss'];
+  /** The ONE shared answer road (peekChrome) — the peek card asks it, so a
+   *  tap and a selection can never disagree about what a word means. */
+  lookUp: ViewChrome['lookUp'];
   surfaceBadge: ViewChrome['surfaceBadge'];
   /**
    * §27.5 — the CONVERTED dictionaries (vault sidecars), asynchronous.
@@ -309,6 +314,7 @@ export class DictionaryView extends ItemView {
       this.outlineAway = null;
     }
     this.vpeekEl?.remove(); this.vpeekEl = null;
+    this.closePeekCard();
     this.peek?.cancel();
   }
 
@@ -378,26 +384,28 @@ export class DictionaryView extends ItemView {
    *  both directions stay free (the films' back-and-forth, made real). */
   goBack(): boolean {
     if (this.historyMode) return false;
+    const leaving = this.currentQuery;
     const prev = this.trail.back(this.currentStop());
     if (!prev) return false;
     this.lastVia = prev.via;
     this.lookupWord(prev.word);
     this.restoreScroll(prev.scroll);
     this.renderBreadcrumbs();
-    this.slideResults('jp-dict-flick-right');
+    this.slideResults('jp-dict-flick-right', leaving);
     return true;
   }
 
   /** The mirror: re-descend into the future you backed out of. */
   goForward(): boolean {
     if (this.historyMode) return false;
+    const leaving = this.currentQuery;
     const next = this.trail.forward(this.currentStop());
     if (!next) return false;
     this.lastVia = next.via;
     this.lookupWord(next.word);
     this.restoreScroll(next.scroll);
     this.renderBreadcrumbs();
-    this.slideResults('jp-dict-flick-left');
+    this.slideResults('jp-dict-flick-left', leaving);
     return true;
   }
 
@@ -414,7 +422,7 @@ export class DictionaryView extends ItemView {
   /** The page the edge drag rides. */
   pageEl(): HTMLElement | null { return this.resultsEl; }
 
-  private slideResults(cls: string): void {
+  private slideResults(cls: string, ghostWord?: string): void {
     if (!this.resultsEl || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
     const el = this.resultsEl;
     el.removeClass('jp-dict-flick-left'); el.removeClass('jp-dict-flick-right');
@@ -422,6 +430,20 @@ export class DictionaryView extends ItemView {
     void el.offsetWidth;
     el.addClass(cls);
     window.setTimeout(() => el.removeClass(cls), 220);
+    // f40 — the walk ghost: the headword you LEFT drifts out in the
+    // direction the page moved, so the motion SAYS you walked the index
+    // (§26.0's one sanctioned animation — it encodes where you came from).
+    // One element, opacity+transform only, gone in 360ms.
+    if (ghostWord && ghostWord !== this.currentQuery) {
+      const host = this.navBarEl?.parentElement;
+      if (host) {
+        const dir = cls.endsWith('-left') ? 'left' : cls.endsWith('-right') ? 'right'
+          : cls.endsWith('-up') ? 'up' : 'down';
+        const g = host.createDiv(`jp-dict-walkghost jp-dict-walkghost--${dir}`);
+        g.setText(ghostWord);
+        window.setTimeout(() => g.remove(), 380);
+      }
+    }
   }
 
   /**
@@ -576,7 +598,11 @@ export class DictionaryView extends ItemView {
             if (dx > 6 || dy > 6) return;             // a drag, not a tap
             e.preventDefault();
             e.stopPropagation();
-            this.recursiveLookup(part);
+            // The filmed grammar (IMG_1184 t125–170): a word tap PEEKS over
+            // the page; descent is a choice made on the card. Explicit
+            // cross-reference links (entry-grammar's → arrows) still jump —
+            // an arrow IS the stated intent to go.
+            this.openPeekCard(part, { x: e.clientX, y: e.clientY });
           });
           frag.appendChild(span);
         } else {
@@ -610,6 +636,7 @@ export class DictionaryView extends ItemView {
     this.applyArrival();
     this.renderNavBar();
     this.renderContinue();
+    this.renderVrel();
     this.renderHomophones();
     this.rerunFind();
   }
@@ -696,10 +723,11 @@ export class DictionaryView extends ItemView {
    * the turn from the direction the hand was already moving.
    */
   flipTo(word: string, slide?: 'left' | 'right' | 'up' | 'down'): void {
+    const leaving = this.currentQuery;
     this.lookupWord(word);
     this.renderBreadcrumbs();
     if (slide) {
-      this.slideResults(`jp-dict-flick-${slide}`);
+      this.slideResults(`jp-dict-flick-${slide}`, leaving);
       // The vertical walk is the BOOK: continuing upward off an entry's top
       // lands at the END of the previous one — the page above, read from
       // where it left off — while downward lands at the next one's head.
@@ -959,6 +987,54 @@ export class DictionaryView extends ItemView {
   }
 
   /**
+   * 縦の関連 — the filmed 類語 column (IMG_1184 t130–175): related words
+   * standing in VERTICAL columns beside the entry, each one pressable.
+   * Ours holds what this vault actually knows about the word: homophones,
+   * the walkable neighbours, and the 台帳 patterns that contain it (class-
+   * dotted — S1's one grammar). A press PEEKS (the card), never jumps —
+   * the column is a place to look sideways from, not a list of exits.
+   * Wide panes only: on a phone the horizontal homophone row already
+   * serves, and a column over a phone's text is an obstruction.
+   */
+  private renderVrel(): void {
+    const host = this.navBarEl?.parentElement;
+    if (!host) return;
+    host.querySelectorAll('.jp-dict-vrel').forEach((n) => n.remove());
+    if (this.historyMode || !this.currentQuery || !this.resultsEl) return;
+    if (host.clientWidth < 620) return;
+    if (!this.resultsEl.querySelector('.jp-dict-card')) return;
+
+    const q = this.currentQuery;
+    const seen = new Set<string>([q]);
+    const items: Array<{ word: string; cls?: NoteClass; ratified?: boolean }> = [];
+    for (const h of this.dictStore.homophones(q)) {
+      if (!seen.has(h.expression) && items.length < 4) { seen.add(h.expression); items.push({ word: h.expression }); }
+    }
+    const nb = this.currentNeighbors();
+    for (const n of [nb?.prev, nb?.next]) {
+      if (n && !seen.has(n.expression) && items.length < 6) { seen.add(n.expression); items.push({ word: n.expression }); }
+    }
+    for (const p of this.patternsIn?.(q) ?? []) {
+      if (!seen.has(p.key) && items.length < 10) {
+        seen.add(p.key);
+        items.push({ word: p.key, cls: p.class, ratified: p.classRatified !== false });
+      }
+    }
+    if (!items.length) return;
+
+    const col = host.createDiv('jp-dict-vrel');
+    col.createDiv({ text: '関連', cls: 'jp-dict-vrel-label' });
+    for (const it of items) {
+      const row = col.createDiv('jp-dict-vrel-item');
+      if (it.cls) classDot(row, it.cls, { ratified: it.ratified !== false });
+      row.createSpan({ text: it.word });
+      row.addEventListener('click', (e) => {
+        this.openPeekCard(it.word, { x: (e as MouseEvent).clientX, y: (e as MouseEvent).clientY });
+      });
+    }
+  }
+
+  /**
    * QUICK NAV — hold a neighbour chip and the dictionary riffles (Monokakido's
    * paddles under a held thumb; the films' walk is chip-chip-chip, never
    * press-wait-press). Steps are hard cuts; the accelerating schedule
@@ -1069,6 +1145,113 @@ export class DictionaryView extends ItemView {
     const away = this.outlineAway;
     window.setTimeout(() => {
       if (this.outlineAway === away) document.addEventListener('pointerdown', away, true);
+    }, 0);
+  }
+
+  // ── The peek card: the filmed intermediate step (IMG_1184 t125–170) ──
+  //
+  // Pressing a word in Monokakido raises a floating card OVER the page —
+  // summary, category, Find, and 「Show Full Entry」 — and the page never
+  // moves. Descent is a choice made ON THE ANSWER, not a consequence of
+  // touching a word; that is what makes the walk feel like standing still,
+  // and its absence is why every tap here used to cost your place.
+
+  private peekCard: HTMLElement | null = null;
+  private peekAway: ((e: PointerEvent) => void) | null = null;
+
+  closePeekCard(): void {
+    this.peekCard?.remove();
+    this.peekCard = null;
+    if (this.peekAway) {
+      document.removeEventListener('pointerdown', this.peekAway, true);
+      this.peekAway = null;
+    }
+  }
+
+  openPeekCard(word: string, at: { x: number; y: number }): void {
+    this.closePeekCard();
+    const host = this.navBarEl?.parentElement;
+    if (!host || !word.trim()) return;
+    const card = host.createDiv('jp-dict-peekcard');
+    this.peekCard = card;
+
+    const head = card.createDiv('jp-dict-peekcard-head');
+    head.createSpan({ text: word, cls: 'jp-dict-peekcard-hw' });
+    const body = card.createDiv('jp-dict-peekcard-body');
+    body.setText('…');
+
+    // Items 12–13's grammar, here too: a word the 台帳 already holds says
+    // so on the card, wearing its class mark, and the chip is a door.
+    const known = this.patternsIn?.(word) ?? [];
+    if (known.length && this.openPattern) {
+      const exact = known.find((k) => k.key === word) ?? known[0];
+      const chip = card.createDiv('jp-dict-peekcard-known');
+      classDot(chip, exact.class, { ratified: exact.classRatified !== false });
+      chip.createSpan({
+        text: exact.key === word ? 'もう台帳にある' : `台帳に ${known.length}件`,
+        cls: 'jp-dict-peekcard-known-label',
+      });
+      chip.addEventListener('click', () => { this.closePeekCard(); this.openPattern!(exact.id); });
+    }
+
+    // The doors, in the filmed order: descend is the MAIN act but never the
+    // only one — Find scopes to this word without leaving the page at all.
+    const acts = card.createDiv('jp-dict-peekcard-acts');
+    const full = acts.createEl('button', { text: '全文を表示', cls: 'jp-dict-peekcard-act jp-dict-peekcard-act--main' });
+    full.addEventListener('click', () => {
+      this.closePeekCard();
+      this.recursiveLookup(word);
+    });
+    const find = acts.createEl('button', { text: '画面内を検索', cls: 'jp-dict-peekcard-act' });
+    find.addEventListener('click', () => {
+      this.closePeekCard();
+      this.toggleFind(true);
+      if (this.findInput) {
+        this.findInput.value = word;
+        this.findInput.dispatchEvent(new Event('input'));
+      }
+    });
+
+    // Clamped near the tap, never off the pane.
+    const r = host.getBoundingClientRect();
+    const W = Math.min(300, r.width - 16);
+    card.style.width = `${W}px`;
+    card.style.left = `${Math.max(8, Math.min(at.x - r.left - W / 2, r.width - W - 8))}px`;
+    card.style.top = `${Math.max(8, Math.min(at.y - r.top + 16, Math.max(8, r.height - 210)))}px`;
+
+    // The ONE shared answer road (view-chrome): a tap, a selection and a
+    // hover can never disagree about what a word means.
+    if (this.lookUp) {
+      void this.lookUp(word).then(
+        (d) => {
+          if (this.peekCard !== card) return;
+          head.empty();
+          head.createSpan({ text: d?.headword ?? word, cls: 'jp-dict-peekcard-hw' });
+          if (d?.reading && d.reading !== d.headword) {
+            head.createSpan({ text: d.reading, cls: 'jp-dict-peekcard-reading' });
+          }
+          if (d?.deinflection?.length) {
+            head.createSpan({ text: `〈${d.deinflection.join('+')}〉`, cls: 'jp-lex-deinflect' });
+          }
+          body.setText(d?.def ? d.def.slice(0, 220) : '辞書に該当なし');
+        },
+        () => { if (this.peekCard === card) body.setText('辞書を読めませんでした'); },
+      );
+    } else {
+      // No shared road wired (a bare-constructed view): say so honestly
+      // rather than reimplementing a second gloss extractor here (§28 S5 —
+      // one answer path, or none).
+      body.setText(this.dictStore.lookup(word).length ? '（全文を表示で読む）' : '辞書に該当なし');
+    }
+
+    // Tap-away closes with your place untouched (the outline's own rule —
+    // instance-owned so every close path removes the capture listener).
+    const away = (e: PointerEvent): void => {
+      if (this.peekCard === card && !card.contains(e.target as Node)) this.closePeekCard();
+    };
+    this.peekAway = away;
+    window.setTimeout(() => {
+      if (this.peekAway === away) document.addEventListener('pointerdown', away, true);
     }, 0);
   }
 
@@ -1379,6 +1562,28 @@ export class DictionaryView extends ItemView {
       this.searchInput?.focus();
     });
 
+    // The search SCOPES, worn on the bar the way the filmed app wears its
+    // Word|Example tabs (IMG_1184 t177–186): where a query looks is a
+    // visible mode ON the box, never a remembered setting. すべて keeps
+    // today's merged walk; 見出し asks only the headword/reading road;
+    // 本文 asks only the entry text (the substring road, made explicit).
+    const scopeRow = (wide ?? header).createDiv('jp-dict-scopes');
+    const scopes: Array<{ id: 'all' | 'head' | 'body'; label: string }> = [
+      { id: 'all', label: 'すべて' },
+      { id: 'head', label: '見出し' },
+      { id: 'body', label: '本文' },
+    ];
+    for (const sc of scopes) {
+      const chip = scopeRow.createEl('button', { text: sc.label, cls: 'jp-dict-scope' });
+      if (this.searchScope === sc.id) chip.addClass('jp-dict-scope--active');
+      chip.addEventListener('click', () => {
+        this.searchScope = sc.id;
+        scopeRow.querySelectorAll('.jp-dict-scope').forEach((c) => c.removeClass('jp-dict-scope--active'));
+        chip.addClass('jp-dict-scope--active');
+        if (this.currentQuery) this.performLiveSearch(this.currentQuery);
+      });
+    }
+
     // Breadcrumb navigation for recursive lookups
     this.breadcrumbEl = container.createDiv('jp-dict-breadcrumbs');
     this.breadcrumbEl.style.display = 'none';
@@ -1532,17 +1737,22 @@ export class DictionaryView extends ItemView {
     const nota = searchNotation(query);
     if (nota) { this.renderNotationSearch(nota, query); return; }
 
-    // Merge: exact results first, then substring-only
-    let merged = this.mergeResults(
-      this.dictStore.lookup(query),
-      this.dictStore.substringSearch(query, 20),
-    );
+    // Merge: exact results first, then substring-only — unless a scope chip
+    // narrows the road (見出し = the headword walk only; 本文 = entry text).
+    let merged = this.searchScope === 'head'
+      ? this.dictStore.lookup(query)
+      : this.searchScope === 'body'
+        ? this.dictStore.substringSearch(query, 40)
+        : this.mergeResults(
+          this.dictStore.lookup(query),
+          this.dictStore.substringSearch(query, 20),
+        );
 
     // Whole string found nothing and the query is several terms → the
     // narrowing grammar (see the block comment above).
     let narrowing: TermNarrowing | undefined;
     const terms = DictionaryView.queryTerms(query);
-    if (!merged.length && terms.length > 1) {
+    if (!merged.length && terms.length > 1 && this.searchScope === 'all') {
       const primary = terms[0];
       const filters = terms.slice(1);
       const wide = this.mergeResults(
@@ -1566,7 +1776,7 @@ export class DictionaryView extends ItemView {
     // which is a verdict, not a status (filmed: "common" declared missing with
     // 検索中… on the same screen). appendBigResults renders the real verdict.
     if (merged.length === 0) {
-      this.renderEmpty(this.bigDict
+      this.renderEmpty(this.bigDict && this.searchScope !== 'body'
         ? `"${query}" — 変換済み辞書を検索中…`
         : this.missMessage(query, narrowing));
     } else {
@@ -1575,7 +1785,7 @@ export class DictionaryView extends ItemView {
         this.renderEntryCard(this.resultsEl, group);
       }
     }
-    this.setStats(query, merged.length, !!this.bigDict, allDeinflected(merged));
+    this.setStats(query, merged.length, !!this.bigDict && this.searchScope !== 'body', allDeinflected(merged));
     // A live query IS a lookup once it settles — recordLookup's refinement
     // rule collapses の→のば→のばあ into one history row, so recording per
     // debounce is safe (dict-nav.ts rule 1). Re-filter renders with NO
@@ -1583,7 +1793,9 @@ export class DictionaryView extends ItemView {
     // animates an explicit descend, and typing cleared that above.
     this.historyStore?.record(query);
     this.afterRender();
-    void this.appendBigResults(query, gen, merged, narrowing);
+    // 本文 scope is a promise about the IMPORTED text; the sidecars answer
+    // by headword and would quietly widen the road the chip just narrowed.
+    if (this.searchScope !== 'body') void this.appendBigResults(query, gen, merged, narrowing);
   }
 
   /**
@@ -1754,12 +1966,14 @@ export class DictionaryView extends ItemView {
     const nota = searchNotation(query);
     if (nota) { this.renderNotationSearch(nota, query); return; }
 
-    let results = this.dictStore.lookup(query);
+    let results = this.searchScope === 'body'
+      ? this.dictStore.substringSearch(query, 40)
+      : this.dictStore.lookup(query);
 
     // Whole string first, then the space-AND grammar — see performLiveSearch.
     let narrowing: TermNarrowing | undefined;
     const terms = DictionaryView.queryTerms(query);
-    if (!results.length && terms.length > 1) {
+    if (!results.length && terms.length > 1 && this.searchScope === 'all') {
       const primary = terms[0];
       const filters = terms.slice(1);
       const wide = this.mergeResults(
@@ -1780,7 +1994,7 @@ export class DictionaryView extends ItemView {
     if (results.length === 0) {
       // provisional while the sidecars are still reading (same rule as the
       // live path — appendBigResults renders the real verdict)
-      this.renderEmpty(this.bigDict
+      this.renderEmpty(this.bigDict && this.searchScope !== 'body'
         ? `"${query}" — 変換済み辞書を検索中…`
         : this.missMessage(query, narrowing));
     } else {
@@ -1790,10 +2004,10 @@ export class DictionaryView extends ItemView {
         this.renderEntryCard(this.resultsEl, group);
       }
     }
-    this.setStats(query, results.length, !!this.bigDict, allDeinflected(results));
+    this.setStats(query, results.length, !!this.bigDict && this.searchScope !== 'body', allDeinflected(results));
     this.historyStore?.record(query);
     this.afterRender();
-    void this.appendBigResults(query, gen, results, narrowing);
+    if (this.searchScope !== 'body') void this.appendBigResults(query, gen, results, narrowing);
   }
 
   // ── Group results ──────────────────────────────────────────

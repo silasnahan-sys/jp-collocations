@@ -24879,6 +24879,71 @@ function spreadOf(u) {
     return "thin";
   return u.authors >= Math.ceil(u.hits * 0.6) ? "spread" : "narrow";
 }
+function environmentGroups(tweets, term, minCount = 3, minAuthors = 2) {
+  var _a2;
+  const needle = term.normalize("NFC").trim();
+  if (!needle)
+    return [];
+  const tally = /* @__PURE__ */ new Map();
+  const bump = (side, raw, who, id) => {
+    const k = flat(raw);
+    if (!k || !CONTENTFUL.test(k))
+      return;
+    const key = `${side}${k}`;
+    let e = tally.get(key);
+    if (!e) {
+      e = { count: 0, who: /* @__PURE__ */ new Set(), ids: [] };
+      tally.set(key, e);
+    }
+    e.count++;
+    e.who.add(who);
+    e.ids.push(id);
+  };
+  for (const t of tweets) {
+    const text = ((_a2 = t.text) != null ? _a2 : "").normalize("NFC");
+    const at = text.indexOf(needle);
+    if (at < 0)
+      continue;
+    bump("before", leftWindow(text, at).text, t.authorHandle, t.id);
+    bump("after", rightWindow(text, at + needle.length).text, t.authorHandle, t.id);
+  }
+  const groups = [];
+  for (const [key, e] of tally) {
+    if (e.count < minCount || e.who.size < minAuthors)
+      continue;
+    const [side, text] = key.split("");
+    groups.push({ side, text, count: e.count, authors: e.who.size, ids: e.ids });
+  }
+  groups.sort((a, b) => b.count * b.authors - a.count * a.authors);
+  const claimed = /* @__PURE__ */ new Set();
+  for (const g of groups) {
+    g.ids = g.ids.filter((id) => !claimed.has(id));
+    for (const id of g.ids)
+      claimed.add(id);
+  }
+  return groups.filter((g) => g.ids.length > 0);
+}
+function labelNess(tweets, term) {
+  var _a2;
+  const needle = term.normalize("NFC").trim();
+  let occ = 0, label = 0;
+  if (!needle)
+    return { occ, label, ratio: 0 };
+  for (const t of tweets) {
+    const text = ((_a2 = t.text) != null ? _a2 : "").normalize("NFC");
+    let at = text.indexOf(needle);
+    while (at !== -1) {
+      occ++;
+      const prev = at === 0 ? "" : text[at - 1];
+      const lineInitial = at === 0 || prev === "\n";
+      const hashtag = prev === "#" || prev === "\uFF03";
+      if (lineInitial || hashtag)
+        label++;
+      at = text.indexOf(needle, at + 1);
+    }
+  }
+  return { occ, label, ratio: occ ? label / occ : 0 };
+}
 
 // src/ui/x-usage-panel.ts
 var SPREAD_JA = {
@@ -25856,7 +25921,10 @@ function attachSelectionEcho(root, deps) {
     const range0 = sel.rangeCount ? sel.getRangeAt(0) : null;
     const rect = sel.getRangeAt(0).getBoundingClientRect();
     const sentence = sentenceAround(range0, root);
-    bar = root.createDiv(`jp-echo${isThumb() ? " jp-echo--foot" : ""}`);
+    const asMenu = isThumb() || isSlate();
+    bar = root.createDiv(`jp-echo${isThumb() ? " jp-echo--foot" : ""}${asMenu ? " jp-echo--menu" : ""}`);
+    const grab = bar.createDiv(`jp-echo-grab${[...text].length > 26 ? " jp-echo-grab--long" : ""}`);
+    grab.setText([...text].length > 64 ? [...text].slice(0, 64).join("") + "\u2026" : text);
     if (deps.look) {
       const head = bar.createDiv("jp-echo-head jp-echo-head--waiting");
       head.createSpan({
@@ -25902,10 +25970,16 @@ function attachSelectionEcho(root, deps) {
       }
     }
     const verbs = bar.createDiv("jp-echo-verbs");
+    const snipOf = (s) => {
+      const c = [...s.trim()];
+      return `\u300C${c.slice(0, 8).join("")}${c.length > 8 ? "\u2026" : ""}\u300D`;
+    };
     for (const intent of intents) {
       const b = verbs.createEl("button", { cls: "jp-echo-btn", attr: { title: intent.detail } });
       b.createSpan({ cls: "jp-echo-icon", text: intent.icon });
       b.createSpan({ cls: "jp-echo-label", text: intent.label });
+      if (asMenu)
+        b.createSpan({ cls: "jp-echo-obj", text: snipOf(text) });
       b.addEventListener("pointerdown", (e) => {
         var _a3;
         e.preventDefault();
@@ -25915,10 +25989,28 @@ function attachSelectionEcho(root, deps) {
         deps.run(intent);
       });
     }
+    if (sentence && sentence.trim() && sentence.trim() !== text) {
+      const scene = sentence.trim();
+      const b = verbs.createEl("button", { cls: "jp-echo-btn", attr: { title: "\u9078\u629E\u3092\u542B\u3080\u4E00\u6587\u3092\u30B3\u30D4\u30FC" } });
+      b.createSpan({ cls: "jp-echo-icon", text: "\u275E" });
+      b.createSpan({ cls: "jp-echo-label", text: "\u6587\u3092\u30B3\u30D4\u30FC" });
+      if (asMenu)
+        b.createSpan({ cls: "jp-echo-obj", text: snipOf(scene) });
+      b.addEventListener("pointerdown", (e) => {
+        var _a3, _b3;
+        e.preventDefault();
+        e.stopPropagation();
+        void ((_a3 = navigator.clipboard) == null ? void 0 : _a3.writeText(scene));
+        hide();
+        (_b3 = window.getSelection()) == null ? void 0 : _b3.removeAllRanges();
+      });
+    }
     if (deps.hold) {
       const b = verbs.createEl("button", { cls: "jp-echo-btn jp-echo-btn--hold", attr: { title: "\u6301\u3063\u3066\u304A\u304F \u2014 \u753B\u9762\u7AEF\u306B\u7F6E\u3044\u3066\u8AAD\u307F\u7D9A\u3051\u308B" } });
       b.createSpan({ cls: "jp-echo-icon", text: "\u270A" });
       b.createSpan({ cls: "jp-echo-label", text: "\u6301\u3064" });
+      if (asMenu)
+        b.createSpan({ cls: "jp-echo-obj", text: snipOf(text) });
       b.addEventListener("pointerdown", (e) => {
         var _a3;
         e.preventDefault();
@@ -36970,6 +37062,8 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     this.breadcrumbEl = null;
     this.debounceTimer = null;
     this.currentQuery = "";
+    /** Where a query looks — worn as chips on the bar (IMG_1184 t177–186). */
+    this.searchScope = "all";
     /** The walk's spine: back AND forward (dict-nav.Trail — one pure organ,
      *  shared grammar with 𝕏). A stop remembers WHERE you were reading. */
     this.trail = new Trail();
@@ -37065,6 +37159,15 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
      * readable without the sweep the films measured (170ms per menu).
      */
     this.outlineAway = null;
+    // ── The peek card: the filmed intermediate step (IMG_1184 t125–170) ──
+    //
+    // Pressing a word in Monokakido raises a floating card OVER the page —
+    // summary, category, Find, and 「Show Full Entry」 — and the page never
+    // moves. Descent is a choice made ON THE ANSWER, not a consequence of
+    // touching a word; that is what makes the walk feel like standing still,
+    // and its absence is why every tap here used to cost your place.
+    this.peekCard = null;
+    this.peekAway = null;
     this.dictStore = dictStore;
     this.onImport = onImport;
     this.onSaveEntry = onSaveEntry != null ? onSaveEntry : () => {
@@ -37205,6 +37308,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     }
     (_a2 = this.vpeekEl) == null ? void 0 : _a2.remove();
     this.vpeekEl = null;
+    this.closePeekCard();
     (_b2 = this.peek) == null ? void 0 : _b2.cancel();
   }
   refresh() {
@@ -37268,6 +37372,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
   goBack() {
     if (this.historyMode)
       return false;
+    const leaving = this.currentQuery;
     const prev = this.trail.back(this.currentStop());
     if (!prev)
       return false;
@@ -37275,13 +37380,14 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     this.lookupWord(prev.word);
     this.restoreScroll(prev.scroll);
     this.renderBreadcrumbs();
-    this.slideResults("jp-dict-flick-right");
+    this.slideResults("jp-dict-flick-right", leaving);
     return true;
   }
   /** The mirror: re-descend into the future you backed out of. */
   goForward() {
     if (this.historyMode)
       return false;
+    const leaving = this.currentQuery;
     const next = this.trail.forward(this.currentStop());
     if (!next)
       return false;
@@ -37289,7 +37395,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     this.lookupWord(next.word);
     this.restoreScroll(next.scroll);
     this.renderBreadcrumbs();
-    this.slideResults("jp-dict-flick-left");
+    this.slideResults("jp-dict-flick-left", leaving);
     return true;
   }
   /** The trail's edge-gesture face (view-chrome routes the suite edge drag
@@ -37310,7 +37416,8 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
   pageEl() {
     return this.resultsEl;
   }
-  slideResults(cls) {
+  slideResults(cls, ghostWord) {
+    var _a2;
     if (!this.resultsEl || window.matchMedia("(prefers-reduced-motion: reduce)").matches)
       return;
     const el = this.resultsEl;
@@ -37321,6 +37428,15 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     void el.offsetWidth;
     el.addClass(cls);
     window.setTimeout(() => el.removeClass(cls), 220);
+    if (ghostWord && ghostWord !== this.currentQuery) {
+      const host = (_a2 = this.navBarEl) == null ? void 0 : _a2.parentElement;
+      if (host) {
+        const dir = cls.endsWith("-left") ? "left" : cls.endsWith("-right") ? "right" : cls.endsWith("-up") ? "up" : "down";
+        const g = host.createDiv(`jp-dict-walkghost jp-dict-walkghost--${dir}`);
+        g.setText(ghostWord);
+        window.setTimeout(() => g.remove(), 380);
+      }
+    }
   }
   /**
    * Put the scroll position back after the results have actually been painted.
@@ -37458,7 +37574,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
               return;
             e.preventDefault();
             e.stopPropagation();
-            this.recursiveLookup(part);
+            this.openPeekCard(part, { x: e.clientX, y: e.clientY });
           });
           frag.appendChild(span);
         } else {
@@ -37490,6 +37606,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     this.applyArrival();
     this.renderNavBar();
     this.renderContinue();
+    this.renderVrel();
     this.renderHomophones();
     this.rerunFind();
   }
@@ -37577,10 +37694,11 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
    * the turn from the direction the hand was already moving.
    */
   flipTo(word, slide) {
+    const leaving = this.currentQuery;
     this.lookupWord(word);
     this.renderBreadcrumbs();
     if (slide) {
-      this.slideResults(`jp-dict-flick-${slide}`);
+      this.slideResults(`jp-dict-flick-${slide}`, leaving);
       if (slide === "down")
         this.scrollToEndAfterRender();
     }
@@ -37882,6 +38000,64 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     row.addEventListener("click", () => this.flipTo(next.expression, "up"));
   }
   /**
+   * 縦の関連 — the filmed 類語 column (IMG_1184 t130–175): related words
+   * standing in VERTICAL columns beside the entry, each one pressable.
+   * Ours holds what this vault actually knows about the word: homophones,
+   * the walkable neighbours, and the 台帳 patterns that contain it (class-
+   * dotted — S1's one grammar). A press PEEKS (the card), never jumps —
+   * the column is a place to look sideways from, not a list of exits.
+   * Wide panes only: on a phone the horizontal homophone row already
+   * serves, and a column over a phone's text is an obstruction.
+   */
+  renderVrel() {
+    var _a2, _b2, _c2;
+    const host = (_a2 = this.navBarEl) == null ? void 0 : _a2.parentElement;
+    if (!host)
+      return;
+    host.querySelectorAll(".jp-dict-vrel").forEach((n) => n.remove());
+    if (this.historyMode || !this.currentQuery || !this.resultsEl)
+      return;
+    if (host.clientWidth < 620)
+      return;
+    if (!this.resultsEl.querySelector(".jp-dict-card"))
+      return;
+    const q = this.currentQuery;
+    const seen = /* @__PURE__ */ new Set([q]);
+    const items = [];
+    for (const h of this.dictStore.homophones(q)) {
+      if (!seen.has(h.expression) && items.length < 4) {
+        seen.add(h.expression);
+        items.push({ word: h.expression });
+      }
+    }
+    const nb = this.currentNeighbors();
+    for (const n of [nb == null ? void 0 : nb.prev, nb == null ? void 0 : nb.next]) {
+      if (n && !seen.has(n.expression) && items.length < 6) {
+        seen.add(n.expression);
+        items.push({ word: n.expression });
+      }
+    }
+    for (const p of (_c2 = (_b2 = this.patternsIn) == null ? void 0 : _b2.call(this, q)) != null ? _c2 : []) {
+      if (!seen.has(p.key) && items.length < 10) {
+        seen.add(p.key);
+        items.push({ word: p.key, cls: p.class, ratified: p.classRatified !== false });
+      }
+    }
+    if (!items.length)
+      return;
+    const col = host.createDiv("jp-dict-vrel");
+    col.createDiv({ text: "\u95A2\u9023", cls: "jp-dict-vrel-label" });
+    for (const it of items) {
+      const row = col.createDiv("jp-dict-vrel-item");
+      if (it.cls)
+        classDot(row, it.cls, { ratified: it.ratified !== false });
+      row.createSpan({ text: it.word });
+      row.addEventListener("click", (e) => {
+        this.openPeekCard(it.word, { x: e.clientX, y: e.clientY });
+      });
+    }
+  }
+  /**
    * QUICK NAV — hold a neighbour chip and the dictionary riffles (Monokakido's
    * paddles under a held thumb; the films' walk is chip-chip-chip, never
    * press-wait-press). Steps are hard cuts; the accelerating schedule
@@ -38003,6 +38179,95 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     const away = this.outlineAway;
     window.setTimeout(() => {
       if (this.outlineAway === away)
+        document.addEventListener("pointerdown", away, true);
+    }, 0);
+  }
+  closePeekCard() {
+    var _a2;
+    (_a2 = this.peekCard) == null ? void 0 : _a2.remove();
+    this.peekCard = null;
+    if (this.peekAway) {
+      document.removeEventListener("pointerdown", this.peekAway, true);
+      this.peekAway = null;
+    }
+  }
+  openPeekCard(word, at) {
+    var _a2, _b2, _c2, _d2;
+    this.closePeekCard();
+    const host = (_a2 = this.navBarEl) == null ? void 0 : _a2.parentElement;
+    if (!host || !word.trim())
+      return;
+    const card = host.createDiv("jp-dict-peekcard");
+    this.peekCard = card;
+    const head = card.createDiv("jp-dict-peekcard-head");
+    head.createSpan({ text: word, cls: "jp-dict-peekcard-hw" });
+    const body2 = card.createDiv("jp-dict-peekcard-body");
+    body2.setText("\u2026");
+    const known = (_c2 = (_b2 = this.patternsIn) == null ? void 0 : _b2.call(this, word)) != null ? _c2 : [];
+    if (known.length && this.openPattern) {
+      const exact = (_d2 = known.find((k) => k.key === word)) != null ? _d2 : known[0];
+      const chip = card.createDiv("jp-dict-peekcard-known");
+      classDot(chip, exact.class, { ratified: exact.classRatified !== false });
+      chip.createSpan({
+        text: exact.key === word ? "\u3082\u3046\u53F0\u5E33\u306B\u3042\u308B" : `\u53F0\u5E33\u306B ${known.length}\u4EF6`,
+        cls: "jp-dict-peekcard-known-label"
+      });
+      chip.addEventListener("click", () => {
+        this.closePeekCard();
+        this.openPattern(exact.id);
+      });
+    }
+    const acts = card.createDiv("jp-dict-peekcard-acts");
+    const full = acts.createEl("button", { text: "\u5168\u6587\u3092\u8868\u793A", cls: "jp-dict-peekcard-act jp-dict-peekcard-act--main" });
+    full.addEventListener("click", () => {
+      this.closePeekCard();
+      this.recursiveLookup(word);
+    });
+    const find = acts.createEl("button", { text: "\u753B\u9762\u5185\u3092\u691C\u7D22", cls: "jp-dict-peekcard-act" });
+    find.addEventListener("click", () => {
+      this.closePeekCard();
+      this.toggleFind(true);
+      if (this.findInput) {
+        this.findInput.value = word;
+        this.findInput.dispatchEvent(new Event("input"));
+      }
+    });
+    const r2 = host.getBoundingClientRect();
+    const W = Math.min(300, r2.width - 16);
+    card.style.width = `${W}px`;
+    card.style.left = `${Math.max(8, Math.min(at.x - r2.left - W / 2, r2.width - W - 8))}px`;
+    card.style.top = `${Math.max(8, Math.min(at.y - r2.top + 16, Math.max(8, r2.height - 210)))}px`;
+    if (this.lookUp) {
+      void this.lookUp(word).then(
+        (d) => {
+          var _a3, _b3;
+          if (this.peekCard !== card)
+            return;
+          head.empty();
+          head.createSpan({ text: (_a3 = d == null ? void 0 : d.headword) != null ? _a3 : word, cls: "jp-dict-peekcard-hw" });
+          if ((d == null ? void 0 : d.reading) && d.reading !== d.headword) {
+            head.createSpan({ text: d.reading, cls: "jp-dict-peekcard-reading" });
+          }
+          if ((_b3 = d == null ? void 0 : d.deinflection) == null ? void 0 : _b3.length) {
+            head.createSpan({ text: `\u3008${d.deinflection.join("+")}\u3009`, cls: "jp-lex-deinflect" });
+          }
+          body2.setText((d == null ? void 0 : d.def) ? d.def.slice(0, 220) : "\u8F9E\u66F8\u306B\u8A72\u5F53\u306A\u3057");
+        },
+        () => {
+          if (this.peekCard === card)
+            body2.setText("\u8F9E\u66F8\u3092\u8AAD\u3081\u307E\u305B\u3093\u3067\u3057\u305F");
+        }
+      );
+    } else {
+      body2.setText(this.dictStore.lookup(word).length ? "\uFF08\u5168\u6587\u3092\u8868\u793A\u3067\u8AAD\u3080\uFF09" : "\u8F9E\u66F8\u306B\u8A72\u5F53\u306A\u3057");
+    }
+    const away = (e) => {
+      if (this.peekCard === card && !card.contains(e.target))
+        this.closePeekCard();
+    };
+    this.peekAway = away;
+    window.setTimeout(() => {
+      if (this.peekAway === away)
         document.addEventListener("pointerdown", away, true);
     }, 0);
   }
@@ -38305,6 +38570,24 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       this.renderHome();
       (_a2 = this.searchInput) == null ? void 0 : _a2.focus();
     });
+    const scopeRow = (wide != null ? wide : header).createDiv("jp-dict-scopes");
+    const scopes = [
+      { id: "all", label: "\u3059\u3079\u3066" },
+      { id: "head", label: "\u898B\u51FA\u3057" },
+      { id: "body", label: "\u672C\u6587" }
+    ];
+    for (const sc of scopes) {
+      const chip = scopeRow.createEl("button", { text: sc.label, cls: "jp-dict-scope" });
+      if (this.searchScope === sc.id)
+        chip.addClass("jp-dict-scope--active");
+      chip.addEventListener("click", () => {
+        this.searchScope = sc.id;
+        scopeRow.querySelectorAll(".jp-dict-scope").forEach((c) => c.removeClass("jp-dict-scope--active"));
+        chip.addClass("jp-dict-scope--active");
+        if (this.currentQuery)
+          this.performLiveSearch(this.currentQuery);
+      });
+    }
     this.breadcrumbEl = container.createDiv("jp-dict-breadcrumbs");
     this.breadcrumbEl.style.display = "none";
     this.suggestionsEl = (wide != null ? wide : container).createDiv("jp-dict-suggestions");
@@ -38431,13 +38714,13 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
       this.renderNotationSearch(nota, query);
       return;
     }
-    let merged = this.mergeResults(
+    let merged = this.searchScope === "head" ? this.dictStore.lookup(query) : this.searchScope === "body" ? this.dictStore.substringSearch(query, 40) : this.mergeResults(
       this.dictStore.lookup(query),
       this.dictStore.substringSearch(query, 20)
     );
     let narrowing;
     const terms = _DictionaryView.queryTerms(query);
-    if (!merged.length && terms.length > 1) {
+    if (!merged.length && terms.length > 1 && this.searchScope === "all") {
       const primary = terms[0];
       const filters = terms.slice(1);
       const wide = this.mergeResults(
@@ -38454,17 +38737,18 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
       return;
     }
     if (merged.length === 0) {
-      this.renderEmpty(this.bigDict ? `"${query}" \u2014 \u5909\u63DB\u6E08\u307F\u8F9E\u66F8\u3092\u691C\u7D22\u4E2D\u2026` : this.missMessage(query, narrowing));
+      this.renderEmpty(this.bigDict && this.searchScope !== "body" ? `"${query}" \u2014 \u5909\u63DB\u6E08\u307F\u8F9E\u66F8\u3092\u691C\u7D22\u4E2D\u2026` : this.missMessage(query, narrowing));
     } else {
       this.resultsEl.empty();
       for (const group of this.groupResults(merged)) {
         this.renderEntryCard(this.resultsEl, group);
       }
     }
-    this.setStats(query, merged.length, !!this.bigDict, allDeinflected(merged));
+    this.setStats(query, merged.length, !!this.bigDict && this.searchScope !== "body", allDeinflected(merged));
     (_a2 = this.historyStore) == null ? void 0 : _a2.record(query);
     this.afterRender();
-    void this.appendBigResults(query, gen, merged, narrowing);
+    if (this.searchScope !== "body")
+      void this.appendBigResults(query, gen, merged, narrowing);
   }
   /**
    * The honest "nothing" — which names the term that failed when a narrowed
@@ -38618,10 +38902,10 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
       this.renderNotationSearch(nota, query);
       return;
     }
-    let results = this.dictStore.lookup(query);
+    let results = this.searchScope === "body" ? this.dictStore.substringSearch(query, 40) : this.dictStore.lookup(query);
     let narrowing;
     const terms = _DictionaryView.queryTerms(query);
-    if (!results.length && terms.length > 1) {
+    if (!results.length && terms.length > 1 && this.searchScope === "all") {
       const primary = terms[0];
       const filters = terms.slice(1);
       const wide = this.mergeResults(
@@ -38638,17 +38922,18 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
       return;
     }
     if (results.length === 0) {
-      this.renderEmpty(this.bigDict ? `"${query}" \u2014 \u5909\u63DB\u6E08\u307F\u8F9E\u66F8\u3092\u691C\u7D22\u4E2D\u2026` : this.missMessage(query, narrowing));
+      this.renderEmpty(this.bigDict && this.searchScope !== "body" ? `"${query}" \u2014 \u5909\u63DB\u6E08\u307F\u8F9E\u66F8\u3092\u691C\u7D22\u4E2D\u2026` : this.missMessage(query, narrowing));
     } else {
       this.resultsEl.empty();
       for (const group of this.groupResults(results)) {
         this.renderEntryCard(this.resultsEl, group);
       }
     }
-    this.setStats(query, results.length, !!this.bigDict, allDeinflected(results));
+    this.setStats(query, results.length, !!this.bigDict && this.searchScope !== "body", allDeinflected(results));
     (_a2 = this.historyStore) == null ? void 0 : _a2.record(query);
     this.afterRender();
-    void this.appendBigResults(query, gen, results, narrowing);
+    if (this.searchScope !== "body")
+      void this.appendBigResults(query, gen, results, narrowing);
   }
   // ── Group results ──────────────────────────────────────────
   groupResults(results) {
@@ -40951,6 +41236,127 @@ function selectionWithin(el) {
   return sel.toString().trim();
 }
 
+// src/x/slot.ts
+var FAMILIES = [
+  ["\u8A00\u3048\u3070", "\u8A00\u3046\u3068", "\u8A00\u3063\u305F\u3089"],
+  ["\u8003\u3048\u308B\u3068", "\u8003\u3048\u308C\u3070", "\u8003\u3048\u305F\u3089"],
+  ["\u898B\u308B\u3068", "\u898B\u308C\u3070", "\u898B\u305F\u3089"]
+];
+function familyOf(anchor) {
+  for (const fam of FAMILIES)
+    if (fam.includes(anchor))
+      return fam;
+  return [anchor];
+}
+function anchorIn(query) {
+  const q = query.trim();
+  for (const fam of FAMILIES) {
+    for (const a of fam)
+      if (q === a || q.endsWith(a))
+        return a;
+  }
+  return null;
+}
+var FILLER_STOP = /[。．！？!?\n「」（）()【】…‥、,\s]/;
+var MAX_FILLER = 12;
+function fillerBefore(text, at) {
+  let start = at;
+  while (start > 0 && at - start < MAX_FILLER && !FILLER_STOP.test(text[start - 1]))
+    start--;
+  return text.slice(start, at);
+}
+function typeFiller(filler, oracle) {
+  if (!filler)
+    return "\u7070";
+  if (filler.endsWith("\u304B\u3089"))
+    return "\u304B\u3089";
+  if (filler.endsWith("\u3092"))
+    return "\u3092";
+  if (filler.endsWith("\u306B"))
+    return "\u306B";
+  if (filler.endsWith("\u3067"))
+    return "\u3067";
+  if (filler.endsWith("\u3066") || filler.endsWith("\u3063\u3066"))
+    return "\u3066";
+  if (filler.endsWith("\u304F")) {
+    const chars = [...filler];
+    for (let i = 0; i < chars.length - 1; i++) {
+      const tail3 = chars.slice(i).join("");
+      for (const c of oracle.deinflect(tail3)) {
+        if (c.term !== tail3 && oracle.isWord(c.term))
+          return "\u304F";
+      }
+    }
+    return "\u7070";
+  }
+  if (oracle.isWord(filler))
+    return "\u8A9E";
+  return "\u7070";
+}
+function slotTable(tweets, anchor, oracle, opts = {}) {
+  var _a2;
+  const family = familyOf(anchor);
+  const rowMap = /* @__PURE__ */ new Map();
+  const impMap = /* @__PURE__ */ new Map();
+  let occurrences2 = 0;
+  let co = 0;
+  for (const t of tweets) {
+    const text = ((_a2 = t.text) != null ? _a2 : "").normalize("NFC");
+    for (const surface of family) {
+      let at = text.indexOf(surface);
+      while (at !== -1) {
+        occurrences2++;
+        if (opts.secondAnchor && text.includes(opts.secondAnchor))
+          co++;
+        const p1 = at > 0 ? text[at - 1] : "";
+        const p2 = at > 1 ? text[at - 2] : "";
+        const cue = p1 === "\u3068" ? p2 === "\u304B" ? "\u304B\u3068" : "\u3068" : p2 + p1 === "\u305D\u3046" ? "\u305D\u3046" : null;
+        if (cue) {
+          const ctx = fillerBefore(text, cue === "\u305D\u3046" ? at - 2 : at - (cue === "\u304B\u3068" ? 2 : 1));
+          const key = `${cue}${ctx}`;
+          const e = impMap.get(key);
+          if (e)
+            e.count++;
+          else
+            impMap.set(key, { cue, text: ctx, count: 1 });
+        } else {
+          const filler = fillerBefore(text, at);
+          if (filler) {
+            let e = rowMap.get(filler);
+            if (!e) {
+              e = { type: typeFiller(filler, oracle), count: 0, surfaces: /* @__PURE__ */ new Set() };
+              rowMap.set(filler, e);
+            }
+            e.count++;
+            e.surfaces.add(surface);
+          }
+        }
+        at = text.indexOf(surface, at + 1);
+      }
+    }
+  }
+  const all = [...rowMap.entries()].map(([filler, e]) => ({
+    filler,
+    type: e.type,
+    count: e.count,
+    surfaces: [...e.surfaces],
+    recurring: e.surfaces.size >= 2
+  }));
+  all.sort((a, b) => b.count - a.count || (a.filler < b.filler ? -1 : 1));
+  const rows = all.filter((r2) => r2.type !== "\u7070");
+  const gray = all.filter((r2) => r2.type === "\u7070");
+  const impostors = [...impMap.values()].sort((a, b) => b.count - a.count);
+  return {
+    anchor,
+    family,
+    occurrences: occurrences2,
+    rows,
+    gray,
+    impostors,
+    ...opts.secondAnchor ? { coAnchor: { anchor: opts.secondAnchor, count: co } } : {}
+  };
+}
+
 // src/x/relevance.ts
 var DEFAULT_REACH = 4;
 function readsAsWord(surface, oracle) {
@@ -41282,6 +41688,13 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
      *  refinement lesson: typing is one lookup, so per-keystroke renders never
      *  file; only a door or an external arrival does). */
     this.trail = new Trail();
+    /**
+     * §29 rung 4 on screen (fixture C). The table asks the WHOLE corpus, not
+     * the current match list — the family's other surfaces (言うと・言ったら
+     * for a 言えば query) are exactly what the match list does not hold.
+     * Cached per (anchor, corpus size), the descentCache pattern.
+     */
+    this.slotCache = null;
     this.deps = deps;
     const s = deps.getSettings();
     this.query = emptyQuery(s.defaultLang, s.defaultProduct);
@@ -41706,6 +42119,32 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
         openUrl: (url) => window.open(url, "_blank"),
         onCapture: this.deps.onCaptureLine ? (quote, url, handle, hit) => this.deps.onCaptureLine(quote, url, handle, hit) : void 0
       });
+      const envs = environmentGroups(all, single).slice(0, 4);
+      if (envs.length && this.resultsEl) {
+        const box = this.resultsEl.createDiv("jp-x-envs");
+        box.createSpan({ text: "\u74B0\u5883", cls: "jp-x-envs-label" });
+        for (const g of envs) {
+          const row = box.createEl("button", {
+            cls: "jp-x-env",
+            attr: { title: `\u300C${single}\u300D\u3068\u300C${g.text}\u300D\u4E21\u65B9\u3092\u542B\u3080\u30C4\u30A4\u30FC\u30C8\u3078` }
+          });
+          row.createSpan({
+            text: g.side === "before" ? `${g.text}\u25C6` : `\u25C6${g.text}`,
+            cls: "jp-x-env-text"
+          });
+          row.createSpan({ text: `${g.count}\u4EF6\u30FB${g.authors}\u4EBA`, cls: "jp-x-env-count" });
+          row.onclick = () => this.goTo(`${single} ${g.text}`, `\u74B0\u5883\u300C${g.text}\u300D\u304B\u3089`);
+        }
+        const ln = labelNess(all, single);
+        if (ln.occ) {
+          box.createSpan({
+            cls: "jp-x-env-labelness",
+            text: `\u884C\u982D/\u30BF\u30B0\u4F4D\u7F6E ${ln.label}/${ln.occ}`,
+            attr: { title: "\u898B\u51FA\u3057\u306E\u3088\u3046\u306B\u884C\u982D\u30FB\u5358\u72EC\u30FB#\u3067\u7ACB\u3064\u56DE\u6570 / \u5168\u51FA\u73FE \u2014 \u4F4D\u7F6E\u306E\u4E8B\u5B9F\u3067\u3042\u3063\u3066\u8A55\u4FA1\u3067\u306F\u306A\u3044" }
+          });
+        }
+      }
+      this.renderSlotTable(single);
     }
     const terms = highlightTerms(this.query);
     const CHUNK = 60;
@@ -41816,6 +42255,49 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
       fileBtn.createSpan({ text: "\u554F", cls: "jp-x-descent-file-mark" });
       fileBtn.createSpan({ text: "\u554F\u3044\u3068\u3057\u3066\u6B8B\u3059 \u2014 \u30B3\u30FC\u30D1\u30B9\u304C\u80B2\u3066\u3070\u7B54\u3048\u308B" });
       fileBtn.onclick = () => this.deps.fileStanding(term);
+    }
+  }
+  renderSlotTable(single) {
+    if (!this.resultsEl || !this.deps.oracle)
+      return;
+    const anchor = anchorIn(single);
+    if (!anchor)
+      return;
+    const all = this.deps.corpus.getAll();
+    const cached = this.slotCache;
+    const t = cached && cached.anchor === anchor && cached.size === all.length ? cached.table : slotTable(all, anchor, this.deps.oracle);
+    this.slotCache = { anchor, size: all.length, table: t };
+    if (!t.occurrences || !t.rows.length && !t.impostors.length)
+      return;
+    const box = this.resultsEl.createDiv("jp-x-slot");
+    box.createDiv({
+      cls: "jp-x-slot-head",
+      text: `\u3014\u3000\u3015${t.family.join("\u30FB")} \u2014 ${t.occurrences}\u4EF6\u306E\u67A0`
+    });
+    for (const r2 of t.rows.slice(0, 12)) {
+      const row = box.createEl("button", {
+        cls: "jp-x-slot-row",
+        attr: { title: `\u300C${r2.filler}${anchor}\u300D\u3067\u5F15\u304D\u76F4\u3059` }
+      });
+      row.createSpan({ text: r2.type, cls: "jp-x-slot-type" });
+      row.createSpan({ text: r2.filler, cls: "jp-x-slot-filler" });
+      row.createSpan({
+        text: `${r2.count}\u4EF6${r2.recurring ? "\u30FB\u8907\u6570\u5F62\u5F0F" : ""}`,
+        cls: "jp-x-slot-count"
+      });
+      row.onclick = () => this.goTo(`${r2.filler}${anchor}`, `\u3014${r2.filler}\u3015\u306E\u67A0\u304B\u3089`);
+    }
+    if (t.gray.length) {
+      const g = box.createDiv("jp-x-slot-gray");
+      g.createSpan({ text: `\u7070 ${t.gray.length}\u4EF6\uFF08\u5224\u5B9A\u4FDD\u7559\u30FB\u63D0\u793A\u306E\u307F\uFF09`, cls: "jp-x-slot-gray-label" });
+      g.createSpan({ text: t.gray.slice(0, 6).map((r2) => r2.filler).join("\u30FB"), cls: "jp-x-slot-gray-list" });
+    }
+    if (t.impostors.length) {
+      const n = t.impostors.reduce((s, i) => s + i.count, 0);
+      box.createDiv({
+        cls: "jp-x-slot-imp",
+        text: `\u9664\u5916 ${n}\u4EF6 \u2014 \u3068/\u304B\u3068/\u305D\u3046 \u3092\u4F34\u3046\u5225\u7269\uFF08${t.impostors.slice(0, 3).map((i) => `${i.text}${i.cue}`).join("\u30FB")}\u2026\uFF09`
+      });
     }
   }
   renderCooccurrence() {

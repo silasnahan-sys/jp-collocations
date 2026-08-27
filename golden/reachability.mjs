@@ -366,6 +366,37 @@ console.log('\n D4. the 辞書 nav grammar: armed, twinned, and lit on both halv
     /this\.activeXView\(\)\?\.goBack\(\)/.test(main));
   check('a silent probe files a standing 問い in one gesture (rung 6)',
     /fileStanding/.test(xview) && /fileStanding:/.test(main));
+
+  // ── 2026-08-27 evening: the IMG_1184 re-grid, built to the frames ──
+  // The film was finally IN a container (FILM-LEDGER §2.4); these pin the
+  // four behaviors it showed that no earlier build had.
+  check('a word tap PEEKS over the page; descent is a choice on the card',
+    /openPeekCard\(part/.test(dict) && /全文を表示/.test(dict));
+  check('the peek card closes from every path (instance-owned away listener)',
+    /closePeekCard\(\)/.test(dict) && /peekAway/.test(dict));
+  check('the echo echoes the GRAB first, enlarged (f18/f32)',
+    /jp-echo-grab/.test(echo));
+  check('on glass the echo verbs read as a menu naming their object',
+    /jp-echo--menu/.test(echo) && /jp-echo-obj/.test(echo) && /snipOf/.test(echo));
+  check('the sentence is a copyable object of its own (文をコピー)',
+    /文をコピー/.test(echo));
+  check('the walk ghost drifts out in the direction the page went (f40)',
+    /jp-dict-walkghost/.test(dict));
+  check('the 縦書き related column exists and PEEKS, never jumps',
+    /jp-dict-vrel/.test(dict) && /renderVrel/.test(dict));
+  check('the search scopes are worn on the bar (すべて/見出し/本文)',
+    /jp-dict-scope/.test(dict) && /searchScope/.test(dict));
+  check('本文 scope never silently widens back through the sidecars',
+    /searchScope !== 'body'\) void this\.appendBigResults/.test(dict));
+  // §29 rungs 2+4, on screen — the specificity the fixtures demand.
+  check('rung 2: environments render as GROUPS that are doors',
+    /environmentGroups\(/.test(xview) && /jp-x-env\b/.test(readFileSync(join(HERE, '..', 'styles.css'), 'utf8')));
+  check('rung 2: label-ness rendered as a positional fact',
+    /labelNess\(/.test(xview) && /行頭\/タグ位置/.test(xview));
+  check('rung 4: the slot table renders with typed fillers as doors',
+    /renderSlotTable\(/.test(xview) && /slotTable\(/.test(xview));
+  check('rung 4: impostors are excluded BY NAME, 灰 juxtaposed',
+    /除外/.test(xview) && /判定保留・提示のみ/.test(xview));
 }
 
 // ── D5. the carried thing is always addressed (宛名札, §2.2) ────────────────

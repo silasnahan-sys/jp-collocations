@@ -2944,3 +2944,47 @@ route that would work (a GitHub release asset). This pass was built from
 the six committed stills, the three film-reading docs, and the user's own
 description of what the films show; the side-by-side walk (PHYSICS §6)
 remains the acceptance test, now with three axes to film.
+
+### 30.4 The film lands in the container — built to the frames (2026-08-27 evening, SHIPPED)
+
+The user put IMG_1184 itself into the session — the first reel any
+container has actually held — and it was re-gridded per FILM-LEDGER §1
+(the window list and readings are §2.4 there). What the frames showed,
+each now built:
+
+- **The selection menu names its object** (t60/t88/t120/t200 — Add IDIOM /
+  Add HEADWORD / Add MEANINGS to Bookmarks; the reel's most-used device).
+  On glass the echo now renders as a vertical menu of readable rows, each
+  verb carrying 「its object」 (`jp-echo--menu`/`jp-echo-obj`); the GRAB
+  itself echoes first, enlarged and selection-pink (f18/f32,
+  `jp-echo-grab`); and 文をコピー copies the containing sentence — the one
+  scope the native menu cannot name because only the plugin knows the
+  scene. The desk keeps the compact bar.
+- **A word tap PEEKS; descent is a choice** (t125–170: the floating card
+  with Show Full Entry / category / Find). `openPeekCard`: summary through
+  the ONE shared lookup road, the 台帳 state chip, 「全文を表示」 (the
+  descend push) and 「画面内を検索」 (Find scoped to the word, no travel).
+  Tap-away dismisses with the place untouched. Explicit → cross-links
+  still jump — an arrow is stated intent.
+- **The walk ghost** (f40; §26.4 step 6, deferred since July): the
+  headword you LEFT drifts out in the direction the page moved — one
+  element, opacity+transform, 360ms, dead under reduced-motion.
+- **縦の関連** (t130–175: the vertical 類語 columns): on wide panes a
+  vertical-rl column beside the entry holds what this vault knows about
+  the word — homophones, walkable neighbours, class-dotted 台帳 patterns —
+  each row a PEEK, not an exit.
+- **The scopes on the bar** (t177–186: Word|Example tabs + Ends chip):
+  すべて / 見出し / 本文 chips on the search row; 本文 never silently
+  widens back through the sidecars.
+- **The article dress** (§26.1: "a typeset ARTICLE, not a UI"): the
+  bordered hover-glow card chrome is gone from the 辞書's entries —
+  typography and a hairline separate them; the semantic boxes stay.
+
+**§29 status update:** rung 2 SHIPPED (`environmentGroups`/`labelNess` in
+`x/usage.ts` — environments promoted from decoration into structure, each
+group a DOOR through the space-AND grammar; label-ness as a positional
+fact) and rung 4's slot layer SHIPPED (`x/slot.ts` — fixture C's cues,
+tail-walk く-typing, family recurrence, named impostors, the 灰 group;
+`golden/x-slot.mjs` 18 checks). Still open in §29, said plainly: rung 4's
+nine operators as row gestures beyond this table, and rung 5's authority
+cycle ▾.

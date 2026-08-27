@@ -32,8 +32,9 @@ import type { PatternCategory } from '../discourse/discourse-patterns';
 import { NOTE_TYPES, type NoteClass } from '../notes/note-types';
 import { classBadge } from './class-grammar';
 import { armDrops, armSelectionEcho, mountSurfaceBar, wideDock, type ViewChrome } from './view-chrome';
-import { buildXUsage } from '../x/usage';
+import { buildXUsage, environmentGroups, labelNess } from '../x/usage';
 import { renderXUsage } from './x-usage-panel';
+import { anchorIn, slotTable, type SlotTable } from '../x/slot.ts';
 import { makeDraggable } from './drag-out';
 
 type SortMode = 'latest' | 'likes' | 'retweets';
@@ -648,6 +649,42 @@ export class XSearchView extends ItemView {
           ? (quote, url, handle, hit) => this.deps.onCaptureLine!(quote, url, handle, hit)
           : undefined,
       });
+
+      // §29 rung 2, SHIPPED here: recurring environments PROMOTED from
+      // decoration into structure — the environment is the answer, the
+      // tweets are its evidence, and each group is a DOOR through the
+      // existing space-AND grammar. Label-ness rides along as a positional
+      // FACT (行頭/タグ), never a verdict about the word.
+      const envs = environmentGroups(all, single).slice(0, 4);
+      if (envs.length && this.resultsEl) {
+        const box = this.resultsEl.createDiv('jp-x-envs');
+        box.createSpan({ text: '環境', cls: 'jp-x-envs-label' });
+        for (const g of envs) {
+          const row = box.createEl('button', {
+            cls: 'jp-x-env',
+            attr: { title: `「${single}」と「${g.text}」両方を含むツイートへ` },
+          });
+          row.createSpan({
+            text: g.side === 'before' ? `${g.text}◆` : `◆${g.text}`,
+            cls: 'jp-x-env-text',
+          });
+          row.createSpan({ text: `${g.count}件・${g.authors}人`, cls: 'jp-x-env-count' });
+          row.onclick = () => this.goTo(`${single} ${g.text}`, `環境「${g.text}」から`);
+        }
+        const ln = labelNess(all, single);
+        if (ln.occ) {
+          box.createSpan({
+            cls: 'jp-x-env-labelness',
+            text: `行頭/タグ位置 ${ln.label}/${ln.occ}`,
+            attr: { title: '見出しのように行頭・単独・#で立つ回数 / 全出現 — 位置の事実であって評価ではない' },
+          });
+        }
+      }
+
+      // §29 rung 4, SHIPPED here: the construction boundary. When the query
+      // asks about a frame family, the manner table renders — typed fillers
+      // as doors, impostors excluded BY NAME, 灰 juxtaposed.
+      this.renderSlotTable(single);
     }
 
     const terms = highlightTerms(this.query);
@@ -777,6 +814,57 @@ export class XSearchView extends ItemView {
       fileBtn.createSpan({ text: '問', cls: 'jp-x-descent-file-mark' });
       fileBtn.createSpan({ text: '問いとして残す — コーパスが育てば答える' });
       fileBtn.onclick = () => this.deps.fileStanding!(term);
+    }
+  }
+
+  /**
+   * §29 rung 4 on screen (fixture C). The table asks the WHOLE corpus, not
+   * the current match list — the family's other surfaces (言うと・言ったら
+   * for a 言えば query) are exactly what the match list does not hold.
+   * Cached per (anchor, corpus size), the descentCache pattern.
+   */
+  private slotCache: { anchor: string; size: number; table: SlotTable } | null = null;
+  private renderSlotTable(single: string): void {
+    if (!this.resultsEl || !this.deps.oracle) return;
+    const anchor = anchorIn(single);
+    if (!anchor) return;
+    const all = this.deps.corpus.getAll();
+    const cached = this.slotCache;
+    const t = (cached && cached.anchor === anchor && cached.size === all.length)
+      ? cached.table
+      : slotTable(all, anchor, this.deps.oracle);
+    this.slotCache = { anchor, size: all.length, table: t };
+    if (!t.occurrences || (!t.rows.length && !t.impostors.length)) return;
+
+    const box = this.resultsEl.createDiv('jp-x-slot');
+    box.createDiv({
+      cls: 'jp-x-slot-head',
+      text: `〔　〕${t.family.join('・')} — ${t.occurrences}件の枠`,
+    });
+    for (const r of t.rows.slice(0, 12)) {
+      const row = box.createEl('button', {
+        cls: 'jp-x-slot-row',
+        attr: { title: `「${r.filler}${anchor}」で引き直す` },
+      });
+      row.createSpan({ text: r.type, cls: 'jp-x-slot-type' });
+      row.createSpan({ text: r.filler, cls: 'jp-x-slot-filler' });
+      row.createSpan({
+        text: `${r.count}件${r.recurring ? '・複数形式' : ''}`,
+        cls: 'jp-x-slot-count',
+      });
+      row.onclick = () => this.goTo(`${r.filler}${anchor}`, `〔${r.filler}〕の枠から`);
+    }
+    if (t.gray.length) {
+      const g = box.createDiv('jp-x-slot-gray');
+      g.createSpan({ text: `灰 ${t.gray.length}件（判定保留・提示のみ）`, cls: 'jp-x-slot-gray-label' });
+      g.createSpan({ text: t.gray.slice(0, 6).map((r) => r.filler).join('・'), cls: 'jp-x-slot-gray-list' });
+    }
+    if (t.impostors.length) {
+      const n = t.impostors.reduce((s, i) => s + i.count, 0);
+      box.createDiv({
+        cls: 'jp-x-slot-imp',
+        text: `除外 ${n}件 — と/かと/そう を伴う別物（${t.impostors.slice(0, 3).map((i) => `${i.text}${i.cue}`).join('・')}…）`,
+      });
     }
   }
 
