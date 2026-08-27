@@ -25904,6 +25904,11 @@ function attachSelectionEcho(root, deps) {
     }
     if (bar == null ? void 0 : bar.contains(anchor.nodeType === 1 ? anchor : anchor.parentNode))
       return;
+    const anchorEl = anchor.nodeType === 1 ? anchor : anchor.parentElement;
+    if (anchorEl == null ? void 0 : anchorEl.closest("button, input, textarea, select, [data-jp-no-echo]")) {
+      hide();
+      return;
+    }
     const shots = imagesIn(sel.rangeCount ? sel.getRangeAt(0) : null, deps.inVault);
     const intents = dropIntents(
       shots.length ? { text, files: shots.map((p) => ({ name: p, type: "image/png" })) } : { text },
@@ -26038,7 +26043,8 @@ function attachSelectionEcho(root, deps) {
   const onChange = () => {
     if (timer)
       window.clearTimeout(timer);
-    timer = window.setTimeout(show2, 160);
+    const wait = isSlate() && lastPointer !== "mouse" ? 480 : 160;
+    timer = window.setTimeout(show2, wait);
   };
   const onEsc = (e) => {
     if (e.key === "Escape")
@@ -37347,6 +37353,9 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     // and its absence is why every tap here used to cost your place.
     this.peekCard = null;
     this.peekAway = null;
+    // ── The headword's verb menu (the folded actions row) ──────────────────
+    this.verbMenu = null;
+    this.verbMenuAway = null;
     this.dictStore = dictStore;
     this.onImport = onImport;
     this.onSaveEntry = onSaveEntry != null ? onSaveEntry : () => {
@@ -37488,6 +37497,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     (_a2 = this.vpeekEl) == null ? void 0 : _a2.remove();
     this.vpeekEl = null;
     this.closePeekCard();
+    this.closeEntryVerbs();
     (_b2 = this.peek) == null ? void 0 : _b2.cancel();
   }
   refresh() {
@@ -37742,7 +37752,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
             e.currentTarget.dataset.jpDownY = String(e.clientY);
           });
           span.addEventListener("click", (e) => {
-            var _a3, _b3, _c2;
+            var _a3, _b3, _c2, _d2;
             const sel = (_a3 = window.getSelection) == null ? void 0 : _a3.call(window);
             if (sel && !sel.isCollapsed && sel.toString().trim().length > 0)
               return;
@@ -37753,7 +37763,9 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
               return;
             e.preventDefault();
             e.stopPropagation();
-            this.openPeekCard(part, { x: e.clientX, y: e.clientY });
+            const word = (_d2 = this.wordAtTap(e.clientX, e.clientY)) != null ? _d2 : [...part].length <= 8 ? part : null;
+            if (word)
+              this.openPeekCard(word, { x: e.clientX, y: e.clientY });
           });
           frag.appendChild(span);
         } else {
@@ -37762,6 +37774,22 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
       }
       (_b2 = textNode.parentNode) == null ? void 0 : _b2.replaceChild(frag, textNode);
     }
+  }
+  /**
+   * The longest word a store confirms at a screen point — the shared
+   * resolver (`word-at.ts`), fed this view's own lookup road. Returns the
+   * SURFACE string that matched (what the finger touched), not the headword:
+   * the peek's lookup road deinflects for itself and shows its own trail.
+   */
+  wordAtTap(x, y) {
+    let matched = null;
+    wordAtPoint(x, y, (probe) => {
+      const hits = this.dictStore.lookup(probe);
+      if (hits.length)
+        matched = probe;
+      return hits;
+    });
+    return matched;
   }
   // ── The navigation grammar (§30 / コマ送り items 7, 8, 16 + the two
   //    recovered items: in-screen find and the descend/flip tempo) ────────
@@ -37772,6 +37800,7 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
    * the neighbour chips, re-apply an open find.
    */
   afterRender() {
+    this.closeEntryVerbs();
     const a = this.pendingArrive;
     if ((a == null ? void 0 : a.tempo) === "descend" && this.resultsEl && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       const el = this.resultsEl;
@@ -38459,6 +38488,84 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
         document.addEventListener("pointerdown", away, true);
     }, 0);
   }
+  closeEntryVerbs() {
+    var _a2;
+    (_a2 = this.verbMenu) == null ? void 0 : _a2.remove();
+    this.verbMenu = null;
+    if (this.verbMenuAway) {
+      document.removeEventListener("pointerdown", this.verbMenuAway, true);
+      this.verbMenuAway = null;
+    }
+  }
+  /**
+   * The entry's verbs, on demand, each row NAMING its object — the filmed
+   * Monokakido device (IMG_1184 t60/t88/t120: Add IDIOM / Add HEADWORD to
+   * Bookmarks; a verb that says what it takes cannot take the wrong thing).
+   * This replaced the standing Copy/Insert/Save/分類 panel that IMG_1231
+   * t139 caught squatting on every entry with nothing selected.
+   */
+  openEntryVerbs(anchor, group) {
+    var _a2, _b2;
+    if (this.verbMenu) {
+      this.closeEntryVerbs();
+      return;
+    }
+    const primary = group[0];
+    const hw = primary.term.expression;
+    const host = (_a2 = this.navBarEl) == null ? void 0 : _a2.parentElement;
+    if (!host)
+      return;
+    const menu = host.createDiv("jp-dict-verbmenu");
+    this.verbMenu = menu;
+    const row = (label, act) => {
+      const b = menu.createEl("button", { cls: "jp-dict-verbmenu-row" });
+      b.createSpan({ cls: "jp-dict-verbmenu-obj", text: `\u300C${hw}\u300D` });
+      b.createSpan({ cls: "jp-dict-verbmenu-verb", text: label });
+      b.addEventListener("click", () => {
+        this.closeEntryVerbs();
+        act();
+      });
+    };
+    row("\u3092\u30B3\u30D4\u30FC", () => {
+      void navigator.clipboard.writeText(hw).then(() => new import_obsidian16.Notice(`Copied: ${hw}`));
+    });
+    const editor = (_b2 = this.app.workspace.activeEditor) == null ? void 0 : _b2.editor;
+    if (editor) {
+      row("\u3092\u30CE\u30FC\u30C8\u306B\u633F\u5165", () => {
+        editor.replaceSelection(hw);
+        new import_obsidian16.Notice(`Inserted: ${hw}`);
+      });
+    }
+    row("\u3092\u4FDD\u5B58", () => {
+      this.onSaveEntry(hw, primary.term.reading || hw, this.extractExampleFromDefs(group));
+      new import_obsidian16.Notice(`Saved: ${hw}`);
+    });
+    if (this.onClassify) {
+      row("\u3092\u53F0\u5E33\u3078\u5206\u985E", () => {
+        var _a3;
+        this.onClassify(
+          hw,
+          this.extractExampleFromDefs(group) || void 0,
+          { dict: (_a3 = primary.dictionary) != null ? _a3 : "\u8F9E\u66F8", headword: hw }
+        );
+      });
+    }
+    const r2 = host.getBoundingClientRect();
+    const a = anchor.getBoundingClientRect();
+    const W = Math.min(280, r2.width - 16);
+    menu.style.width = `${W}px`;
+    menu.style.left = `${Math.max(8, Math.min(a.right - r2.left - W, r2.width - W - 8))}px`;
+    menu.style.top = `${Math.max(8, a.bottom - r2.top + 4)}px`;
+    const away = (e) => {
+      if (this.verbMenu === menu && !menu.contains(e.target))
+        this.closeEntryVerbs();
+    };
+    this.verbMenuAway = away;
+    window.setTimeout(() => {
+      if (this.verbMenuAway === away)
+        document.addEventListener("pointerdown", away, true);
+    }, 0);
+  }
   // ── In-screen find (the recovered 答え合わせ item): re-find a passage
   //    INSIDE what is already open, instead of a new dictionary query. ──
   toggleFind(open) {
@@ -38797,7 +38904,8 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
         this.renderEntryCard(this.resultsEl, group);
       }
     }
-    (_a2 = this.historyStore) == null ? void 0 : _a2.record(query);
+    if (results.length)
+      (_a2 = this.historyStore) == null ? void 0 : _a2.record(query);
     this.afterRender();
   }
   /**
@@ -39102,7 +39210,8 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
       }
     }
     this.setStats(query, merged.length, !!this.bigDict && this.searchScope !== "body", allDeinflected(merged));
-    (_a2 = this.historyStore) == null ? void 0 : _a2.record(query);
+    if (merged.length)
+      (_a2 = this.historyStore) == null ? void 0 : _a2.record(query);
     this.afterRender();
     if (this.searchScope !== "body")
       void this.appendBigResults(query, gen, merged, narrowing);
@@ -39168,6 +39277,7 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
    * dropped rather than painted over the current one.
    */
   async appendBigResults(query, gen, local, narrowing) {
+    var _a2;
     if (!this.bigDict)
       return;
     let hits;
@@ -39204,6 +39314,8 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
       return;
     if (!local.length)
       this.resultsEl.empty();
+    if (!local.length)
+      (_a2 = this.historyStore) == null ? void 0 : _a2.record(query);
     for (const group of this.groupResults(extra)) {
       this.renderEntryCard(this.resultsEl, group);
     }
@@ -39287,7 +39399,8 @@ ${JSON.stringify((_b2 = h.entry.senses) != null ? _b2 : [])}${h.entry.nodes ? JS
       }
     }
     this.setStats(query, results.length, !!this.bigDict && this.searchScope !== "body", allDeinflected(results));
-    (_a2 = this.historyStore) == null ? void 0 : _a2.record(query);
+    if (results.length)
+      (_a2 = this.historyStore) == null ? void 0 : _a2.record(query);
     this.afterRender();
     if (this.searchScope !== "body")
       void this.appendBigResults(query, gen, results, narrowing);
@@ -39359,6 +39472,15 @@ ${sense}` : primary.term.expression,
         attr: { title: "\u5165\u529B\u306F\u6D3B\u7528\u5F62\u3067\u3057\u305F \u2014 \u8F9E\u66F8\u5F62\u306B\u623B\u3057\u3066\u7167\u5408" }
       });
     }
+    const verbsBtn = headerRow.createEl("button", {
+      text: "\u22EF",
+      cls: "jp-dict-card-verbs-btn",
+      attr: { title: `${primary.term.expression} \u306E\u64CD\u4F5C`, "aria-label": `${primary.term.expression} \u306E\u64CD\u4F5C` }
+    });
+    verbsBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.openEntryVerbs(verbsBtn, group);
+    });
     const metaRow = card.createDiv("jp-dict-card-meta");
     if (primary.frequency !== void 0 && this.dictStore.settings.showFrequency) {
       const freqBadge = metaRow.createSpan({ cls: "jp-dict-freq-badge" });
@@ -39483,46 +39605,6 @@ ${sense}` : primary.term.expression,
       this.attachExampleCaptures(defsSection, group);
     };
     renderDefs();
-    const actionsRow = card.createDiv("jp-dict-card-actions");
-    const copyBtn = actionsRow.createEl("button", { text: "Copy", cls: "jp-dict-action-btn" });
-    copyBtn.addEventListener("click", () => {
-      navigator.clipboard.writeText(primary.term.expression).then(() => {
-        new import_obsidian16.Notice(`Copied: ${primary.term.expression}`);
-      });
-    });
-    const insertBtn = actionsRow.createEl("button", { text: "Insert", cls: "jp-dict-action-btn" });
-    insertBtn.addEventListener("click", () => {
-      var _a3;
-      const editor = (_a3 = this.app.workspace.activeEditor) == null ? void 0 : _a3.editor;
-      if (editor) {
-        editor.replaceSelection(primary.term.expression);
-        new import_obsidian16.Notice(`Inserted: ${primary.term.expression}`);
-      }
-    });
-    const saveBtn = actionsRow.createEl("button", { text: "\u{1F4BE} Save", cls: "jp-dict-action-btn jp-dict-save-btn" });
-    saveBtn.addEventListener("click", () => {
-      const exampleText = this.extractExampleFromDefs(group);
-      this.onSaveEntry(
-        primary.term.expression,
-        primary.term.reading || primary.term.expression,
-        exampleText
-      );
-      new import_obsidian16.Notice(`Saved: ${primary.term.expression}`);
-      saveBtn.textContent = "\u2713 Saved";
-      saveBtn.disabled = true;
-    });
-    if (this.onClassify) {
-      const classifyBtn = actionsRow.createEl("button", { text: "\u{1F3F7}\uFE0F \u5206\u985E", cls: "jp-dict-action-btn" });
-      classifyBtn.title = "6\u5206\u985E\u3067\u53F0\u5E33\u3078";
-      classifyBtn.addEventListener("click", () => {
-        var _a3, _b3;
-        this.onClassify(
-          primary.term.expression,
-          this.extractExampleFromDefs(group) || void 0,
-          { dict: (_b3 = (_a3 = group[0]) == null ? void 0 : _a3.dictionary) != null ? _b3 : "\u8F9E\u66F8", headword: primary.term.expression }
-        );
-      });
-    }
     const mine = (_c2 = (_b2 = this.patternsIn) == null ? void 0 : _b2.call(this, primary.term.expression)) != null ? _c2 : [];
     if (mine.length) {
       const row = card.createDiv("jp-dict-mine");
@@ -51334,6 +51416,7 @@ var ImportModal = class extends import_obsidian31.Modal {
     var _a2;
     const { contentEl } = this;
     contentEl.addClass("jp-import");
+    contentEl.setAttr("data-jp-no-echo", "");
     contentEl.createEl("h3", { text: this.opts.title });
     if (this.opts.hint)
       contentEl.createEl("p", { text: this.opts.hint, cls: "jp-import-hint" });

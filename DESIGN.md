@@ -3075,3 +3075,37 @@ tail-walk く-typing, family recurrence, named impostors, the 灰 group;
 `golden/x-slot.mjs` 18 checks). Still open in §29, said plainly: rung 4's
 nine operators as row gestures beyond this table, and rung 5's authority
 cycle ▾.
+
+### 30.7 The critique film — IMG_1231, the problems then the comparison (2026-08-27, SHIPPED)
+
+The user filmed the plugin FAILING acts the same reel then shows Monokakido
+doing quietly — the harshest and most useful film yet, and it indicts the
+round built from the last film: the organs work, the airspace was wrong.
+Full reading: claude/GLASS-1231-2026-08-27.md; windows: FILM-LEDGER §2.6;
+repairs pinned: reachability D9 (10 checks). The four mechanisms, each
+traced and repaired (v1.4.0):
+
+1. **One selection wore four layers** (t31–38, t97–107: echo menu + the
+   standing Copy/Insert/Save/分類 panel + the dock + iOS's bar; ten unbroken
+   seconds of wrestling on ガッツリ). The standing panel is gone; the echo
+   waits out the native bar on slate touch/pen (480ms) and takes BELOW; two
+   pieces of chrome is the webview floor, four was not.
+2. **The tap's unit was a RUN, not a word** (t26.8–31.3: selecting in an
+   example searched 「彼らの飛行機はまもなく」, threw ガッツリ away, and filed
+   the sentence into trail AND permanent History). Taps now resolve through
+   `wordAtPoint` — longest store-confirmed word under the nib, dictionary-
+   or-nothing — and History records only pages that ANSWERED, on all three
+   record sites plus the sidecar's late-answer site.
+3. **The entry wore a standing control panel with nothing selected**
+   (t139, §26.1's own words violated). The headword's verbs fold behind ⋯
+   on the header row, each row NAMING its object (「ガッツリ」を保存 —
+   IMG_1184's device, now the entry's too).
+4. **The echo armed on chrome** (t146.5: the Podcast modal's title). The
+   echo refuses selections anchored in controls / `[data-jp-no-echo]`.
+
+Recorded honestly, NOT built: the surface-to-surface doors (the filmed
+palette hunt t126–136 + tab-tree crawl — reachability's home ground); the
+uninvited keyboard pop-ins (t111.5/t113.3, cause unconfirmed at 30fps);
+辞書で引く riding the grown word. The films now live at a CHECKABLE path on
+the user's machine (FILM-LEDGER §2.6) — the ⚠ label-conflict rows are
+re-griddable without any upload route.

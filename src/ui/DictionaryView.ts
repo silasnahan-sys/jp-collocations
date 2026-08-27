@@ -48,6 +48,7 @@ import { classBadge, classDot } from './class-grammar';
 import { armDrops, armSelectionEcho, mountSurfaceBar, wideDock, type ViewChrome } from './view-chrome';
 import { makeDraggable } from './drag-out';
 import { historyDays, searchNotation, panVerdict, foldForFind, pageCount, stepPage, Trail, riffleDelay, RIFFLE_HOLD_MS, type DictHistoryStore } from '../dictionary/dict-nav';
+import { wordAtPoint } from './word-at';
 
 export const JP_DICTIONARY_VIEW_TYPE = 'jp-dictionary-view';
 
@@ -315,6 +316,7 @@ export class DictionaryView extends ItemView {
     }
     this.vpeekEl?.remove(); this.vpeekEl = null;
     this.closePeekCard();
+    this.closeEntryVerbs();
     this.peek?.cancel();
   }
 
@@ -602,7 +604,21 @@ export class DictionaryView extends ItemView {
             // the page; descent is a choice made on the card. Explicit
             // cross-reference links (entry-grammar's → arrows) still jump —
             // an arrow IS the stated intent to go.
-            this.openPeekCard(part, { x: e.clientX, y: e.clientY });
+            //
+            // And the unit of the tap is the word UNDER the nib, never this
+            // span. The span is a maximal Japanese RUN — 「彼らの飛行機はまもなく」
+            // is one span — and peeking the run handed every downstream
+            // device a sentence-length "word" (IMG_1231 t26–31: the page
+            // navigated to a no-results sentence search; ガッツリ →
+            // 彼らの飛行機はまもなく stood in the trail). `wordAtPoint` probes
+            // the store with progressively shorter strings from the tapped
+            // character and takes the longest thing a dictionary confirms.
+            // Dictionary-or-nothing: on text no store knows, a short run
+            // still peeks (the honest 該当なし), a long one does nothing —
+            // Monokakido's own tap behaviour — rather than hijacking.
+            const word = this.wordAtTap(e.clientX, e.clientY)
+              ?? ([...part].length <= 8 ? part : null);
+            if (word) this.openPeekCard(word, { x: e.clientX, y: e.clientY });
           });
           frag.appendChild(span);
         } else {
@@ -611,6 +627,22 @@ export class DictionaryView extends ItemView {
       }
       textNode.parentNode?.replaceChild(frag, textNode);
     }
+  }
+
+  /**
+   * The longest word a store confirms at a screen point — the shared
+   * resolver (`word-at.ts`), fed this view's own lookup road. Returns the
+   * SURFACE string that matched (what the finger touched), not the headword:
+   * the peek's lookup road deinflects for itself and shows its own trail.
+   */
+  private wordAtTap(x: number, y: number): string | null {
+    let matched: string | null = null;
+    wordAtPoint(x, y, (probe) => {
+      const hits = this.dictStore.lookup(probe);
+      if (hits.length) matched = probe;
+      return hits;
+    });
+    return matched;
   }
 
   // ── The navigation grammar (§30 / コマ送り items 7, 8, 16 + the two
@@ -623,6 +655,8 @@ export class DictionaryView extends ItemView {
    * the neighbour chips, re-apply an open find.
    */
   private afterRender(): void {
+    // Any re-render destroyed the ⋯ this menu was anchored to.
+    this.closeEntryVerbs();
     const a = this.pendingArrive;
     if (a?.tempo === 'descend' && this.resultsEl
       && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -1279,6 +1313,81 @@ export class DictionaryView extends ItemView {
     }, 0);
   }
 
+  // ── The headword's verb menu (the folded actions row) ──────────────────
+
+  private verbMenu: HTMLElement | null = null;
+  private verbMenuAway: ((e: PointerEvent) => void) | null = null;
+
+  private closeEntryVerbs(): void {
+    this.verbMenu?.remove();
+    this.verbMenu = null;
+    if (this.verbMenuAway) {
+      document.removeEventListener('pointerdown', this.verbMenuAway, true);
+      this.verbMenuAway = null;
+    }
+  }
+
+  /**
+   * The entry's verbs, on demand, each row NAMING its object — the filmed
+   * Monokakido device (IMG_1184 t60/t88/t120: Add IDIOM / Add HEADWORD to
+   * Bookmarks; a verb that says what it takes cannot take the wrong thing).
+   * This replaced the standing Copy/Insert/Save/分類 panel that IMG_1231
+   * t139 caught squatting on every entry with nothing selected.
+   */
+  private openEntryVerbs(anchor: HTMLElement, group: DictLookupResult[]): void {
+    if (this.verbMenu) { this.closeEntryVerbs(); return; }
+    const primary = group[0];
+    const hw = primary.term.expression;
+    const host = this.navBarEl?.parentElement;
+    if (!host) return;
+    const menu = host.createDiv('jp-dict-verbmenu');
+    this.verbMenu = menu;
+
+    const row = (label: string, act: () => void): void => {
+      const b = menu.createEl('button', { cls: 'jp-dict-verbmenu-row' });
+      b.createSpan({ cls: 'jp-dict-verbmenu-obj', text: `「${hw}」` });
+      b.createSpan({ cls: 'jp-dict-verbmenu-verb', text: label });
+      b.addEventListener('click', () => { this.closeEntryVerbs(); act(); });
+    };
+
+    row('をコピー', () => {
+      void navigator.clipboard.writeText(hw).then(() => new Notice(`Copied: ${hw}`));
+    });
+    const editor = this.app.workspace.activeEditor?.editor;
+    if (editor) {
+      row('をノートに挿入', () => {
+        editor.replaceSelection(hw);
+        new Notice(`Inserted: ${hw}`);
+      });
+    }
+    row('を保存', () => {
+      this.onSaveEntry(hw, primary.term.reading || hw, this.extractExampleFromDefs(group));
+      new Notice(`Saved: ${hw}`);
+    });
+    if (this.onClassify) {
+      row('を台帳へ分類', () => {
+        this.onClassify!(hw, this.extractExampleFromDefs(group) || undefined,
+          { dict: primary.dictionary ?? '辞書', headword: hw });
+      });
+    }
+
+    // Under the ⋯ that asked, clamped to the pane.
+    const r = host.getBoundingClientRect();
+    const a = anchor.getBoundingClientRect();
+    const W = Math.min(280, r.width - 16);
+    menu.style.width = `${W}px`;
+    menu.style.left = `${Math.max(8, Math.min(a.right - r.left - W, r.width - W - 8))}px`;
+    menu.style.top = `${Math.max(8, a.bottom - r.top + 4)}px`;
+
+    const away = (e: PointerEvent): void => {
+      if (this.verbMenu === menu && !menu.contains(e.target as Node)) this.closeEntryVerbs();
+    };
+    this.verbMenuAway = away;
+    window.setTimeout(() => {
+      if (this.verbMenuAway === away) document.addEventListener('pointerdown', away, true);
+    }, 0);
+  }
+
   // ── In-screen find (the recovered 答え合わせ item): re-find a passage
   //    INSIDE what is already open, instead of a new dictionary query. ──
 
@@ -1555,7 +1664,10 @@ export class DictionaryView extends ItemView {
         this.renderEntryCard(this.resultsEl, group);
       }
     }
-    this.historyStore?.record(query);
+    // A page that answered. History is the walk you TOOK, and a miss is not
+    // a place — IMG_1231 t26–31 put a sentence-length no-results step into
+    // the permanent dated History, junk it would carry forever.
+    if (results.length) this.historyStore?.record(query);
     this.afterRender();
   }
 
@@ -1953,7 +2065,10 @@ export class DictionaryView extends ItemView {
     // debounce is safe (dict-nav.ts rule 1). Re-filter renders with NO
     // motion (コマ送り item 5: the list just changes) — afterRender only
     // animates an explicit descend, and typing cleared that above.
-    this.historyStore?.record(query);
+    // Only a page that ANSWERED is a place (the History-of-misses defect,
+    // IMG_1231); a sync miss the sidecars later answer records in
+    // appendBigResults, where the answer actually lands.
+    if (merged.length) this.historyStore?.record(query);
     this.afterRender();
     // 本文 scope is a promise about the IMPORTED text; the sidecars answer
     // by headword and would quietly widen the road the chip just narrowed.
@@ -2065,6 +2180,9 @@ export class DictionaryView extends ItemView {
 
     // The placeholder was provisional — these entries are the answer to it.
     if (!local.length) this.resultsEl.empty();
+    // The sync half recorded nothing (it had nothing); the walk reached a
+    // real page only now, so the History learns it here.
+    if (!local.length) this.historyStore?.record(query);
     for (const group of this.groupResults(extra)) {
       this.renderEntryCard(this.resultsEl, group);
     }
@@ -2167,7 +2285,7 @@ export class DictionaryView extends ItemView {
       }
     }
     this.setStats(query, results.length, !!this.bigDict && this.searchScope !== 'body', allDeinflected(results));
-    this.historyStore?.record(query);
+    if (results.length) this.historyStore?.record(query);
     this.afterRender();
     if (this.searchScope !== 'body') void this.appendBigResults(query, gen, results, narrowing);
   }
@@ -2261,6 +2379,17 @@ export class DictionaryView extends ItemView {
         attr: { title: '入力は活用形でした — 辞書形に戻して照合' },
       });
     }
+
+    // The headword's verbs, folded to one quiet glyph (the article dress,
+    // round 2 — see the note where the standing row used to be).
+    const verbsBtn = headerRow.createEl('button', {
+      text: '⋯', cls: 'jp-dict-card-verbs-btn',
+      attr: { title: `${primary.term.expression} の操作`, 'aria-label': `${primary.term.expression} の操作` },
+    });
+    verbsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.openEntryVerbs(verbsBtn, group);
+    });
 
     // ── Meta row: frequency + tags + dict badge ──────────────
     const metaRow = card.createDiv('jp-dict-card-meta');
@@ -2427,50 +2556,14 @@ export class DictionaryView extends ItemView {
     };
     renderDefs();
 
-    // ── Copy button ──────────────────────────────────────────
-    const actionsRow = card.createDiv('jp-dict-card-actions');
-
-    const copyBtn = actionsRow.createEl('button', { text: 'Copy', cls: 'jp-dict-action-btn' });
-    copyBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(primary.term.expression).then(() => {
-        new Notice(`Copied: ${primary.term.expression}`);
-      });
-    });
-
-    const insertBtn = actionsRow.createEl('button', { text: 'Insert', cls: 'jp-dict-action-btn' });
-    insertBtn.addEventListener('click', () => {
-      const editor = this.app.workspace.activeEditor?.editor;
-      if (editor) {
-        editor.replaceSelection(primary.term.expression);
-        new Notice(`Inserted: ${primary.term.expression}`);
-      }
-    });
-
-    // Save as collocation entry
-    const saveBtn = actionsRow.createEl('button', { text: '💾 Save', cls: 'jp-dict-action-btn jp-dict-save-btn' });
-    saveBtn.addEventListener('click', () => {
-      // Extract first example sentence from definitions (structured content text)
-      const exampleText = this.extractExampleFromDefs(group);
-      this.onSaveEntry(
-        primary.term.expression,
-        primary.term.reading || primary.term.expression,
-        exampleText,
-      );
-      new Notice(`Saved: ${primary.term.expression}`);
-      saveBtn.textContent = '✓ Saved';
-      saveBtn.disabled = true;
-    });
-
-    // Universal classify-capture: file this expression under one of the six
-    // note classes (pattern catalog), with a definition example as context.
-    if (this.onClassify) {
-      const classifyBtn = actionsRow.createEl('button', { text: '🏷️ 分類', cls: 'jp-dict-action-btn' });
-      classifyBtn.title = '6分類で台帳へ';
-      classifyBtn.addEventListener('click', () => {
-        this.onClassify!(primary.term.expression, this.extractExampleFromDefs(group) || undefined,
-          { dict: group[0]?.dictionary ?? '辞書', headword: primary.term.expression });
-      });
-    }
+    // The four standing buttons that used to live here (Copy / Insert /
+    // 💾 Save / 🏷️ 分類, `jp-dict-card-actions`) are GONE, deliberately.
+    // IMG_1231 t139: with nothing selected and nothing asked, every entry
+    // wore a two-row control panel that duplicated the article it sat on —
+    // §26.1's own words are "a typeset ARTICLE, not a UI", and Monokakido's
+    // articles carry no standing verbs at all. The verbs now live behind the
+    // header's ⋯ (built into the header above), each one NAMING its object
+    // the way the filmed selection menu does (IMG_1184 t60/t88/t120).
 
     // ── §28 S1: your catalog, for this headword ──────────────
     // Placed ABOVE the context panel because "you already noticed this" outranks

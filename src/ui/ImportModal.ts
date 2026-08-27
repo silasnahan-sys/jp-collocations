@@ -33,6 +33,10 @@ export class ImportModal extends Modal {
   onOpen(): void {
     const { contentEl } = this;
     contentEl.addClass('jp-import');
+    // Chrome, not reading text: a pen sweep across this title armed the
+    // selection echo on a UI label (IMG_1231 t146.5). The marker is read by
+    // selection-echo's guard.
+    contentEl.setAttr('data-jp-no-echo', '');
     contentEl.createEl('h3', { text: this.opts.title });
     if (this.opts.hint) contentEl.createEl('p', { text: this.opts.hint, cls: 'jp-import-hint' });
 

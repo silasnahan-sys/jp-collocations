@@ -8649,3 +8649,57 @@ body.jp-posture-slate .jp-drop-veil {
   cursor: pointer;
 }
 .jp-dict-homophone:hover { border-color: var(--text-accent); }
+
+/* ── the headword's verbs, folded (IMG_1231: the standing four-button row
+      squatted on every entry; the article is an article again) ─────────── */
+.jp-dict-card-verbs-btn {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  color: var(--text-faint);
+  font-size: 1.1rem;
+  line-height: 1.4;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.jp-dict-card-verbs-btn:hover { color: var(--text-normal); background: transparent; }
+.jp-dict-verbmenu {
+  position: absolute;
+  z-index: 46; /* above the peek card — the menu was asked for after it */
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--background-secondary-alt, var(--background-secondary));
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.32), 0 2px 6px rgba(0, 0, 0, 0.22);
+}
+.jp-dict-verbmenu-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.95rem;
+}
+.jp-dict-verbmenu-row:hover { background: var(--background-modifier-hover); }
+.jp-dict-verbmenu-row + .jp-dict-verbmenu-row { border-top: 1px solid var(--background-modifier-border); border-radius: 0 0 8px 8px; }
+.jp-dict-verbmenu-obj {
+  color: var(--text-accent);
+  font-weight: 600;
+  max-width: 11em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jp-dict-verbmenu-verb { color: var(--text-normal); }

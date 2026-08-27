@@ -52,6 +52,7 @@ lead, not evidence — re-grid before building on it.
 | IMG_1159 | ⚠ CONFLICTING RECORDS: DESIGN §30 lists it among コマ送り's Calendar reels; the Aug-25 盤面 audit describes an Aug-19 Calendar hold-menu/resize reel. Probably the same Calendar footage; treat the label as unconfirmed until re-gridded | chat |
 | IMG_1067 / IMG_1082 / IMG_1083 | the Aug-14 pass (1082 described as an X capture in one audit, as Calendar in §30's summary — ⚠ same caveat) | claude__video-pass-2026-08-14.md (project knowledge, NOT in repo) |
 | IMG_1186 | 30fps sheets existed on a dead container's disk; content never written down | ⚠ unknown |
+| IMG_1231 (317s) | THE CRITIQUE FILM: the plugin failing acts Monokakido then does quietly — plugin dark t0–148, Monokakido light t153–316 | four-layer menu stack (t31–38, t97–107); selection→sentence-search hijack (t26.8–31.3); standing Copy/Insert/Save panel on a quiet entry (t139); palette hunt (t126–136); echo on modal chrome (t146.5); Monokakido scope-menus (t168–202), 縦書き selection (t214–260) — reading in claude/GLASS-1231-2026-08-27.md, repairs pinned in reachability D9 |
 | 07-15 Monokakido ScreenRecording (Drive) | the recording §26 was built FROM — named as the benchmark to grid before any nav build; still never gridded | PHYSICS-2026-08-19.md names the debt |
 
 ## 2.4 IMG_1184 re-gridded IN-CONTAINER (2026-08-27 — first checkable grid)
@@ -95,6 +96,28 @@ its frame grid remains debt. The route that would work: attach the films
 github.com is reachable from every session. Until one exists, a container
 session's ground truth is: `_ref_monokakido/` (six stills, committed),
 DESIGN §26.1/§30, CALENDAR-PHYSICS, and this ledger.
+
+## 2.6 IMG_1231 window list (2026-08-27 — gridded on the user's machine)
+
+Source file, checkable: `C:/Users/silas/OneDrive/Desktop/thevids/IMG_1231.MOV`
+(a byte-identical copy sits at `C:/Users/silas/OneDrive/IMG_1231.MOV`).
+1920×1080, 29.97fps, 317.39s, 9514 frames. This machine has the films —
+the thevids folder also holds 1067, 1082(+trim), 1083(+trim), 1144, 1159,
+and two ScreenRecordings (08-08, 08-19) — so the ⚠ rows above are now
+re-griddable without any upload route.
+
+| window | span | fps | what it holds |
+|---|---|---|---|
+| map | 0–317 | 1 | full storyline, 11 sheets 6×5, burned counter = seconds |
+| w1 | 24–42 | 6 | selection round 1: はまも cut → 4-layer stack → native bar → Save |
+| w2 | 68–92 | 6 | native return; plane word-tap → reverse list → 滑空する save |
+| w3 | 94–116 | 6 | ガッツリ wrestle: native ×3, keyboard pop-ins t111.5/t113.3 |
+| w4 | 118–150 | 2 | tray, palette hunt, tab-tree crawl, Podcast modal echo |
+| w5 | 158–188 | 4 | Monokakido: selection → ONE scope-naming menu → Cancel = instant return |
+| w6 | 208–232 | 4 | Monokakido: 縦書き tan-band selection, MEIKYO switch |
+| stills | 31.3 / 33.5 / 139 / 146.5 | — | full-res: the stack, the hijacked page, the standing panel, the chrome echo |
+
+Offset convention as §1: burned n in window wN → t = START + n/fps.
 
 ## 3. What the standing acceptance test still needs
 

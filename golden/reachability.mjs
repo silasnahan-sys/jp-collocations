@@ -370,8 +370,10 @@ console.log('\n D4. the 辞書 nav grammar: armed, twinned, and lit on both halv
   // ── 2026-08-27 evening: the IMG_1184 re-grid, built to the frames ──
   // The film was finally IN a container (FILM-LEDGER §2.4); these pin the
   // four behaviors it showed that no earlier build had.
+  // (IMG_1231 corrected the unit: the tap peeks the WORD under the nib,
+  //  resolved by wordAtPoint — never the whole clickable run. See D9.)
   check('a word tap PEEKS over the page; descent is a choice on the card',
-    /openPeekCard\(part/.test(dict) && /全文を表示/.test(dict));
+    /openPeekCard\(word/.test(dict) && /全文を表示/.test(dict));
   check('the peek card closes from every path (instance-owned away listener)',
     /closePeekCard\(\)/.test(dict) && /peekAway/.test(dict));
   check('the echo echoes the GRAB first, enlarged (f18/f32)',
@@ -510,6 +512,46 @@ console.log('\n D8. \u{1D54F}: terms are patterns, and the probe is askable');
   check('and says per term what it just read it to mean',
     /notationHint\(parseTerm\(/.test(view) && /renderNotationHint\(\)/.test(view));
   check('the hint has somewhere to render', /jp-x-notation-hint/.test(css));
+}
+
+// The critique film (IMG_1231, 2026-08-27): the user filmed the plugin's own
+// problems, then the same acts done fluently in Monokakido. Four mechanisms
+// were indicted with frame numbers; each repair is pinned here because every
+// one is exactly the aperture-bug shape this suite exists for — the mechanism
+// worked, and the page it produced was unreadable or unwanted.
+console.log('\n D9. the critique film: the article is an article, the tap is a word');
+{
+  const view = read('ui', 'DictionaryView.ts');
+  const echo = read('ui', 'selection-echo.ts');
+  const css = readFileSync(join(HERE, '..', 'styles.css'), 'utf8');
+  // t26–31: tapping the example line looked up 「彼らの飛行機はまもなく」 —
+  // the clickable unit was the maximal Japanese RUN, sentence-length.
+  check('a word tap resolves through wordAtPoint, never the whole run',
+    /wordAtTap\(e\.clientX, e\.clientY\)/.test(view) && /wordAtPoint\(x, y/.test(view));
+  check('a long unresolved run does nothing rather than hijacking',
+    /\[\.\.\.part\]\.length <= 8 \? part : null/.test(view));
+  // t139: Copy/Insert/Save/分類 standing on every entry, nothing selected.
+  check('the standing four-button panel is gone from the entry card',
+    !/createDiv\('jp-dict-card-actions'\)/.test(view));
+  check('the folded verbs NAME their object (the filmed Monokakido device)',
+    /jp-dict-verbmenu-obj/.test(view) && /jp-dict-verbmenu-obj/.test(css));
+  check('and the ⋯ that opens them lives on the header row',
+    /jp-dict-card-verbs-btn/.test(view) && /jp-dict-card-verbs-btn/.test(css));
+  // t26–31 again, the record half: the sentence-miss entered the permanent
+  // dated History. A miss is not a place.
+  check('History records only pages that answered (sync halves)',
+    /if \(results\.length\) this\.historyStore\?\.record\(query\)/.test(view)
+    && /if \(merged\.length\) this\.historyStore\?\.record\(query\)/.test(view));
+  check('…and the sidecar half records a late answer where it lands',
+    /if \(!local\.length\) this\.historyStore\?\.record\(query\)/.test(view));
+  // t146.5: the tray modal's own title, selected, wore the echo.
+  check('the echo refuses selections anchored in chrome',
+    /closest\('button, input, textarea, select, \[data-jp-no-echo\]'\)/.test(echo));
+  check('the one filmed chrome surface is marked',
+    /data-jp-no-echo/.test(read('ui', 'ImportModal.ts')));
+  // t32–38: the native bar and the echo landing in the same beat, shuffling.
+  check('a slate touch/pen selection lets the native bar settle first',
+    /isSlate\(\) && lastPointer !== 'mouse' \? 480 : 160/.test(echo));
 }
 
 // ── the ledger must not rot ───────────────────────────────────────────────────

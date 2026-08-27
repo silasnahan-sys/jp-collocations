@@ -233,6 +233,13 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
     if (!anchor || !root.contains(anchor.nodeType === 1 ? anchor : anchor.parentNode)) { hide(); return; }
     // Never over our own bar (clicking a verb re-fires selectionchange).
     if (bar?.contains(anchor.nodeType === 1 ? anchor : anchor.parentNode)) return;
+    // Chrome is not text (IMG_1231 t146.5: the tray's own section header,
+    // swept by the pen, wore the echo and offered to classify a UI label).
+    // A selection anchored in a control — a button, an input, anything a
+    // surface marks `data-jp-no-echo` — is the hand adjusting the machine,
+    // not reading it; the echo stays down.
+    const anchorEl = (anchor.nodeType === 1 ? anchor : anchor.parentElement) as HTMLElement | null;
+    if (anchorEl?.closest('button, input, textarea, select, [data-jp-no-echo]')) { hide(); return; }
 
     // A selection is not always words. Dragging the Pencil across a manga
     // panel and the sentence under it selects BOTH, and until now the echo read
@@ -409,9 +416,17 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
 
   // `selectionchange` fires continuously through a drag-select, so the bar is
   // built once the hand has settled rather than on every intermediate range.
+  //
+  // On a slate touch/pen selection the wait is deliberately LONGER: iOS's own
+  // edit bar arrives on the same gesture, and when both menus land in the same
+  // beat they re-arrange around each other — filmed as the t32–38 churn in
+  // IMG_1231, one selection wearing chrome that keeps shuffling. Letting the
+  // native bar settle first, then taking BELOW (see `place`), is the least
+  // fighting a webview can do: it cannot merge its verbs into the system menu.
   const onChange = (): void => {
     if (timer) window.clearTimeout(timer);
-    timer = window.setTimeout(show, 160);
+    const wait = isSlate() && lastPointer !== 'mouse' ? 480 : 160;
+    timer = window.setTimeout(show, wait);
   };
   const onEsc = (e: KeyboardEvent): void => { if (e.key === 'Escape') hide(); };
 
