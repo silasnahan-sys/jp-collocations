@@ -3109,3 +3109,69 @@ uninvited keyboard pop-ins (t111.5/t113.3, cause unconfirmed at 30fps);
 辞書で引く riding the grown word. The films now live at a CHECKABLE path on
 the user's machine (FILM-LEDGER §2.6) — the ⚠ label-conflict rows are
 re-griddable without any upload route.
+
+### 30.8 The desk report — the walk reaches the mouse, the semantics reach the pair (2026-08-28, SHIPPED)
+
+The user's screenshots from the Windows desktop, two charges, both TRUE by
+code-reading:
+
+1. **「the gestures and navigation no where to be seen」** — every §30 walk
+   organ was touch/pen-gated: `armEntryPan` returns on mouse, the vertical
+   walk is touch-only, no keyboard walk existed, the neighbour chips were
+   `visibility:hidden` whenever the walkable order had nothing, and the
+   ONE desk gesture that existed (the touchpad swipe, invariant 9) stepped
+   SURFACES over the dictionary's head. Built: `walkStep` (page inside an
+   open article — overflow spends on the neighbour — else the neighbour),
+   the wheel swipe routed dictionary-first with surface-step as fallback,
+   ←/→ walk + Alt+←/→ trail keys (inputs never robbed), chips that STATE
+   「隣接なし」 instead of hiding, the hover peek resolving the word under
+   the cursor through `wordAtPoint`, and the がやさしい fix: `lookUpShed`
+   (a leading particle sheds; exact entries only). Pins: reachability D10.
+2. **「semantics for x dict not there」** — every §29 organ was gated on
+   `single`, and the user's real queries are PAIRS. Built: `x/pair.ts`
+   (the gap concordance — what stands BETWEEN 障害 and 残って, grouped,
+   counted, one vote per doc, order as a positional fact, far co-mentions
+   counted but never grouped) rendered as doors above the feed; `x/family.ts`
+   (corpus-attested sibling forms through the SAME oracle — 残って walks to
+   残らない/残ってる without retyping) on single AND pair queries; pair
+   probes of the catalog (joined surface, then either term); and a
+   multi-term 0-hit that names its failing half with per-term counts.
+   Goldens: x-pair.mjs (18), both cores pure.
+
+## 31. 集句 — selection as query, selections as A question (2026-08-28, SHIPPED core)
+
+The ask (user's words, distilled): reading 「今も言語にやや障害が残っている」
+the live study question is 「do 今も and やや go together?」 — and no
+feature answered it, because (a) a selection could only be LOOKED UP, never
+ASKED WITH, and (b) only one selection can exist at a time, while the
+question needs two. Monokakido's separately-indexed 用例 is the same idea
+one rung down: the span itself is the query.
+
+Built, as three organs on the ONE selection grammar (§26.3):
+
+- **The yourei line.** Every echo now carries 「𝕏用例 N件 →」 — the exact
+  span counted in the frozen corpus (bigram-indexed, cheap), the row a
+  door into the 𝕏 view where KWIC, environments, pair panels and families
+  answer. 招いた誤解, が招いた誤解 — any span, not only headwords. Absent
+  at zero (a 0件 row would be decoration).
+- **集句 — the collect strip** (`x/collect.ts` pure + `ui/collect-strip.ts`).
+  The echo's ⊕「集める」 verb pins a span into ONE plugin-wide term set;
+  the strip (辞書 and 𝕏 both mount it) shows the accumulating chips, an
+  ×共起/〜近接 mode (assembling ONLY strings the search box could have
+  been handed — space-AND or the 〜 notation; no invented grammar), the
+  live local count, and the doors: 𝕏で見る (the semantic layer answers)
+  and 分類 (the hand files the shape; the machine still never does).
+  **Armed mode** is the ergonomic core: latch ⊕ and every settled
+  selection joins — select 今も, select やや, done; the selection is never
+  cleared between conditions. Chrome refuses collection by the echo's own
+  rule. Goldens: x-collect.mjs (20).
+- **The tandem answer.** The strip runs into the 𝕏 view, where §30.8's
+  pair panel IS the answer to a two-span question: the gap concordance
+  shows what the corpus puts between 今も and やや, order shows which comes
+  first, families show the forms — and every group is a door deeper.
+
+Open, named: family-as-OR riding a chip (anyTerms exists; the UI toggle
+does not yet); the dictionary-example shelf as a second instances source
+beside the 𝕏 corpus (needs an example-line index the sidecars do not yet
+carry); cross-view highlight of collected terms; and the strip on the
+語彙/トレイ faces.

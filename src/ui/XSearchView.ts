@@ -44,6 +44,9 @@ export const JP_X_VIEW_TYPE = 'jp-x-search-view';
 
 /** Callbacks the view needs from the plugin. */
 import { occurrences, trueHits, partialLabel, rankByClass, type Oracle, type Probe } from '../x/relevance.ts';
+import { pairReading, type PairReading } from '../x/pair.ts';
+import { formFamily, type FamilyForm } from '../x/family.ts';
+import { mountCollectStrip } from './collect-strip.ts';
 import { descend, verdictLine, type ProbeResult } from '../x/probe.ts';
 import { tokenizeForCanvas } from '../notes/token-canvas.ts';
 import { Trail } from '../dictionary/dict-nav.ts';
@@ -108,6 +111,11 @@ export interface XViewDeps {
    *  extended to this surface, 2026-08-27 — see view-chrome.armEdgeBack). */
   forwardPeek?: ViewChrome['forwardPeek'];
   goForward?: ViewChrome['goForward'];
+  /** Selection-as-query (2026-08-28): the yourei count/door and 集句. */
+  instances?: ViewChrome['instances'];
+  openInstances?: ViewChrome['openInstances'];
+  collect?: ViewChrome['collect'];
+  collectStrip?: ViewChrome['collectStrip'];
   pageEl?: ViewChrome['pageEl'];
   /** §29 rung 6's hand-act: file the probed shape as a standing 問い
    *  (attestations: [], sweep-exempt from the ✕ mute) in one gesture at the
@@ -289,6 +297,9 @@ export class XSearchView extends ItemView {
     // for now: it keeps the 分類-button road alive alongside the echo, and it
     // retires when that road does (the inspector build).
     armSelectionEcho(container, this.deps, 'x');
+    // 集句: the same shared multi-selection question, on this face too — a
+    // span selected in the 辞書 and one selected here land in ONE strip.
+    if (this.deps.collectStrip) this.register(mountCollectStrip(container, this.deps.collectStrip));
 
     // §26.3 — the query row belongs under the reaching hand and needs WIDTH,
     // so it takes the foot bar; `wide` is null on the desktop, which is what
@@ -560,6 +571,17 @@ export class XSearchView extends ItemView {
      */
     const single = this.query.allTerms.length === 1 && !this.query.anyTerms.length
       ? this.query.allTerms[0].trim() : '';
+    /**
+     * The PAIR query — the view's headline feature (「両方を含むツイート」),
+     * and until 2026-08-27 the one shape every semantic organ ignored:
+     * ranking, environments, the ladder and the slot table were all gated
+     * on `single`, so the queries the user actually runs (障害 残って) got a
+     * reverse-chronological card feed and nothing else. A pair is a
+     * CONSTRUCTION being asked about; pairReading/formFamily answer it.
+     */
+    const pair = this.query.allTerms.length === 2 && !this.query.anyTerms.length
+      ? this.query.allTerms.map((t) => t.trim()).filter(Boolean) : [];
+    const pairTerms: [string, string] | null = pair.length === 2 ? [pair[0], pair[1]] : null;
 
     /**
      * §29 RUNG 0 — the floor under every ranking above it.
@@ -599,7 +621,16 @@ export class XSearchView extends ItemView {
      * always honestly were. No catalog entry for this query means no class to
      * rank by, and the list stays exactly as it was.
      */
-    const probe = single ? this.deps.probeFor?.(single) : undefined;
+    // A pair probes the catalog too: the joined surface first (the 台帳 may
+    // hold 障害が残る as one pattern), then either term — first answer wins,
+    // and the status line names whichever entry is doing the ranking.
+    const probe = single
+      ? this.deps.probeFor?.(single)
+      : pairTerms
+        ? (this.deps.probeFor?.(pairTerms.join(''))
+          ?? this.deps.probeFor?.(pairTerms[0])
+          ?? this.deps.probeFor?.(pairTerms[1]))
+        : undefined;
     const whyById = new Map<string, string>();
     if (probe && shown.length) {
       const ranked = rankByClass(shown, probe, (a, b) => this.sortValue(b) - this.sortValue(a));
@@ -631,6 +662,23 @@ export class XSearchView extends ItemView {
        */
       if (single && this.deps.oracle && total > 0) {
         this.renderDescent(single);
+        return;
+      }
+      // A MULTI-term miss names its failing half, the same honesty the 辞書
+      // box already has: which term is absent, and what each term holds
+      // alone — every count a door (§29 rung 3 extended past `single`).
+      if (this.query.allTerms.length >= 2 && total > 0) {
+        const box = this.resultsEl.createDiv('jp-x-empty jp-x-pairmiss');
+        box.createDiv({ text: '組み合わせは0件 — それぞれ単独では:', cls: 'jp-x-empty-text' });
+        const row = box.createDiv('jp-x-pairmiss-row');
+        for (const t of this.query.allTerms) {
+          const n = this.deps.corpus.search({ ...this.query, allTerms: [t], anyTerms: [] }, 3000).length;
+          const chip = row.createEl('button', { cls: 'jp-x-family-chip' });
+          chip.createSpan({ text: t, cls: 'jp-x-family-form' });
+          chip.createSpan({ text: `${n}件`, cls: 'jp-x-family-count' });
+          chip.onclick = () => this.goTo(t, '単独へ降りる');
+          if (n === 0) chip.addClass('jp-x-pairmiss-zero');
+        }
         return;
       }
       const empty = this.resultsEl.createDiv('jp-x-empty');
@@ -712,6 +760,56 @@ export class XSearchView extends ItemView {
       // asks about a frame family, the manner table renders — typed fillers
       // as doors, impostors excluded BY NAME, 灰 juxtaposed.
       this.renderSlotTable(single);
+
+      // The term's FORM family, corpus-attested: the walk to 残らない/残ってる
+      // without retyping the query (the 2026-08-27 study loop, mechanized).
+      this.renderFamilyChips(this.resultsEl, single, (form) => this.goTo(form, `「${single}」の形から`));
+    }
+
+    /**
+     * THE PAIR PANEL — what a two-term query is really asking. Three
+     * countable facts, each rendered as doors, none as verdicts:
+     * the gap concordance (what stands BETWEEN the terms — the construction's
+     * variable slot, unenumerable by any regex the hand could write), the
+     * order, and each term's form family.
+     */
+    if (pairTerms && this.resultsEl) {
+      const [a, b] = pairTerms;
+      const all = this.deps.corpus.getAll();
+      const pc = this.pairCache;
+      const reading = (pc && pc.a === a && pc.b === b && pc.count === all.length)
+        ? pc.reading
+        : pairReading(all.map((t) => ({ id: t.id, text: t.text, author: t.authorHandle })), a, b);
+      this.pairCache = { a, b, count: all.length, reading };
+
+      if (reading.order.ab + reading.order.ba > 0) {
+        const box = this.resultsEl.createDiv('jp-x-pair');
+        const head = box.createDiv('jp-x-pair-head');
+        head.createSpan({ text: `${a} ◆ ${b}`, cls: 'jp-x-pair-title' });
+        head.createSpan({
+          cls: 'jp-x-pair-order',
+          text: `順序 ${a}→${b} ${reading.order.ab}件・${b}→${a} ${reading.order.ba}件`
+            + (reading.far ? `・遠隔 ${reading.far}件` : ''),
+          attr: { title: '位置の事実であって評価ではない' },
+        });
+        if (reading.groups.length) {
+          const row = box.createDiv('jp-x-pair-gaps');
+          row.createSpan({ text: '間', cls: 'jp-x-pair-gaps-label', attr: { title: '二語のあいだに立つ材料 — 構文の変項' } });
+          for (const g of reading.groups.slice(0, 8)) {
+            const phrase = g.dir === 'ab' ? `${a}${g.gap}${b}` : `${b}${g.gap}${a}`;
+            const btn = row.createEl('button', {
+              cls: 'jp-x-pair-gap',
+              attr: { title: `…${g.sample}… — タップで「${phrase}」をそのまま検索` },
+            });
+            btn.createSpan({ text: g.gap === '' ? '（直結）' : g.gap, cls: 'jp-x-pair-gap-text' });
+            btn.createSpan({ text: `${g.count}件・${g.authors}人`, cls: 'jp-x-pair-gap-count' });
+            btn.onclick = () => this.goTo(phrase, `間「${g.gap || '直結'}」から`);
+          }
+        }
+        // Each term's family walks WITHIN the pair: the other term rides.
+        this.renderFamilyChips(box, a, (form) => this.goTo(`${form} ${b}`, `「${a}」の形から`));
+        this.renderFamilyChips(box, b, (form) => this.goTo(`${a} ${form}`, `「${b}」の形から`));
+      }
     }
 
     const terms = highlightTerms(this.query);
@@ -851,6 +949,38 @@ export class XSearchView extends ItemView {
    * Cached per (anchor, corpus size), the descentCache pattern.
    */
   private slotCache: { anchor: string; size: number; table: SlotTable } | null = null;
+  /** pairReading over the full corpus, memoized append-only style. */
+  private pairCache: { a: string; b: string; count: number; reading: PairReading } | null = null;
+  /** formFamily per term, same regime. */
+  private familyCache = new Map<string, { count: number; forms: FamilyForm[] }>();
+
+  /**
+   * The corpus-attested sibling forms of a term, as door chips. Absent
+   * silently when the oracle cannot name a lemma or the corpus holds no
+   * sibling — an empty 形 row would be decoration (§28 S6).
+   */
+  private renderFamilyChips(host: HTMLElement, term: string, go: (form: string) => void): void {
+    if (!this.deps.oracle) return;
+    const all = this.deps.corpus.getAll();
+    const c = this.familyCache.get(term);
+    const forms = (c && c.count === all.length)
+      ? c.forms
+      : formFamily(all.map((t) => t.text), term, this.deps.oracle);
+    this.familyCache.set(term, { count: all.length, forms });
+    if (!forms.length) return;
+    const row = host.createDiv('jp-x-family');
+    row.createSpan({
+      text: `${term} の形`, cls: 'jp-x-family-label',
+      attr: { title: 'このコーパスに実在する同語の別形 — 活用表ではなく実測' },
+    });
+    for (const f of forms) {
+      const chip = row.createEl('button', { cls: 'jp-x-family-chip' });
+      chip.createSpan({ text: f.form, cls: 'jp-x-family-form' });
+      chip.createSpan({ text: `${f.count}`, cls: 'jp-x-family-count' });
+      chip.onclick = () => go(f.form);
+    }
+  }
+
   private renderSlotTable(single: string): void {
     if (!this.resultsEl || !this.deps.oracle) return;
     const anchor = anchorIn(single);

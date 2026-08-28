@@ -3763,6 +3763,10 @@ body.jp-posture-thumb .jp-dismiss { order: 99; }
 .jp-dict-nb:active { transform: scale(0.97); }
 .jp-dict-nb--void { visibility: hidden; }
 .jp-dict-navbar--bare .jp-dict-nb { visibility: hidden; }
+/* With a query open but no walkable neighbour, the chip STATES the fact
+   instead of hiding (2026-08-27 desk report: hidden chips read as "no nav
+   exists"). --bare now means only "home screen, nothing to walk". */
+.jp-dict-navbar:not(.jp-dict-navbar--bare) .jp-dict-nb--void { opacity: 0.4; visibility: visible; }
 
 .jp-dict-navbar-mid {
   display: flex;
@@ -8703,3 +8707,142 @@ body.jp-posture-slate .jp-drop-veil {
   white-space: nowrap;
 }
 .jp-dict-verbmenu-verb { color: var(--text-normal); }
+
+/* ── the pair panel: what stands BETWEEN two terms, in which order, and in
+      which forms (x/pair.ts, x/family.ts — §29 extended past `single`) ── */
+.jp-x-pair {
+  margin: 6px 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+}
+.jp-x-pair-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; }
+.jp-x-pair-title { font-weight: 700; color: var(--text-normal); }
+.jp-x-pair-order { font-size: 0.74rem; color: var(--text-muted); }
+.jp-x-pair-gaps { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.jp-x-pair-gaps-label { font-size: 0.72rem; color: var(--text-faint); letter-spacing: 0.1em; }
+.jp-x-pair-gap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  padding: 4px 9px;
+  cursor: pointer;
+}
+.jp-x-pair-gap:hover { background: var(--background-modifier-hover); }
+.jp-x-pair-gap-text { font-size: 0.86rem; color: var(--text-accent); font-weight: 600; }
+.jp-x-pair-gap-count { font-size: 0.72rem; color: var(--text-muted); }
+.jp-x-family { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+.jp-x-family-label { font-size: 0.72rem; color: var(--text-faint); letter-spacing: 0.05em; }
+.jp-x-family-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.jp-x-family-chip:hover { background: var(--background-modifier-hover); }
+.jp-x-family-form { font-size: 0.84rem; color: var(--text-normal); }
+.jp-x-family-count { font-size: 0.7rem; color: var(--text-muted); }
+.jp-x-pairmiss-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 8px; }
+.jp-x-pairmiss-zero .jp-x-family-form { color: var(--text-error, #c00); }
+
+/* ── 集句 — the multi-selection question strip (x/collect.ts) ─────────── */
+.jp-collect {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--background-secondary-alt, var(--background-secondary));
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.jp-collect-latch {
+  border: 1px dashed var(--background-modifier-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+.jp-collect-latch--on {
+  border-style: solid;
+  border-color: var(--text-accent);
+  color: var(--text-accent);
+  background: var(--background-primary);
+}
+.jp-collect-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  padding: 2px 4px 2px 9px;
+}
+.jp-collect-chip-text { font-size: 0.88rem; color: var(--text-normal); font-weight: 600; }
+.jp-collect-chip-x {
+  border: none; background: transparent; box-shadow: none;
+  color: var(--text-faint); cursor: pointer; padding: 2px 5px; font-size: 0.75rem;
+}
+.jp-collect-chip-x:hover { color: var(--text-normal); }
+.jp-collect-mode {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-accent);
+  padding: 3px 9px;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+.jp-collect-count { font-size: 0.76rem; color: var(--text-muted); }
+.jp-collect-go {
+  border: 1px solid var(--text-accent);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-accent);
+  font-weight: 600;
+  padding: 3px 12px;
+  cursor: pointer;
+  font-size: 0.84rem;
+}
+.jp-collect-go:hover { background: var(--background-modifier-hover); }
+.jp-collect-classify {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 0.82rem;
+}
+.jp-collect-clear {
+  margin-left: auto;
+  border: none; background: transparent; box-shadow: none;
+  color: var(--text-faint); cursor: pointer; font-size: 0.85rem;
+}
+.jp-collect-clear:hover { color: var(--text-normal); }
+
+/* the echo's yourei line + ⊕ verb */
+.jp-echo-instances {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  color: var(--text-accent);
+  font-size: 0.82rem;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.jp-echo-instances:hover { background: var(--background-modifier-hover); }
+.jp-echo-instances-arrow { margin-left: auto; color: var(--text-faint); }

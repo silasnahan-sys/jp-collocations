@@ -84,6 +84,15 @@ export interface ViewChrome {
   patternsIn?: ((text: string) => Array<{ id: string; key: string; class: NoteClass; classRatified?: boolean }>) | null;
   /** …and the door to the entry it already is. */
   openPattern?: ((id: string) => void) | null;
+  /** The yourei count for an exact span in the frozen 𝕏 corpus, and the
+   *  door to its instances (the 𝕏 view). Wired once in main.ts. */
+  instances?: (text: string) => number;
+  openInstances?: (text: string) => void;
+  /** 集句 — add a span to the shared multi-selection question. */
+  collect?: (text: string) => void;
+  /** …and the strip that shows the accumulating question (one shared set;
+   *  each view mounts its own strip). See ui/collect-strip.ts. */
+  collectStrip?: import('./collect-strip.ts').CollectStripDeps;
 }
 
 /**
@@ -149,6 +158,9 @@ export function armSelectionEcho(
     ...(chrome.hold ? { hold: chrome.hold } : {}),
     ...(chrome.patternsIn ? { patternsIn: chrome.patternsIn } : {}),
     ...(chrome.openPattern ? { openPattern: chrome.openPattern } : {}),
+    ...(chrome.instances ? { instances: chrome.instances } : {}),
+    ...(chrome.openInstances ? { openInstances: chrome.openInstances } : {}),
+    ...(chrome.collect ? { collect: chrome.collect } : {}),
   });
 }
 

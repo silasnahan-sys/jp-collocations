@@ -49,6 +49,7 @@ import { armDrops, armSelectionEcho, mountSurfaceBar, wideDock, type ViewChrome 
 import { makeDraggable } from './drag-out';
 import { historyDays, searchNotation, panVerdict, foldForFind, pageCount, stepPage, Trail, riffleDelay, RIFFLE_HOLD_MS, type DictHistoryStore } from '../dictionary/dict-nav';
 import { wordAtPoint } from './word-at';
+import { mountCollectStrip } from './collect-strip';
 
 export const JP_DICTIONARY_VIEW_TYPE = 'jp-dictionary-view';
 
@@ -114,6 +115,13 @@ export class DictionaryView extends ItemView {
    *  tap and a selection can never disagree about what a word means. */
   lookUp: ViewChrome['lookUp'];
   surfaceBadge: ViewChrome['surfaceBadge'];
+  /** Selection-as-query (2026-08-28, peekChrome): the 𝕏用例 count/door on
+   *  every selection, the 集句 ⊕ verb, and the strip that shows the
+   *  accumulating multi-selection question. */
+  instances: ViewChrome['instances'];
+  openInstances: ViewChrome['openInstances'];
+  collect: ViewChrome['collect'];
+  collectStrip: ViewChrome['collectStrip'];
   /**
    * §27.5 — the CONVERTED dictionaries (vault sidecars), asynchronous.
    *
@@ -182,12 +190,17 @@ export class DictionaryView extends ItemView {
     // rows; t (🏷️) captures the focused one — the same verbs as elsewhere.
     this.contentEl.setAttr('tabindex', '0');
     this.registerDomEvent(this.contentEl, 'keydown', (e) => this.onExampleKey(e));
+    // The desk walk's keys: ←/→ page or flip, Alt+←/→ ride the trail.
+    this.registerDomEvent(this.contentEl, 'keydown', (e) => this.onWalkKey(e));
     // §26.3 hover peek: dwell over any recursive-lookup word → reading+gloss
     // WITHOUT navigating away (keeps your place in the current entry — the
     // monokakido 飛び込み-without-losing-place feel). Mouse/Pencil only.
     this.peek = new HoverPeek((x, y) => {
       const span = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest?.('.jp-dict-clickable-word');
-      const word = span?.textContent?.trim();
+      if (!span) return null;
+      // The span is a maximal Japanese RUN (see makeJapaneseClickable) — the
+      // hover, like the tap, answers the WORD under the cursor, not the run.
+      const word = this.wordAtTap(x, y) ?? span.textContent?.trim();
       if (!word) return null;
       const hits = this.dictStore.lookup(word);
       if (!hits.length) return null;
@@ -747,15 +760,28 @@ export class DictionaryView extends ItemView {
   private renderNavBar(): void {
     if (!this.navBarEl || !this.nbPrevEl || !this.nbNextEl) return;
     const nb = this.currentNeighbors();
+    // A nav that HIDES is a nav that was never built, as far as the hand can
+    // tell — the 2026-08-27 desk report read the hidden chips as 「no where
+    // to be seen」. With a word open and no walkable neighbour, the chip now
+    // STATES the fact (§28 S6: absent and blank are different); it only
+    // truly disappears on the home screen, where there is nothing to walk.
+    const asked = !!this.currentQuery && !this.historyMode;
     const set = (btn: HTMLButtonElement, h: { expression: string } | null, arrow: 'prev' | 'next'): void => {
-      if (!h) { btn.addClass('jp-dict-nb--void'); btn.disabled = true; btn.setText(''); return; }
+      if (!h) {
+        btn.addClass('jp-dict-nb--void');
+        btn.disabled = true;
+        btn.setText(asked ? (arrow === 'prev' ? '〈' : '〉') : '');
+        if (asked) btn.title = '隣接する見出しがありません — この語は歩行順（インポート辞書の見出し順）に載っていません';
+        return;
+      }
       btn.removeClass('jp-dict-nb--void');
       btn.disabled = false;
+      btn.title = arrow === 'prev' ? '前の見出しへ（長押しでパラパラ / ←キー）' : '次の見出しへ（長押しでパラパラ / →キー）';
       btn.setText(arrow === 'prev' ? `〈 ${h.expression}` : `${h.expression} 〉`);
     };
     set(this.nbPrevEl, nb?.prev ?? null, 'prev');
     set(this.nbNextEl, nb?.next ?? null, 'next');
-    this.navBarEl.toggleClass('jp-dict-navbar--bare', !nb);
+    this.navBarEl.toggleClass('jp-dict-navbar--bare', !asked);
   }
 
   /**
@@ -797,6 +823,50 @@ export class DictionaryView extends ItemView {
     const target = dir > 0 ? nb?.next : nb?.prev;
     if (!target) return;
     this.flipTo(target.expression, slide);
+  }
+
+  /**
+   * The DESK walk — one step forward or back from wherever the hand is: a
+   * page inside an open article (its overflow already spends itself on the
+   * neighbouring headword — `turnPage`), otherwise the neighbour itself.
+   *
+   * This exists because the walk was touch-and-pen only: `armEntryPan`
+   * returns on `pointerType === 'mouse'`, the vertical walk is touch-only,
+   * and the wheel swipe stepped SURFACES. On the user's desktop the whole
+   * §30 grammar was therefore invisible — 「the gestures and navigation no
+   * where to be seen」 (2026-08-27 desk report). Serves the wheel swipe
+   * (main.ts routes a swipe over this pane here first) and the arrow keys.
+   * Returns false when there is nowhere to walk, so the caller can spend
+   * the gesture on its own fallback (the surface step).
+   */
+  walkStep(dir: 1 | -1): boolean {
+    if (this.articleEl?.isShown()) { this.turnPage(dir); return true; }
+    if (this.historyMode || !this.currentQuery) return false;
+    const nb = this.currentNeighbors();
+    const target = dir > 0 ? nb?.next : nb?.prev;
+    if (!target) return false;
+    this.flipTo(target.expression, dir > 0 ? 'left' : 'right');
+    return true;
+  }
+
+  /**
+   * Keyboard twins for the walk, scoped to this pane (never a global grab):
+   * ←/→ page or flip; Alt+←/→ ride the trail. Guarded off every input —
+   * arrows in the search box are the caret's, not the walk's.
+   */
+  private onWalkKey(e: KeyboardEvent): void {
+    const t = e.target as HTMLElement | null;
+    if (t?.closest('input, textarea, select, [contenteditable="true"]')) return;
+    if (e.metaKey || e.ctrlKey) return;
+    if (e.altKey && e.key === 'ArrowLeft') {
+      e.preventDefault(); this.goBack(); return;
+    }
+    if (e.altKey && e.key === 'ArrowRight') {
+      e.preventDefault(); this.goForward(); return;
+    }
+    if (!e.altKey && !e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+      if (this.walkStep(e.key === 'ArrowRight' ? 1 : -1)) e.preventDefault();
+    }
   }
 
   /**
@@ -1765,6 +1835,9 @@ export class DictionaryView extends ItemView {
      * arbitrary text and you get its meaning and the ordinary verbs.
      */
     armSelectionEcho(container, this, 'dict');
+    // 集句 (2026-08-28): the multi-selection question strip. One shared set
+    // plugin-wide; this view mounts its own face of it.
+    if (this.collectStrip) this.register(mountCollectStrip(container, this.collectStrip));
 
     // §26.3 — the search box, its suggestions and the identity bar all live
     // under the reaching hand rather than at the top of the screen. Both docks

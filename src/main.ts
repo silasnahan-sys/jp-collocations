@@ -53,6 +53,7 @@ import { XCorpusStore } from "./x/XCorpusStore";
 import { XClient } from "./x/XClient";
 import { XSearchView, JP_X_VIEW_TYPE, type XViewDeps } from "./ui/XSearchView";
 import { emptyQuery, DEFAULT_X_SETTINGS } from "./x/x-types";
+import { CollectSet } from "./x/collect";
 // §29.2 — X as a corpus: KWIC windows, spread, and the adjacent environment.
 import { buildXUsage, kwicQuote, type XUsage } from "./x/usage";
 import { parseTerms } from "./x/query-builder";
@@ -333,6 +334,10 @@ export default class JPCollocationsPlugin extends Plugin {
 
   /** Touchpad reducer state. See `ui/input-map.ts` for why it needs any. */
   private gesture: GestureState = idleGesture();
+  /** 集句 — the ONE multi-selection question, shared across every armed
+   *  surface (x/collect.ts). A span from the 辞書 and a span from the 𝕏
+   *  view accumulate into the same query. */
+  private readonly collectSet = new CollectSet();
   /** Live text scale for the plugin's surfaces, 0–4. Persisted. */
   private density = DENSITY_DEFAULT;
 
@@ -1119,8 +1124,18 @@ export default class JPCollocationsPlugin extends Plugin {
       this.gesture = r.state;
       if (!r.gesture) return;
       e.preventDefault();
-      if (r.gesture.kind === "density-step") void this.stepDensity(r.gesture.by);
-      else this.stepSurface(r.gesture.by);
+      if (r.gesture.kind === "density-step") { void this.stepDensity(r.gesture.by); return; }
+      // Over the 辞書, the swipe is the DICTIONARY'S own walk first —
+      // Monokakido's page turn under a touchpad (2026-08-27 desk report:
+      // the entire §30 walk was touch-gated, so a desktop hand had no walk
+      // at all while this very gesture stepped surfaces over its head).
+      // Only when the dict has nowhere to walk does the swipe fall back to
+      // the surface step it has always been.
+      const dictLeaf = this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE)
+        .find((l) => l.view.containerEl.contains(e.target as Node));
+      const dv = dictLeaf?.view instanceof DictionaryView ? dictLeaf.view : null;
+      if (dv?.walkStep(r.gesture.by)) return;
+      this.stepSurface(r.gesture.by);
     };
     const bindWheel = (): void => {
       // A finger never produces `wheel`, so on tablet and phone this listener
@@ -4228,6 +4243,13 @@ export default class JPCollocationsPlugin extends Plugin {
     // and let a real dictionary hit on 進まない (→ 進む) outrank the junk.
     const grown = sentence ? await this.lookUpGrown(q, sentence) : null;
     if (grown) return grown;
+    // The knife's OTHER miss: the selection grabbed a particle or a copula
+    // tail along with the word — がやさしい answered 辞書に該当なし while
+    // やさしい sat inside it (filmed on the 2026-08-27 desk screenshots).
+    // Growth cannot cure this one; shedding can. Exact entries only, so the
+    // shed can never invent — the same dictionary-or-nothing rule as growth.
+    const shed = await this.lookUpShed(q);
+    if (shed) return shed;
     if (direct) return direct;
     const hit = (await this.bigDict.lookup(q, 1))[0];
     if (!hit) return null;
@@ -4237,6 +4259,38 @@ export default class JPCollocationsPlugin extends Plugin {
       ...(hit.deinflection ? { deinflection: hit.deinflection } : {}),
       def: definitionsPreview(hit.entry.senses ?? []),
     };
+  }
+
+  /**
+   * Shed up to two characters from either end of the selection, longest
+   * remainder first, and answer the first REAL entry (exact — a deinflected
+   * shed remainder is a guess stacked on a guess, and まない→まる is the
+   * canonical warning). がやさしい → やさしい in one shed.
+   */
+  private async lookUpShed(q: string): Promise<PeekData | null> {
+    const chars = [...q];
+    const cands: string[] = [];
+    for (let l = 0; l <= 2; l++) {
+      for (let r = 0; r <= 2; r++) {
+        if (l + r === 0 || chars.length - l - r < 2) continue;
+        cands.push(chars.slice(l, chars.length - r).join(''));
+      }
+    }
+    cands.sort((a, b) => [...b].length - [...a].length);
+    for (const form of cands) {
+      const local = this.dictStore.lookup(form)[0];
+      if (local && !local.deinflection?.length) return this.peekOfLocal([local]);
+    }
+    for (const form of cands.slice(0, 4)) {
+      const hit = (await this.bigDict.lookup(form, 1))[0];
+      if (!hit || hit.deinflection?.length) continue;
+      return {
+        headword: hit.entry.expression,
+        ...(hit.entry.reading ? { reading: hit.entry.reading } : {}),
+        def: definitionsPreview(hit.entry.senses ?? []),
+      };
+    }
+    return null;
   }
 
   /** First local hit as a peek, or null. */
@@ -4294,7 +4348,7 @@ export default class JPCollocationsPlugin extends Plugin {
    * no edge gesture, which is the one failure mode the invariant cannot
    * survive. Coupling them at one line makes that unforgettable.
    */
-  private peekChrome(): Pick<ViewChrome, "lookUp" | "openWord" | "backPeek" | "inVault" | "hold"> & {
+  private peekChrome(): Pick<ViewChrome, "lookUp" | "openWord" | "backPeek" | "inVault" | "hold" | "instances" | "openInstances" | "collect" | "collectStrip"> & {
     // NonNullable: the chrome contract admits null so a VIEW FIELD can start
     // unwired, but what THIS builder hands out is always the real closure —
     // deps interfaces that take `?: fn` must not be poisoned by the union.
@@ -4311,7 +4365,44 @@ export default class JPCollocationsPlugin extends Plugin {
       // Items 12–13: the echo carries 台帳 state on every surface, wired once.
       patternsIn: (text) => this.patternsIn(text),
       openPattern: (id) => void this.openLexiconAt(id),
+      // Selection-as-query (2026-08-28): every armed surface answers a span
+      // with its corpus count (the yourei line), a door to its instances,
+      // the 集句 ⊕ verb, and the strip's deps — wired once, like everything
+      // above, so no two surfaces can disagree about what a selection asks.
+      instances: (text) => this.xInstanceCount(text),
+      openInstances: (text) => void this.openXView(text, false),
+      collect: (text) => { this.collectSet.add(text); },
+      collectStrip: {
+        set: this.collectSet,
+        count: (q) => this.xQueryCount(q),
+        run: (q) => void this.openXView(q, false),
+        classify: (key) => {
+          new CaptureModal(this.app, {
+            text: key,
+            source: { kind: "manual", sourceName: "集句" },
+          }, this.makeCaptureDeps()).open();
+        },
+      },
     };
+  }
+
+  /** Exact-span count in the frozen 𝕏 corpus (bigram-indexed; cheap). */
+  private xInstanceCount(text: string): number {
+    const t = text.trim();
+    if ([...t].length < 2 || [...t].length > 40) return 0;
+    try {
+      return this.xCorpus.search({ ...emptyQuery(""), allTerms: [t] }, 2000).length;
+    } catch { return 0; }
+  }
+
+  /** Count for an assembled 集句 query (terms may carry the 〜 notation —
+   *  the corpus matcher reads them as patterns, §30.4). */
+  private xQueryCount(q: string): number | null {
+    const terms = q.split(/[\s　]+/).filter(Boolean);
+    if (!terms.length) return null;
+    try {
+      return this.xCorpus.search({ ...emptyQuery(""), allTerms: terms }, 3000).length;
+    } catch { return null; }
   }
 
   /** Feel knobs for the hold — settings override the defaults, never guessed. */

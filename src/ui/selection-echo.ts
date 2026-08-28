@@ -81,6 +81,26 @@ export interface SelectionEchoDeps {
   openPattern?: (id: string) => void;
 
   /**
+   * The YOUREI ANSWER (2026-08-28 desk report): how often this exact span
+   * occurs in the frozen 𝕏 corpus — Monokakido's separately-indexed 用例
+   * feel, for ANY selected span (招いた誤解, が招いた誤解), not only
+   * headwords. Cheap by construction (the bigram index), absent silently
+   * when zero — a 0件 row would be decoration where the phrase count IS
+   * the fact (§28 S6 both ways).
+   */
+  instances?: (text: string) => number;
+  /** …and the door: open the instances where the semantic layer answers
+   *  (the 𝕏 view: KWIC, environments, pair/gap panels, families). */
+  openInstances?: (text: string) => void;
+
+  /**
+   * 集句 (x/collect.ts): add this span to the accumulating multi-selection
+   * question. The verb every selection carries; the strip and its armed
+   * mode do the rest.
+   */
+  collect?: (text: string) => void;
+
+  /**
    * Turn what a rendered image's DOM knows into a vault path the tray can
    * point at. See `InVault`.
    *
@@ -298,6 +318,26 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
       );
     }
 
+    // The 用例 line: this exact span, counted in the frozen corpus, as a
+    // door. Selection IS the yourei query now — the Monokakido habit the
+    // 2026-08-28 report asked for by name.
+    if (deps.instances && deps.openInstances) {
+      const n = deps.instances(text);
+      if (n > 0) {
+        const row = bar.createDiv('jp-echo-instances');
+        row.createSpan({ text: `𝕏用例 ${n}件`, cls: 'jp-echo-instances-count' });
+        row.createSpan({ text: '→', cls: 'jp-echo-instances-arrow' });
+        row.title = `「${text}」をそのままコーパスに引く — KWIC・環境・形もそこで`;
+        row.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          hide();
+          window.getSelection()?.removeAllRanges();
+          deps.openInstances!(text);
+        });
+      }
+    }
+
     // Items 12–13: BETWEEN the answer and the verbs, the state. A phrase the
     // 台帳 already holds says so — with its class dot, wearing the same mark
     // it wears everywhere — and the chip is a door to the entry it already
@@ -389,6 +429,27 @@ export function attachSelectionEcho(root: HTMLElement, deps: SelectionEchoDeps):
         hide();
         window.getSelection()?.removeAllRanges();
         deps.hold!(text, ctx().surface, sentence);
+      });
+    }
+
+    // 集句 ⊕ — add this span to the accumulating question (x/collect.ts).
+    // Unconditional like the grab: the multi-selection road must exist on
+    // every armed surface, or the second span has nowhere to go. Note: the
+    // SELECTION SURVIVES this verb — the next span is coming, and clearing
+    // the highlight between conditions is exactly the friction 集句 removes.
+    if (deps.collect) {
+      const b = verbs.createEl('button', {
+        cls: 'jp-echo-btn jp-echo-btn--collect',
+        attr: { title: '条件に加える — 選択を重ねて「一緒に出るか」を聞く（集句ストリップに貯まります）' },
+      });
+      b.createSpan({ cls: 'jp-echo-icon', text: '⊕' });
+      b.createSpan({ cls: 'jp-echo-label', text: '集める' });
+      if (asMenu) b.createSpan({ cls: 'jp-echo-obj', text: snipOf(text) });
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        hide();
+        deps.collect!(text);
       });
     }
 

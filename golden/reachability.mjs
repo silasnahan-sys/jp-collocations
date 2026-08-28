@@ -554,6 +554,55 @@ console.log('\n D9. the critique film: the article is an article, the tap is a w
     /isSlate\(\) && lastPointer !== 'mouse' \? 480 : 160/.test(echo));
 }
 
+// The second glass report (2026-08-28, desktop): the §30 walk was touch-and-
+// pen only — a mouse hand had NO walk while the wheel swipe stepped surfaces
+// over its head; the 𝕏 semantic layer was gated on single-term queries while
+// the user's real queries are pairs; and a selection could name a span but
+// never ASK with it. Three families of repair, pinned.
+console.log('\n D10. the desk walk, the pair semantics, and selection-as-query');
+{
+  const dict = read('ui', 'DictionaryView.ts');
+  const mainTs = read('main.ts');
+  const xview = read('ui', 'XSearchView.ts');
+  const echo = read('ui', 'selection-echo.ts');
+  const css = readFileSync(join(HERE, '..', 'styles.css'), 'utf8');
+  // — the desk walk —
+  check('the wheel swipe over the 辞書 walks the DICTIONARY first',
+    /dv\?\.walkStep\(r\.gesture\.by\)/.test(mainTs));
+  check('…falling back to the surface step only when there is nowhere to walk',
+    /walkStep\(r\.gesture\.by\)\) return;\s*\n\s*this\.stepSurface/.test(mainTs));
+  check('arrow keys walk; Alt+arrows ride the trail; inputs are never robbed',
+    /onWalkKey/.test(dict) && /closest\('input, textarea, select/.test(dict)
+    && /e\.altKey && e\.key === 'ArrowLeft'/.test(dict));
+  check('a chip with a query but no neighbour STATES the fact instead of hiding',
+    /隣接する見出しがありません/.test(dict) && /jp-dict-nb--void \{ opacity/.test(css));
+  check('the hover peek answers the word under the cursor, not the run',
+    /const word = this\.wordAtTap\(x, y\)/.test(dict));
+  check('a leading-particle cut sheds to the real word (がやさしい→やさしい)',
+    /lookUpShed/.test(mainTs));
+  // — the pair semantics —
+  check('the pair panel exists: gap concordance + order as positional facts',
+    /pairReading\(/.test(xview) && /jp-x-pair-gaps/.test(xview) && /順序/.test(xview));
+  check('form families render as doors on single AND pair queries',
+    /renderFamilyChips\(this\.resultsEl, single/.test(xview)
+    && /renderFamilyChips\(box, a/.test(xview));
+  check('a multi-term miss names its failing half with per-term counts',
+    /組み合わせは0件/.test(xview));
+  check('a pair probes the catalog too (joined surface, then either term)',
+    /probeFor\?\.\(pairTerms\.join\(''\)\)/.test(xview));
+  // — selection-as-query —
+  check('every selection carries its corpus count as a door (the yourei line)',
+    /jp-echo-instances/.test(echo) && /instances: \(text\) => this\.xInstanceCount/.test(mainTs));
+  check('the ⊕ verb adds a span to the shared question',
+    /jp-echo-btn--collect/.test(echo) && /collect: \(text\) => \{ this\.collectSet\.add/.test(mainTs));
+  check('the strip mounts on BOTH the 辞書 and the 𝕏 view (one shared set)',
+    /mountCollectStrip\(container, this\.collectStrip\)/.test(dict)
+    && /mountCollectStrip\(container, this\.deps\.collectStrip\)/.test(xview));
+  check('armed mode collects every settled selection, chrome excluded',
+    /deps\.set\.armed\(\)/.test(read('ui', 'collect-strip.ts'))
+    && /data-jp-no-echo/.test(read('ui', 'collect-strip.ts')));
+}
+
 // ── the ledger must not rot ───────────────────────────────────────────────────
 //
 // An allow-list nobody prunes becomes permission. Every entry above is asserted

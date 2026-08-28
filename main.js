@@ -25953,6 +25953,23 @@ function attachSelectionEcho(root, deps) {
         }
       );
     }
+    if (deps.instances && deps.openInstances) {
+      const n = deps.instances(text);
+      if (n > 0) {
+        const row = bar.createDiv("jp-echo-instances");
+        row.createSpan({ text: `\u{1D54F}\u7528\u4F8B ${n}\u4EF6`, cls: "jp-echo-instances-count" });
+        row.createSpan({ text: "\u2192", cls: "jp-echo-instances-arrow" });
+        row.title = `\u300C${text}\u300D\u3092\u305D\u306E\u307E\u307E\u30B3\u30FC\u30D1\u30B9\u306B\u5F15\u304F \u2014 KWIC\u30FB\u74B0\u5883\u30FB\u5F62\u3082\u305D\u3053\u3067`;
+        row.addEventListener("pointerdown", (e) => {
+          var _a3;
+          e.preventDefault();
+          e.stopPropagation();
+          hide();
+          (_a3 = window.getSelection()) == null ? void 0 : _a3.removeAllRanges();
+          deps.openInstances(text);
+        });
+      }
+    }
     if (deps.patternsIn && deps.openPattern) {
       const known = deps.patternsIn(text);
       if (known.length) {
@@ -26023,6 +26040,22 @@ function attachSelectionEcho(root, deps) {
         hide();
         (_a3 = window.getSelection()) == null ? void 0 : _a3.removeAllRanges();
         deps.hold(text, ctx().surface, sentence);
+      });
+    }
+    if (deps.collect) {
+      const b = verbs.createEl("button", {
+        cls: "jp-echo-btn jp-echo-btn--collect",
+        attr: { title: "\u6761\u4EF6\u306B\u52A0\u3048\u308B \u2014 \u9078\u629E\u3092\u91CD\u306D\u3066\u300C\u4E00\u7DD2\u306B\u51FA\u308B\u304B\u300D\u3092\u805E\u304F\uFF08\u96C6\u53E5\u30B9\u30C8\u30EA\u30C3\u30D7\u306B\u8CAF\u307E\u308A\u307E\u3059\uFF09" }
+      });
+      b.createSpan({ cls: "jp-echo-icon", text: "\u2295" });
+      b.createSpan({ cls: "jp-echo-label", text: "\u96C6\u3081\u308B" });
+      if (asMenu)
+        b.createSpan({ cls: "jp-echo-obj", text: snipOf(text) });
+      b.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        hide();
+        deps.collect(text);
       });
     }
     const grip = verbs.createEl("button", {
@@ -26693,7 +26726,10 @@ function armSelectionEcho(host, chrome, surface, opts = {}) {
     ...chrome.inVault ? { inVault: chrome.inVault } : {},
     ...chrome.hold ? { hold: chrome.hold } : {},
     ...chrome.patternsIn ? { patternsIn: chrome.patternsIn } : {},
-    ...chrome.openPattern ? { openPattern: chrome.openPattern } : {}
+    ...chrome.openPattern ? { openPattern: chrome.openPattern } : {},
+    ...chrome.instances ? { instances: chrome.instances } : {},
+    ...chrome.openInstances ? { openInstances: chrome.openInstances } : {},
+    ...chrome.collect ? { collect: chrome.collect } : {}
   });
 }
 function mountSurfaceBar(viewRoot, chrome, current2, fallback) {
@@ -37214,6 +37250,182 @@ var ContextEngine = class {
   }
 };
 
+// src/x/collect.ts
+var MAX_TERMS = 6;
+var MIN_CHARS2 = 2;
+var MAX_CHARS = 24;
+function collectQuery(terms, mode) {
+  const ts = terms.map((t) => t.trim()).filter(Boolean);
+  if (!ts.length)
+    return "";
+  if (ts.length === 1)
+    return ts[0];
+  if (mode === "near" && ts.length === 2)
+    return `${ts[0]}\u301C${ts[1]}`;
+  return ts.join(" ");
+}
+function collectable(text) {
+  const t = text.trim();
+  const n = [...t].length;
+  return n >= MIN_CHARS2 && n <= MAX_CHARS && !/\n/.test(t);
+}
+var CollectSet = class {
+  constructor() {
+    this.terms = [];
+    this._mode = "and";
+    this._armed = false;
+    this.subs = /* @__PURE__ */ new Set();
+  }
+  list() {
+    return [...this.terms];
+  }
+  mode() {
+    return this._mode;
+  }
+  armed() {
+    return this._armed;
+  }
+  query() {
+    return collectQuery(this.terms, this._mode);
+  }
+  /** Add a settled selection. Rejects non-terms, dedupes, caps; returns
+   *  whether the set changed. */
+  add(text) {
+    const t = text.trim();
+    if (!collectable(t) || this.terms.includes(t) || this.terms.length >= MAX_TERMS)
+      return false;
+    this.terms.push(t);
+    this.emit();
+    return true;
+  }
+  remove(text) {
+    const i = this.terms.indexOf(text);
+    if (i < 0)
+      return;
+    this.terms.splice(i, 1);
+    this.emit();
+  }
+  clear() {
+    if (!this.terms.length && !this._armed)
+      return;
+    this.terms = [];
+    this._armed = false;
+    this.emit();
+  }
+  setMode(m) {
+    if (this._mode === m)
+      return;
+    this._mode = m;
+    this.emit();
+  }
+  setArmed(on) {
+    if (this._armed === on)
+      return;
+    this._armed = on;
+    this.emit();
+  }
+  subscribe(fn) {
+    this.subs.add(fn);
+    return () => this.subs.delete(fn);
+  }
+  emit() {
+    for (const fn of this.subs)
+      fn();
+  }
+};
+
+// src/ui/collect-strip.ts
+function mountCollectStrip(host, deps) {
+  const el = host.createDiv("jp-collect");
+  el.hide();
+  let selTimer = null;
+  const onSelChange = () => {
+    if (!deps.set.armed())
+      return;
+    if (selTimer)
+      window.clearTimeout(selTimer);
+    selTimer = window.setTimeout(() => {
+      var _a2, _b2;
+      const sel = window.getSelection();
+      const text = (_a2 = sel == null ? void 0 : sel.toString().trim()) != null ? _a2 : "";
+      if (!sel || sel.rangeCount === 0 || !collectable(text))
+        return;
+      const anchor = sel.anchorNode;
+      const a = anchor && (anchor.nodeType === 1 ? anchor : anchor.parentElement);
+      if (!a || !host.contains(a))
+        return;
+      if ((_b2 = a.closest) == null ? void 0 : _b2.call(a, "button, input, textarea, select, [data-jp-no-echo], .jp-collect"))
+        return;
+      deps.set.add(text);
+    }, 500);
+  };
+  document.addEventListener("selectionchange", onSelChange);
+  const render = () => {
+    const terms = deps.set.list();
+    const armed = deps.set.armed();
+    if (!terms.length && !armed) {
+      el.hide();
+      el.empty();
+      return;
+    }
+    el.show();
+    el.empty();
+    const latch = el.createEl("button", {
+      cls: `jp-collect-latch${armed ? " jp-collect-latch--on" : ""}`,
+      attr: { title: armed ? "\u96C6\u53E5\u3092\u89E3\u9664 \u2014 \u9078\u629E\u306F\u3082\u3046\u96C6\u307E\u308A\u307E\u305B\u3093" : "\u9078\u629E\u3092\u96C6\u3081\u308B \u2014 \u62BC\u3057\u3066\u3044\u308B\u9593\u3001\u9078\u629E\u3059\u308B\u305F\u3073\u6761\u4EF6\u306B\u52A0\u308F\u308A\u307E\u3059" }
+    });
+    latch.setText(armed ? "\u2295 \u96C6\u3081\u3066\u3044\u307E\u3059" : "\u2295");
+    latch.onclick = () => deps.set.setArmed(!armed);
+    for (const t of terms) {
+      const chip = el.createDiv("jp-collect-chip");
+      chip.createSpan({ text: t, cls: "jp-collect-chip-text" });
+      const x = chip.createEl("button", { text: "\u2715", cls: "jp-collect-chip-x", attr: { "aria-label": `${t} \u3092\u5916\u3059` } });
+      x.onclick = () => deps.set.remove(t);
+    }
+    if (terms.length >= 2) {
+      const mode = deps.set.mode();
+      const modeBtn = el.createEl("button", {
+        cls: "jp-collect-mode",
+        attr: {
+          title: mode === "and" ? "\u5171\u8D77\uFF08\u9806\u4E0D\u540C\u30FB\u540C\u30C4\u30A4\u30FC\u30C8\u5185\uFF09\u2014 \u30BF\u30C3\u30D7\u3067 \u301C\u8FD1\u63A5\uFF08\u3053\u306E\u9806\u5E8F\u30FB\u8FD1\u304F\uFF09\u3078" : "\u301C\u8FD1\u63A5\uFF08\u3053\u306E\u9806\u5E8F\u3067\u8FD1\u304F\u306B\u7ACB\u3064\uFF09\u2014 \u30BF\u30C3\u30D7\u3067\u5171\u8D77\u3078\u3002\u4E09\u8A9E\u4EE5\u4E0A\u306F\u5171\u8D77\u306E\u307F"
+        }
+      });
+      modeBtn.setText(mode === "and" ? "\xD7\u5171\u8D77" : "\u301C\u8FD1\u63A5");
+      modeBtn.onclick = () => deps.set.setMode(mode === "and" ? "near" : "and");
+    }
+    if (terms.length) {
+      const q = deps.set.query();
+      const n = deps.count(q);
+      el.createSpan({
+        cls: "jp-collect-count",
+        text: n === null ? "" : `\u30ED\u30FC\u30AB\u30EB ${n}\u4EF6`,
+        attr: { title: "\u51CD\u7D50\u30B3\u30FC\u30D1\u30B9\u5185\u306E\u4EF6\u6570 \u2014 \u30E9\u30A4\u30D6\u53D6\u5F97\u306F\u307E\u3060\u8D70\u3063\u3066\u3044\u307E\u305B\u3093" }
+      });
+      const go = el.createEl("button", { text: "\u{1D54F}\u3067\u898B\u308B", cls: "jp-collect-go" });
+      go.onclick = () => deps.run(q);
+      if (deps.classify && terms.length >= 2) {
+        const cls = el.createEl("button", {
+          text: "\u5206\u985E",
+          cls: "jp-collect-classify",
+          attr: { title: "\u3053\u306E\u7D44\u307F\u5408\u308F\u305B\u3092\u53F0\u5E33\u3078\uFF08\u6A5F\u68B0\u306F\u63D0\u6848\u3057\u307E\u305B\u3093 \u2014 \u5206\u985E\u306F\u624B\u306E\u4ED5\u4E8B\uFF09" }
+        });
+        cls.onclick = () => deps.classify(q);
+      }
+    }
+    const clear = el.createEl("button", { text: "\u232B", cls: "jp-collect-clear", attr: { "aria-label": "\u96C6\u53E5\u3092\u3059\u3079\u3066\u6D88\u3059" } });
+    clear.onclick = () => deps.set.clear();
+  };
+  const unsub = deps.set.subscribe(render);
+  render();
+  return () => {
+    unsub();
+    document.removeEventListener("selectionchange", onSelChange);
+    if (selTimer)
+      window.clearTimeout(selTimer);
+    el.remove();
+  };
+}
+
 // src/ui/DictionaryView.ts
 var JP_DICTIONARY_VIEW_TYPE = "jp-dictionary-view";
 function allDeinflected(results) {
@@ -37378,10 +37590,13 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     void this.refreshBigInstalled();
     this.contentEl.setAttr("tabindex", "0");
     this.registerDomEvent(this.contentEl, "keydown", (e) => this.onExampleKey(e));
+    this.registerDomEvent(this.contentEl, "keydown", (e) => this.onWalkKey(e));
     this.peek = new HoverPeek((x, y) => {
-      var _a2, _b2, _c2;
+      var _a2, _b2, _c2, _d2;
       const span = (_b2 = (_a2 = document.elementFromPoint(x, y)) == null ? void 0 : _a2.closest) == null ? void 0 : _b2.call(_a2, ".jp-dict-clickable-word");
-      const word = (_c2 = span == null ? void 0 : span.textContent) == null ? void 0 : _c2.trim();
+      if (!span)
+        return null;
+      const word = (_d2 = this.wordAtTap(x, y)) != null ? _d2 : (_c2 = span.textContent) == null ? void 0 : _c2.trim();
       if (!word)
         return null;
       const hits = this.dictStore.lookup(word);
@@ -37888,20 +38103,24 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     if (!this.navBarEl || !this.nbPrevEl || !this.nbNextEl)
       return;
     const nb = this.currentNeighbors();
+    const asked = !!this.currentQuery && !this.historyMode;
     const set = (btn, h, arrow) => {
       if (!h) {
         btn.addClass("jp-dict-nb--void");
         btn.disabled = true;
-        btn.setText("");
+        btn.setText(asked ? arrow === "prev" ? "\u3008" : "\u3009" : "");
+        if (asked)
+          btn.title = "\u96A3\u63A5\u3059\u308B\u898B\u51FA\u3057\u304C\u3042\u308A\u307E\u305B\u3093 \u2014 \u3053\u306E\u8A9E\u306F\u6B69\u884C\u9806\uFF08\u30A4\u30F3\u30DD\u30FC\u30C8\u8F9E\u66F8\u306E\u898B\u51FA\u3057\u9806\uFF09\u306B\u8F09\u3063\u3066\u3044\u307E\u305B\u3093";
         return;
       }
       btn.removeClass("jp-dict-nb--void");
       btn.disabled = false;
+      btn.title = arrow === "prev" ? "\u524D\u306E\u898B\u51FA\u3057\u3078\uFF08\u9577\u62BC\u3057\u3067\u30D1\u30E9\u30D1\u30E9 / \u2190\u30AD\u30FC\uFF09" : "\u6B21\u306E\u898B\u51FA\u3057\u3078\uFF08\u9577\u62BC\u3057\u3067\u30D1\u30E9\u30D1\u30E9 / \u2192\u30AD\u30FC\uFF09";
       btn.setText(arrow === "prev" ? `\u3008 ${h.expression}` : `${h.expression} \u3009`);
     };
     set(this.nbPrevEl, (_a2 = nb == null ? void 0 : nb.prev) != null ? _a2 : null, "prev");
     set(this.nbNextEl, (_b2 = nb == null ? void 0 : nb.next) != null ? _b2 : null, "next");
-    this.navBarEl.toggleClass("jp-dict-navbar--bare", !nb);
+    this.navBarEl.toggleClass("jp-dict-navbar--bare", !asked);
   }
   /**
    * FLIP to a neighbour — sideways moves replace the current place: the
@@ -37942,6 +38161,61 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     if (!target)
       return;
     this.flipTo(target.expression, slide);
+  }
+  /**
+   * The DESK walk — one step forward or back from wherever the hand is: a
+   * page inside an open article (its overflow already spends itself on the
+   * neighbouring headword — `turnPage`), otherwise the neighbour itself.
+   *
+   * This exists because the walk was touch-and-pen only: `armEntryPan`
+   * returns on `pointerType === 'mouse'`, the vertical walk is touch-only,
+   * and the wheel swipe stepped SURFACES. On the user's desktop the whole
+   * §30 grammar was therefore invisible — 「the gestures and navigation no
+   * where to be seen」 (2026-08-27 desk report). Serves the wheel swipe
+   * (main.ts routes a swipe over this pane here first) and the arrow keys.
+   * Returns false when there is nowhere to walk, so the caller can spend
+   * the gesture on its own fallback (the surface step).
+   */
+  walkStep(dir) {
+    var _a2;
+    if ((_a2 = this.articleEl) == null ? void 0 : _a2.isShown()) {
+      this.turnPage(dir);
+      return true;
+    }
+    if (this.historyMode || !this.currentQuery)
+      return false;
+    const nb = this.currentNeighbors();
+    const target = dir > 0 ? nb == null ? void 0 : nb.next : nb == null ? void 0 : nb.prev;
+    if (!target)
+      return false;
+    this.flipTo(target.expression, dir > 0 ? "left" : "right");
+    return true;
+  }
+  /**
+   * Keyboard twins for the walk, scoped to this pane (never a global grab):
+   * ←/→ page or flip; Alt+←/→ ride the trail. Guarded off every input —
+   * arrows in the search box are the caret's, not the walk's.
+   */
+  onWalkKey(e) {
+    const t = e.target;
+    if (t == null ? void 0 : t.closest('input, textarea, select, [contenteditable="true"]'))
+      return;
+    if (e.metaKey || e.ctrlKey)
+      return;
+    if (e.altKey && e.key === "ArrowLeft") {
+      e.preventDefault();
+      this.goBack();
+      return;
+    }
+    if (e.altKey && e.key === "ArrowRight") {
+      e.preventDefault();
+      this.goForward();
+      return;
+    }
+    if (!e.altKey && !e.shiftKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      if (this.walkStep(e.key === "ArrowRight" ? 1 : -1))
+        e.preventDefault();
+    }
   }
   /**
    * The kindle-quick page turn, CORRECTED (2026-08-26). The first build was
@@ -38983,6 +39257,8 @@ var DictionaryView = class _DictionaryView extends import_obsidian16.ItemView {
     container.addClass("jp-dict-view");
     armDrops(container, this, "dict", { paste: true });
     armSelectionEcho(container, this, "dict");
+    if (this.collectStrip)
+      this.register(mountCollectStrip(container, this.collectStrip));
     const wide = wideDock(container);
     const header = container.createDiv("jp-dict-header");
     mountSurfaceBar(container, this, "dict", header);
@@ -42069,6 +42345,136 @@ function rankByClass(items, probe, tie = () => 0, window2 = DEFAULT_LINK_WINDOW)
   }).sort((a, b) => b.score - a.score || tie(a.item, b.item));
 }
 
+// src/x/pair.ts
+var MAX_GAP = 14;
+var MAX_GROUPS_SCAN = 40;
+function pairReading(docs, a, b) {
+  const byKey = /* @__PURE__ */ new Map();
+  let ab = 0, ba = 0, far = 0;
+  if (!a || !b || a === b)
+    return { groups: [], order: { ab, ba }, far };
+  for (const doc of docs) {
+    const t = doc.text;
+    if (!t)
+      continue;
+    const best = nearestPairing(t, a, b);
+    if (!best)
+      continue;
+    if (best.dir === "ab")
+      ab++;
+    else
+      ba++;
+    if (best.gap.length > MAX_GAP) {
+      far++;
+      continue;
+    }
+    const key = `${best.dir}\0${best.gap}`;
+    let g = byKey.get(key);
+    if (!g) {
+      g = { dir: best.dir, gap: best.gap, count: 0, authors: /* @__PURE__ */ new Set(), sample: best.sample };
+      byKey.set(key, g);
+    }
+    g.count++;
+    if (doc.author)
+      g.authors.add(doc.author);
+  }
+  const groups = [...byKey.values()].map((g) => ({ gap: g.gap, dir: g.dir, count: g.count, authors: g.authors.size || 1, sample: g.sample })).sort((x, y) => y.count - x.count || x.gap.length - y.gap.length).slice(0, MAX_GROUPS_SCAN);
+  return { groups, order: { ab, ba }, far };
+}
+function nearestPairing(t, a, b) {
+  const asIdx = allIndexOf(t, a);
+  const bsIdx = allIndexOf(t, b);
+  if (!asIdx.length || !bsIdx.length)
+    return null;
+  let best = null;
+  for (const i of asIdx) {
+    for (const j of bsIdx) {
+      if (j >= i && j < i + a.length)
+        continue;
+      if (i >= j && i < j + b.length)
+        continue;
+      const dir = i < j ? "ab" : "ba";
+      const gap = dir === "ab" ? t.slice(i + a.length, j) : t.slice(j + b.length, i);
+      if (!best || gap.length < best.gap.length) {
+        best = { dir, gap, span: dir === "ab" ? [i, j + b.length] : [j, i + a.length] };
+      }
+    }
+  }
+  if (!best)
+    return null;
+  const [s, e] = best.span;
+  const sample = t.slice(Math.max(0, s - 12), Math.min(t.length, e + 12)).replace(/\s+/g, " ");
+  return { dir: best.dir, gap: best.gap, sample };
+}
+function allIndexOf(t, needle) {
+  const out = [];
+  let i = t.indexOf(needle);
+  while (i >= 0 && out.length < 32) {
+    out.push(i);
+    i = t.indexOf(needle, i + 1);
+  }
+  return out;
+}
+
+// src/x/family.ts
+var MAX_TAIL = 6;
+var MAX_FORMS = 8;
+var MAX_OCCURRENCES = 4e3;
+function lemmaOf(term, oracle) {
+  var _a2, _b2;
+  if (!term)
+    return null;
+  if (oracle.isWord(term)) {
+    return term;
+  }
+  const cands = oracle.deinflect(term).filter((c) => c.term !== term && oracle.isWord(c.term)).sort((a, b) => a.trail.length - b.trail.length || a.term.length - b.term.length);
+  return (_b2 = (_a2 = cands[0]) == null ? void 0 : _a2.term) != null ? _b2 : null;
+}
+function formFamily(texts, term, oracle) {
+  var _a2;
+  const lemma = lemmaOf(term, oracle);
+  if (!lemma)
+    return [];
+  const stem = commonPrefix(term, lemma);
+  if (!stem || stem.length < 2 && !/[一-龯]/.test(stem))
+    return [];
+  const counts = /* @__PURE__ */ new Map();
+  let seen = 0;
+  for (const t of texts) {
+    if (seen >= MAX_OCCURRENCES)
+      break;
+    let i = t.indexOf(stem);
+    while (i >= 0 && seen < MAX_OCCURRENCES) {
+      seen++;
+      const tail3 = t.slice(i + stem.length, i + stem.length + MAX_TAIL);
+      const form = longestFamilyForm(stem, tail3, lemma, oracle);
+      if (form && form !== term)
+        counts.set(form, ((_a2 = counts.get(form)) != null ? _a2 : 0) + 1);
+      i = t.indexOf(stem, i + stem.length || i + 1);
+    }
+  }
+  return [...counts.entries()].map(([form, count]) => ({ form, count })).sort((a, b) => b.count - a.count || a.form.length - b.form.length).slice(0, MAX_FORMS);
+}
+function longestFamilyForm(stem, tail3, lemma, oracle) {
+  for (let n = tail3.length; n >= 0; n--) {
+    const cand = stem + tail3.slice(0, n);
+    if (cand.length < stem.length || cand.length < 2)
+      break;
+    if (cand === lemma)
+      return cand;
+    const back2 = oracle.deinflect(cand);
+    if (back2.some((c) => c.term === lemma))
+      return cand;
+  }
+  return null;
+}
+function commonPrefix(a, b) {
+  let n = 0;
+  while (n < a.length && n < b.length && a[n] === b[n])
+    n++;
+  return a.slice(0, n);
+}
+
 // src/x/probe.ts
 var KANJI_RE2 = /[㐀-䶿一-鿿々]/;
 function density(tok) {
@@ -42226,6 +42632,10 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
      * Cached per (anchor, corpus size), the descentCache pattern.
      */
     this.slotCache = null;
+    /** pairReading over the full corpus, memoized append-only style. */
+    this.pairCache = null;
+    /** formFamily per term, same regime. */
+    this.familyCache = /* @__PURE__ */ new Map();
     this.deps = deps;
     const s = deps.getSettings();
     this.query = emptyQuery(s.defaultLang, s.defaultProduct);
@@ -42353,6 +42763,8 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
     container.addClass("jp-x-view");
     armDrops(container, this.deps, "x", { paste: true });
     armSelectionEcho(container, this.deps, "x");
+    if (this.deps.collectStrip)
+      this.register(mountCollectStrip(container, this.deps.collectStrip));
     const wide = wideDock(container);
     const header = container.createDiv("jp-x-header");
     mountSurfaceBar(container, this.deps, "x", header);
@@ -42607,7 +43019,7 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
     return sorted;
   }
   renderLocal() {
-    var _a2, _b2;
+    var _a2, _b2, _c2, _d2, _e2, _f2, _g2, _h2, _i2, _j2;
     if (!this.resultsEl || !this.statusEl)
       return;
     const total = this.deps.corpus.size();
@@ -42621,6 +43033,8 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
     }
     const results = this.applySort(this.deps.corpus.search(this.query, 300));
     const single = this.query.allTerms.length === 1 && !this.query.anyTerms.length ? this.query.allTerms[0].trim() : "";
+    const pair = this.query.allTerms.length === 2 && !this.query.anyTerms.length ? this.query.allTerms.map((t) => t.trim()).filter(Boolean) : [];
+    const pairTerms = pair.length === 2 ? [pair[0], pair[1]] : null;
     let shown = results;
     let demoted = [];
     let tailLabel = "";
@@ -42636,7 +43050,7 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
         tailLabel = partialLabel(judged);
       }
     }
-    const probe = single ? (_b2 = (_a2 = this.deps).probeFor) == null ? void 0 : _b2.call(_a2, single) : void 0;
+    const probe = single ? (_b2 = (_a2 = this.deps).probeFor) == null ? void 0 : _b2.call(_a2, single) : pairTerms ? (_j2 = (_g2 = (_d2 = (_c2 = this.deps).probeFor) == null ? void 0 : _d2.call(_c2, pairTerms.join(""))) != null ? _g2 : (_f2 = (_e2 = this.deps).probeFor) == null ? void 0 : _f2.call(_e2, pairTerms[0])) != null ? _j2 : (_i2 = (_h2 = this.deps).probeFor) == null ? void 0 : _i2.call(_h2, pairTerms[1]) : void 0;
     const whyById = /* @__PURE__ */ new Map();
     if (probe && shown.length) {
       const ranked = rankByClass(shown, probe, (a, b) => this.sortValue(b) - this.sortValue(a));
@@ -42657,6 +43071,21 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
     if (results.length === 0) {
       if (single && this.deps.oracle && total > 0) {
         this.renderDescent(single);
+        return;
+      }
+      if (this.query.allTerms.length >= 2 && total > 0) {
+        const box = this.resultsEl.createDiv("jp-x-empty jp-x-pairmiss");
+        box.createDiv({ text: "\u7D44\u307F\u5408\u308F\u305B\u306F0\u4EF6 \u2014 \u305D\u308C\u305E\u308C\u5358\u72EC\u3067\u306F:", cls: "jp-x-empty-text" });
+        const row = box.createDiv("jp-x-pairmiss-row");
+        for (const t of this.query.allTerms) {
+          const n = this.deps.corpus.search({ ...this.query, allTerms: [t], anyTerms: [] }, 3e3).length;
+          const chip = row.createEl("button", { cls: "jp-x-family-chip" });
+          chip.createSpan({ text: t, cls: "jp-x-family-form" });
+          chip.createSpan({ text: `${n}\u4EF6`, cls: "jp-x-family-count" });
+          chip.onclick = () => this.goTo(t, "\u5358\u72EC\u3078\u964D\u308A\u308B");
+          if (n === 0)
+            chip.addClass("jp-x-pairmiss-zero");
+        }
         return;
       }
       const empty = this.resultsEl.createDiv("jp-x-empty");
@@ -42702,6 +43131,40 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
         }
       }
       this.renderSlotTable(single);
+      this.renderFamilyChips(this.resultsEl, single, (form) => this.goTo(form, `\u300C${single}\u300D\u306E\u5F62\u304B\u3089`));
+    }
+    if (pairTerms && this.resultsEl) {
+      const [a, b] = pairTerms;
+      const all = this.deps.corpus.getAll();
+      const pc = this.pairCache;
+      const reading = pc && pc.a === a && pc.b === b && pc.count === all.length ? pc.reading : pairReading(all.map((t) => ({ id: t.id, text: t.text, author: t.authorHandle })), a, b);
+      this.pairCache = { a, b, count: all.length, reading };
+      if (reading.order.ab + reading.order.ba > 0) {
+        const box = this.resultsEl.createDiv("jp-x-pair");
+        const head = box.createDiv("jp-x-pair-head");
+        head.createSpan({ text: `${a} \u25C6 ${b}`, cls: "jp-x-pair-title" });
+        head.createSpan({
+          cls: "jp-x-pair-order",
+          text: `\u9806\u5E8F ${a}\u2192${b} ${reading.order.ab}\u4EF6\u30FB${b}\u2192${a} ${reading.order.ba}\u4EF6` + (reading.far ? `\u30FB\u9060\u9694 ${reading.far}\u4EF6` : ""),
+          attr: { title: "\u4F4D\u7F6E\u306E\u4E8B\u5B9F\u3067\u3042\u3063\u3066\u8A55\u4FA1\u3067\u306F\u306A\u3044" }
+        });
+        if (reading.groups.length) {
+          const row = box.createDiv("jp-x-pair-gaps");
+          row.createSpan({ text: "\u9593", cls: "jp-x-pair-gaps-label", attr: { title: "\u4E8C\u8A9E\u306E\u3042\u3044\u3060\u306B\u7ACB\u3064\u6750\u6599 \u2014 \u69CB\u6587\u306E\u5909\u9805" } });
+          for (const g of reading.groups.slice(0, 8)) {
+            const phrase = g.dir === "ab" ? `${a}${g.gap}${b}` : `${b}${g.gap}${a}`;
+            const btn = row.createEl("button", {
+              cls: "jp-x-pair-gap",
+              attr: { title: `\u2026${g.sample}\u2026 \u2014 \u30BF\u30C3\u30D7\u3067\u300C${phrase}\u300D\u3092\u305D\u306E\u307E\u307E\u691C\u7D22` }
+            });
+            btn.createSpan({ text: g.gap === "" ? "\uFF08\u76F4\u7D50\uFF09" : g.gap, cls: "jp-x-pair-gap-text" });
+            btn.createSpan({ text: `${g.count}\u4EF6\u30FB${g.authors}\u4EBA`, cls: "jp-x-pair-gap-count" });
+            btn.onclick = () => this.goTo(phrase, `\u9593\u300C${g.gap || "\u76F4\u7D50"}\u300D\u304B\u3089`);
+          }
+        }
+        this.renderFamilyChips(box, a, (form) => this.goTo(`${form} ${b}`, `\u300C${a}\u300D\u306E\u5F62\u304B\u3089`));
+        this.renderFamilyChips(box, b, (form) => this.goTo(`${a} ${form}`, `\u300C${b}\u300D\u306E\u5F62\u304B\u3089`));
+      }
     }
     const terms = highlightTerms(this.query);
     const CHUNK = 60;
@@ -42812,6 +43275,33 @@ var _XSearchView = class _XSearchView extends import_obsidian21.ItemView {
       fileBtn.createSpan({ text: "\u554F", cls: "jp-x-descent-file-mark" });
       fileBtn.createSpan({ text: "\u554F\u3044\u3068\u3057\u3066\u6B8B\u3059 \u2014 \u30B3\u30FC\u30D1\u30B9\u304C\u80B2\u3066\u3070\u7B54\u3048\u308B" });
       fileBtn.onclick = () => this.deps.fileStanding(term);
+    }
+  }
+  /**
+   * The corpus-attested sibling forms of a term, as door chips. Absent
+   * silently when the oracle cannot name a lemma or the corpus holds no
+   * sibling — an empty 形 row would be decoration (§28 S6).
+   */
+  renderFamilyChips(host, term, go) {
+    if (!this.deps.oracle)
+      return;
+    const all = this.deps.corpus.getAll();
+    const c = this.familyCache.get(term);
+    const forms = c && c.count === all.length ? c.forms : formFamily(all.map((t) => t.text), term, this.deps.oracle);
+    this.familyCache.set(term, { count: all.length, forms });
+    if (!forms.length)
+      return;
+    const row = host.createDiv("jp-x-family");
+    row.createSpan({
+      text: `${term} \u306E\u5F62`,
+      cls: "jp-x-family-label",
+      attr: { title: "\u3053\u306E\u30B3\u30FC\u30D1\u30B9\u306B\u5B9F\u5728\u3059\u308B\u540C\u8A9E\u306E\u5225\u5F62 \u2014 \u6D3B\u7528\u8868\u3067\u306F\u306A\u304F\u5B9F\u6E2C" }
+    });
+    for (const f of forms) {
+      const chip = row.createEl("button", { cls: "jp-x-family-chip" });
+      chip.createSpan({ text: f.form, cls: "jp-x-family-form" });
+      chip.createSpan({ text: `${f.count}`, cls: "jp-x-family-count" });
+      chip.onclick = () => go(f.form);
     }
   }
   renderSlotTable(single) {
@@ -56496,6 +56986,10 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
     this.navStack = [];
     /** Touchpad reducer state. See `ui/input-map.ts` for why it needs any. */
     this.gesture = idleGesture();
+    /** 集句 — the ONE multi-selection question, shared across every armed
+     *  surface (x/collect.ts). A span from the 辞書 and a span from the 𝕏
+     *  view accumulate into the same query. */
+    this.collectSet = new CollectSet();
     /** Live text scale for the plugin's surfaces, 0–4. Persisted. */
     this.density = DENSITY_DEFAULT;
     /**
@@ -57241,10 +57735,15 @@ var _JPCollocationsPlugin = class _JPCollocationsPlugin extends import_obsidian3
       if (!r2.gesture)
         return;
       e.preventDefault();
-      if (r2.gesture.kind === "density-step")
+      if (r2.gesture.kind === "density-step") {
         void this.stepDensity(r2.gesture.by);
-      else
-        this.stepSurface(r2.gesture.by);
+        return;
+      }
+      const dictLeaf = this.app.workspace.getLeavesOfType(JP_DICTIONARY_VIEW_TYPE).find((l) => l.view.containerEl.contains(e.target));
+      const dv = (dictLeaf == null ? void 0 : dictLeaf.view) instanceof DictionaryView ? dictLeaf.view : null;
+      if (dv == null ? void 0 : dv.walkStep(r2.gesture.by))
+        return;
+      this.stepSurface(r2.gesture.by);
     };
     const bindWheel = () => {
       if (posture() !== "desk")
@@ -60385,6 +60884,9 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
     const grown = sentence ? await this.lookUpGrown(q, sentence) : null;
     if (grown)
       return grown;
+    const shed = await this.lookUpShed(q);
+    if (shed)
+      return shed;
     if (direct)
       return direct;
     const hit = (await this.bigDict.lookup(q, 1))[0];
@@ -60396,6 +60898,41 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       ...hit.deinflection ? { deinflection: hit.deinflection } : {},
       def: definitionsPreview((_b2 = hit.entry.senses) != null ? _b2 : [])
     };
+  }
+  /**
+   * Shed up to two characters from either end of the selection, longest
+   * remainder first, and answer the first REAL entry (exact — a deinflected
+   * shed remainder is a guess stacked on a guess, and まない→まる is the
+   * canonical warning). がやさしい → やさしい in one shed.
+   */
+  async lookUpShed(q) {
+    var _a2, _b2, _c2;
+    const chars = [...q];
+    const cands = [];
+    for (let l = 0; l <= 2; l++) {
+      for (let r2 = 0; r2 <= 2; r2++) {
+        if (l + r2 === 0 || chars.length - l - r2 < 2)
+          continue;
+        cands.push(chars.slice(l, chars.length - r2).join(""));
+      }
+    }
+    cands.sort((a, b) => [...b].length - [...a].length);
+    for (const form of cands) {
+      const local = this.dictStore.lookup(form)[0];
+      if (local && !((_a2 = local.deinflection) == null ? void 0 : _a2.length))
+        return this.peekOfLocal([local]);
+    }
+    for (const form of cands.slice(0, 4)) {
+      const hit = (await this.bigDict.lookup(form, 1))[0];
+      if (!hit || ((_b2 = hit.deinflection) == null ? void 0 : _b2.length))
+        continue;
+      return {
+        headword: hit.entry.expression,
+        ...hit.entry.reading ? { reading: hit.entry.reading } : {},
+        def: definitionsPreview((_c2 = hit.entry.senses) != null ? _c2 : [])
+      };
+    }
+    return null;
   }
   /** First local hit as a peek, or null. */
   peekOfLocal(local) {
@@ -60465,8 +61002,51 @@ Plex \u7531\u6765\u306E\u30C8\u30E9\u30F3\u30B9\u30AF\u30EA\u30D7\u30C8\u306A\u3
       hold: (text, surface, sentence) => this.holdText(text, surface, sentence),
       // Items 12–13: the echo carries 台帳 state on every surface, wired once.
       patternsIn: (text) => this.patternsIn(text),
-      openPattern: (id) => void this.openLexiconAt(id)
+      openPattern: (id) => void this.openLexiconAt(id),
+      // Selection-as-query (2026-08-28): every armed surface answers a span
+      // with its corpus count (the yourei line), a door to its instances,
+      // the 集句 ⊕ verb, and the strip's deps — wired once, like everything
+      // above, so no two surfaces can disagree about what a selection asks.
+      instances: (text) => this.xInstanceCount(text),
+      openInstances: (text) => void this.openXView(text, false),
+      collect: (text) => {
+        this.collectSet.add(text);
+      },
+      collectStrip: {
+        set: this.collectSet,
+        count: (q) => this.xQueryCount(q),
+        run: (q) => void this.openXView(q, false),
+        classify: (key) => {
+          new CaptureModal(this.app, {
+            text: key,
+            source: { kind: "manual", sourceName: "\u96C6\u53E5" }
+          }, this.makeCaptureDeps()).open();
+        }
+      }
     };
+  }
+  /** Exact-span count in the frozen 𝕏 corpus (bigram-indexed; cheap). */
+  xInstanceCount(text) {
+    const t = text.trim();
+    if ([...t].length < 2 || [...t].length > 40)
+      return 0;
+    try {
+      return this.xCorpus.search({ ...emptyQuery(""), allTerms: [t] }, 2e3).length;
+    } catch (e) {
+      return 0;
+    }
+  }
+  /** Count for an assembled 集句 query (terms may carry the 〜 notation —
+   *  the corpus matcher reads them as patterns, §30.4). */
+  xQueryCount(q) {
+    const terms = q.split(/[\s　]+/).filter(Boolean);
+    if (!terms.length)
+      return null;
+    try {
+      return this.xCorpus.search({ ...emptyQuery(""), allTerms: terms }, 3e3).length;
+    } catch (e) {
+      return null;
+    }
   }
   /** Feel knobs for the hold — settings override the defaults, never guessed. */
   holdKnobs() {
